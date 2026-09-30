@@ -41,6 +41,9 @@ public sealed class BackupRunner : IBackupRunner
     private const int ErrorLockViolation = 33;
     private const int ErrorHandleDiskFull = 39;
     private const int ErrorDiskFull = 112;
+    private const int MoveAttempts = 5;
+    private const string NoLongerExists = "no longer exists";
+    private static readonly TimeSpan MoveRetryDelay = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly ITargetVolume _volume;
@@ -119,6 +122,12 @@ public sealed class BackupRunner : IBackupRunner
             throw new BackupAbortException(RunStatus.Error, $"Source folder \"{plan.Source}\" does not exist.");
         if (string.IsNullOrWhiteSpace(plan.Target))
             throw new BackupAbortException(RunStatus.Error, "No target folder is set.");
+        if (string.IsNullOrWhiteSpace(plan.Name) || plan.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new BackupAbortException(RunStatus.Error, $"The plan name \"{plan.Name}\" cannot be used as a folder name.");
+        if (PathUtil.IsSameOrInside(plan.Target, plan.Source))
+            throw new BackupAbortException(RunStatus.Error, "The target folder is the source folder or inside it.");
+        if (PathUtil.IsSameOrInside(plan.Source, plan.Target))
+            throw new BackupAbortException(RunStatus.Error, "The source folder is inside the target folder.");
 
         Directory.CreateDirectory(plan.Target);
         DeleteLeftovers(plan);
@@ -127,6 +136,8 @@ public sealed class BackupRunner : IBackupRunner
         var index = SourceIndexer.Build(plan.Source, indexProgress, cancellationToken);
         var matcher = IgnoreMatcher.ForPlan(plan.Ignore, request.GlobalIgnoreDefaults, index.IgnoreFiles);
         var root = IndexEvaluator.Evaluate(index, matcher, cancellationToken);
+        if (root.Node.Error is { } rootError)
+            throw new BackupAbortException(RunStatus.Error, $"The source folder could not be read: {rootError}");
 
         var work = new BackupWork(index.Root);
         foreach (var path in index.UnreadableIgnoreFiles)
@@ -161,10 +172,16 @@ public sealed class BackupRunner : IBackupRunner
             return;
         }
 
+        if (path.Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            work.Skipped.Add(new SkippedEntry(path, "the name is reserved for the backup manifest"));
+            return;
+        }
+
         if (path.Length > 0)
             work.Directories.Add(node.Node);
         if (node.Node.Error is { } error)
-            work.Skipped.Add(new SkippedEntry(path.Length == 0 ? "." : path, error));
+            work.Skipped.Add(new SkippedEntry(path, error));
         foreach (var child in node.Children)
             Collect(child, work);
     }
@@ -239,14 +256,21 @@ public sealed class BackupRunner : IBackupRunner
                 {
                     bytesDone += count;
                     Report(BackupPhase.Copying, file.RelativePath, force: false);
-                }, cancellationToken, out var skipReason);
+                }, cancellationToken, out var skipReason, out var changed);
 
             if (copied is null)
             {
+                if (skipReason == NoLongerExists && !Directory.Exists(work.SourceRoot))
+                    throw new BackupAbortException(RunStatus.Error, "The source folder is no longer available.");
                 entry.AddSkipped(new SkippedEntry(file.RelativePath, skipReason!));
             }
             else
             {
+                if (changed)
+                {
+                    entry.AddSkipped(new SkippedEntry(file.RelativePath,
+                        "changed while it was copied; the copy may be inconsistent"));
+                }
                 manifest.Files.Add(copied);
                 entry.FilesCopied++;
                 entry.BytesCopied += copied.Size;
@@ -257,20 +281,41 @@ public sealed class BackupRunner : IBackupRunner
             Report(BackupPhase.Copying, file.RelativePath, force: false);
         }
 
+        // The last report comes before the rename: a throwing progress callback must not undo a finished backup.
         Report(BackupPhase.Finishing, "", force: true);
         using (var stream = File.Create(Path.Combine(partialPath, VersionName.ManifestFileName)))
+        {
             JsonSerializer.Serialize(stream, manifest, JsonDefaults.Options);
+            stream.Flush(flushToDisk: true);
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
-        Directory.Move(partialPath, finalPath);
-        Report(BackupPhase.Finishing, "", force: true);
+        MoveWithRetry(partialPath, finalPath);
+    }
+
+    /// <summary>Antivirus, indexers or Explorer can briefly hold a handle inside the folder; retry before giving up.</summary>
+    private void MoveWithRetry(string source, string destination)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                _volume.MoveDirectory(source, destination);
+                return;
+            }
+            catch (Exception ex) when (attempt < MoveAttempts && ex is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(MoveRetryDelay * attempt);
+            }
+        }
     }
 
     /// <summary>Copies one file while hashing it. Returns null and a reason when the source cannot be read; target errors propagate.</summary>
     private ManifestFile? CopyFile(string sourcePath, string targetPath, IndexNode node, byte[] buffer,
-        Action<int> onBytes, CancellationToken cancellationToken, out string? skipReason)
+        Action<int> onBytes, CancellationToken cancellationToken, out string? skipReason, out bool changed)
     {
         skipReason = null;
+        changed = false;
         FileStream input;
         try
         {
@@ -317,22 +362,36 @@ public sealed class BackupRunner : IBackupRunner
             return null;
         }
 
+        // The source is opened shared, so it can change while it is read: compare with what was indexed.
+        var mtime = node.LastWriteUtc;
         try
         {
-            File.SetLastWriteTimeUtc(targetPath, node.LastWriteUtc);
+            var info = new FileInfo(sourcePath);
+            var length = info.Length;
+            mtime = info.LastWriteTimeUtc;
+            changed = size != node.Size || length != node.Size || mtime != node.LastWriteUtc;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            changed = true;
+        }
+
+        try
+        {
+            File.SetLastWriteTimeUtc(targetPath, mtime);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentOutOfRangeException)
         {
             // The copy itself is fine; the manifest still records the source time.
         }
 
-        return new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
+        return new ManifestFile(node.RelativePath, size, mtime,
             "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash()));
     }
 
     private static string? SourceSkipReason(Exception exception) => exception switch
     {
-        FileNotFoundException or DirectoryNotFoundException => "no longer exists",
+        FileNotFoundException or DirectoryNotFoundException => NoLongerExists,
         UnauthorizedAccessException => "access denied",
         IOException io when IsLocked(io) => "locked by another program",
         _ => null,

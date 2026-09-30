@@ -8,6 +8,9 @@ public interface ITargetVolume
 
     /// <summary>Creates a new file for writing; fails when it already exists.</summary>
     Stream CreateFile(string path);
+
+    /// <summary>Renames a folder on the target.</summary>
+    void MoveDirectory(string source, string destination);
 }
 
 public sealed class PhysicalTargetVolume : ITargetVolume
@@ -27,6 +30,8 @@ public sealed class PhysicalTargetVolume : ITargetVolume
             return long.MaxValue;
         }
     }
+
+    public void MoveDirectory(string source, string destination) => Directory.Move(source, destination);
 
     public Stream CreateFile(string path) =>
         new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize, FileOptions.SequentialScan);

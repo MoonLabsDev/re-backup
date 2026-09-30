@@ -13,7 +13,7 @@ namespace ReBackup.Core.Tests.Backup;
 
 public class BackupRunnerTests : IDisposable
 {
-    private const string Minute = "2026_09_30-14_05";
+    private const string Minute = "2026_09_30-16_05";   // 14:05 UTC in the fixed +02:00 test zone
     private readonly TempDir _tmp = new();
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 30, 14, 5, 30, TimeSpan.Zero));
     private readonly string _source;
@@ -21,6 +21,7 @@ public class BackupRunnerTests : IDisposable
 
     public BackupRunnerTests()
     {
+        _time.SetLocalTimeZone(TimeZoneInfo.CreateCustomTimeZone("test", TimeSpan.FromHours(2), "test", "test"));
         _source = _tmp.CreateDir("source");
         _target = _tmp.PathOf("target");
         _tmp.WriteFile(@"source\a.txt", "alpha");
@@ -47,7 +48,7 @@ public class BackupRunnerTests : IDisposable
     private string VersionPath(string minute = Minute) => Path.Combine(_target, $"{minute} Projects");
 
     private string[] TargetEntries() =>
-        Directory.Exists(_target) ? Directory.GetFileSystemEntries(_target).Select(Path.GetFileName).ToArray()! : [];
+        Directory.Exists(_target) ? Directory.GetFileSystemEntries(_target).Select(e => Path.GetFileName(e)!).ToArray() : [];
 
     [Fact]
     public async Task Copies_everything_into_a_named_version_folder()
@@ -275,7 +276,7 @@ public class BackupRunnerTests : IDisposable
         entry.Status.Should().Be(RunStatus.Completed);
         entry.Version.Should().NotBe($"{Minute} Projects", "that folder already existed");
         VersionName.TryParse(entry.Version!, "Projects", out var versionTime).Should().BeTrue();
-        versionTime.Should().BeAfter(new DateTime(2026, 9, 30, 14, 5, 0));
+        versionTime.Should().BeAfter(new DateTime(2026, 9, 30, 16, 5, 0));
         File.Exists(Path.Combine(_target, entry.Version!, "a.txt")).Should().BeTrue();
         Directory.GetFileSystemEntries(VersionPath()).Should().BeEmpty("the existing folder is not touched");
     }
@@ -308,6 +309,120 @@ public class BackupRunnerTests : IDisposable
         entry.EndUtc.Should().Be(entry.StartUtc.AddSeconds(4));
     }
 
+    [Fact]
+    public async Task File_modified_during_the_copy_is_kept_and_reported_as_changed()
+    {
+        var volume = new FakeVolume
+        {
+            OnCreateFile = path =>
+            {
+                if (Path.GetFileName(path) != "a.txt")
+                    return;
+                using var append = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                append.Write("-more"u8);
+            },
+        };
+
+        var entry = await Runner(volume).RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        entry.Skipped.Should().ContainSingle().Which.Should().Be(
+            new SkippedEntry("a.txt", "changed while it was copied; the copy may be inconsistent"));
+        entry.FilesCopied.Should().Be(2);
+        var copied = File.ReadAllBytes(Path.Combine(VersionPath(), "a.txt"));
+        var manifest = JsonSerializer.Deserialize<BackupManifest>(
+            File.ReadAllText(Path.Combine(VersionPath(), "re-manifest.json")), JsonDefaults.Options)!;
+        var a = manifest.Files.Single(f => f.Path == "a.txt");
+        a.Size.Should().Be(copied.Length);
+        a.Hash.Should().Be("xxh64:" + Convert.ToHexStringLower(XxHash64.Hash(copied)));
+        a.MtimeUtc.Should().Be(File.GetLastWriteTimeUtc(Path.Combine(_source, "a.txt")));
+        File.GetLastWriteTimeUtc(Path.Combine(VersionPath(), "a.txt")).Should().Be(a.MtimeUtc);
+    }
+
+    [Fact]
+    public async Task Source_that_disappears_during_the_run_aborts_as_Error()
+    {
+        var volume = new FakeVolume { OnFreeSpaceQuery = () => Directory.Move(_source, _source + "-gone") };
+
+        var entry = await Runner(volume).RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().Be("The source folder is no longer available.");
+        entry.Version.Should().BeNull();
+        TargetEntries().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_failing_final_rename_is_retried()
+    {
+        var volume = new FakeVolume { MoveFailures = 2 };
+
+        var entry = await Runner(volume).RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        TargetEntries().Should().Equal($"{Minute} Projects");
+    }
+
+    [Fact]
+    public async Task A_final_rename_that_keeps_failing_aborts_as_Error_and_removes_the_partial_folder()
+    {
+        var volume = new FakeVolume { MoveFailures = 99 };
+
+        var entry = await Runner(volume).RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        TargetEntries().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Plan_name_with_path_characters_aborts_as_Error()
+    {
+        var plan = Plan();
+        plan.Name = @"..\evil";
+
+        var entry = await Runner().RunAsync(Request(plan));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        Directory.Exists(_tmp.PathOf("evil")).Should().BeFalse();
+        TargetEntries().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Target_inside_the_source_aborts_as_Error()
+    {
+        var plan = Plan();
+        plan.Target = Path.Combine(_source, "out");
+
+        var entry = await Runner().RunAsync(Request(plan));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        Directory.Exists(plan.Target).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Source_inside_the_target_aborts_as_Error()
+    {
+        var plan = Plan();
+        plan.Target = _tmp.Root;
+
+        var entry = await Runner().RunAsync(Request(plan));
+
+        entry.Status.Should().Be(RunStatus.Error);
+    }
+
+    [Fact]
+    public async Task Root_folder_named_like_the_manifest_is_skipped()
+    {
+        _tmp.WriteFile(@"source\re-manifest.json\inner.txt", "x");
+
+        var entry = await Runner().RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        entry.Skipped.Should().ContainSingle().Which.Path.Should().Be("re-manifest.json");
+        File.ReadAllText(Path.Combine(VersionPath(), "re-manifest.json")).Should().Contain("\"planId\"");
+        entry.FilesCopied.Should().Be(2);
+    }
+
     private static void RunMklink(string link, string target)
     {
         var info = new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
@@ -334,9 +449,23 @@ public class BackupRunnerTests : IDisposable
         public long? FreeSpace { get; init; }
         public Action<string>? OnCreateFile { get; init; }
         public bool FailWritesWithDiskFull { get; init; }
+        public Action? OnFreeSpaceQuery { get; init; }
+        public int MoveFailures { get; init; }
         public int FilesCreated { get; private set; }
+        private int _moveAttempts;
 
-        public long GetAvailableFreeSpace(string directory) => FreeSpace ?? _inner.GetAvailableFreeSpace(directory);
+        public long GetAvailableFreeSpace(string directory)
+        {
+            OnFreeSpaceQuery?.Invoke();
+            return FreeSpace ?? _inner.GetAvailableFreeSpace(directory);
+        }
+
+        public void MoveDirectory(string source, string destination)
+        {
+            if (_moveAttempts++ < MoveFailures)
+                throw new IOException("directory is in use");
+            _inner.MoveDirectory(source, destination);
+        }
 
         public Stream CreateFile(string path)
         {
