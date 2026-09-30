@@ -1,7 +1,8 @@
 <UserControl x:Class="ReBackup.App.Views.RetentionView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:ReBackup.App.ViewModels">
+             xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
+             xmlns:controls="clr-namespace:ReBackup.App.Controls">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -146,6 +147,21 @@
                 </ListView.View>
             </ListView>
         </DockPanel>
-        <!-- Row 2: full extension (Task 9) -->
+        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+            <DockPanel Margin="0,0,0,4">
+                <ComboBox DockPanel.Dock="Right" Width="190" DisplayMemberPath="Label"
+                          ItemsSource="{x:Static vm:RetentionPreviewViewModel.Schedules}"
+                          SelectedItem="{Binding RetentionPreview.SelectedSchedule}" />
+                <TextBlock DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" Text="Assume" />
+                <TextBlock FontWeight="SemiBold" VerticalAlignment="Center"
+                           Text="Full extension — two years from now" />
+            </DockPanel>
+            <TextBlock TextWrapping="Wrap" Text="{Binding RetentionPreview.FullSummary}" />
+            <ScrollViewer MaxHeight="180" Margin="0,6,0,0" VerticalScrollBarVisibility="Auto">
+                <controls:RetentionTimelineControl Lanes="{Binding RetentionPreview.TimelineLanes}"
+                                                   From="{Binding RetentionPreview.TimelineFrom}"
+                                                   To="{Binding RetentionPreview.TimelineTo}" />
+            </ScrollViewer>
+        </StackPanel>
     </Grid>
 </UserControl>

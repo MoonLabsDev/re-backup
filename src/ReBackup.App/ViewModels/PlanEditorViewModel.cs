@@ -34,7 +34,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _saved = plan.Clone();
         _allPlans = allPlans;
         Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
-        RetentionPreview = new RetentionPreviewViewModel(ToPlan);
+        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.Root?.IncludedSize);
         Preview.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(IgnorePreviewViewModel.SelectedNode))

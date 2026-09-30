@@ -7,6 +7,9 @@ using ReBackup.Core.Retention;
 
 namespace ReBackup.App.ViewModels;
 
+/// <summary>A backup frequency assumed for the full-extension preview until plans have a schedule.</summary>
+public sealed record AssumedSchedule(string Label, TimeSpan Interval);
+
 /// <summary>Shows what a plan's retention rules do with the versions in its target.</summary>
 public sealed partial class RetentionPreviewViewModel : ObservableObject
 {
@@ -14,19 +17,39 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private static readonly TimeSpan EvaluateDelay = TimeSpan.FromMilliseconds(300);
 
     private readonly Func<BackupPlan> _plan;
+    private readonly Func<long?> _fallbackVersionBytes;
     private IReadOnlyList<VersionInfo>? _versions;
     private CancellationTokenSource? _loadCts;
     private CancellationTokenSource? _evaluateCts;
+    private CancellationTokenSource? _simulateCts;
 
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string _nowSummary = NotLoadedText;
+    [ObservableProperty] private AssumedSchedule _selectedSchedule = Schedules[1];
+    [ObservableProperty] private string _fullSummary = "";
+    [ObservableProperty] private IReadOnlyList<TimelineLane> _timelineLanes = [];
+    [ObservableProperty] private DateTime _timelineFrom;
+    [ObservableProperty] private DateTime _timelineTo;
 
     /// <param name="plan">Gives the plan as currently edited.</param>
-    public RetentionPreviewViewModel(Func<BackupPlan> plan)
+    /// <param name="fallbackVersionBytes">Size of one version when the target has none yet; null when unknown.</param>
+    public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes)
     {
         _plan = plan;
+        _fallbackVersionBytes = fallbackVersionBytes;
     }
+
+    public static IReadOnlyList<AssumedSchedule> Schedules { get; } =
+    [
+        new("one backup a week", TimeSpan.FromDays(7)),
+        new("one backup a day", TimeSpan.FromDays(1)),
+        new("two backups a day", TimeSpan.FromHours(12)),
+        new("a backup every 4 hours", TimeSpan.FromHours(4)),
+        new("a backup every hour", TimeSpan.FromHours(1)),
+    ];
+
+    partial void OnSelectedScheduleChanged(AssumedSchedule value) => RequestEvaluate();
 
     /// <summary>The version folders in the target, newest first.</summary>
     public RangeObservableCollection<RetentionNowRow> NowRows { get; } = new();
@@ -56,6 +79,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         Error = null;
         NowRows.ReplaceAll([]);
         NowSummary = NotLoadedText;
+        ClearSimulation();
     }
 
     /// <summary>Applies the edited rules again after a short pause in typing. The target is not read again.</summary>
@@ -109,6 +133,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 _versions = null;
                 NowRows.ReplaceAll([]);
                 NowSummary = "";
+                ClearSimulation();
                 Error = $"The target folder could not be read: {ex.Message}";
             }
         }
@@ -134,6 +159,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         {
             NowRows.ReplaceAll([]);
             NowSummary = "Correct the rules above to see what they keep.";
+            ClearSimulation();
             return;
         }
 
@@ -142,16 +168,75 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         var managed = decisions.Where(d => d.Decision is not null).ToList();
         var deleted = managed.Where(d => d.Delete).ToList();
         var unmanaged = decisions.Count - managed.Count;
-        if (decisions.Count == 0)
+        NowSummary = decisions.Count == 0
+            ? "There are no versions in the target yet."
+            : $"{managed.Count:N0} versions, {ByteSize.Format(SizeOf(managed))}  →  the rules keep " +
+              $"{managed.Count - deleted.Count:N0} and delete {deleted.Count:N0} (frees {ByteSize.Format(SizeOf(deleted))})" +
+              (unmanaged > 0 ? $"  ·  {unmanaged:N0} not managed" : "");
+
+        _ = SimulateAsync(versions, rules);
+    }
+
+    private void ClearSimulation()
+    {
+        _simulateCts?.Cancel();
+        _simulateCts = null;
+        FullSummary = "";
+        TimelineLanes = [];
+    }
+
+    private async Task SimulateAsync(IReadOnlyList<VersionInfo> versions, IReadOnlyList<RetentionRule> rules)
+    {
+        _simulateCts?.Cancel();
+        var cts = _simulateCts = new CancellationTokenSource();
+        var schedule = SelectedSchedule;
+        var now = DateTime.Now;
+        var owned = versions.Where(v => v.IsOwned).ToList();
+        var seeds = owned.Select(v => new RetentionVersion(v.Name, v.LocalTime)).ToList();
+        var sizes = owned.Where(v => v.TotalBytes is not null).Select(v => v.TotalBytes!.Value).ToList();
+        long? average = sizes.Count > 0 ? (long)sizes.Average() : _fallbackVersionBytes();
+
+        try
         {
-            NowSummary = "There are no versions in the target yet.";
-            return;
+            // The assumed backups run at 02:00 and then every interval.
+            var result = await Task.Run(() => RetentionSimulator.Simulate(seeds, rules,
+                RetentionSimulator.Every(now.Date.AddHours(2), schedule.Interval), now, average, cts.Token), cts.Token);
+            if (ReferenceEquals(_simulateCts, cts))
+                ShowSimulation(result, rules, schedule, now);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ArgumentException)
+        {
+            // Evaluate() checked the rules already; if they are not valid after all there is nothing to show.
+        }
+    }
+
+    private void ShowSimulation(SimulationResult result, IReadOnlyList<RetentionRule> rules, AssumedSchedule schedule,
+        DateTime now)
+    {
+        var size = result.EstimatedBytes is { } bytes ? $", about {ByteSize.Format(bytes)}" : "";
+        var cut = result.Truncated ? $" The simulation stopped after {result.RunsSimulated:N0} runs." : "";
+        FullSummary = rules.Count == 0
+            ? $"No rules, so nothing is ever deleted: with {schedule.Label} there are {result.SteadyStateCount:N0} versions after two years{size}.{cut}"
+            : $"With {schedule.Label} the target holds up to {result.SteadyStateCount:N0} versions{size}.{cut}";
+
+        var lanes = new List<TimelineLane>();
+        for (var i = 0; i < rules.Count; i++)
+        {
+            var ruleIndex = i;
+            lanes.Add(new TimelineLane($"{RetentionRules.Describe(rules[i])}, keep {rules[i].Keep:N0}",
+                result.Survivors.Where(s => s.Reasons.Any(r => r.RuleIndex == ruleIndex)).Select(s => s.LocalTime).ToList()));
         }
 
-        NowSummary =
-            $"{managed.Count:N0} versions, {ByteSize.Format(SizeOf(managed))}  →  the rules keep " +
-            $"{managed.Count - deleted.Count:N0} and delete {deleted.Count:N0} (frees {ByteSize.Format(SizeOf(deleted))})" +
-            (unmanaged > 0 ? $"  ·  {unmanaged:N0} not managed" : "");
+        var others = result.Survivors.Where(s => s.Reasons.All(r => r.RuleIndex < 0)).Select(s => s.LocalTime).ToList();
+        if (others.Count > 0)
+            lanes.Add(new TimelineLane(rules.Count == 0 ? "All versions" : "Newest", others));
+
+        TimelineFrom = result.Survivors.Count > 0 ? result.Survivors[0].LocalTime : now;
+        TimelineTo = result.Horizon;
+        TimelineLanes = lanes;
     }
 
     private static long SizeOf(IEnumerable<VersionDecision> decisions) =>
