@@ -260,6 +260,118 @@ public class BackupRunnerRetentionTests : IDisposable
         new BackupProgress(BackupPhase.Retention, 0, 0, 0, 0, "").Fraction.Should().Be(1);
     }
 
+    private BackupPlan FreeingPlan(params RetentionRule[] rules)
+    {
+        var plan = Plan(rules);
+        plan.FreeSpaceByRetention = true;
+        return plan;
+    }
+
+    /// <summary>Reports 2 free bytes plus 10 for each of the given old versions that is gone.</summary>
+    private Func<long> FreedBy(params int[] days) =>
+        () => 2 + 10 * days.Count(day => !Directory.Exists(Path.Combine(_target, OldName(day))));
+
+    [Fact]
+    public async Task Frees_space_by_deleting_the_oldest_versions_retention_would_delete_anyway()
+    {
+        for (var day = 25; day <= 29; day++)
+            Old(day);
+        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+
+        var entry = await Run(FreeingPlan(Daily(3)), volume);
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        // 25 and 26 made room before the run; 27 went in the normal retention pass after it.
+        entry.RetentionDeleted.Should().Equal(OldName(25), OldName(26), OldName(27));
+        entry.Warnings.Should().BeEmpty();
+        TargetEntries().Should().BeEquivalentTo(OldName(28), OldName(29), NewVersion);
+    }
+
+    [Fact]
+    public async Task Does_not_free_space_when_the_option_is_off()
+    {
+        for (var day = 25; day <= 29; day++)
+            Old(day);
+        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+
+        var entry = await Run(Plan(Daily(3)), volume);
+
+        entry.Status.Should().Be(RunStatus.Full);
+        entry.RetentionDeleted.Should().BeEmpty();
+        TargetEntries().Should().HaveCount(5);
+    }
+
+    [Fact]
+    public async Task Deletes_nothing_when_even_all_deletable_versions_would_not_make_enough_room()
+    {
+        for (var day = 25; day <= 29; day++)
+            Old(day, bytes: 1);
+        var volume = new ScriptedVolume { FreeSpace = () => 2 };
+
+        var entry = await Run(FreeingPlan(Daily(3)), volume);
+
+        entry.Status.Should().Be(RunStatus.Full);
+        entry.RetentionDeleted.Should().BeEmpty();
+        TargetEntries().Should().HaveCount(5);
+    }
+
+    [Fact]
+    public async Task Never_deletes_the_newest_existing_version_to_make_room()
+    {
+        Old(29, bytes: 100);
+        var volume = new ScriptedVolume { FreeSpace = () => 2 };
+
+        var entry = await Run(FreeingPlan(Daily(1)), volume);
+
+        entry.Status.Should().Be(RunStatus.Full);
+        entry.RetentionDeleted.Should().BeEmpty();
+        TargetEntries().Should().BeEquivalentTo(OldName(29));
+    }
+
+    [Fact]
+    public async Task Records_what_it_deleted_even_when_the_space_is_still_not_enough()
+    {
+        for (var day = 25; day <= 29; day++)
+            Old(day);
+        var volume = new ScriptedVolume { FreeSpace = () => 2 };   // deleting does not help on this volume
+
+        var entry = await Run(FreeingPlan(Daily(3)), volume);
+
+        entry.Status.Should().Be(RunStatus.Full);
+        entry.RetentionDeleted.Should().Equal(OldName(25), OldName(26), OldName(27));
+        TargetEntries().Should().BeEquivalentTo(OldName(28), OldName(29));
+    }
+
+    [Fact]
+    public async Task Without_rules_there_is_nothing_to_free()
+    {
+        Old(28);
+        Old(29);
+        var volume = new ScriptedVolume { FreeSpace = () => 2 };
+
+        var entry = await Run(FreeingPlan(), volume);
+
+        entry.Status.Should().Be(RunStatus.Full);
+        TargetEntries().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task A_version_that_cannot_be_deleted_to_make_room_is_a_warning_and_the_next_one_is_tried()
+    {
+        for (var day = 25; day <= 29; day++)
+            Old(day);
+        var stubborn = Path.Combine(_target, OldName(25));
+        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27), FailMove = source => source == stubborn };
+
+        var entry = await Run(FreeingPlan(Daily(3)), volume);
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        entry.RetentionDeleted.Should().Equal(OldName(26), OldName(27));
+        entry.Warnings.Should().HaveCount(2, "once before the run and once in the retention pass after it");
+        entry.Warnings[0].Should().Be($"\"{OldName(25)}\" could not be deleted to free space: the folder is in use");
+        Directory.Exists(stubborn).Should().BeTrue();
+    }
+
     private sealed class SyncProgress(Action<BackupProgress> onReport) : IProgress<BackupProgress>
     {
         public void Report(BackupProgress value) => onReport(value);

@@ -164,12 +164,56 @@ public sealed class BackupRunner : IBackupRunner
 
         var required = (long)Math.Ceiling(work.TotalBytes * FreeSpaceMargin);
         var free = _volume.GetAvailableFreeSpace(plan.Target);
+        if (required > free && plan.FreeSpaceByRetention)
+            free = FreeSpaceByRetention(plan, required, free, entry, cancellationToken);
         if (required > free)
         {
             throw new BackupAbortException(RunStatus.Full,
                 $"The backup needs {ByteSize.Format(required)} but only {ByteSize.Format(free)} is free on the target.");
         }
         return work;
+    }
+
+    /// <summary>
+    /// Makes room by deleting versions that retention would delete after this run anyway, oldest first. Nothing is
+    /// deleted unless that can make the run fit, and the newest existing version always stays. Returns the free space.
+    /// </summary>
+    private long FreeSpaceByRetention(BackupPlan plan, long required, long free, RunLogEntry entry,
+        CancellationToken cancellationToken)
+    {
+        if (plan.Retention.Count == 0)
+            return free;
+
+        List<VersionInfo> candidates;
+        try
+        {
+            var versions = VersionCatalog.List(plan.Target, plan.Id, plan.Name, cancellationToken);
+            var newest = versions.LastOrDefault(v => v.IsOwned);
+            candidates = RetentionPlanner.Decide(versions, plan.Retention, upcomingRun: _time.GetLocalNow().DateTime)
+                .Where(d => d.Delete && !ReferenceEquals(d.Version, newest))
+                .Select(d => d.Version)
+                .ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            entry.Warnings.Add($"Old versions could not be examined to free space: {ex.Message}");
+            return free;
+        }
+
+        if (free + candidates.Sum(v => v.TotalBytes ?? 0) < required)
+            return free;
+
+        foreach (var version in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryRemoveVersion(version, entry, $"\"{version.Name}\" could not be deleted to free space"))
+                continue;
+
+            free = _volume.GetAvailableFreeSpace(plan.Target);
+            if (required <= free)
+                break;
+        }
+        return free;
     }
 
     private static void Collect(EvaluatedNode node, BackupWork work)
