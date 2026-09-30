@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using ReBackup.Core.Json;
 using ReBackup.Core.Retention;
+using ReBackup.Core.Schedule;
 
 namespace ReBackup.Core.Plans;
 
@@ -25,7 +26,16 @@ public sealed class BackupPlan
         set => _retention = value ?? [];
     }
 
-    /// <summary>Plan sections not yet modelled by this version (triggers) survive a load/save round trip.</summary>
+    private List<ScheduleTrigger> _triggers = [];
+
+    /// <summary>When the plan runs by itself. Empty means: only when started by hand.</summary>
+    public List<ScheduleTrigger> Triggers
+    {
+        get => _triggers;
+        set => _triggers = value ?? [];
+    }
+
+    /// <summary>Plan sections not modelled by this version survive a load/save round trip.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 

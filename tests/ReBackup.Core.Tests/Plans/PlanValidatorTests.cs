@@ -1,6 +1,7 @@
 using FluentAssertions;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
+using ReBackup.Core.Schedule;
 using ReBackup.Core.Tests.TestSupport;
 
 namespace ReBackup.Core.Tests.Plans;
@@ -126,5 +127,27 @@ public class PlanValidatorTests : IDisposable
         Validate(plan).Should().Equal(
             "Retention rule 2: the anchor must be a weekday, for example Sunday.",
             "Retention rule 3: keep must be a number from 1 to 9999.");
+    }
+
+    [Fact]
+    public void Invalid_triggers_are_reported_with_their_position()
+    {
+        var plan = ValidPlan();
+        plan.Triggers =
+        [
+            new ScheduleTrigger { Type = TriggerType.Daily, Time = "02:00" },
+            new ScheduleTrigger { Type = TriggerType.Weekly, Time = "18:00" },
+        ];
+
+        Validate(plan).Should().Equal("Trigger 2: choose at least one weekday.");
+    }
+
+    [Fact]
+    public void NameErrors_checks_the_name_alone()
+    {
+        PlanValidator.NameErrors("Projects").Should().BeEmpty();
+        PlanValidator.NameErrors("Projects.").Should().Equal("Name must not end with a dot.");
+        PlanValidator.NameErrors(" x ").Should().Equal("Name must not start or end with spaces.");
+        PlanValidator.NameErrors(null).Should().Equal("Name is required.");
     }
 }
