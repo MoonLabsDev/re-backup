@@ -2413,3 +2413,35 @@ git commit -m "feat(app): retention preview uses the plan's triggers" -m "Co-Aut
 - Version browser, comparison and restore (phase 6).
 - Phase 3 UI items still open: status dot per plan row, current file and ETA, "starting at hh:mm".
 - Phase 4 later items (see the carry-forward of the Phase 4 plan).
+
+---
+
+## Carry-forward from Phase 5 execution (final review triage)
+
+Changed against the plan text above during reviews (the code is the reference now):
+- The scheduler uses a one-shot timer that is re-armed after every check for the next hh:mm:01, so checks realign after sleep or clock corrections. Checks and pausing share one method that collects due runs.
+- Pausing first queues what is already due (triggers and a due catch-up), then pauses. `_checkedUntil` never moves backwards (checks, pause, resume, start). A plan re-published with changed triggers or enabled flag starts from now; an unchanged one keeps its position. A scheduled run removes a pending catch-up of the same plan.
+- Scheduler callbacks cannot crash the timer thread (delegate snapshot, try/catch around each check); `RefreshSchedule` and `RunScheduled` on the UI thread catch their own errors.
+- Time-zone changes: `SystemEvents.TimeChanged` clears the cached zone and refreshes the schedule texts.
+- Plan files with a `null` entry in `triggers` or `retention` are reported as load errors instead of crashing the app.
+- An existing trigger with a missing field shows the field empty and its error; the plan list says "Schedule has errors: does not run".
+- "Next 5 runs" is refreshed every minute and says when the scheduler is paused or the plan has unsaved changes.
+
+Not verified by anyone: the manual checklists of Tasks 5, 6 and 7; whether Windows raises `SystemEvents.TimeChanged` for a time-zone change made in Settings.
+
+Known limitations:
+- Scheduled runs happen only while ReBackup runs (spec). Sleep: a trigger missed while the PC slept runs once at the first check after waking.
+- A time-zone change westward can make a local-time trigger that already ran today come due again.
+- Scheduled runs are queued without a validity check; an invalid saved plan fails in the runner and shows up as an Error in History.
+- A scheduled run can be queued while the delete-plan dialogs are open (the delete then happens while it runs; the run's log file is recreated).
+- A plan edited in the editor whose file changes on disk keeps using the older saved copy for scheduled runs until it is saved or reverted.
+- The run log of every plan is read on the UI thread at startup (one tail read per plan).
+
+Later / nice to have:
+- Name rules exist twice in the runner (old checks plus `PlanValidator.NameErrors`).
+- Unknown fields inside a trigger are dropped on save (unknown plan sections survive).
+- `ScheduleCalculator`: `afterUtc` of Kind Local is treated as UTC; per-day re-evaluation of weekdays and interval window; edge tests (MinValue/MaxValue, LookBack limit, gap collision of two triggers).
+- `RunLog.ReadLast`: a file truncated between reading its length and seeking throws (the scheduler then does no catch-up for that plan).
+- `ArmNextCheck` swallows an exception and would then stop re-arming (not reachable with the system clock).
+- The Retention tab's "using the plan's triggers" label is stale before the target has been read.
+- Phase 3 UI items still open: status dot per plan row, current file and ETA, "starting at hh:mm".
