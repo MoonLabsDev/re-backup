@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using ReBackup.Core.Json;
 
@@ -50,6 +51,7 @@ public sealed class RunLog
 {
     private const int AppendAttempts = 5;
     private static readonly TimeSpan AppendRetryDelay = TimeSpan.FromMilliseconds(50);
+    private const int TailBytes = 64 * 1024;
 
     public RunLog(string logFile) => LogFile = logFile;
 
@@ -100,22 +102,58 @@ public sealed class RunLog
         using var reader = new StreamReader(stream);
         while (reader.ReadLine() is { } line)
         {
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-            try
-            {
-                if (JsonSerializer.Deserialize<RunLogEntry>(line, JsonDefaults.Compact) is not { } entry)
-                    continue;
-                entry.Skipped ??= [];
-                entry.RetentionDeleted ??= [];
-                entry.Warnings ??= [];
+            if (Parse(line) is { } entry)
                 entries.Add(entry);
-            }
-            catch (JsonException)
-            {
-                // A damaged line must not hide the rest of the history.
-            }
         }
         return entries;
+    }
+
+    /// <summary>The newest readable entry; null when there is none. Reads only the end of a large log where possible.</summary>
+    public RunLogEntry? ReadLast()
+    {
+        if (!File.Exists(LogFile))
+            return null;
+
+        using (var stream = new FileStream(LogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            if (stream.Length > TailBytes)
+            {
+                stream.Seek(-TailBytes, SeekOrigin.End);
+                var buffer = new byte[TailBytes];
+                var length = stream.ReadAtLeast(buffer, TailBytes, throwOnEndOfStream: false);
+                var lines = Encoding.UTF8.GetString(buffer, 0, length).Split('\n');
+                // The first piece is usually the cut-off end of an older line.
+                for (var i = lines.Length - 1; i >= 1; i--)
+                {
+                    if (Parse(lines[i].TrimEnd('\r')) is { } entry)
+                        return entry;
+                }
+            }
+        }
+
+        // A small log, or no complete readable line in its last part.
+        var all = ReadAll();
+        return all.Count == 0 ? null : all[^1];
+    }
+
+    /// <summary>A readable entry; null for a blank or damaged line.</summary>
+    private static RunLogEntry? Parse(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return null;
+        try
+        {
+            if (JsonSerializer.Deserialize<RunLogEntry>(line, JsonDefaults.Compact) is not { } entry)
+                return null;
+            entry.Skipped ??= [];
+            entry.RetentionDeleted ??= [];
+            entry.Warnings ??= [];
+            return entry;
+        }
+        catch (JsonException)
+        {
+            // A damaged line must not hide the rest of the history.
+            return null;
+        }
     }
 }
