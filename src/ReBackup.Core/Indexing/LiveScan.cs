@@ -119,7 +119,11 @@ public sealed class LiveScan
                     if (_queue.TryDequeue(out var next, out _))
                     {
                         if (next.State != ScanState.Waiting)
-                            continue;   // a second entry of a prioritised folder that was taken already
+                        {
+                            // A second entry of a prioritised folder that was taken already; it was counted once more.
+                            Interlocked.Decrement(ref _waiting);
+                            continue;
+                        }
                         folder = next;
                         break;
                     }
@@ -198,7 +202,7 @@ public sealed class LiveScan
             {
                 Interlocked.Increment(ref _directories);
                 var (ignored, pattern) = Decide(folder, matcher, path, isDirectory: true);
-                var child = new LiveNode(folder, subdirectory.Name, path, true, 0, LastWrite(subdirectory),
+                var child = new LiveNode(folder, subdirectory.Name, path, true, 0, subdirectory.LastWriteTimeUtc,
                     folder.Depth + 1, ignored, pattern, folder.IsIgnored);
                 if (subdirectory.LinkTarget is not null)
                 {
@@ -232,15 +236,6 @@ public sealed class LiveScan
             Enqueue(subfolder);
         Finish(folder);
     }
-
-    /// <summary>
-    /// The time of a folder that is listed is read from the folder itself, as <see cref="SourceIndexer"/> does: the
-    /// time in its parent's listing can lag behind on NTFS.
-    /// </summary>
-    private static DateTime LastWrite(DirectoryInfo subdirectory) =>
-        subdirectory.LinkTarget is null
-            ? new DirectoryInfo(subdirectory.FullName).LastWriteTimeUtc
-            : subdirectory.LastWriteTimeUtc;
 
     /// <summary>Below an ignored folder nothing can be re-included (git rules), as in <see cref="IndexEvaluator"/>.</summary>
     private static (bool Ignored, IgnorePattern? Pattern) Decide(LiveNode folder, IgnoreMatcher matcher, string path,

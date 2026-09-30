@@ -31,6 +31,19 @@ public class LiveScanTests : IDisposable
         _tmp.WriteFile(@"source\sub\b.bin", "bravo-bravo");
         _tmp.WriteFile(@"source\sub\inner\c.txt", "charlie");
         _tmp.CreateDir(@"source\empty");
+        SettleFolderTimes();
+    }
+
+    /// <summary>
+    /// A folder's time in its parent's listing can lag behind the folder itself right after files were written into
+    /// it. Setting every folder's time explicitly, deepest first, makes both indexers see the same value.
+    /// </summary>
+    private void SettleFolderTimes()
+    {
+        var time = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        foreach (var directory in Directory.GetDirectories(_source, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(d => d.Length))
+            Directory.SetLastWriteTimeUtc(directory, time);
     }
 
     private static LiveNode Child(LiveNode folder, string name) =>
@@ -116,7 +129,7 @@ public class LiveScanTests : IDisposable
     }
 
     [Fact]
-    public async Task Evaluated_nodes_are_preview_entries_too()
+    public void Evaluated_nodes_are_preview_entries_too()
     {
         WriteFixture();
         var index = SourceIndexer.Build(_source);
@@ -126,7 +139,6 @@ public class LiveScanTests : IDisposable
         root.RelativePath.Should().BeEmpty();
         root.IsDirectory.Should().BeTrue();
         root.GetChildren().Select(c => c.Name).Should().Contain(["a.txt", "sub"]);
-        await Task.CompletedTask;
     }
 
     [Fact]
@@ -244,7 +256,7 @@ public class LiveScanTests : IDisposable
         var act = () => scan.Completion.WaitAsync(Timeout);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        listed.Should().BeLessThan(31);
+        listed.Should().BeLessThanOrEqualTo(3 + LiveScan.DefaultParallelism, "the workers stop at the next folder after the cancel");
     }
 
     [Fact]
