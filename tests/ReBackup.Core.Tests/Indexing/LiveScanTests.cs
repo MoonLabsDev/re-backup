@@ -317,4 +317,77 @@ public class LiveScanTests : IDisposable
 
         act.Should().Throw<DirectoryNotFoundException>();
     }
+
+    private (LiveScan Scan, System.Collections.Concurrent.ConcurrentQueue<string> Order, ManualResetEventSlim Entered,
+        ManualResetEventSlim Release) StartBlockedAtB()
+    {
+        _tmp.WriteFile(@"source\a\x\y\f.txt", "f");
+        _tmp.WriteFile(@"source\b\f.txt", "f");
+        _tmp.WriteFile(@"source\c\f.txt", "f");
+        var order = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var entered = new ManualResetEventSlim();
+        var release = new ManualResetEventSlim();
+        var options = new LiveScanOptions
+        {
+            MaxParallel = 1,
+            BeforeListing = folder =>
+            {
+                order.Enqueue(folder.RelativePath);
+                if (folder.RelativePath == "b")
+                {
+                    entered.Set();
+                    release.Wait(Timeout);
+                }
+            },
+        };
+        return (LiveScan.Start(_source, Settings(), [], options), order, entered, release);
+    }
+
+    [Fact]
+    public async Task Without_priority_shallower_folders_come_first()
+    {
+        var (scan, order, entered, release) = StartBlockedAtB();
+        using (entered)
+        using (release)
+        {
+            entered.Wait(Timeout).Should().BeTrue();
+            release.Set();
+            await scan.Completion.WaitAsync(Timeout);
+        }
+
+        order.Should().Equal("", "a", "b", "c", "a/x", "a/x/y");
+    }
+
+    [Fact]
+    public async Task A_prioritised_folder_and_what_is_found_in_it_are_listed_first()
+    {
+        var (scan, order, entered, release) = StartBlockedAtB();
+        using (entered)
+        using (release)
+        {
+            entered.Wait(Timeout).Should().BeTrue();
+            var x = Child(Child(scan.Root, "a"), "x");
+            x.State.Should().Be(ScanState.Waiting);
+
+            scan.Prioritize(x);
+            release.Set();
+            await scan.Completion.WaitAsync(Timeout);
+        }
+
+        order.Should().Equal("", "a", "b", "a/x", "a/x/y", "c");
+        scan.WaitingFolders.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Prioritising_a_folder_that_is_not_waiting_does_nothing()
+    {
+        _tmp.WriteFile(@"source\a\f.txt", "f");
+        var scan = LiveScan.Start(_source, Settings(), []);
+        await scan.Completion.WaitAsync(Timeout);
+
+        var act = () => scan.Prioritize(scan.Root);
+
+        act.Should().NotThrow();
+        scan.WaitingFolders.Should().Be(0);
+    }
 }

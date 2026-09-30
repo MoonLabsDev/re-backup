@@ -71,6 +71,24 @@ public sealed class LiveScan
     /// <summary>Folders found but not listed yet.</summary>
     public int WaitingFolders => Volatile.Read(ref _waiting);
 
+    /// <summary>
+    /// Lists this folder, and the folders later found in it, before all others (e.g. because it was expanded).
+    /// Does nothing for a folder that is not waiting or already wanted.
+    /// </summary>
+    public void Prioritize(LiveNode folder)
+    {
+        lock (_gate)
+        {
+            if (folder.State != ScanState.Waiting || folder.Wanted)
+                return;
+            folder.Wanted = true;
+            // The folder's first queue entry stays behind; it is skipped when a worker finds it no longer waiting.
+            _queue.Enqueue(folder, Rank(folder));
+            Interlocked.Increment(ref _waiting);
+            Monitor.PulseAll(_gate);
+        }
+    }
+
     /// <exception cref="DirectoryNotFoundException">The source folder does not exist.</exception>
     public static LiveScan Start(string root, IgnoreSettings settings, IReadOnlyList<string> globalDefaults,
         LiveScanOptions? options = null, CancellationToken cancellationToken = default)
