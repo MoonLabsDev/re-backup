@@ -148,7 +148,7 @@ Hashes are xxHash64 (System.IO.Hashing), computed while copying. The manifest is
 | `IndexEvaluator` | Applies an `IgnoreMatcher` to an index → per-node `Included / Ignored / Partial` + rolled-up included/ignored sizes |
 | `RetentionEngine` | Pure: `(versions, rules) → per-version Keep/Delete + reasons` |
 | `RetentionSimulator` | Takes future run times, applies the engine run by run over a 2-year horizon → steady-state count, estimated size, timeline |
-| `ScheduleCalculator` | Pure: `(triggers, lastRun, now) → nextRun, missedSinceLastRun` |
+| `ScheduleCalculator` | Pure: `(triggers, after, zone) → run times`; `(triggers, lastRun, now) → last due trigger` |
 | `BackupRunner` | Preflight → copy + hash → manifest → rename → retention; reports `IProgress<BackupProgress>` |
 | `BackupQueue` | Single worker; one job per plan at a time (duplicate enqueue is a no-op) |
 | `Scheduler` | Checks triggers every minute; on startup enqueues one catch-up run per plan that missed a trigger |
@@ -205,10 +205,16 @@ When `freeSpaceByRetention` is true and preflight finds too little space, the ru
 
 Trigger types: `Daily(time)`, `Weekly(days[], time)`, `Monthly(day, time)` with the same day encoding as retention anchors, and `Interval(everyHours, from, to)`.
 
+- Times are written `HH:mm`. Weekdays are written `Mon`…`Sun` (full English names are accepted when reading).
+- `Interval` runs every `everyHours` (1–24) hours within one day, starting at `from` and not after `to`; it starts again at `from` the next day. `from` defaults to `00:00`, `to` to `23:59`; `from` must not be after `to`.
+
 - Times are local wall-clock time. On a DST gap the run happens at the first valid minute after. On a DST overlap it runs once.
 - A plan is due when a trigger time is at or before now and after the plan's last run start (from the log).
-- On startup, a plan with at least one missed trigger since its last run gets **one** `CatchUp` run, enqueued about 1 minute after startup.
-- Disabled plans and a paused scheduler (tray option; not persisted, resumes on restart) never enqueue scheduled runs. Manual runs always work.
+- On startup, a plan with at least one missed trigger since its last run gets **one** `CatchUp` run, enqueued about 1 minute after startup. A trigger that falls due at that moment is covered by the catch-up run. A plan that has never run is not caught up; it runs at its next trigger. Every logged run counts as the last run, whatever its result.
+- While the app runs, triggers are checked once a minute. A plan added or saved while the app runs is only run for triggers from then on.
+- Disabled plans and a paused scheduler (tray option; not persisted, resumes on restart) never enqueue scheduled runs; triggers that pass while paused are skipped, not made up for. Manual runs always work.
+- Scheduled runs use the plan as saved; unsaved edits are ignored. A plan that is already queued or running is not queued again.
+- The Retention tab's full-extension preview uses the plan's triggers; the assumed frequency is offered only for plans without triggers.
 
 ## 9. Backup run
 
