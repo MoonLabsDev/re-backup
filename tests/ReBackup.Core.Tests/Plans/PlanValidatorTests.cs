@@ -31,6 +31,8 @@ public class PlanValidatorTests : IDisposable
     [InlineData("   ", "Name is required.")]
     [InlineData(" Projects", "Name must not start or end with spaces.")]
     [InlineData("Projects.", "Name must not end with a dot.")]
+    [InlineData("Docs.partial", "Name must not end with \".partial\".")]
+    [InlineData("Docs.PARTIAL", "Name must not end with \".partial\".")]
     [InlineData("a/b", "Name contains characters that are not allowed in folder names.")]
     [InlineData("a:b", "Name contains characters that are not allowed in folder names.")]
     public void Invalid_names_are_reported(string name, string expected)

@@ -259,6 +259,36 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_plan_name_ending_in_partial_aborts_as_Error_and_touches_nothing()
+    {
+        _tmp.WriteFile(@"target\2026_09_28-09_00 Projects\a.txt", "older version");
+        _tmp.WriteFile(@"target\2026_09_29-10_00 Projects.partial\x.txt", "stale");
+        var before = TargetEntries();
+        var plan = Plan();
+        plan.Name = "Projects.partial";
+
+        var entry = await Runner().RunAsync(Request(plan));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().Be("The plan name must not end with \".partial\".");
+        TargetEntries().Should().BeEquivalentTo(before);
+        File.Exists(Path.Combine(_target, "2026_09_29-10_00 Projects.partial", "x.txt")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_partial_folder_with_a_manifest_is_a_finished_version_of_another_plan_and_is_kept()
+    {
+        _tmp.WriteFile(@"target\2026_09_29-10_00 Projects.partial\re-manifest.json", "{}");
+        _tmp.WriteFile(@"target\2026_09_29-10_00 Projects.partial\a.txt", "finished");
+
+        var entry = await Runner().RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        File.Exists(Path.Combine(_target, "2026_09_29-10_00 Projects.partial", "a.txt")).Should().BeTrue();
+        TargetEntries().Should().BeEquivalentTo("2026_09_29-10_00 Projects.partial", $"{Minute} Projects");
+    }
+
+    [Fact]
     public async Task Waits_for_the_next_minute_when_the_version_folder_already_exists()
     {
         Directory.CreateDirectory(VersionPath());

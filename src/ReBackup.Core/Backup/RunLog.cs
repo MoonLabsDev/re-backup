@@ -45,6 +45,9 @@ public sealed class RunLogEntry
 /// <summary>Append-only JSON Lines file with one entry per run of a plan.</summary>
 public sealed class RunLog
 {
+    private const int AppendAttempts = 5;
+    private static readonly TimeSpan AppendRetryDelay = TimeSpan.FromMilliseconds(50);
+
     public RunLog(string logFile) => LogFile = logFile;
 
     public string LogFile { get; }
@@ -52,8 +55,36 @@ public sealed class RunLog
     public void Append(RunLogEntry entry)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(LogFile))!);
-        File.AppendAllText(LogFile, JsonSerializer.Serialize(entry, JsonDefaults.Compact) + "\n");
+        var bytes = System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(entry, JsonDefaults.Compact) + "\n");
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(LogFile, FileMode.Append, FileAccess.Write, FileShare.Read);
+                if (stream.Length > 0 && !EndsWithNewline())
+                    stream.WriteByte((byte)'\n');
+                stream.Write(bytes);
+                return;
+            }
+            catch (IOException ex) when (attempt < AppendAttempts && IsSharingViolation(ex))
+            {
+                Thread.Sleep(AppendRetryDelay * attempt);
+            }
+        }
     }
+
+    /// <summary>Checks the last byte through a separate read handle, because the append handle cannot be read.</summary>
+    private bool EndsWithNewline()
+    {
+        using var reader = new FileStream(LogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        if (reader.Length == 0)
+            return true;
+        reader.Seek(-1, SeekOrigin.End);
+        return reader.ReadByte() == '\n';
+    }
+
+    private static bool IsSharingViolation(IOException exception) =>
+        (exception.HResult & 0xFFFF) is 32 or 33;
 
     /// <summary>All readable entries, oldest first.</summary>
     public IReadOnlyList<RunLogEntry> ReadAll()
@@ -62,7 +93,9 @@ public sealed class RunLog
         if (!File.Exists(LogFile))
             return entries;
 
-        foreach (var line in File.ReadLines(LogFile))
+        using var stream = new FileStream(LogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        while (reader.ReadLine() is { } line)
         {
             if (string.IsNullOrWhiteSpace(line))
                 continue;

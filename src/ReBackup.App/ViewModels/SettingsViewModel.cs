@@ -16,6 +16,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly string _appDataRoot;
     private readonly IDialogService _dialogs;
     private readonly Func<bool> _confirmRestart;
+    private readonly Func<bool> _isBackupActive;
     private ConfigPaths _paths;
 
     [ObservableProperty] private string _configFolder = "";
@@ -24,7 +25,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _startWithWindows;
 
     public SettingsViewModel(SettingsStore store, AppSettings settings, ConfigPaths paths, string appDataRoot,
-        IDialogService dialogs, Func<bool> confirmRestart)
+        IDialogService dialogs, Func<bool> confirmRestart, Func<bool> isBackupActive)
     {
         _store = store;
         _settings = settings;
@@ -32,6 +33,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _appDataRoot = appDataRoot;
         _dialogs = dialogs;
         _confirmRestart = confirmRestart;
+        _isBackupActive = isBackupActive;
 
         ConfigFolder = paths.Root;
         DefaultIgnorePatterns = string.Join(Environment.NewLine, settings.DefaultIgnorePatterns);
@@ -47,6 +49,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void ChangeConfigFolder()
     {
+        if (_isBackupActive())
+        {
+            _dialogs.ShowInfo("Configuration folder",
+                "A backup is running or queued. Wait for it to finish or cancel it before moving the configuration folder.");
+            return;
+        }
+
         var folder = _dialogs.PickFolder("Choose configuration folder", ConfigFolder);
         if (folder is null)
             return;

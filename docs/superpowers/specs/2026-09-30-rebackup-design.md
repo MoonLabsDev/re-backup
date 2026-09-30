@@ -204,7 +204,7 @@ Trigger types: `Daily(time)`, `Weekly(days[], time)`, `Monthly(day, time)` with 
 
 ## 9. Backup run
 
-1. **Preflight**: check the source and target exist and are reachable. Index the source, evaluate ignores, and compute the included bytes. If included bytes + 5 % exceed the free space on the target → optional retention freeing (7.2) → otherwise abort `Full` before writing anything.
+1. **Preflight**: check the source exists and is reachable, and create the target folder if it does not exist. Index the source, evaluate ignores, and compute the included bytes. If included bytes + 5 % exceed the free space on the target → optional retention freeing (7.2) → otherwise abort `Full` before writing anything.
 2. **Copy**: create `<name>.partial`, walk the included files, and copy each with a streaming read that feeds the xxHash64. Preserve the relative path and last-write time. Report progress (files done/total, bytes done/total, current file, ETA).
 3. **Locked or unreadable files** (sharing violation, access denied): skip and record them. The run continues.
 4. **Finish**: write `re-manifest.json`, rename `.partial` → final name, and run retention.

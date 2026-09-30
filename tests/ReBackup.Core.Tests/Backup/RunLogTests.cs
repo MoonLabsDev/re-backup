@@ -71,6 +71,39 @@ public class RunLogTests : IDisposable
     }
 
     [Fact]
+    public void Append_succeeds_while_another_handle_reads_the_file()
+    {
+        var log = new RunLog(_tmp.PathOf("p1.jsonl"));
+        log.Append(Entry("a", RunStatus.Completed));
+
+        using (new FileStream(log.LogFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            log.Append(Entry("b", RunStatus.Error));
+
+        log.ReadAll().Select(e => e.RunId).Should().Equal("a", "b");
+    }
+
+    [Fact]
+    public void ReadAll_succeeds_while_another_handle_appends_to_the_file()
+    {
+        var log = new RunLog(_tmp.PathOf("p1.jsonl"));
+        log.Append(Entry("a", RunStatus.Completed));
+
+        using (new FileStream(log.LogFile, FileMode.Append, FileAccess.Write, FileShare.Read))
+            log.ReadAll().Select(e => e.RunId).Should().Equal("a");
+    }
+
+    [Fact]
+    public void A_torn_last_line_does_not_glue_to_the_next_entry()
+    {
+        var log = new RunLog(_tmp.PathOf("p1.jsonl"));
+        File.WriteAllText(log.LogFile, "{\"runId\":\"x\"");
+
+        log.Append(Entry("b", RunStatus.Completed));
+
+        log.ReadAll().Select(e => e.RunId).Should().Equal("b");
+    }
+
+    [Fact]
     public void AddSkipped_counts_everything_but_stores_only_the_first_thousand()
     {
         var entry = Entry("a", RunStatus.CompletedWithWarnings);

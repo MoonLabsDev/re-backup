@@ -284,6 +284,12 @@ public sealed partial class MainViewModel : ObservableObject
         editor?.Run.Apply(update);
         UpdateQueueStatus(update);
 
+        if (update.State == JobState.Removed)
+        {
+            StatusMessage = $"The queued backup of \"{update.PlanName}\" was removed.";
+            return;
+        }
+
         if (update is not { State: JobState.Finished, Result: { } result })
             return;
 
@@ -312,6 +318,10 @@ public sealed partial class MainViewModel : ObservableObject
         else if (!_queue.IsBusy)
         {
             QueueStatus = "No backup running";
+        }
+        else if (queued > 0)
+        {
+            QueueStatus = $"{queued} backup(s) queued";
         }
     }
 

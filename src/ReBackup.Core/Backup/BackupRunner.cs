@@ -124,6 +124,8 @@ public sealed class BackupRunner : IBackupRunner
             throw new BackupAbortException(RunStatus.Error, "No target folder is set.");
         if (string.IsNullOrWhiteSpace(plan.Name) || plan.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw new BackupAbortException(RunStatus.Error, $"The plan name \"{plan.Name}\" cannot be used as a folder name.");
+        if (plan.Name.EndsWith(VersionName.PartialSuffix, StringComparison.OrdinalIgnoreCase))
+            throw new BackupAbortException(RunStatus.Error, "The plan name must not end with \".partial\".");
         if (PathUtil.IsSameOrInside(plan.Target, plan.Source))
             throw new BackupAbortException(RunStatus.Error, "The target folder is the source folder or inside it.");
         if (PathUtil.IsSameOrInside(plan.Source, plan.Target))
@@ -192,8 +194,13 @@ public sealed class BackupRunner : IBackupRunner
         {
             var name = Path.GetFileName(directory);
             var versionName = name[..^VersionName.PartialSuffix.Length];
-            if (VersionName.TryParse(versionName, plan.Name, out _))
-                TryDeleteDirectory(directory);
+            if (!VersionName.TryParse(versionName, plan.Name, out _))
+                continue;
+            // A manifest is written last, right before the rename: such a folder is a finished version of a plan
+            // whose name ends in ".partial" (or a crash just before the rename). Leaving it is the safe choice.
+            if (File.Exists(Path.Combine(directory, VersionName.ManifestFileName)))
+                continue;
+            TryDeleteDirectory(directory);
         }
     }
 

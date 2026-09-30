@@ -187,9 +187,9 @@ public partial class App : Application
             RunStatus.Completed => (NotificationIcon.Info, $"Completed in {duration}."),
             RunStatus.CompletedWithWarnings =>
                 (NotificationIcon.Warning, $"Completed in {duration}, {result.SkippedCount:N0} entries were skipped."),
-            RunStatus.Canceled => (NotificationIcon.Info, "Canceled."),
-            RunStatus.Full => (NotificationIcon.Error, $"Aborted, the target is full. {result.Reason}"),
-            _ => (NotificationIcon.Error, $"Aborted with an error. {result.Reason}"),
+            RunStatus.Canceled => (NotificationIcon.Info, $"Canceled after {duration}."),
+            RunStatus.Full => (NotificationIcon.Error, $"Aborted after {duration}, the target is full. {result.Reason}"),
+            _ => (NotificationIcon.Error, $"Aborted after {duration} with an error. {result.Reason}"),
         };
         try
         {
@@ -260,7 +260,8 @@ public partial class App : Application
 
     private void ShowSettings()
     {
-        var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs, ConfirmDiscardUnsaved);
+        var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs, ConfirmDiscardUnsaved,
+            () => _queue.IsBusy);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
             window.Owner = _window;
