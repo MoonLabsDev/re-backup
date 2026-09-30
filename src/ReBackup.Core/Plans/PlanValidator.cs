@@ -37,6 +37,8 @@ public static class PlanValidator
             errors.Add("Name must not start or end with spaces.");
         if (name.EndsWith('.'))
             errors.Add("Name must not end with a dot.");
+        if (name.EndsWith(".partial", StringComparison.OrdinalIgnoreCase))
+            errors.Add("Name must not end with \".partial\".");
         if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             errors.Add("Name contains characters that are not allowed in folder names.");
         if (allPlans.Any(p => p.Id != plan.Id && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))

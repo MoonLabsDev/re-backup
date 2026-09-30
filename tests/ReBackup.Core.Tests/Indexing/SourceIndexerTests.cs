@@ -103,6 +103,28 @@ public class SourceIndexerTests : IDisposable
     }
 
     [Fact]
+    public void Unreadable_ignore_file_is_reported()
+    {
+        var source = CreateSource();
+        var ignoreFile = _tmp.WriteFile(@"src\sub\.backupignore", "*.tmp");
+        using var locked = new FileStream(ignoreFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var index = SourceIndexer.Build(source);
+
+        index.UnreadableIgnoreFiles.Should().Equal("sub/.backupignore");
+        index.IgnoreFiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Readable_ignore_files_are_not_reported_as_unreadable()
+    {
+        var source = CreateSource();
+        _tmp.WriteFile(@"src\.backupignore", "*.tmp");
+
+        SourceIndexer.Build(source).UnreadableIgnoreFiles.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Folders_nested_deeper_than_the_limit_are_not_scanned()
     {
         var source = _tmp.PathOf("src");

@@ -3,6 +3,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.App.Services;
+using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
@@ -16,17 +17,24 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly AppSettings _settings;
     private readonly IDialogService _dialogs;
     private readonly Action _openSettings;
+    private readonly BackupQueue _queue;
+    private readonly Action<Action> _runOnUi;
 
     [ObservableProperty] private PlanEditorViewModel? _selectedPlan;
     [ObservableProperty] private string? _statusMessage;
+    [ObservableProperty] private string _queueStatus = "No backup running";
 
-    public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs, Action openSettings)
+    public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
+        Action openSettings, BackupQueue queue, Action<Action> runOnUi)
     {
         _store = store;
         _paths = paths;
         _settings = settings;
         _dialogs = dialogs;
         _openSettings = openSettings;
+        _queue = queue;
+        _runOnUi = runOnUi;
+        _queue.Changed += update => _runOnUi(() => OnJobUpdate(update));
 
         var result = _store.LoadAll();
         foreach (var plan in result.Plans)
@@ -36,6 +44,9 @@ public sealed partial class MainViewModel : ObservableObject
         StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
     }
 
+    /// <summary>Plan name and result of a finished run; raised on the UI thread.</summary>
+    public event Action<string, RunLogEntry>? RunFinished;
+
     public ObservableCollection<PlanEditorViewModel> Plans { get; } = [];
 
     /// <summary>Re-applies the patterns in every open preview, e.g. after the global defaults changed.</summary>
@@ -44,6 +55,12 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (var editor in Plans)
             editor.Preview.RequestReevaluate();
     }
+
+    /// <summary>Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid or already active plans.</summary>
+    public IReadOnlyList<(string Id, string Name, bool CanRun)> RunnablePlans =>
+        Plans.Where(p => !p.IsNew)
+            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive))
+            .ToList();
 
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
 
@@ -116,6 +133,12 @@ public sealed partial class MainViewModel : ObservableObject
         var editor = SelectedPlan;
         if (editor is null)
             return;
+
+        if (editor.Run.IsActive)
+        {
+            StatusMessage = $"Cancel the backup of \"{editor.Name}\" before deleting the plan.";
+            return;
+        }
 
         if (!editor.IsNew)
         {
@@ -215,6 +238,105 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings() => _openSettings();
 
+    /// <summary>Queues a run of the saved plan. False when it is dirty, invalid, unknown or already queued.</summary>
+    public bool RunPlan(string planId)
+    {
+        var editor = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase));
+        return editor is not null && Start(editor);
+    }
+
+    [RelayCommand]
+    private void RunNow(PlanEditorViewModel? editor)
+    {
+        editor ??= SelectedPlan;
+        if (editor is not null)
+            Start(editor);
+    }
+
+    [RelayCommand]
+    private void CancelRun(PlanEditorViewModel? editor)
+    {
+        editor ??= SelectedPlan;
+        if (editor is not null && _queue.Cancel(editor.Id))
+            StatusMessage = $"Canceling the backup of \"{editor.Name}\"…";
+    }
+
+    private bool Start(PlanEditorViewModel editor)
+    {
+        if (editor.IsNew || editor.IsDirty || editor.Errors.Count > 0)
+        {
+            StatusMessage = $"Save \"{editor.Name}\" without errors before running it.";
+            return false;
+        }
+
+        var request = new BackupRequest(editor.SavedPlan(), _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Manual);
+        if (!_queue.Enqueue(request))
+        {
+            StatusMessage = $"\"{editor.Name}\" is already queued or running.";
+            return false;
+        }
+        return true;
+    }
+
+    private void OnJobUpdate(BackupJobUpdate update)
+    {
+        var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
+        editor?.Run.Apply(update);
+        UpdateQueueStatus(update);
+
+        if (update.State == JobState.Removed)
+        {
+            StatusMessage = $"The queued backup of \"{update.PlanName}\" was removed.";
+            return;
+        }
+
+        if (update is not { State: JobState.Finished, Result: { } result })
+            return;
+
+        if (editor is not null)
+            LoadHistory(editor);
+        StatusMessage = result.Status switch
+        {
+            RunStatus.Completed => $"Backup of \"{update.PlanName}\" completed in {RunHistoryRow.FormatDuration(result.DurationMs)}.",
+            RunStatus.CompletedWithWarnings =>
+                $"Backup of \"{update.PlanName}\" completed with {result.SkippedCount:N0} skipped entries.",
+            RunStatus.Canceled => $"Backup of \"{update.PlanName}\" was canceled.",
+            _ => $"Backup of \"{update.PlanName}\" was aborted: {result.Reason}",
+        };
+        RunFinished?.Invoke(update.PlanName, result);
+    }
+
+    private void UpdateQueueStatus(BackupJobUpdate update)
+    {
+        var queued = _queue.QueuedCount;
+        var waiting = queued > 0 ? $" · {queued} queued" : "";
+        if (update.State == JobState.Running)
+        {
+            var percent = update.Progress is { } progress ? $" — {progress.Fraction * 100:0} %" : "";
+            QueueStatus = $"Backing up \"{update.PlanName}\"{percent}{waiting}";
+        }
+        else if (!_queue.IsBusy)
+        {
+            QueueStatus = "No backup running";
+        }
+        else if (queued > 0)
+        {
+            QueueStatus = $"{queued} backup(s) queued";
+        }
+    }
+
+    private void LoadHistory(PlanEditorViewModel editor)
+    {
+        try
+        {
+            editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusMessage = $"The run history of \"{editor.Name}\" could not be read: {ex.Message}";
+        }
+    }
+
     private void AddEditor(PlanEditorViewModel editor)
     {
         editor.PropertyChanged += (_, e) =>
@@ -222,6 +344,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (e.PropertyName == nameof(PlanEditorViewModel.Name))
                 RevalidateAll();
         };
+        LoadHistory(editor);
         Plans.Add(editor);
     }
 

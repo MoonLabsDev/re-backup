@@ -218,9 +218,11 @@ public sealed class IgnorePattern
         if (i >= glob.Length)
             return -1;
 
+        if (negate)
+            sb.Append("(?!/)");   // a class never matches a slash
         sb.Append('[');
         if (negate)
-            sb.Append("^/");   // a class never matches a slash
+            sb.Append('^');
         foreach (var ch in glob.AsSpan(contentStart, i - contentStart))
         {
             if (ch is '\\' or '[' or ']' or '^')
