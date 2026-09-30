@@ -32,6 +32,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private IReadOnlyList<string> _nextRuns = [];
     [ObservableProperty] private string _nextRunsNote = "";
 
+    /// <summary>Whether the scheduler is paused; set by the main view model, shown in the note under the next runs.</summary>
+    [ObservableProperty] private bool _schedulerPaused;
+
     public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
         Func<IReadOnlyList<string>> globalIgnoreDefaults)
     {
@@ -103,6 +106,10 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
     partial void OnFreeSpaceByRetentionChanged(bool value) => Touch();
+
+    partial void OnIsDirtyChanged(bool value) => RefreshNextRuns();
+
+    partial void OnSchedulerPausedChanged(bool value) => RefreshNextRuns();
 
     partial void OnIgnorePatternsTextChanged(string value)
     {
@@ -251,30 +258,37 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
-    /// <summary>Recomputes the next five runs of the edited triggers from the current time.</summary>
+    /// <summary>
+    /// Recomputes the next five runs of the edited triggers from the current time; the note says whether they apply
+    /// (paused scheduler, disabled plan, unsaved edits).
+    /// </summary>
     public void RefreshNextRuns()
     {
         var triggers = TriggerRows.Select(row => row.ToTrigger()).ToList();
+        string note;
         if (triggers.Count == 0)
         {
             NextRuns = [];
-            NextRunsNote = "No triggers: this plan runs only when started by hand.";
-            return;
+            note = "No triggers: this plan runs only when started by hand.";
         }
-        if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
+        else if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
         {
             NextRuns = [];
-            NextRunsNote = "Correct the triggers above to see the next runs.";
-            return;
+            note = "Correct the triggers above to see the next runs.";
+        }
+        else
+        {
+            NextRuns = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local)
+                .Take(5)
+                .Select(time => time.ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture))
+                .ToList();
+            note = Enabled
+                ? "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed)."
+                : "The plan is disabled: it runs only when started by hand until it is enabled again.";
         }
 
-        NextRuns = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local)
-            .Take(5)
-            .Select(time => time.ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture))
-            .ToList();
-        NextRunsNote = Enabled
-            ? "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed)."
-            : "The plan is disabled: it runs only when started by hand until it is enabled again.";
+        NextRunsNote = (SchedulerPaused ? "The scheduler is paused. " : "") + note +
+                       (IsDirty ? " Unsaved changes take effect after Save." : "");
     }
 
     public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());

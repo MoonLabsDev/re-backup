@@ -260,22 +260,45 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Queues a run the scheduler started. It uses the plan as saved; unsaved edits do not matter.</summary>
     public void RunScheduled(string planId, RunTrigger trigger)
     {
-        var editor = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase));
-        if (editor is null || editor.IsNew)
-            return;
-        var plan = editor.SavedPlan();
-        if (!plan.Enabled)
-            return;   // disabled after the scheduler decided
-        _queue.Enqueue(new BackupRequest(plan, _settings.DefaultIgnorePatterns.ToList(), trigger));
+        // Called from the scheduler through the dispatcher: an exception here would end the app.
+        try
+        {
+            var editor = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase));
+            if (editor is null || editor.IsNew)
+                return;
+            var plan = editor.SavedPlan();
+            if (!plan.Enabled)
+                return;   // disabled after the scheduler decided
+            _queue.Enqueue(new BackupRequest(plan, _settings.DefaultIgnorePatterns.ToList(), trigger));
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"A scheduled backup could not be queued: {ex.Message}";
+        }
     }
 
-    /// <summary>Updates the "next run" texts and the scheduler state. Called whenever the scheduler reports a change.</summary>
+    /// <summary>
+    /// Updates the "next run" texts, the next runs shown on the Schedule tab and the scheduler state. Called whenever
+    /// the scheduler reports a change, so at least once a minute.
+    /// </summary>
     public void RefreshSchedule()
     {
-        var paused = _scheduler.IsPaused;
-        SchedulerStatus = paused ? "Scheduler paused" : "";
-        foreach (var editor in Plans)
-            editor.Run.NextRunText = NextRunText(editor, paused);
+        // Called from the scheduler through the dispatcher: an exception here would end the app.
+        try
+        {
+            var paused = _scheduler.IsPaused;
+            SchedulerStatus = paused ? "Scheduler paused" : "";
+            foreach (var editor in Plans)
+            {
+                editor.SchedulerPaused = paused;
+                editor.Run.NextRunText = NextRunText(editor, paused);
+            }
+            SelectedPlan?.RefreshNextRuns();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"The schedule could not be updated: {ex.Message}";
+        }
     }
 
     private string NextRunText(PlanEditorViewModel editor, bool paused)
@@ -287,6 +310,8 @@ public sealed partial class MainViewModel : ObservableObject
             return "Disabled: runs only by hand";
         if (plan.Triggers.Count == 0)
             return "No schedule";
+        if (plan.Triggers.Any(trigger => ScheduleTriggers.Validate(trigger) is not null))
+            return "Schedule has errors: does not run";
         if (paused)
             return "Scheduler paused";
         return _scheduler.NextRunUtc(editor.Id) is { } next

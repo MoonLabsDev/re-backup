@@ -39,24 +39,31 @@ public sealed partial class TriggerRowViewModel : ObservableObject
             .Select((name, index) => new WeekdayChoice(name, (DayOfWeek)((index + 1) % 7)))
             .ToList();
 
+        // A field the trigger's type uses shows what the trigger holds, empty when it is missing (so the row shows its
+        // error instead of a default that was never saved). Fields of the other types keep their defaults, which
+        // pre-fill the row when its type is switched.
         Type = trigger.Type;
-        if (trigger.Time is not null)
-            TimeText = trigger.Time;
+        var usesTime = trigger.Type is TriggerType.Daily or TriggerType.Weekly or TriggerType.Monthly;
+        if (usesTime || trigger.Time is not null)
+            TimeText = trigger.Time ?? "";
         var chosen = ScheduleTriggers.WeekdaysOf(trigger);
         foreach (var choice in Weekdays)
         {
             choice.IsChecked = chosen.Contains(choice.Day);
             choice.PropertyChanged += (_, _) => OnEdited();
         }
-        if (trigger.Day is { } day)
-            DayText = day.ToString(CultureInfo.InvariantCulture);
-        if (trigger.EveryHours is { } hours)
-            EveryHoursText = hours.ToString(CultureInfo.InvariantCulture);
+        if (trigger.Type == TriggerType.Monthly || trigger.Day is not null)
+            DayText = trigger.Day?.ToString(CultureInfo.InvariantCulture) ?? "";
         if (trigger.Type == TriggerType.Interval)
         {
+            EveryHoursText = trigger.EveryHours?.ToString(CultureInfo.InvariantCulture) ?? "";
             // Empty bounds mean the whole day; showing the defaults of a new row would change the trigger.
             FromText = trigger.From ?? "";
             ToText = trigger.To ?? "";
+        }
+        else if (trigger.EveryHours is { } hours)
+        {
+            EveryHoursText = hours.ToString(CultureInfo.InvariantCulture);
         }
 
         _ready = true;

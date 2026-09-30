@@ -8,6 +8,7 @@ using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
+using Microsoft.Win32;
 using ReBackup.App.Services;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
@@ -61,6 +62,7 @@ public partial class App : Application
         _window.Closing += OnMainWindowClosing;
         CreateTrayIcon();
         _scheduler.Start(planId => new RunLog(_paths.LogFileFor(planId)).ReadLast()?.StartUtc);
+        SystemEvents.TimeChanged += OnSystemTimeChanged;
         _singleInstance.ListenForActivation(() => Dispatcher.InvokeAsync(ShowMainWindow));
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
@@ -244,6 +246,7 @@ public partial class App : Application
     /// </summary>
     private bool StopBackups(TimeSpan wait)
     {
+        SystemEvents.TimeChanged -= OnSystemTimeChanged;
         _scheduler?.Dispose();
         _queue.Close();
         try
@@ -255,6 +258,16 @@ public partial class App : Application
             // The worker never faults; this only guards the wait itself.
             return false;
         }
+    }
+
+    /// <summary>
+    /// The clock or the time zone changed. TimeZoneInfo.Local is cached until cleared; the scheduler reads it on every
+    /// check, the "next run" texts are refreshed now. Raised on a system events thread.
+    /// </summary>
+    private void OnSystemTimeChanged(object? sender, EventArgs e)
+    {
+        TimeZoneInfo.ClearCachedData();
+        Dispatcher.InvokeAsync(() => _mainViewModel.RefreshSchedule());
     }
 
     private void DisposeTray()
