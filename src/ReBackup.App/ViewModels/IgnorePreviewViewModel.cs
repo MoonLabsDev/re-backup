@@ -123,6 +123,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
 
         _indexCts?.Cancel();
         _evaluateCts?.Cancel();
+        _evaluationVersion++;   // an evaluation still running from an earlier cancel must not publish over this scan
         var cts = _indexCts = new CancellationTokenSource();
         Error = null;
 
@@ -170,10 +171,13 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             IsIndexing = false;
             if (_index is { } previous)
             {
-                while (!await EvaluateAsync(previous, CancellationToken.None))
+                // Stop as soon as this scan was superseded (Invalidate / a new scan): the old index must not be published.
+                var shown = false;
+                while (ReferenceEquals(_indexCts, cts) && !(shown = await EvaluateAsync(previous, CancellationToken.None)))
                 {
                 }
-                ProgressText = "Indexing canceled; showing the previous index.";
+                if (shown && ReferenceEquals(_indexCts, cts))
+                    ProgressText = "Indexing canceled; showing the previous index.";
             }
             else
             {
