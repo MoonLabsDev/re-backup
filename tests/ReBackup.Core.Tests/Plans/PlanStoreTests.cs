@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FluentAssertions;
+using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Retention;
 using ReBackup.Core.Tests.TestSupport;
 
 namespace ReBackup.Core.Tests.Plans;
@@ -183,5 +185,33 @@ public class PlanStoreTests : IDisposable
         store.Delete("does-not-exist");
 
         store.LoadAll().Plans.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Retention_rules_round_trip()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Projects" };
+        plan.Retention.Add(new RetentionRule { Period = RetentionPeriod.Monthly, Anchor = "0", Keep = 12 });
+        plan.Retention.Add(new RetentionRule { Period = RetentionPeriod.Weekly, Anchor = "Sunday", Keep = 4 });
+        store.Save(plan);
+
+        var loaded = store.LoadAll().Plans.Single();
+
+        loaded.Retention.Should().HaveCount(2);
+        loaded.Retention[0].Period.Should().Be(RetentionPeriod.Monthly);
+        loaded.Retention[0].Anchor.Should().Be("0");
+        loaded.Retention[0].Keep.Should().Be(12);
+        loaded.Retention[1].Anchor.Should().Be("Sunday");
+        loaded.Clone().Retention.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void A_null_retention_section_loads_as_no_rules()
+    {
+        var plan = JsonSerializer.Deserialize<BackupPlan>("""{ "id": "p1", "name": "Keep", "retention": null }""",
+            JsonDefaults.Options)!;
+
+        plan.Retention.Should().BeEmpty();
     }
 }

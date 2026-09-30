@@ -1,4 +1,5 @@
 using ReBackup.Core.IO;
+using ReBackup.Core.Retention;
 
 namespace ReBackup.Core.Plans;
 
@@ -22,6 +23,12 @@ public static class PlanValidator
                 errors.Add("Source must not be inside the target.");
         }
 
+        for (var i = 0; i < plan.Retention.Count; i++)
+        {
+            if (RetentionRules.Validate(plan.Retention[i]) is { } problem)
+                errors.Add($"Retention rule {i + 1}: {problem}");
+        }
+
         return errors;
     }
 
@@ -39,6 +46,8 @@ public static class PlanValidator
             errors.Add("Name must not end with a dot.");
         if (name.EndsWith(".partial", StringComparison.OrdinalIgnoreCase))
             errors.Add("Name must not end with \".partial\".");
+        if (name.EndsWith(".deleting", StringComparison.OrdinalIgnoreCase))
+            errors.Add("Name must not end with \".deleting\".");
         if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             errors.Add("Name contains characters that are not allowed in folder names.");
         if (allPlans.Any(p => p.Id != plan.Id && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Retention;
 using ReBackup.Core.Tests.TestSupport;
 
 namespace ReBackup.Core.Tests.Plans;
@@ -33,6 +34,8 @@ public class PlanValidatorTests : IDisposable
     [InlineData("Projects.", "Name must not end with a dot.")]
     [InlineData("Docs.partial", "Name must not end with \".partial\".")]
     [InlineData("Docs.PARTIAL", "Name must not end with \".partial\".")]
+    [InlineData("Docs.deleting", "Name must not end with \".deleting\".")]
+    [InlineData("Docs.DELETING", "Name must not end with \".deleting\".")]
     [InlineData("a/b", "Name contains characters that are not allowed in folder names.")]
     [InlineData("a:b", "Name contains characters that are not allowed in folder names.")]
     public void Invalid_names_are_reported(string name, string expected)
@@ -107,5 +110,21 @@ public class PlanValidatorTests : IDisposable
         plan.Target = _tmp.Root;
 
         Validate(plan).Should().Contain("Source must not be inside the target.");
+    }
+
+    [Fact]
+    public void Invalid_retention_rules_are_reported_with_their_position()
+    {
+        var plan = ValidPlan();
+        plan.Retention =
+        [
+            new RetentionRule { Period = RetentionPeriod.Daily, Keep = 7 },
+            new RetentionRule { Period = RetentionPeriod.Weekly, Anchor = "Someday", Keep = 4 },
+            new RetentionRule { Period = RetentionPeriod.Daily, Keep = 0 },
+        ];
+
+        Validate(plan).Should().Equal(
+            "Retention rule 2: the anchor must be a weekday, for example Sunday.",
+            "Retention rule 3: keep must be a number from 1 to 9999.");
     }
 }

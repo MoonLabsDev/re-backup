@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ReBackup.Core.Json;
+using ReBackup.Core.Retention;
 
 namespace ReBackup.Core.Plans;
 
@@ -15,7 +16,16 @@ public sealed class BackupPlan
 
     public IgnoreSettings Ignore { get; set; } = new();
 
-    /// <summary>Plan sections not yet modelled by this version (triggers, retention) survive a load/save round trip.</summary>
+    private List<RetentionRule> _retention = [];
+
+    /// <summary>Which old versions to keep. Empty means: keep everything.</summary>
+    public List<RetentionRule> Retention
+    {
+        get => _retention;
+        set => _retention = value ?? [];
+    }
+
+    /// <summary>Plan sections not yet modelled by this version (triggers) survive a load/save round trip.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 
