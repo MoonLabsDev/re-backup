@@ -58,23 +58,40 @@ public sealed class Scheduler : IDisposable
                 var now = UtcNow;
                 if (value)
                 {
-                    // PAUSING: handle already-due runs before pausing
-                    foreach (var plan in _plans.Values)
+                    // PAUSING: handle already-due runs only if scheduler is running
+                    if (_started && !_stopped)
                     {
-                        if (!plan.Enabled || due.Exists(d => string.Equals(d.PlanId, plan.Id, StringComparison.OrdinalIgnoreCase)))
-                            continue;
-
-                        var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
-                        if (now > since && LastDue(plan, since, now) is not null)
+                        // Queue due catch-ups first (like Check does)
+                        if (_catchUps.Count > 0 && now >= _catchUpAtUtc)
                         {
-                            due.Add((plan.Id, RunTrigger.Scheduled));
-                            _catchUps.Remove(plan.Id);
+                            foreach (var id in _catchUps)
+                            {
+                                if (_plans.TryGetValue(id, out var plan) && plan.Enabled)
+                                    due.Add((id, RunTrigger.CatchUp));
+                            }
+                            _catchUps.Clear();
+                        }
+
+                        // Queue due scheduled runs, but skip plans that got catch-ups
+                        foreach (var plan in _plans.Values)
+                        {
+                            if (!plan.Enabled || due.Exists(d => string.Equals(d.PlanId, plan.Id, StringComparison.OrdinalIgnoreCase)))
+                                continue;
+
+                            var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
+                            if (now > since && LastDue(plan, since, now) is not null)
+                                due.Add((plan.Id, RunTrigger.Scheduled));
                         }
                     }
 
-                    // Set _checkedUntil to now and mark as paused
+                    // Set _checkedUntil to max(existing, now) to never go backwards (e.g. after clock set-back)
                     foreach (var id in _plans.Keys)
-                        _checkedUntil[id] = now;
+                    {
+                        if (_checkedUntil.TryGetValue(id, out var checkedUntil))
+                            _checkedUntil[id] = now > checkedUntil ? now : checkedUntil;
+                        else
+                            _checkedUntil[id] = now;
+                    }
                     _paused = true;
                 }
                 else

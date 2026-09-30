@@ -264,7 +264,6 @@ public class SchedulerTests : IDisposable
         _enqueued.Should().HaveCount(1);
     }
 
-
     [Fact]
     public void Dispose_from_a_Changed_handler_does_not_throw()
     {
@@ -322,26 +321,29 @@ public class SchedulerTests : IDisposable
         // Advance past the next check at 02:00:01 - the new trigger is in the past from update time
         _time.Advance(TimeSpan.FromSeconds(0.5));
         _enqueued.Should().BeEmpty();
+    }
 
-        // Now test that re-publishing an unchanged plan keeps a trigger that just passed
-        var time2 = new FakeTimeProvider(Start);
-        time2.SetLocalTimeZone(TimeZoneInfo.Utc);
-        var enqueued2 = new List<(string, RunTrigger)>();
-        using var scheduler2 = new Scheduler((id, trigger) => enqueued2.Add((id, trigger)), time2);
+    [Fact]
+    public void Resaving_an_unchanged_plan_keeps_a_trigger_that_just_passed()
+    {
+        var time = new FakeTimeProvider(Start);
+        time.SetLocalTimeZone(TimeZoneInfo.Utc);
+        var enqueued = new List<(string, RunTrigger)>();
+        using var scheduler = new Scheduler((id, trigger) => enqueued.Add((id, trigger)), time);
 
         var plan = Plan("p1", DailyAt("02:00"));
-        scheduler2.UpdatePlans([plan]);
-        scheduler2.Start(_ => null);
+        scheduler.UpdatePlans([plan]);
+        scheduler.Start(_ => null);
 
         // Advance to 02:00:00.5
-        time2.Advance(TimeSpan.FromSeconds(90.5));
+        time.Advance(TimeSpan.FromSeconds(90.5));
 
         // Re-publish the same plan (new object, same content)
-        scheduler2.UpdatePlans([new ScheduledPlan("p1", true, plan.Triggers)]);
+        scheduler.UpdatePlans([new ScheduledPlan("p1", true, plan.Triggers)]);
 
         // Advance past the next check - trigger should still be queued once
-        time2.Advance(TimeSpan.FromSeconds(1));
-        enqueued2.Should().Equal(("p1", RunTrigger.Scheduled));
+        time.Advance(TimeSpan.FromSeconds(1));
+        enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
     }
 
     [Fact]
@@ -366,6 +368,84 @@ public class SchedulerTests : IDisposable
         // Advance 10 minutes - the trigger should not be run again
         fakeTime.Advance(TimeSpan.FromMinutes(10));
         enqueued.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Pausing_after_Dispose_queues_nothing()
+    {
+        StartWith(Plan("p1", DailyAt("02:00")));
+
+        _scheduler.Dispose();
+
+        // Pausing after dispose should not queue anything
+        _scheduler.IsPaused = true;
+        _enqueued.Should().BeEmpty();
+
+        _scheduler.IsPaused = false;
+        _enqueued.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Pausing_before_Start_queues_nothing()
+    {
+        _scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
+
+        // Pausing before Start should not queue anything
+        _scheduler.IsPaused = true;
+        _enqueued.Should().BeEmpty();
+
+        _scheduler.IsPaused = false;
+        _enqueued.Should().BeEmpty();
+
+        // Now start and verify normal operation
+        _scheduler.Start(_ => null);
+        _time.Advance(TimeSpan.FromSeconds(122));
+        _enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
+    }
+
+    [Fact]
+    public void Pausing_after_the_clock_was_set_back_does_not_run_a_trigger_twice()
+    {
+        var fakeTime = new FakeTimeProvider(Start);
+        fakeTime.SetLocalTimeZone(TimeZoneInfo.Utc);
+        var offsetTime = new OffsetTimeProvider(fakeTime);
+        var enqueued = new List<(string, RunTrigger)>();
+        using var scheduler = new Scheduler((id, trigger) => enqueued.Add((id, trigger)), offsetTime);
+
+        scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
+        scheduler.Start(_ => null);
+
+        // Advance to 02:00:01 (past the trigger)
+        fakeTime.Advance(TimeSpan.FromSeconds(122));
+        enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
+
+        // Set the clock back by 3 minutes
+        offsetTime.Offset = TimeSpan.FromMinutes(-3);
+
+        // Pause and resume
+        scheduler.IsPaused = true;
+        scheduler.IsPaused = false;
+
+        // Advance 10 minutes - trigger should not run again
+        fakeTime.Advance(TimeSpan.FromMinutes(10));
+        enqueued.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Pausing_when_a_catch_up_is_due_still_runs_it()
+    {
+        StartWith(_ => Utc(9, 20, 10), Plan("p1", DailyAt("12:00")));
+
+        // Advance to 01:59:01 (first check, catch-up is pending but not due yet)
+        _time.Advance(TimeSpan.FromSeconds(31));
+
+        // Advance to 01:59:46 (45 seconds later, no check between 01:59:01 and 01:59:46)
+        // Next check would be at 02:00:01
+        _time.Advance(TimeSpan.FromSeconds(45));
+
+        // Pause - the catch-up at 01:59:30 is due but hasn't been picked up by a check yet
+        _scheduler.IsPaused = true;
+        _enqueued.Should().Equal(("p1", RunTrigger.CatchUp));
     }
 }
 
