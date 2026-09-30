@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
@@ -94,7 +95,23 @@ public partial class App : Application
 
     private void ShowSettings()
     {
-        // Implemented in Task 8.
+        var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs, ConfirmDiscardUnsaved);
+        var window = new SettingsWindow(viewModel);
+        if (_window.IsVisible)
+            window.Owner = _window;
+        window.ShowDialog();
+
+        if (viewModel.RestartRequired)
+            Restart();
+    }
+
+    private void Restart()
+    {
+        _exitRequested = true;
+        _tray?.Dispose();
+        _planStore.Dispose();
+        Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false });
+        Shutdown();
     }
 
     private void OnMainWindowClosing(object? sender, CancelEventArgs e)
