@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
+using H.NotifyIcon.Core;
 using ReBackup.App.Services;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
@@ -132,9 +133,13 @@ public partial class App : Application
 
     private void CreateTrayIcon()
     {
+        var runMenu = new MenuItem { Header = "Run plan" };
         _trayMenu.Items.Add(CreateTrayMenuItem("Open", ShowMainWindow));
+        _trayMenu.Items.Add(runMenu);
         _trayMenu.Items.Add(new Separator());
         _trayMenu.Items.Add(CreateTrayMenuItem("Exit", ExitApp));
+        _trayMenu.Opened += (_, _) => FillRunMenu(runMenu);
+        FillRunMenu(runMenu);
 
         _tray = new TaskbarIcon
         {
@@ -152,6 +157,54 @@ public partial class App : Application
         };
         // Efficiency mode would throttle the process while hidden, which would slow scheduled backups.
         _tray.ForceCreate(enablesEfficiencyMode: false);
+
+        _mainViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.QueueStatus) && _tray is not null)
+                _tray.ToolTipText = "ReBackup — " + _mainViewModel.QueueStatus;
+        };
+        _mainViewModel.RunFinished += ShowRunNotification;
+    }
+
+    private void ShowRunNotification(string planName, RunLogEntry result)
+    {
+        var duration = RunHistoryRow.FormatDuration(result.DurationMs);
+        var (icon, message) = result.Status switch
+        {
+            RunStatus.Completed => (NotificationIcon.Info, $"Completed in {duration}."),
+            RunStatus.CompletedWithWarnings =>
+                (NotificationIcon.Warning, $"Completed in {duration}, {result.SkippedCount:N0} entries were skipped."),
+            RunStatus.Canceled => (NotificationIcon.Info, "Canceled."),
+            RunStatus.Full => (NotificationIcon.Error, $"Aborted, the target is full. {result.Reason}"),
+            _ => (NotificationIcon.Error, $"Aborted with an error. {result.Reason}"),
+        };
+        _tray?.ShowNotification($"Backup \"{planName}\"", message, icon);
+    }
+
+    private void FillRunMenu(MenuItem runMenu)
+    {
+        runMenu.Items.Clear();
+        foreach (var (id, name, canRun) in _mainViewModel.RunnablePlans)
+        {
+            var item = CreateTrayMenuItem(name, () => _mainViewModel.RunPlan(id));
+            item.IsEnabled = canRun;
+            runMenu.Items.Add(item);
+        }
+        runMenu.IsEnabled = runMenu.Items.Count > 0;
+    }
+
+    /// <summary>Cancels queued and running backups and waits briefly for the running one to clean up its partial folder.</summary>
+    private void StopBackups(TimeSpan wait)
+    {
+        _queue.CancelAll();
+        try
+        {
+            _queue.WhenIdleAsync().Wait(wait);
+        }
+        catch (AggregateException)
+        {
+            // The worker never faults; this only guards the wait itself.
+        }
     }
 
     internal static MenuItem CreateTrayMenuItem(string header, Action action)
@@ -186,9 +239,10 @@ public partial class App : Application
     private void Restart()
     {
         _exitRequested = true;
+        StopBackups(TimeSpan.FromSeconds(15));
         _tray?.Dispose();
         _planStore.Dispose();
-        _singleInstance?.Dispose();
+        _singleInstance?.Dispose();   // the new process needs the lock; released only after the backups stopped
         try
         {
             Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--restarted") { UseShellExecute = false });
@@ -216,8 +270,15 @@ public partial class App : Application
     {
         base.OnSessionEnding(e);
         _exitRequested = true;
+        if (_queue is not null)
+            StopBackups(TimeSpan.FromSeconds(3));
         _tray?.Dispose();
-        _planStore.Dispose();
+        _planStore?.Dispose();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        base.OnExit(e);
         _singleInstance?.Dispose();
     }
 
@@ -237,10 +298,17 @@ public partial class App : Application
         if (!ConfirmDiscardUnsaved())
             return;
 
+        if (_queue.IsBusy)
+        {
+            if (!_dialogs.Confirm("Backup in progress",
+                    "A backup is running or queued.\n\nCancel it and exit ReBackup?"))
+                return;
+            StopBackups(TimeSpan.FromSeconds(15));
+        }
+
         _exitRequested = true;
         _tray?.Dispose();
         _planStore.Dispose();
-        _singleInstance?.Dispose();
         Shutdown();
     }
 }

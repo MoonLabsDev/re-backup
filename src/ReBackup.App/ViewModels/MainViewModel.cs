@@ -56,6 +56,12 @@ public sealed partial class MainViewModel : ObservableObject
             editor.Preview.RequestReevaluate();
     }
 
+    /// <summary>Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid or already active plans.</summary>
+    public IReadOnlyList<(string Id, string Name, bool CanRun)> RunnablePlans =>
+        Plans.Where(p => !p.IsNew)
+            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive))
+            .ToList();
+
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
 
     public IEnumerable<string> UnsavedPlanNames =>

@@ -16,8 +16,17 @@ public sealed class SingleInstance : IDisposable
     /// <summary>Null when another instance is running. Call <see cref="Dispose"/> on the same thread.</summary>
     public static SingleInstance? TryAcquire(TimeSpan waitForPrevious)
     {
-        var mutex = new Mutex(initiallyOwned: false, MutexName);
+        Mutex mutex;
         bool owned;
+        try
+        {
+            mutex = new Mutex(initiallyOwned: false, MutexName);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;    // the mutex exists under an incompatible ACL, e.g. the running copy is elevated
+        }
+
         try
         {
             owned = mutex.WaitOne(waitForPrevious);
@@ -36,10 +45,17 @@ public sealed class SingleInstance : IDisposable
     /// <summary>Asks the instance that is already running to show its window.</summary>
     public static void SignalRunningInstance()
     {
-        if (EventWaitHandle.TryOpenExisting(ActivateEventName, out var activate))
+        try
         {
-            using (activate)
-                activate.Set();
+            if (EventWaitHandle.TryOpenExisting(ActivateEventName, out var activate))
+            {
+                using (activate)
+                    activate.Set();
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // The running copy is elevated and its event is not accessible; nothing to wake.
         }
     }
 
