@@ -110,7 +110,14 @@ public partial class App : Application
         _exitRequested = true;
         _tray?.Dispose();
         _planStore.Dispose();
-        Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false });
+        try
+        {
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false });
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            _dialogs.ShowInfo("ReBackup", "ReBackup could not restart itself. Please start it again manually.");
+        }
         Shutdown();
     }
 

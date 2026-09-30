@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.App.Services;
 using ReBackup.Core.Config;
+using ReBackup.Core.IO;
 using ReBackup.Core.Settings;
 
 namespace ReBackup.App.ViewModels;
@@ -49,6 +50,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         var folder = _dialogs.PickFolder("Choose configuration folder", ConfigFolder);
         if (folder is null)
             return;
+        if (string.Equals(PathUtil.Normalize(folder), PathUtil.Normalize(_paths.Root), StringComparison.OrdinalIgnoreCase))
+            return;
 
         var mode = ConfigMoveMode.CopyCurrent;
         if (ConfigLocation.ContainsConfiguration(folder))
@@ -66,7 +69,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             _paths = ConfigLocation.Move(_appDataRoot, _paths, folder, mode);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+            or ArgumentException or NotSupportedException)
         {
             _dialogs.ShowError("Configuration folder", ex.Message);
             return;
@@ -81,21 +85,35 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void Save()
     {
-        _settings.DefaultIgnorePatterns = DefaultIgnorePatterns
-            .Split('\n')
-            .Select(line => line.TrimEnd('\r', ' ', '\t'))
-            .Where(line => line.Length > 0)
-            .ToList();
-        _settings.CloseToTray = CloseToTray;
-        _settings.StartWithWindows = StartWithWindows;
+        var oldPatterns = _settings.DefaultIgnorePatterns.ToList();
+        var oldCloseToTray = _settings.CloseToTray;
+        var oldStartWithWindows = _settings.StartWithWindows;
+        var registryChanged = false;
 
         try
         {
-            _store.Save(_settings);
             StartupRegistration.Apply(StartWithWindows);
+            registryChanged = StartWithWindows != oldStartWithWindows;
+
+            _settings.DefaultIgnorePatterns = DefaultIgnorePatterns
+                .Split('\n')
+                .Select(line => line.TrimEnd('\r', ' ', '\t'))
+                .Where(line => line.Length > 0)
+                .ToList();
+            _settings.CloseToTray = CloseToTray;
+            _settings.StartWithWindows = StartWithWindows;
+            _store.Save(_settings);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
         {
+            _settings.DefaultIgnorePatterns = oldPatterns;
+            _settings.CloseToTray = oldCloseToTray;
+            _settings.StartWithWindows = oldStartWithWindows;
+            if (registryChanged)
+            {
+                try { StartupRegistration.Apply(oldStartWithWindows); }
+                catch (Exception revertEx) when (revertEx is IOException or UnauthorizedAccessException or SecurityException) { }
+            }
             _dialogs.ShowError("Settings", ex.Message);
             return;
         }
