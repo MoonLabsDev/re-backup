@@ -2499,3 +2499,23 @@ git commit -m "feat(app): settings dialog with start-with-Windows and config fol
 ## Next plans
 
 After Phase 1 is merged, the next plan is written against the real code: `docs/superpowers/plans/YYYY-MM-DD-rebackup-phase2-ignore-preview.md` (spec §6, §10.2 tab 3; build phase 2). Later phases follow the order in spec §13.
+
+## Carry-forward from Phase 1 execution (final review triage)
+
+Precondition for Phase 3 (runner/queue):
+- Single-instance guard (named mutex + activate first instance), with a restart handoff because `Restart()` starts the new process before the old one exits. Two instances would run the same plan twice.
+
+Early in Phase 2:
+- Fix `ContentControl` re-instantiating the `TabControl` on every selection change (the selected tab resets) before adding the second tab.
+- Tighten `PlanStoreTests.Unknown_properties_survive_load_and_save` to compare the JSON structure, not substrings.
+- Consider moving the `MainViewModel.ReloadFromDisk` merge decision into a pure, tested Core function.
+- A dirty editor keeps a stale `_saved`. Saving then overwrites external edits to sections it doesn't show (triggers/ignore/retention). Decide the policy once those sections become editable.
+- `PlanValidator` calls `Directory.Exists` on the UI thread for every plan on each Name change, so a slow or unreachable share stalls typing.
+
+Later / nice to have:
+- Global `DispatcherUnhandledException` handler that logs to `<config>/logs/app.log`.
+- `FileSystemWatcher.Error` → raise `ExternalChange`; stale own-write markers after a failed Delete.
+- `WpfDialogService.Owner` is null while hidden to tray (relevant once dialogs can come from the tray in Phases 3/5).
+- `OnSessionEnding` dereferences `_planStore` if the session ends while the startup config dialog is open.
+- Config move: `CopyCurrent` is not atomic (a partial copy then blocks a retry), and copying a log fails if a same-named log already exists in the target.
+- Run-key path goes stale if the exe moves; `AtomicFile` uses a fixed `.tmp` name; `AppSettings` has no `[JsonExtensionData]`; newly appeared plans are appended unsorted; the dirty flag is one-way; reserved device names (CON, NUL) are not rejected in plan names (harmless inside version folder names).
