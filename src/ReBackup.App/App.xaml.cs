@@ -109,6 +109,14 @@ public partial class App : Application
             ExitApp();
     }
 
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        base.OnSessionEnding(e);
+        _exitRequested = true;
+        _tray?.Dispose();
+        _planStore.Dispose();
+    }
+
     private bool ConfirmDiscardUnsaved()
     {
         if (!_mainViewModel.HasUnsavedChanges)
@@ -120,6 +128,8 @@ public partial class App : Application
 
     private void ExitApp()
     {
+        if (_mainViewModel.HasUnsavedChanges && !_window.IsVisible)
+            ShowMainWindow();
         if (!ConfirmDiscardUnsaved())
             return;
 
