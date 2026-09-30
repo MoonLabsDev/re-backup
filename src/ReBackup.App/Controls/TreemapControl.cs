@@ -20,7 +20,8 @@ public sealed class TreemapControl : FrameworkElement
         Frozen(0x76, 0xB7, 0xB2), Frozen(0xED, 0xC9, 0x48), Frozen(0xB0, 0x7A, 0xA1), Frozen(0x9C, 0x75, 0x5F),
     ];
     private static readonly Pen TilePen = FrozenPen(Colors.White, 0.5);
-    private static readonly Pen SelectionPen = FrozenPen(Colors.Black, 2);
+    private static readonly Pen SelectionPen = FrozenPen(Colors.Black, 1);
+    private static readonly Pen SelectionHaloPen = FrozenPen(Colors.White, 3);
 
     public static readonly DependencyProperty RootProperty = DependencyProperty.Register(
         nameof(Root), typeof(EvaluatedNode), typeof(TreemapControl),
@@ -31,8 +32,13 @@ public sealed class TreemapControl : FrameworkElement
         new FrameworkPropertyMetadata(null,
             FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
 
-    private readonly List<(EvaluatedNode Node, Rect Rect)> _leafTiles = [];
-    private readonly Dictionary<EvaluatedNode, Rect> _rects = [];
+    private readonly record struct Tile(EvaluatedNode Node, Rect Rect, Brush Fill, bool IsLeaf);
+
+    private readonly List<Tile> _tiles = [];
+    private EvaluatedNode? _layoutRoot;
+    private Size _layoutSize;
+    private bool _hasLayout;
+    private EvaluatedNode? _hovered;
 
     public EvaluatedNode? Root
     {
@@ -48,18 +54,41 @@ public sealed class TreemapControl : FrameworkElement
 
     protected override void OnRender(DrawingContext drawingContext)
     {
-        _leafTiles.Clear();
-        _rects.Clear();
-
-        var bounds = new Rect(0, 0, ActualWidth, ActualHeight);
+        var size = new Size(ActualWidth, ActualHeight);
+        var bounds = new Rect(size);
         drawingContext.DrawRectangle(Brushes.Transparent, null, bounds);   // keeps the whole area hit-testable
-        if (Root is not { TotalSize: > 0 } root || bounds.Width < MinTile || bounds.Height < MinTile)
-            return;
 
-        Draw(drawingContext, root, bounds);
+        var root = Root;
+        if (!_hasLayout || !ReferenceEquals(root, _layoutRoot) || size != _layoutSize)
+        {
+            _tiles.Clear();
+            if (root is { TotalSize: > 0 })
+                Layout(root, bounds);
+            _layoutRoot = root;
+            _layoutSize = size;
+            _hasLayout = true;
+            _hovered = null;
+        }
 
-        if (Selected is { } selected && _rects.TryGetValue(selected, out var rect))
-            drawingContext.DrawRectangle(null, SelectionPen, rect);
+        foreach (var tile in _tiles)
+            drawingContext.DrawRectangle(tile.Fill, tile.IsLeaf ? TilePen : null, tile.Rect);
+
+        if (Selected is { } selected)
+        {
+            foreach (var tile in _tiles)
+            {
+                if (!ReferenceEquals(tile.Node, selected))
+                    continue;
+                var outline = tile.Rect;
+                outline.Inflate(-1, -1);
+                if (outline.Width > 0 && outline.Height > 0)
+                {
+                    drawingContext.DrawRectangle(null, SelectionHaloPen, outline);
+                    drawingContext.DrawRectangle(null, SelectionPen, outline);
+                }
+                break;
+            }
+        }
     }
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
@@ -73,44 +102,58 @@ public sealed class TreemapControl : FrameworkElement
     {
         base.OnMouseMove(e);
         var node = TileAt(e.GetPosition(this));
-        var tip = node is null
+        if (ReferenceEquals(node, _hovered))
+            return;
+        _hovered = node;
+        ToolTip = node is null
             ? null
             : $"{node.Node.RelativePath}\n{ByteSize.Format(node.TotalSize)} — {node.Status}";
-        if (!Equals(ToolTip, tip))
-            ToolTip = tip;
     }
 
-    private void Draw(DrawingContext dc, EvaluatedNode node, Rect rect)
+    protected override void OnMouseLeave(MouseEventArgs e)
     {
-        if (rect.Width < MinTile || rect.Height < MinTile)
+        base.OnMouseLeave(e);
+        _hovered = null;
+        ToolTip = null;
+    }
+
+    private void Layout(EvaluatedNode node, Rect rect)
+    {
+        if (!(rect.Width >= MinTile) || !(rect.Height >= MinTile))
             return;
-        _rects[node] = rect;
 
         var split = node.Node.IsDirectory && node.Children.Count > 0 && node.TotalSize > 0
                     && rect.Width >= MinSplit && rect.Height >= MinSplit;
         if (!split)
         {
-            dc.DrawRectangle(BrushFor(node), TilePen, rect);
-            _leafTiles.Add((node, rect));
+            _tiles.Add(new Tile(node, rect, BrushFor(node), true));
             return;
         }
 
-        dc.DrawRectangle(FolderBrush, null, rect);   // shows through where children are too small to draw
-        var tiles = TreemapLayout.Squarify(node.Children, child => (double)child.TotalSize,
+        // Folder background shows through where children are too small to draw.
+        _tiles.Add(new Tile(node, rect, node.Status == IncludeStatus.Ignored ? IgnoredBrush : FolderBrush, false));
+
+        // Only children that could fill at least MinTile x MinTile are laid out.
+        var minSize = node.TotalSize * (MinTile * MinTile) / (rect.Width * rect.Height);
+        var drawable = node.Children.Where(child => child.TotalSize >= minSize && child.TotalSize > 0).ToList();
+        if (drawable.Count == 0)
+            return;
+
+        var tiles = TreemapLayout.Squarify(drawable, child => (double)child.TotalSize,
             new TreemapRect(rect.X, rect.Y, rect.Width, rect.Height));
         foreach (var tile in tiles)
         {
-            Draw(dc, tile.Item,
+            Layout(tile.Item,
                 new Rect(tile.Rect.X, tile.Rect.Y, Math.Max(0, tile.Rect.Width), Math.Max(0, tile.Rect.Height)));
         }
     }
 
     private EvaluatedNode? TileAt(Point point)
     {
-        foreach (var (node, rect) in _leafTiles)
+        foreach (var tile in _tiles)
         {
-            if (rect.Contains(point))
-                return node;
+            if (tile.IsLeaf && tile.Rect.Contains(point))
+                return tile.Node;
         }
         return null;
     }
