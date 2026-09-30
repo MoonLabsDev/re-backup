@@ -335,11 +335,14 @@ public class SchedulerTests : IDisposable
         scheduler.UpdatePlans([plan]);
         scheduler.Start(_ => null);
 
-        // Advance to 02:00:00.5
-        time.Advance(TimeSpan.FromSeconds(90.5));
+        // The clock is already at the end of the step when a check fires: 01:59:01 for the first check,
+        // then 02:00:00.5, after the trigger and before the check at 02:00:01
+        time.Advance(TimeSpan.FromSeconds(31));
+        time.Advance(TimeSpan.FromSeconds(59.5));
+        enqueued.Should().BeEmpty();
 
-        // Re-publish the same plan (new object, same content)
-        scheduler.UpdatePlans([new ScheduledPlan("p1", true, plan.Triggers)]);
+        // Re-publish the same plan (new plan and new trigger objects, same content)
+        scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
 
         // Advance past the next check - trigger should still be queued once
         time.Advance(TimeSpan.FromSeconds(1));
@@ -376,8 +379,8 @@ public class SchedulerTests : IDisposable
         StartWith(Plan("p1", DailyAt("02:00")));
 
         _scheduler.Dispose();
+        Minutes(5);   // 02:03:30: the 02:00 trigger has passed, but no check runs any more
 
-        // Pausing after dispose should not queue anything
         _scheduler.IsPaused = true;
         _enqueued.Should().BeEmpty();
 
@@ -389,17 +392,37 @@ public class SchedulerTests : IDisposable
     public void Pausing_before_Start_queues_nothing()
     {
         _scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
+        Minutes(5);   // 02:03:30: the 02:00 trigger has passed, but the scheduler has not started
 
-        // Pausing before Start should not queue anything
         _scheduler.IsPaused = true;
         _enqueued.Should().BeEmpty();
 
         _scheduler.IsPaused = false;
         _enqueued.Should().BeEmpty();
 
-        // Now start and verify normal operation
+        // Now start: the passed trigger stays skipped, the next day's one runs
         _scheduler.Start(_ => null);
-        _time.Advance(TimeSpan.FromSeconds(122));
+        Minutes(5);
+        _enqueued.Should().BeEmpty();
+        _time.Advance(TimeSpan.FromDays(1));
+        _enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
+    }
+
+    [Fact]
+    public void Pausing_drops_a_catch_up_covered_by_the_scheduled_run_it_queues()
+    {
+        StartWith(_ => Utc(9, 20, 10), Plan("p1", DailyAt("01:59")));
+
+        // 01:59:00.5: the 01:59 trigger has passed, the first check (01:59:01) and the catch-up (01:59:30) are still ahead
+        _time.Advance(TimeSpan.FromSeconds(30.5));
+        _enqueued.Should().BeEmpty();
+
+        _scheduler.IsPaused = true;
+        _enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
+
+        _scheduler.IsPaused = false;
+        Minutes(3);
+
         _enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
     }
 

@@ -80,7 +80,11 @@ public sealed class Scheduler : IDisposable
 
                             var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
                             if (now > since && LastDue(plan, since, now) is not null)
+                            {
                                 due.Add((plan.Id, RunTrigger.Scheduled));
+                                // The scheduled run covers the pending catch-up, as in Check
+                                _catchUps.Remove(plan.Id);
+                            }
                         }
                     }
 
