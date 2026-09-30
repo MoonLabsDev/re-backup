@@ -49,19 +49,61 @@ public sealed class Scheduler : IDisposable
         get { lock (_gate) return _paused; }
         set
         {
+            var due = new List<(string PlanId, RunTrigger Trigger)>();
             lock (_gate)
             {
                 if (_paused == value)
                     return;
-                _paused = value;
-                if (!value)
+
+                var now = UtcNow;
+                if (value)
                 {
-                    // Only reset _checkedUntil when resuming, not when pausing
-                    var now = UtcNow;
+                    // PAUSING: handle already-due runs before pausing
+                    foreach (var plan in _plans.Values)
+                    {
+                        if (!plan.Enabled || due.Exists(d => string.Equals(d.PlanId, plan.Id, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
+                        if (now > since && LastDue(plan, since, now) is not null)
+                        {
+                            due.Add((plan.Id, RunTrigger.Scheduled));
+                            _catchUps.Remove(plan.Id);
+                        }
+                    }
+
+                    // Set _checkedUntil to now and mark as paused
                     foreach (var id in _plans.Keys)
                         _checkedUntil[id] = now;
+                    _paused = true;
+                }
+                else
+                {
+                    // RESUMING: set _checkedUntil to max(existing, now) to not go backwards
+                    foreach (var id in _plans.Keys)
+                    {
+                        if (_checkedUntil.TryGetValue(id, out var checkedUntil))
+                            _checkedUntil[id] = now > checkedUntil ? now : checkedUntil;
+                        else
+                            _checkedUntil[id] = now;
+                    }
+                    _paused = false;
                 }
             }
+
+            // Queue any due runs outside the lock
+            foreach (var (planId, trigger) in due)
+            {
+                try
+                {
+                    _enqueue(planId, trigger);
+                }
+                catch (Exception)
+                {
+                    // enqueue failure must not stop pause
+                }
+            }
+
             RaiseChanged();
         }
     }
@@ -147,7 +189,13 @@ public sealed class Scheduler : IDisposable
                 _catchUps.Add(id);
             _catchUpAtUtc = now + CatchUpDelay;
             foreach (var id in _plans.Keys)
-                _checkedUntil[id] = now;
+            {
+                // Never move _checkedUntil backwards
+                if (_checkedUntil.TryGetValue(id, out var checkedUntil))
+                    _checkedUntil[id] = now > checkedUntil ? now : checkedUntil;
+                else
+                    _checkedUntil[id] = now;
+            }
             var nextMinute = new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerMinute, DateTimeKind.Utc).AddMinutes(1);
             _timer = _time.CreateTimer(_ => SafeCheck(), null, nextMinute + CheckOffset - now, CheckInterval);
         }

@@ -281,4 +281,116 @@ public class SchedulerTests : IDisposable
         _time.Advance(TimeSpan.FromMinutes(1));
         _enqueued.Should().BeEmpty();
     }
+
+    [Fact]
+    public void Pausing_right_after_a_trigger_still_runs_it()
+    {
+        StartWith(Plan("p1", DailyAt("02:00")));
+
+        // Advance to 01:59:01 (the check runs)
+        _time.Advance(TimeSpan.FromSeconds(31));
+        _enqueued.Should().BeEmpty();
+
+        // Advance to 02:00:00.5 (after the trigger, before the next check at 02:00:01)
+        _time.Advance(TimeSpan.FromSeconds(59.5));
+
+        // Pause immediately - should queue the 02:00 trigger that just passed
+        _scheduler.IsPaused = true;
+        _enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
+
+        // Resume and advance - no more runs should be queued
+        _scheduler.IsPaused = false;
+        _time.Advance(TimeSpan.FromMinutes(5));
+
+        _enqueued.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Resaving_a_plan_with_changed_triggers_starts_it_from_now()
+    {
+        StartWith(Plan("p1", DailyAt("12:00")));
+
+        // Advance to 01:59:01 (the check runs)
+        _time.Advance(TimeSpan.FromSeconds(31));
+
+        // Advance to 02:00:00.5 (before the next check at 02:00:01)
+        _time.Advance(TimeSpan.FromSeconds(59.5));
+
+        // Update plan with new trigger Daily 02:00 (which just passed)
+        _scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
+
+        // Advance past the next check at 02:00:01 - the new trigger is in the past from update time
+        _time.Advance(TimeSpan.FromSeconds(0.5));
+        _enqueued.Should().BeEmpty();
+
+        // Now test that re-publishing an unchanged plan keeps a trigger that just passed
+        var time2 = new FakeTimeProvider(Start);
+        time2.SetLocalTimeZone(TimeZoneInfo.Utc);
+        var enqueued2 = new List<(string, RunTrigger)>();
+        using var scheduler2 = new Scheduler((id, trigger) => enqueued2.Add((id, trigger)), time2);
+
+        var plan = Plan("p1", DailyAt("02:00"));
+        scheduler2.UpdatePlans([plan]);
+        scheduler2.Start(_ => null);
+
+        // Advance to 02:00:00.5
+        time2.Advance(TimeSpan.FromSeconds(90.5));
+
+        // Re-publish the same plan (new object, same content)
+        scheduler2.UpdatePlans([new ScheduledPlan("p1", true, plan.Triggers)]);
+
+        // Advance past the next check - trigger should still be queued once
+        time2.Advance(TimeSpan.FromSeconds(1));
+        enqueued2.Should().Equal(("p1", RunTrigger.Scheduled));
+    }
+
+    [Fact]
+    public void A_clock_set_back_does_not_run_triggers_twice()
+    {
+        var fakeTime = new FakeTimeProvider(Start);
+        fakeTime.SetLocalTimeZone(TimeZoneInfo.Utc);
+        var offsetTime = new OffsetTimeProvider(fakeTime);
+        var enqueued = new List<(string, RunTrigger)>();
+        using var scheduler = new Scheduler((id, trigger) => enqueued.Add((id, trigger)), offsetTime);
+
+        scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
+        scheduler.Start(_ => null);
+
+        // Advance to 02:00:01 (past the trigger)
+        fakeTime.Advance(TimeSpan.FromSeconds(122));
+        enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
+
+        // Set the clock back by 3 minutes (simulating a system clock adjustment)
+        offsetTime.Offset = TimeSpan.FromMinutes(-3);
+
+        // Advance 10 minutes - the trigger should not be run again
+        fakeTime.Advance(TimeSpan.FromMinutes(10));
+        enqueued.Should().HaveCount(1);
+    }
+}
+
+/// <summary>
+/// TimeProvider that applies an offset to the underlying FakeTimeProvider's clock.
+/// Used to simulate system clock adjustments without requiring FakeTimeProvider to support SetUtcNow backwards.
+/// </summary>
+internal sealed class OffsetTimeProvider : TimeProvider
+{
+    private readonly FakeTimeProvider _inner;
+    public TimeSpan Offset { get; set; } = TimeSpan.Zero;
+
+    public OffsetTimeProvider(FakeTimeProvider inner)
+    {
+        _inner = inner;
+    }
+
+    public override TimeZoneInfo LocalTimeZone => _inner.LocalTimeZone;
+
+    public override long TimestampFrequency => _inner.TimestampFrequency;
+
+    public override DateTimeOffset GetUtcNow() => _inner.GetUtcNow() + Offset;
+
+    public override long GetTimestamp() => _inner.GetTimestamp();
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        => _inner.CreateTimer(callback, state, dueTime, period);
 }
