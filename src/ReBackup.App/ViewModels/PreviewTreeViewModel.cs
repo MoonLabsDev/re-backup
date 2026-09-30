@@ -25,7 +25,7 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         _root = root;
         var rows = new List<PreviewRowViewModel>();
         if (root is not null)
-            AppendRows(rows, root, root.TotalSize, 0, expanded);
+            AppendRows(rows, root, root, 0, expanded);
         Rows.ReplaceAll(rows);
 
         SelectedRow = selectedPath is null
@@ -96,7 +96,7 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         if (expanded)
         {
             var children = Sorted(row.Node)
-                .Select(child => new PreviewRowViewModel(this, child, row.Node.TotalSize, row.Depth + 1, isExpanded: false))
+                .Select(child => new PreviewRowViewModel(this, child, row.Node, row.Depth + 1, isExpanded: false))
                 .ToList();
             Rows.InsertRange(index + 1, children);
         }
@@ -109,15 +109,15 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         }
     }
 
-    private void AppendRows(List<PreviewRowViewModel> rows, EvaluatedNode node, long parentTotalSize, int depth,
+    private void AppendRows(List<PreviewRowViewModel> rows, EvaluatedNode node, EvaluatedNode parent, int depth,
         HashSet<string> expanded)
     {
         var isExpanded = node.Children.Count > 0 && expanded.Contains(node.Node.RelativePath);
-        rows.Add(new PreviewRowViewModel(this, node, parentTotalSize, depth, isExpanded));
+        rows.Add(new PreviewRowViewModel(this, node, parent, depth, isExpanded));
         if (!isExpanded)
             return;
         foreach (var child in Sorted(node))
-            AppendRows(rows, child, node.TotalSize, depth + 1, expanded);
+            AppendRows(rows, child, node, depth + 1, expanded);
     }
 
     private static IEnumerable<EvaluatedNode> Sorted(EvaluatedNode node) =>
