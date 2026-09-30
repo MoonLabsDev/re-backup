@@ -215,7 +215,7 @@ Final status: `Completed` if nothing was skipped, otherwise `CompletedWithWarnin
 
 Left: plan list. Each row shows the name, a status dot (idle / queued / running / last failed), last run (time + result), next run, and a **Run now** button. A running plan shows a progress bar and a **Cancel** button in its row. New/Delete plan buttons sit below the list; deleting a plan asks for confirmation, removes the JSON (and optionally its log), and never touches the backups.
 
-Right: tabs for the selected plan. Edits mark the plan dirty (•). **Save** / **Revert**. Switching plans with unsaved edits asks first.
+Right: tabs for the selected plan. Edits mark the plan dirty (•). **Save** / **Revert**. Unsaved edits are kept per plan while switching between plans; exiting (or restarting after a config-folder change) with unsaved edits asks first.
 
 Bottom status strip: queue state and the current job's progress.
 
