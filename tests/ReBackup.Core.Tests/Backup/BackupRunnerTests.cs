@@ -510,6 +510,8 @@ public class BackupRunnerTests : IDisposable
             _inner.MoveDirectory(source, destination);
         }
 
+        public void DeleteDirectory(string path) => _inner.DeleteDirectory(path);
+
         public Stream CreateFile(string path)
         {
             OnCreateFile?.Invoke(path);

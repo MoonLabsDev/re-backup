@@ -6,10 +6,11 @@ using ReBackup.Core.Indexing;
 using ReBackup.Core.IO;
 using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Retention;
 
 namespace ReBackup.Core.Backup;
 
-public enum BackupPhase { Indexing, Copying, Finishing }
+public enum BackupPhase { Indexing, Copying, Finishing, Retention }
 
 public readonly record struct BackupProgress(
     BackupPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal, string CurrentFile)
@@ -18,7 +19,7 @@ public readonly record struct BackupProgress(
     public double Fraction =>
         BytesTotal > 0 ? Math.Clamp((double)BytesDone / BytesTotal, 0, 1)
         : FilesTotal > 0 ? Math.Clamp((double)FilesDone / FilesTotal, 0, 1)
-        : Phase == BackupPhase.Finishing ? 1 : 0;
+        : Phase is BackupPhase.Finishing or BackupPhase.Retention ? 1 : 0;
 }
 
 /// <summary>A plan as saved, the global ignore defaults at the time of the request, and why the run starts.</summary>
@@ -109,6 +110,19 @@ public sealed class BackupRunner : IBackupRunner
         if (!completed && partialPath is not null)
             TryDeleteDirectory(partialPath);
 
+        if (completed)
+        {
+            try
+            {
+                await Task.Run(() => ApplyRetention(plan, entry, progress, cancellationToken));
+            }
+            catch (Exception ex)
+            {
+                // The backup itself is done; whatever goes wrong here must not turn it into a failure.
+                entry.Warnings.Add($"Retention was skipped: {ex.Message}");
+            }
+        }
+
         entry.DurationMs = (long)_time.GetElapsedTime(started).TotalMilliseconds;
         entry.EndUtc = entry.StartUtc.AddMilliseconds(entry.DurationMs);
         return entry;
@@ -126,6 +140,8 @@ public sealed class BackupRunner : IBackupRunner
             throw new BackupAbortException(RunStatus.Error, $"The plan name \"{plan.Name}\" cannot be used as a folder name.");
         if (plan.Name.EndsWith(VersionName.PartialSuffix, StringComparison.OrdinalIgnoreCase))
             throw new BackupAbortException(RunStatus.Error, "The plan name must not end with \".partial\".");
+        if (plan.Name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
+            throw new BackupAbortException(RunStatus.Error, "The plan name must not end with \".deleting\".");
         if (PathUtil.IsSameOrInside(plan.Target, plan.Source))
             throw new BackupAbortException(RunStatus.Error, "The target folder is the source folder or inside it.");
         if (PathUtil.IsSameOrInside(plan.Source, plan.Target))
@@ -188,19 +204,101 @@ public sealed class BackupRunner : IBackupRunner
             Collect(child, work);
     }
 
+    /// <summary>Removes what earlier runs of this plan left behind: unfinished ".partial" folders and ".deleting" remains.</summary>
     private void DeleteLeftovers(BackupPlan plan)
     {
-        foreach (var directory in Directory.EnumerateDirectories(plan.Target, "*" + VersionName.PartialSuffix))
+        foreach (var directory in Directory.EnumerateDirectories(plan.Target).ToList())
         {
             var name = Path.GetFileName(directory);
-            var versionName = name[..^VersionName.PartialSuffix.Length];
-            if (!VersionName.TryParse(versionName, plan.Name, out _))
-                continue;
-            // A manifest is written last, right before the rename: such a folder is a finished version of a plan
-            // whose name ends in ".partial" (or a crash just before the rename). Leaving it is the safe choice.
-            if (File.Exists(Path.Combine(directory, VersionName.ManifestFileName)))
-                continue;
-            TryDeleteDirectory(directory);
+            if (name.EndsWith(VersionName.PartialSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!VersionName.TryParse(name[..^VersionName.PartialSuffix.Length], plan.Name, out _))
+                    continue;
+                // A manifest is written last, right before the rename: such a folder is a finished version of a
+                // plan whose name ends in ".partial" (or a crash just before the rename). Leaving it is the safe
+                // choice, and so is leaving a folder that cannot be examined.
+                if (HasManifest(directory) != false)
+                    continue;
+                TryDeleteDirectory(directory);
+            }
+            else if (name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!VersionName.TryParseAny(name[..^VersionName.DeletingSuffix.Length], out _, out var folderPlanName) ||
+                    !IsOwnRemains(directory, plan, folderPlanName))
+                    continue;
+                try
+                {
+                    VersionRemover.RemoveRemains(directory, _volume);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Best effort; the next run tries again.
+                }
+            }
+        }
+    }
+
+    /// <summary>True or false when it is known; null when the folder cannot be examined.</summary>
+    private static bool? HasManifest(string directory)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(directory, VersionName.ManifestFileName).Any();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Remains belong to the plan by their manifest; without one (it is deleted last), by their name.</summary>
+    private static bool IsOwnRemains(string directory, BackupPlan plan, string folderPlanName) =>
+        VersionCatalog.Probe(directory, plan.Id).Ownership switch
+        {
+            VersionOwnership.Owned => true,
+            VersionOwnership.NoManifest =>
+                HasManifest(directory) == false && folderPlanName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        };
+
+    /// <summary>Deletes the versions the plan's rules no longer keep. Problems become warnings; the run stays successful.</summary>
+    private void ApplyRetention(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (plan.Retention.Count == 0)
+            return;
+
+        progress?.Report(new BackupProgress(BackupPhase.Retention, entry.FilesCopied, entry.FilesCopied,
+            entry.BytesCopied, entry.BytesCopied, ""));
+
+        List<VersionInfo> doomed;
+        try
+        {
+            var versions = VersionCatalog.List(plan.Target, plan.Id, plan.Name);
+            doomed = RetentionPlanner.Decide(versions, plan.Retention).Where(d => d.Delete).Select(d => d.Version).ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            entry.Warnings.Add($"Retention was skipped: {ex.Message}");
+            return;
+        }
+
+        foreach (var version in doomed)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return;   // the next successful run deletes the rest
+            if (version.Name.Equals(entry.Version, StringComparison.OrdinalIgnoreCase))
+                continue;   // never the version this run just made, whatever the clock or the rules say
+
+            try
+            {
+                VersionRemover.Remove(version.Path, _volume);
+                entry.RetentionDeleted.Add(version.Name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                entry.Warnings.Add($"Retention could not delete \"{version.Name}\": {ex.Message}");
+            }
         }
     }
 
