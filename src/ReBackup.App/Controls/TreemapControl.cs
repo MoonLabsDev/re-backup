@@ -32,12 +32,17 @@ public sealed class TreemapControl : FrameworkElement
         new FrameworkPropertyMetadata(null,
             FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
 
+    public static readonly DependencyProperty HideIgnoredProperty = DependencyProperty.Register(
+        nameof(HideIgnored), typeof(bool), typeof(TreemapControl),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+
     private readonly record struct Tile(EvaluatedNode Node, Rect Rect, Brush Fill, bool IsLeaf);
 
     private readonly List<Tile> _tiles = [];
     private EvaluatedNode? _layoutRoot;
     private Size _layoutSize;
     private bool _hasLayout;
+    private bool _layoutHidesIgnored;
     private EvaluatedNode? _hovered;
 
     public EvaluatedNode? Root
@@ -52,6 +57,13 @@ public sealed class TreemapControl : FrameworkElement
         set => SetValue(SelectedProperty, value);
     }
 
+    /// <summary>Leaves ignored entries out and sizes everything by what is backed up.</summary>
+    public bool HideIgnored
+    {
+        get => (bool)GetValue(HideIgnoredProperty);
+        set => SetValue(HideIgnoredProperty, value);
+    }
+
     protected override void OnRender(DrawingContext drawingContext)
     {
         var size = new Size(ActualWidth, ActualHeight);
@@ -59,10 +71,12 @@ public sealed class TreemapControl : FrameworkElement
         drawingContext.DrawRectangle(Brushes.Transparent, null, bounds);   // keeps the whole area hit-testable
 
         var root = Root;
-        if (!_hasLayout || !ReferenceEquals(root, _layoutRoot) || size != _layoutSize)
+        var hideIgnored = HideIgnored;
+        if (!_hasLayout || !ReferenceEquals(root, _layoutRoot) || size != _layoutSize || hideIgnored != _layoutHidesIgnored)
         {
             _tiles.Clear();
-            if (root is { TotalSize: > 0 })
+            _layoutHidesIgnored = hideIgnored;
+            if (root is not null && WeightOf(root) > 0)
                 Layout(root, bounds);
             _layoutRoot = root;
             _layoutSize = size;
@@ -107,7 +121,7 @@ public sealed class TreemapControl : FrameworkElement
         _hovered = node;
         ToolTip = node is null
             ? null
-            : $"{node.Node.RelativePath}\n{ByteSize.Format(node.TotalSize)} — {node.Status}";
+            : $"{node.Node.RelativePath}\n{ByteSize.Format(node.TotalSize)}, backup {ByteSize.Format(node.IncludedSize)} — {node.Status}";
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)
@@ -122,7 +136,8 @@ public sealed class TreemapControl : FrameworkElement
         if (!(rect.Width >= MinTile) || !(rect.Height >= MinTile))
             return;
 
-        var split = node.Node.IsDirectory && node.Children.Count > 0 && node.TotalSize > 0
+        var weight = WeightOf(node);
+        var split = node.Node.IsDirectory && node.Children.Count > 0 && weight > 0
                     && rect.Width >= MinSplit && rect.Height >= MinSplit;
         if (!split)
         {
@@ -134,12 +149,12 @@ public sealed class TreemapControl : FrameworkElement
         _tiles.Add(new Tile(node, rect, node.Status == IncludeStatus.Ignored ? IgnoredBrush : FolderBrush, false));
 
         // Only children that could fill at least MinTile x MinTile are laid out.
-        var minSize = node.TotalSize * (MinTile * MinTile) / (rect.Width * rect.Height);
-        var drawable = node.Children.Where(child => child.TotalSize >= minSize && child.TotalSize > 0).ToList();
+        var minSize = weight * (MinTile * MinTile) / (rect.Width * rect.Height);
+        var drawable = node.Children.Where(child => WeightOf(child) >= minSize && WeightOf(child) > 0).ToList();
         if (drawable.Count == 0)
             return;
 
-        var tiles = TreemapLayout.Squarify(drawable, child => (double)child.TotalSize,
+        var tiles = TreemapLayout.Squarify(drawable, child => (double)WeightOf(child),
             new TreemapRect(rect.X, rect.Y, rect.Width, rect.Height));
         foreach (var tile in tiles)
         {
@@ -147,6 +162,9 @@ public sealed class TreemapControl : FrameworkElement
                 new Rect(tile.Rect.X, tile.Rect.Y, Math.Max(0, tile.Rect.Width), Math.Max(0, tile.Rect.Height)));
         }
     }
+
+    /// <summary>Tile area: the whole size, or only the backed-up part when ignored entries are hidden (ignored ones are then 0).</summary>
+    private long WeightOf(EvaluatedNode node) => _layoutHidesIgnored ? node.IncludedSize : node.TotalSize;
 
     private EvaluatedNode? TileAt(Point point)
     {

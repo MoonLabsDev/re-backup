@@ -13,19 +13,24 @@ public sealed class PreviewRowViewModel : ObservableObject
     private readonly PreviewTreeViewModel _tree;
     private bool _isExpanded;
 
-    public PreviewRowViewModel(PreviewTreeViewModel tree, EvaluatedNode node, long parentTotalSize, int depth,
+    /// <param name="parent">The parent folder's node; the root passes itself.</param>
+    public PreviewRowViewModel(PreviewTreeViewModel tree, EvaluatedNode node, EvaluatedNode parent, int depth,
         bool isExpanded)
     {
         _tree = tree;
         Node = node;
         Depth = depth;
         _isExpanded = isExpanded;
-        PercentOfParent = parentTotalSize > 0 ? 100.0 * node.TotalSize / parentTotalSize : 0;
+        PercentOfParent = parent.TotalSize > 0 ? 100.0 * node.TotalSize / parent.TotalSize : 0;
+        BackupPercentOfParent = parent.IncludedSize > 0 ? 100.0 * node.IncludedSize / parent.IncludedSize : 0;
     }
 
     public EvaluatedNode Node { get; }
     public int Depth { get; }
     public double PercentOfParent { get; }
+
+    /// <summary>Share of the parent's backup size (both without ignored entries).</summary>
+    public double BackupPercentOfParent { get; }
 
     public bool IsExpanded
     {
@@ -41,11 +46,18 @@ public sealed class PreviewRowViewModel : ObservableObject
     public string Name => Node.Node.Name;
     public Thickness Indent => new(Depth * IndentPerLevel, 0, 0, 0);
     public string SizeText => ByteSize.Format(Node.TotalSize);
+    /// <summary>What the backup of this entry takes: its size without the ignored parts.</summary>
+    public string BackupSizeText => Node.Status == IncludeStatus.Ignored ? "—" : ByteSize.Format(Node.IncludedSize);
     public string FilesText => Node.Node.IsDirectory ? Node.TotalFiles.ToString("N0", CultureInfo.CurrentCulture) : "";
     public string PercentText => PercentOfParent.ToString("0.0", CultureInfo.CurrentCulture) + " %";
+    public string BackupPercentText => Node.Status == IncludeStatus.Ignored
+        ? "—"
+        : BackupPercentOfParent.ToString("0.0", CultureInfo.CurrentCulture) + " %";
     public string StatusText =>
         Node.Node.Error is not null && Node.Status != IncludeStatus.Ignored ? "Not scanned" : Node.Status.ToString();
     public bool IsIgnored => Node.Status == IncludeStatus.Ignored;
+    public bool IsPartial => Node.Status == IncludeStatus.Partial;
+    public bool IsNotScanned => Node.Node.Error is not null && Node.Status != IncludeStatus.Ignored;
 
     public string StatusDetail
     {

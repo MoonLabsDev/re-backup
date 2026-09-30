@@ -80,6 +80,14 @@
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="ToolTip" Value="{Binding StatusDetail}" />
                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnRowRightButtonDown" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPartial}" Value="True">
+                                    <Setter Property="Background" Value="#FFF6D8" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsIgnored}" Value="True">
+                                    <Setter Property="Background" Value="#FBE3E1" />
+                                </DataTrigger>
+                            </Style.Triggers>
                         </Style>
                     </ListView.ItemContainerStyle>
                     <ListView.View>
@@ -120,6 +128,7 @@
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
                             <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
+                            <GridViewColumn Header="Backup size" Width="85" DisplayMemberBinding="{Binding BackupSizeText}" />
                             <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
                             <GridViewColumn Header="% of parent" Width="130">
                                 <GridViewColumn.CellTemplate>
@@ -133,15 +142,58 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="Status" Width="80" DisplayMemberBinding="{Binding StatusText}" />
+                            <GridViewColumn Header="% of parent backup" Width="130">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <ProgressBar Height="14" Maximum="100" Foreground="#2E9E48"
+                                                         Value="{Binding BackupPercentOfParent, Mode=OneWay}" />
+                                            <TextBlock HorizontalAlignment="Center" FontSize="11"
+                                                       Text="{Binding BackupPercentText}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Status" Width="110">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="#2E9E48" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsPartial}" Value="True">
+                                                                <Setter Property="Fill" Value="#E0A800" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsIgnored}" Value="True">
+                                                                <Setter Property="Fill" Value="#D93025" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsNotScanned}" Value="True">
+                                                                <Setter Property="Fill" Value="Gray" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock VerticalAlignment="Center" Text="{Binding StatusText}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                         </GridView>
                     </ListView.View>
                 </ListView>
                 <GridSplitter Grid.Row="1" Height="8" HorizontalAlignment="Stretch" Background="Transparent" />
-                <Border Grid.Row="2" BorderBrush="#ABADB3" BorderThickness="1">
-                    <controls:TreemapControl Root="{Binding Preview.Root}"
-                                             Selected="{Binding Preview.SelectedNode}" />
-                </Border>
+                <DockPanel Grid.Row="2">
+                    <CheckBox x:Name="HideIgnoredBox" DockPanel.Dock="Top" Margin="0,0,0,4"
+                              Content="Hide ignored entries in the treemap (sizes then show what is backed up)" />
+                    <Border BorderBrush="#ABADB3" BorderThickness="1">
+                        <controls:TreemapControl Root="{Binding Preview.Root}"
+                                                 Selected="{Binding Preview.SelectedNode}"
+                                                 HideIgnored="{Binding IsChecked, ElementName=HideIgnoredBox}" />
+                    </Border>
+                </DockPanel>
             </Grid>
         </DockPanel>
     </Grid>
