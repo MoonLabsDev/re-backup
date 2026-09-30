@@ -12,6 +12,7 @@ public static class VersionRemover
     /// <exception cref="UnauthorizedAccessException">Access is denied.</exception>
     public static void Remove(string versionPath, ITargetVolume volume)
     {
+        RefuseLink(versionPath);
         var doomed = versionPath + VersionName.DeletingSuffix;
         volume.MoveDirectory(versionPath, doomed);
         RemoveRemains(doomed, volume);
@@ -23,6 +24,7 @@ public static class VersionRemover
     /// </summary>
     public static void RemoveRemains(string doomedPath, ITargetVolume volume)
     {
+        RefuseLink(doomedPath);
         foreach (var entry in Directory.EnumerateFileSystemEntries(doomedPath).ToList())
         {
             if (Directory.Exists(entry))
@@ -31,5 +33,12 @@ public static class VersionRemover
                 File.Delete(entry);
         }
         volume.DeleteDirectory(doomedPath);
+    }
+
+    /// <summary>A link would lead the deletion out of the target: its content is not ours to delete.</summary>
+    private static void RefuseLink(string path)
+    {
+        if (new DirectoryInfo(path).LinkTarget is not null)
+            throw new IOException($"\"{Path.GetFileName(path)}\" is a link and is not removed.");
     }
 }

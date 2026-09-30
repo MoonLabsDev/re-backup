@@ -58,4 +58,26 @@ public class VersionRemoverTests : IDisposable
         VersionRemover.RemoveRemains(doomed, new PhysicalTargetVolume());
         Directory.GetFileSystemEntries(_target).Should().BeEmpty();
     }
+
+    [Fact]
+    public void A_link_is_refused_and_its_target_is_untouched()
+    {
+        var real = VersionFolder.Create(_tmp.CreateDir("elsewhere"), Name, "p1");
+        var link = Path.Combine(_target, "2026_09_02-02_00 Projects");
+        Junction.Create(link, real);
+
+        try
+        {
+            var act = () => VersionRemover.Remove(link, new PhysicalTargetVolume());
+
+            act.Should().Throw<IOException>().WithMessage("*is a link*");
+            File.Exists(Path.Combine(real, "data.bin")).Should().BeTrue();
+            File.Exists(Path.Combine(real, "re-manifest.json")).Should().BeTrue();
+            Directory.Exists(link + ".deleting").Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(link);
+        }
+    }
 }

@@ -163,11 +163,76 @@ public class BackupRunnerRetentionTests : IDisposable
         VersionFolder.Create(_target, OldName(2) + ".deleting", "other");
         _tmp.WriteFile($@"target\{OldName(3)}.deleting\a.txt", "remains without a manifest");
         _tmp.WriteFile($@"target\{OldName(4, "Other")}.deleting\a.txt", "remains of another plan");
+        _tmp.CreateDir($@"target\{OldName(5)}.deleting");
 
         var entry = await Run(Plan());
 
         entry.Status.Should().Be(RunStatus.Completed);
-        TargetEntries().Should().BeEquivalentTo(OldName(2) + ".deleting", OldName(4, "Other") + ".deleting", NewVersion);
+        entry.Warnings.Should().BeEmpty();
+        TargetEntries().Should().BeEquivalentTo(OldName(2) + ".deleting", OldName(3) + ".deleting",
+            OldName(4, "Other") + ".deleting", NewVersion);
+    }
+
+    [Fact]
+    public async Task A_removal_that_fails_half_way_counts_as_deleted_with_a_warning_and_the_remains_go_at_the_next_run()
+    {
+        Old(26);
+        var stubborn = Old(27);
+        var doomed = stubborn + ".deleting";
+        var volume = new ScriptedVolume { FailDelete = path => path == doomed };
+
+        var entry = await Run(Plan(Daily(1)), volume);
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        entry.RetentionDeleted.Should().Contain(OldName(27));
+        entry.Warnings.Should().ContainSingle().Which.Should()
+            .StartWith($"\"{OldName(27)}\" was removed from the versions, but its remains could not be deleted yet");
+        Directory.Exists(stubborn).Should().BeFalse();
+        Directory.Exists(doomed).Should().BeTrue();
+
+        // A later run, the delete still failing: reported as a warning. The fake clock does not advance, so
+        // the version name of the first run must be free again.
+        Directory.Delete(Path.Combine(_target, NewVersion), recursive: true);
+        var still = await Run(Plan(), volume);
+        still.Warnings.Should().ContainSingle().Which.Should().StartWith("Remains of an earlier removal could not be deleted");
+        Directory.Exists(doomed).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Remains_are_removed_without_a_warning_when_the_volume_works_again()
+    {
+        var stubborn = Old(27);
+        var doomed = stubborn + ".deleting";
+        await Run(Plan(Daily(1)), new ScriptedVolume { FailDelete = path => path == doomed });
+        Directory.Exists(doomed).Should().BeTrue();
+        Directory.Delete(Path.Combine(_target, NewVersion), recursive: true);   // the fake clock does not advance
+
+        var entry = await Run(Plan());
+
+        entry.Warnings.Should().BeEmpty();
+        Directory.Exists(doomed).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_deleting_junction_to_an_owned_version_is_left_alone()
+    {
+        var real = VersionFolder.Create(_tmp.CreateDir("elsewhere"), OldName(3), "p1");
+        var link = Path.Combine(_target, OldName(3) + ".deleting");
+        Junction.Create(link, real);
+
+        try
+        {
+            var entry = await Run(Plan(Daily(1)));
+
+            entry.Status.Should().Be(RunStatus.Completed);
+            File.Exists(Path.Combine(real, "data.bin")).Should().BeTrue();
+            File.Exists(Path.Combine(real, "re-manifest.json")).Should().BeTrue();
+            Directory.Exists(link).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(link);
+        }
     }
 
     [Fact]

@@ -72,7 +72,7 @@ public sealed class BackupRunner : IBackupRunner
         var completed = false;
         try
         {
-            var work = await Task.Run(() => Prepare(request, progress, cancellationToken), cancellationToken);
+            var work = await Task.Run(() => Prepare(request, entry, progress, cancellationToken), cancellationToken);
             foreach (var skipped in work.Skipped)
                 entry.AddSkipped(skipped);
 
@@ -129,7 +129,7 @@ public sealed class BackupRunner : IBackupRunner
     }
 
     /// <summary>Index, evaluate and preflight. Writes nothing except creating the target folder and removing leftovers.</summary>
-    private BackupWork Prepare(BackupRequest request, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
+    private BackupWork Prepare(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         var plan = request.Plan;
         if (string.IsNullOrWhiteSpace(plan.Source) || !Directory.Exists(plan.Source))
@@ -148,7 +148,7 @@ public sealed class BackupRunner : IBackupRunner
             throw new BackupAbortException(RunStatus.Error, "The source folder is inside the target folder.");
 
         Directory.CreateDirectory(plan.Target);
-        DeleteLeftovers(plan);
+        DeleteLeftovers(plan, entry);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
         var index = SourceIndexer.Build(plan.Source, indexProgress, cancellationToken);
@@ -205,10 +205,13 @@ public sealed class BackupRunner : IBackupRunner
     }
 
     /// <summary>Removes what earlier runs of this plan left behind: unfinished ".partial" folders and ".deleting" remains.</summary>
-    private void DeleteLeftovers(BackupPlan plan)
+    private void DeleteLeftovers(BackupPlan plan, RunLogEntry entry)
     {
         foreach (var directory in Directory.EnumerateDirectories(plan.Target).ToList())
         {
+            if (new DirectoryInfo(directory).LinkTarget is not null)
+                continue;   // never follow a link out of the target
+
             var name = Path.GetFileName(directory);
             if (name.EndsWith(VersionName.PartialSuffix, StringComparison.OrdinalIgnoreCase))
             {
@@ -232,7 +235,7 @@ public sealed class BackupRunner : IBackupRunner
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    // Best effort; the next run tries again.
+                    entry.Warnings.Add($"Remains of an earlier removal could not be deleted (\"{name}\"): {ex.Message}");
                 }
             }
         }
@@ -251,13 +254,30 @@ public sealed class BackupRunner : IBackupRunner
         }
     }
 
-    /// <summary>Remains belong to the plan by their manifest; without one (it is deleted last), by their name.</summary>
+    /// <summary>False when the folder holds anything or cannot be examined.</summary>
+    private static bool IsEmpty(string directory)
+    {
+        try
+        {
+            return !Directory.EnumerateFileSystemEntries(directory).Any();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Remains belong to the plan by their manifest. The manifest is deleted last, so remains without one that still
+    /// hold files are not ours by construction; empty ones are removed when the name matches.
+    /// </summary>
     private static bool IsOwnRemains(string directory, BackupPlan plan, string folderPlanName) =>
         VersionCatalog.Probe(directory, plan.Id).Ownership switch
         {
             VersionOwnership.Owned => true,
             VersionOwnership.NoManifest =>
-                HasManifest(directory) == false && folderPlanName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase),
+                HasManifest(directory) == false && folderPlanName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase) &&
+                IsEmpty(directory),
             _ => false,
         };
 
@@ -290,16 +310,31 @@ public sealed class BackupRunner : IBackupRunner
             if (version.Name.Equals(entry.Version, StringComparison.OrdinalIgnoreCase))
                 continue;   // never the version this run just made, whatever the clock or the rules say
 
-            try
-            {
-                VersionRemover.Remove(version.Path, _volume);
-                entry.RetentionDeleted.Add(version.Name);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                entry.Warnings.Add($"Retention could not delete \"{version.Name}\": {ex.Message}");
-            }
+            TryRemoveVersion(version, entry, $"Retention could not delete \"{version.Name}\"");
         }
+    }
+
+    /// <summary>
+    /// Removes one version. True when the folder no longer is a version: it is gone, or it was renamed and only
+    /// its remains are left (the next run of the plan removes them). False when nothing was changed.
+    /// </summary>
+    private bool TryRemoveVersion(VersionInfo version, RunLogEntry entry, string failurePrefix)
+    {
+        try
+        {
+            VersionRemover.Remove(version.Path, _volume);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            if (Directory.Exists(version.Path))
+            {
+                entry.Warnings.Add($"{failurePrefix}: {ex.Message}");
+                return false;
+            }
+            entry.Warnings.Add($"\"{version.Name}\" was removed from the versions, but its remains could not be deleted yet: {ex.Message}");
+        }
+        entry.RetentionDeleted.Add(version.Name);
+        return true;
     }
 
     /// <summary>Picks the folder name for the current minute; waits for the next minute if that name is taken.</summary>

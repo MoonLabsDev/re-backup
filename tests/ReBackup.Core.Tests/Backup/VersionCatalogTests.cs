@@ -125,17 +125,7 @@ public class VersionCatalogTests : IDisposable
     {
         var real = VersionFolder.Create(_tmp.CreateDir("elsewhere"), "2026_09_01-02_00 Projects", "p1");
         var link = Path.Combine(_target, "2026_09_01-02_00 Projects");
-        using (var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{real}\"")
-               {
-                   UseShellExecute = false,
-                   CreateNoWindow = true,
-                   RedirectStandardOutput = true,
-                   RedirectStandardError = true,
-               })!)
-        {
-            process.WaitForExit();
-            process.ExitCode.Should().Be(0, "the junction must exist for this test");
-        }
+        Junction.Create(link, real);
 
         try
         {
