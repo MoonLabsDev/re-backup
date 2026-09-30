@@ -13,7 +13,9 @@ public sealed class BackupPlan
     public bool Enabled { get; set; } = true;
     public bool FreeSpaceByRetention { get; set; }
 
-    /// <summary>Plan sections not yet modelled by this version (triggers, ignore, retention) survive a load/save round trip.</summary>
+    public IgnoreSettings Ignore { get; set; } = new();
+
+    /// <summary>Plan sections not yet modelled by this version (triggers, retention) survive a load/save round trip.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 

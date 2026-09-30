@@ -50,6 +50,8 @@ public sealed class PlanStore : IDisposable
                 var expectedId = Path.GetFileNameWithoutExtension(file);
                 if (!string.Equals(plan.Id, expectedId, StringComparison.OrdinalIgnoreCase))
                     throw new JsonException($"Plan id \"{plan.Id}\" does not match file name \"{expectedId}\".");
+                plan.Ignore ??= new IgnoreSettings();
+                plan.Ignore.Patterns ??= [];
                 plans.Add(plan);
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

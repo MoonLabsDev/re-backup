@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Tests.TestSupport;
@@ -58,13 +59,68 @@ public class PlanStoreTests : IDisposable
         var path = store.PathFor("p1");
         File.WriteAllText(path, """
             { "id": "p1", "name": "Keep", "source": "C:\\x", "target": "D:\\y",
-              "triggers": [ { "type": "Daily", "time": "02:00" } ] }
+              "triggers": [ { "type": "Daily", "time": "02:00" } ],
+              "retention": [ { "period": "Monthly", "anchor": 0, "keep": 12 } ] }
             """);
 
         var plan = store.LoadAll().Plans.Single();
         store.Save(plan);
 
-        File.ReadAllText(path).Should().Contain("\"triggers\"").And.Contain("02:00");
+        using var saved = JsonDocument.Parse(File.ReadAllText(path));
+        var trigger = saved.RootElement.GetProperty("triggers")[0];
+        trigger.GetProperty("type").GetString().Should().Be("Daily");
+        trigger.GetProperty("time").GetString().Should().Be("02:00");
+        var rule = saved.RootElement.GetProperty("retention")[0];
+        rule.GetProperty("period").GetString().Should().Be("Monthly");
+        rule.GetProperty("anchor").GetInt32().Should().Be(0);
+        rule.GetProperty("keep").GetInt32().Should().Be(12);
+    }
+
+    [Fact]
+    public void Ignore_section_round_trips_with_spec_property_names()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Projects" };
+        plan.Ignore.UseGlobalDefaults = false;
+        plan.Ignore.HonorNestedFiles = false;
+        plan.Ignore.Patterns.AddRange(["node_modules/", "*.tmp", "!keep.tmp"]);
+
+        store.Save(plan);
+
+        using var saved = JsonDocument.Parse(File.ReadAllText(store.PathFor(plan.Id)));
+        var ignore = saved.RootElement.GetProperty("ignore");
+        ignore.GetProperty("useGlobalDefaults").GetBoolean().Should().BeFalse();
+        ignore.GetProperty("honorNestedFiles").GetBoolean().Should().BeFalse();
+        ignore.GetProperty("patterns").EnumerateArray().Select(e => e.GetString())
+            .Should().Equal("node_modules/", "*.tmp", "!keep.tmp");
+        store.LoadAll().Plans.Single().Ignore.Should().BeEquivalentTo(plan.Ignore);
+    }
+
+    [Fact]
+    public void Missing_ignore_section_yields_defaults()
+    {
+        using var store = NewStore();
+        File.WriteAllText(store.PathFor("p1"), """{ "id": "p1", "name": "Old" }""");
+
+        var ignore = store.LoadAll().Plans.Single().Ignore;
+
+        ignore.UseGlobalDefaults.Should().BeTrue();
+        ignore.HonorNestedFiles.Should().BeTrue();
+        ignore.Patterns.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("""{ "id": "p1", "name": "X", "ignore": null }""")]
+    [InlineData("""{ "id": "p1", "name": "X", "ignore": { "patterns": null } }""")]
+    public void Null_ignore_values_are_replaced_by_defaults(string json)
+    {
+        using var store = NewStore();
+        File.WriteAllText(store.PathFor("p1"), json);
+
+        var ignore = store.LoadAll().Plans.Single().Ignore;
+
+        ignore.Should().NotBeNull();
+        ignore.Patterns.Should().BeEmpty();
     }
 
     [Fact]
