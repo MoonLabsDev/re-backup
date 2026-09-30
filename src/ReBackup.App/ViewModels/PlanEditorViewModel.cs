@@ -247,6 +247,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     private void OnTriggersEdited()
     {
         RefreshNextRuns();
+        RetentionPreview.RequestEvaluate();
         Touch();
     }
 
