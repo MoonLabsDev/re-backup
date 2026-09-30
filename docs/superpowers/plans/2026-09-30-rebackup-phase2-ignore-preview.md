@@ -2892,8 +2892,27 @@ git commit -m "feat(app): treemap of the indexed source, linked to the tree" -m 
 
 ---
 
-## Carry-forward (not in this plan)
+## Carry-forward from Phase 2 execution (final review triage)
 
-- Precondition for Phase 3: single-instance guard with restart handoff (see the Phase 1 plan).
-- Saving new global default patterns in the settings dialog does not re-evaluate open previews until the next edit or index.
-- "Un-ignore this" has no effect on an entry below an ignored folder (gitignore semantics); the tooltip explains why.
+Fix first in Phase 3 (small, left over from the final fix wave):
+- `PreviewRowViewModel.StatusDetail`: the tooltip suffix reads `Not scanned:{Error}`; add the space after the colon.
+- `IgnorePattern.AppendCharacterClass`: a negated class that starts with `-` (`[!-x]`) now compiles to the range `[^/-x]`. Emit the slash escaped or at the end of the class, and add a test.
+
+Explicit Phase 3 tasks (the backup runner reuses the index and the evaluator):
+- Single-instance guard with restart handoff (from Phase 1).
+- Folders that were not scanned (links, nesting deeper than `SourceIndexer.MaxDepth`, unreadable) only carry a free-text `IndexNode.Error` and evaluate as Included with 0 files. The runner must record every such non-ignored node (including `RootNode.Error`) as skipped, or a run reports Completed with subtrees missing. Add a typed reason and a rolled-up count on `EvaluatedNode`.
+- An unreadable `.backupignore` is dropped silently; the runner should log a warning.
+- Decide how file symlinks and empty included folders are backed up.
+- Consider `IndexEvaluator.Evaluate(index, settings, globalDefaults)` so callers cannot forget `index.IgnoreFiles`.
+
+Later / nice to have:
+- "Un-ignore this" does nothing for entries below an ignored folder or excluded by a nested `.backupignore` (gitignore semantics); enable it only where it can work.
+- Regex patterns have no match timeout (`RegexOptions.NonBacktracking` would fit).
+- Treemap: pruned tiny children are left out of the weight sum, so the rest of a folder is drawn slightly too large; only leaf tiles are clickable; a selected entry that is too small to draw has no outline.
+- A pattern edit during the very first evaluation after indexing is only applied on the next edit.
+- The shared list may drop a plan's row selection when switching plans; the list scrolls to the selection on every re-evaluation.
+- No keyboard expand/collapse in the tree; collapsing forgets which descendants were expanded.
+- Each keystroke in the pattern box re-validates all plans; indexes and evaluated trees are kept per plan for the whole session (memory on very large sources).
+- `ByteSize` shows `1024.0 KB` just below a unit boundary; POSIX character classes (`[[:alpha:]]`) are not supported.
+- Test gaps: case-insensitivity rows for each match path, unreadable folder, mid-scan cancel, evaluator status equal to `IgnoreMatcher.Match` for every node.
+- Commit c320d92 has its Co-Authored-By line in the subject instead of a trailer.
