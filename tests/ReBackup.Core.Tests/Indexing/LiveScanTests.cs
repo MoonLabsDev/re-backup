@@ -369,7 +369,16 @@ public class LiveScanTests : IDisposable
             var x = Child(Child(scan.Root, "a"), "x");
             x.State.Should().Be(ScanState.Waiting);
 
+            // Before prioritizing: waiting folders are c and a/x, and b is being scanned (not counted as waiting)
+            var waitingBefore = scan.WaitingFolders;
             scan.Prioritize(x);
+            // Prioritize does not change WaitingFolders: it just re-queues an already-counted folder
+            scan.WaitingFolders.Should().Be(waitingBefore);
+
+            // Calling Prioritize again on an already-wanted folder is a no-op
+            scan.Prioritize(x);
+            scan.WaitingFolders.Should().Be(waitingBefore);
+
             release.Set();
             await scan.Completion.WaitAsync(Timeout);
         }

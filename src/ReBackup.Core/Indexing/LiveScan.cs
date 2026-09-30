@@ -84,7 +84,6 @@ public sealed class LiveScan
             folder.Wanted = true;
             // The folder's first queue entry stays behind; it is skipped when a worker finds it no longer waiting.
             _queue.Enqueue(folder, Rank(folder));
-            Interlocked.Increment(ref _waiting);
             Monitor.PulseAll(_gate);
         }
     }
@@ -138,8 +137,7 @@ public sealed class LiveScan
                     {
                         if (next.State != ScanState.Waiting)
                         {
-                            // A second entry of a prioritised folder that was taken already; it was counted once more.
-                            Interlocked.Decrement(ref _waiting);
+                            // A second entry of a prioritised folder that was taken already; skip silently.
                             continue;
                         }
                         folder = next;
