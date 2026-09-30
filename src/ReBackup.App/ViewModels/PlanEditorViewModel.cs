@@ -50,6 +50,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     /// <summary>Index and preview of this plan's source; cached for the session.</summary>
     public IgnorePreviewViewModel Preview { get; }
 
+    /// <summary>Queue state, progress and history of this plan.</summary>
+    public PlanRunViewModel Run { get; } = new();
+
+    /// <summary>A copy of the plan as last saved (unsaved edits are not part of a run).</summary>
+    public BackupPlan SavedPlan() => _saved.Clone();
+
     public string Id => _saved.Id;
 
     public string DisplayName =>

@@ -121,10 +121,14 @@ Hashes are xxHash64 (System.IO.Hashing), computed while copying. The manifest is
   "startUtc": "…", "endUtc": "…", "durationMs": 81234,
   "status": "Completed|CompletedWithWarnings|Full|Error|Canceled",
   "reason": "text for Full/Error",
+  "version": "2026_09_30-14_05 Projects",
   "filesCopied": 12034, "bytesCopied": 5368709120,
-  "skipped": [ { "path": "…", "reason": "locked" } ],
+  "skippedCount": 1,
+  "skipped": [ { "path": "…", "reason": "locked by another program" } ],
   "retentionDeleted": ["2026_09_01-02_00 Projects"] }
 ```
+
+`version` is null when the run did not complete. `skipped` stores at most the first 1000 entries of a run; `skippedCount` counts all of them.
 
 ## 5. Core components
 

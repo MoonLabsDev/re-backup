@@ -9,12 +9,17 @@
 
     <DockPanel>
         <StatusBar DockPanel.Dock="Bottom">
-            <TextBlock Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding QueueStatus}" />
+            </StatusBarItem>
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
+            </StatusBarItem>
         </StatusBar>
 
         <Grid Margin="8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="320" />
                 <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
@@ -25,14 +30,75 @@
                     <Button Content="Delete" Padding="10,4" Margin="8,0,0,0" Command="{Binding DeletePlanCommand}" />
                     <Button Content="Settings…" Padding="10,4" Margin="8,0,0,0" Command="{Binding OpenSettingsCommand}" />
                 </StackPanel>
-                <ListBox ItemsSource="{Binding Plans}" SelectedItem="{Binding SelectedPlan}">
+                <ListBox ItemsSource="{Binding Plans}" SelectedItem="{Binding SelectedPlan}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Margin="2,4">
-                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding Source}" Foreground="Gray" FontSize="11"
-                                           TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
+                            <Grid Margin="2,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Source}" Foreground="Gray" FontSize="11"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Run.LastRunText}" Foreground="Gray" FontSize="11"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <StackPanel>
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Run.IsActive}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <ProgressBar Height="6" Margin="0,3,0,1" Maximum="100"
+                                                     Value="{Binding Run.ProgressPercent, Mode=OneWay}"
+                                                     IsIndeterminate="{Binding Run.IsIndeterminate}" />
+                                        <TextBlock Text="{Binding Run.ProgressText}" FontSize="11"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <Grid Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0">
+                                    <Button Content="Run now" Padding="8,2"
+                                            Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Run.IsActive}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    <Button Content="Cancel" Padding="8,2"
+                                            Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Run.IsActive}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </Grid>
+                            </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
@@ -107,6 +173,10 @@
 
                     <TabItem Header="Ignore &amp; Preview">
                         <views:IgnorePreviewView />
+                    </TabItem>
+
+                    <TabItem Header="History">
+                        <views:HistoryView />
                     </TabItem>
                 </TabControl>
             </DockPanel>

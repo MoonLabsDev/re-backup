@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using ReBackup.App.Services;
 using ReBackup.App.ViewModels;
+using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
@@ -23,6 +24,7 @@ public partial class App : Application
     private SettingsStore _settingsStore = null!;
     private AppSettings _settings = null!;
     private PlanStore _planStore = null!;
+    private BackupQueue _queue = null!;
     private MainViewModel _mainViewModel = null!;
     private MainWindow _window = null!;
     private bool _exitRequested;
@@ -105,7 +107,9 @@ public partial class App : Application
         var planStore = new PlanStore(paths.PlansDirectory);
         try
         {
-            var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings);
+            var queue = new BackupQueue(new BackupRunner(), planId => new RunLog(paths.LogFileFor(planId)));
+            var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue,
+                action => Dispatcher.InvokeAsync(action));
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
             planStore.StartWatching();
 
@@ -114,6 +118,7 @@ public partial class App : Application
             _settings = settings;
             _planStore = planStore;
             _mainViewModel = mainViewModel;
+            _queue = queue;
         }
         catch
         {
