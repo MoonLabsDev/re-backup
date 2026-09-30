@@ -6,6 +6,8 @@ namespace ReBackup.Core.Backup;
 public static class VersionName
 {
     public const string PartialSuffix = ".partial";
+    /// <summary>Suffix of a version folder that retention is removing.</summary>
+    public const string DeletingSuffix = ".deleting";
     public const string ManifestFileName = "re-manifest.json";
     private const string TimestampFormat = "yyyy_MM_dd-HH_mm";
 
@@ -24,4 +26,25 @@ public static class VersionName
         return DateTime.TryParseExact(folderName.AsSpan(0, stampLength), TimestampFormat,
             CultureInfo.InvariantCulture, DateTimeStyles.None, out localTime);
     }
+
+    /// <summary>True when the folder name is a timestamp, one space and any non-empty name.</summary>
+    public static bool TryParseAny(string folderName, out DateTime localTime, out string planName)
+    {
+        localTime = default;
+        planName = "";
+        var stampLength = TimestampFormat.Length;
+        if (folderName.Length <= stampLength + 1 || folderName[stampLength] != ' ')
+            return false;
+        if (!DateTime.TryParseExact(folderName.AsSpan(0, stampLength), TimestampFormat,
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out localTime))
+            return false;
+
+        planName = folderName[(stampLength + 1)..];
+        return true;
+    }
+
+    /// <summary>True for folders that are being written (".partial") or removed (".deleting"); they are never versions.</summary>
+    public static bool IsTransient(string folderName) =>
+        folderName.EndsWith(PartialSuffix, StringComparison.OrdinalIgnoreCase) ||
+        folderName.EndsWith(DeletingSuffix, StringComparison.OrdinalIgnoreCase);
 }

@@ -290,6 +290,8 @@ public sealed class BackupRunner : IBackupRunner
 
         // The last report comes before the rename: a throwing progress callback must not undo a finished backup.
         Report(BackupPhase.Finishing, "", force: true);
+        manifest.FileCount = manifest.Files.Count;
+        manifest.TotalBytes = manifest.Files.Sum(f => f.Size);
         using (var stream = File.Create(Path.Combine(partialPath, VersionName.ManifestFileName)))
         {
             JsonSerializer.Serialize(stream, manifest, JsonDefaults.Options);

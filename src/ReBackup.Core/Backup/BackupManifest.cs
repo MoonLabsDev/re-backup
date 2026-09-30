@@ -8,6 +8,12 @@ public sealed class BackupManifest
     public string PlanName { get; set; } = "";
     public DateTime CreatedUtc { get; set; }
     public string Source { get; set; } = "";
+    /// <summary>Number of entries in <see cref="Files"/>. Stands in front of the list so that it can be read without it.</summary>
+    public int? FileCount { get; set; }
+
+    /// <summary>Sum of the sizes in <see cref="Files"/>.</summary>
+    public long? TotalBytes { get; set; }
+
     public List<ManifestFile> Files { get; set; } = [];
 }
 

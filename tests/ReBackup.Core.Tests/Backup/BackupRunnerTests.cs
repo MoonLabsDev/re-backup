@@ -453,6 +453,19 @@ public class BackupRunnerTests : IDisposable
         entry.FilesCopied.Should().Be(2);
     }
 
+    [Fact]
+    public async Task Manifest_carries_the_file_count_and_total_size_in_front_of_the_file_list()
+    {
+        await Runner().RunAsync(Request(Plan()));
+
+        var json = File.ReadAllText(Path.Combine(VersionPath(), "re-manifest.json"));
+        var manifest = JsonSerializer.Deserialize<BackupManifest>(json, JsonDefaults.Options)!;
+        manifest.FileCount.Should().Be(2);
+        manifest.TotalBytes.Should().Be(16);
+        json.IndexOf("\"totalBytes\"", StringComparison.Ordinal).Should().BeLessThan(json.IndexOf("\"files\"", StringComparison.Ordinal));
+        ManifestReader.ReadHeader(Path.Combine(VersionPath(), "re-manifest.json")).TotalBytes.Should().Be(16);
+    }
+
     private static void RunMklink(string link, string target)
     {
         var info = new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")

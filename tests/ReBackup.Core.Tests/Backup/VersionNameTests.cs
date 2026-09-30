@@ -41,4 +41,31 @@ public class VersionNameTests
     {
         VersionName.TryParse(folderName, "Projects", out _).Should().BeFalse();
     }
+
+    [Theory]
+    [InlineData("2026_09_30-14_05 Projects", true, "Projects")]
+    [InlineData("2026_09_30-14_05 My plan v2", true, "My plan v2")]
+    [InlineData("2026_09_30-14_05 ", false, "")]
+    [InlineData("2026_09_30-14_05", false, "")]
+    [InlineData("2026_13_30-14_05 Projects", false, "")]
+    [InlineData("2026_09_30-14_05_Projects", false, "")]
+    [InlineData("notes", false, "")]
+    public void TryParseAny_accepts_a_timestamp_followed_by_any_name(string folder, bool expected, string expectedName)
+    {
+        VersionName.TryParseAny(folder, out var time, out var name).Should().Be(expected);
+
+        name.Should().Be(expectedName);
+        if (expected)
+            time.Should().Be(new DateTime(2026, 9, 30, 14, 5, 0));
+    }
+
+    [Theory]
+    [InlineData("2026_09_30-14_05 Projects.partial", true)]
+    [InlineData("2026_09_30-14_05 Projects.PARTIAL", true)]
+    [InlineData("2026_09_30-14_05 Projects.deleting", true)]
+    [InlineData("2026_09_30-14_05 Projects", false)]
+    public void IsTransient_recognises_folders_that_are_being_written_or_removed(string folder, bool expected)
+    {
+        VersionName.IsTransient(folder).Should().Be(expected);
+    }
 }
