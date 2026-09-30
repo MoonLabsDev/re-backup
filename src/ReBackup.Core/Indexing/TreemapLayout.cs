@@ -14,9 +14,14 @@ public static class TreemapLayout
         TreemapRect bounds)
     {
         var tiles = new List<TreemapTile<T>>();
+
+        // Guard against non-finite bounds.
+        if (!double.IsFinite(bounds.Width) || !double.IsFinite(bounds.Height))
+            return tiles;
+
         var weighted = items
             .Select(item => (Item: item, Weight: weight(item)))
-            .Where(x => x.Weight > 0)
+            .Where(x => x.Weight > 0 && double.IsFinite(x.Weight))
             .OrderByDescending(x => x.Weight)
             .ToList();
         if (weighted.Count == 0 || bounds.Width <= 0 || bounds.Height <= 0)
@@ -24,34 +29,45 @@ public static class TreemapLayout
 
         var scale = bounds.Area / weighted.Sum(x => x.Weight);
         var row = new List<(T Item, double Area)>();
+        var rowSum = 0.0;
+        var rowMax = 0.0;
+        var rowMin = 0.0;
         var free = bounds;
+
         foreach (var (item, itemWeight) in weighted)
         {
             var area = itemWeight * scale;
             var side = Math.Min(free.Width, free.Height);
-            if (row.Count > 0 && WorstRatio(row, area, side) > WorstRatio(row, 0, side))
+
+            if (row.Count > 0)
             {
-                free = PlaceRow(row, free, tiles);
-                row.Clear();
+                var worstWithout = Worst(rowSum, rowMax, rowMin, side);
+                var worstWith = Worst(rowSum + area, Math.Max(rowMax, area), Math.Min(rowMin, area), side);
+                if (worstWith > worstWithout)
+                {
+                    free = PlaceRow(row, free, tiles);
+                    row.Clear();
+                    rowSum = 0;
+                    rowMax = 0;
+                    rowMin = 0;
+                }
             }
+
             row.Add((item, area));
+            rowSum += area;
+            rowMax = row.Count == 1 ? area : Math.Max(rowMax, area);
+            rowMin = row.Count == 1 ? area : Math.Min(rowMin, area);
         }
-        PlaceRow(row, free, tiles);
+
+        if (row.Count > 0)
+            PlaceRow(row, free, tiles);
+
         return tiles;
     }
 
-    /// <summary>Worst aspect ratio in the row if <paramref name="extraArea"/> were added (0 = the row as it is).</summary>
-    private static double WorstRatio<T>(List<(T Item, double Area)> row, double extraArea, double side)
+    /// <summary>Worst aspect ratio for a row with given sum, max, min areas and shorter side.</summary>
+    private static double Worst(double sum, double max, double min, double side)
     {
-        var sum = extraArea;
-        var max = extraArea;
-        var min = extraArea > 0 ? extraArea : double.MaxValue;
-        foreach (var (_, area) in row)
-        {
-            sum += area;
-            max = Math.Max(max, area);
-            min = Math.Min(min, area);
-        }
         var side2 = side * side;
         var sum2 = sum * sum;
         return Math.Max(side2 * max / sum2, sum2 / (side2 * min));

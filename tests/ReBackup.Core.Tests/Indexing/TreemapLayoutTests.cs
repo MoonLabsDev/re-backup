@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FluentAssertions;
 using ReBackup.Core.Indexing;
 
@@ -83,6 +84,38 @@ public class TreemapLayoutTests
         Layout(new TreemapRect(0, 0, 10, 10)).Should().BeEmpty();
         Layout(new TreemapRect(0, 0, 10, 10), 0, 0).Should().BeEmpty();
         Layout(new TreemapRect(0, 0, 0, 10), 1, 2).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Handles_many_tiny_items_quickly()
+    {
+        var weights = new double[100_000];
+        weights[0] = 1e9;
+        for (int i = 1; i < weights.Length; i++)
+            weights[i] = 1;
+
+        var sw = Stopwatch.StartNew();
+        var tiles = Layout(new TreemapRect(0, 0, 800, 600), weights);
+        sw.Stop();
+
+        tiles.Should().HaveCount(100_000);
+        tiles.Sum(t => t.Rect.Area).Should().BeApproximately(800 * 600, 1e-3);
+        sw.Elapsed.Should().BeLessThan(System.TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public void Non_finite_weights_are_left_out()
+    {
+        var tiles = Layout(new TreemapRect(0, 0, 10, 10), 1, double.NaN, 2, double.PositiveInfinity, 3);
+
+        tiles.Select(t => t.Item).Should().Equal(3, 2, 1);
+    }
+
+    [Fact]
+    public void Non_finite_bounds_yield_empty_result()
+    {
+        Layout(new TreemapRect(0, 0, double.NaN, 10), 1, 2).Should().BeEmpty();
+        Layout(new TreemapRect(0, 0, 10, double.PositiveInfinity), 1, 2).Should().BeEmpty();
     }
 
     private static void AssertRect(TreemapRect rect, double x, double y, double width, double height)
