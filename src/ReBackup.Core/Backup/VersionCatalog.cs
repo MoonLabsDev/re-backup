@@ -31,6 +31,7 @@ public static class VersionCatalog
     /// The versions of a plan, oldest first. A folder belongs to the plan when its name starts with a timestamp
     /// and its manifest carries the plan's id, whatever plan name the folder ends with: versions made before a
     /// rename stay with the plan. Folders that only carry the plan's current name are listed as not owned.
+    /// Folders that are links are left out.
     /// </summary>
     /// <exception cref="IOException">The target cannot be listed.</exception>
     /// <exception cref="UnauthorizedAccessException">Access to the target is denied.</exception>
@@ -46,6 +47,10 @@ public static class VersionCatalog
             cancellationToken.ThrowIfCancellationRequested();
             var name = System.IO.Path.GetFileName(directory);
             if (VersionName.IsTransient(name) || !VersionName.TryParseAny(name, out var localTime, out var folderPlanName))
+                continue;
+
+            // A junction or symbolic link is never a version: removing it would reach into the link's target.
+            if (new DirectoryInfo(directory).LinkTarget is not null)
                 continue;
 
             var (ownership, header) = Probe(directory, planId);

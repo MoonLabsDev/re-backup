@@ -107,4 +107,43 @@ public class VersionCatalogTests : IDisposable
         VersionCatalog.Probe(empty, "p1").Should().Be((VersionOwnership.NoManifest, (ManifestHeader?)null));
         VersionCatalog.Probe(_tmp.PathOf("nowhere"), "p1").Should().Be((VersionOwnership.NoManifest, (ManifestHeader?)null));
     }
+
+    [Fact]
+    public void A_canceled_token_stops_the_listing()
+    {
+        VersionFolder.Create(_target, "2026_09_01-02_00 Projects", "p1");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = () => VersionCatalog.List(_target, "p1", "Projects", cts.Token);
+
+        act.Should().Throw<OperationCanceledException>();
+    }
+
+    [Fact]
+    public void A_folder_that_is_a_link_is_not_listed()
+    {
+        var real = VersionFolder.Create(_tmp.CreateDir("elsewhere"), "2026_09_01-02_00 Projects", "p1");
+        var link = Path.Combine(_target, "2026_09_01-02_00 Projects");
+        using (var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{real}\"")
+               {
+                   UseShellExecute = false,
+                   CreateNoWindow = true,
+                   RedirectStandardOutput = true,
+                   RedirectStandardError = true,
+               })!)
+        {
+            process.WaitForExit();
+            process.ExitCode.Should().Be(0, "the junction must exist for this test");
+        }
+
+        try
+        {
+            List().Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(link);   // removes the junction only
+        }
+    }
 }
