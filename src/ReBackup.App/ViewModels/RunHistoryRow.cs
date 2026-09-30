@@ -21,6 +21,7 @@ public sealed class RunHistoryRow
         RunStatus.Full => "Aborted: target full",
         RunStatus.Error => "Aborted: error",
         RunStatus.Canceled => "Canceled",
+        RunStatus.Completed when _entry.Warnings.Count > 0 => "Completed (retention warnings)",
         _ => "Completed",
     };
 
@@ -47,6 +48,11 @@ public sealed class RunHistoryRow
             {
                 lines.Add("Deleted by retention:");
                 lines.AddRange(_entry.RetentionDeleted.Select(v => "  " + v));
+            }
+            if (_entry.Warnings.Count > 0)
+            {
+                lines.Add("Warnings:");
+                lines.AddRange(_entry.Warnings.Select(w => "  " + w));
             }
             return string.Join(Environment.NewLine, lines);
         }

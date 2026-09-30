@@ -1,9 +1,11 @@
+using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Retention;
 
 namespace ReBackup.App.ViewModels;
 
@@ -52,6 +54,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     /// <summary>Queue state, progress and history of this plan.</summary>
     public PlanRunViewModel Run { get; } = new();
+
+    /// <summary>The retention rules as edited.</summary>
+    public ObservableCollection<RetentionRuleViewModel> RetentionRuleRows { get; } = [];
+
+    public bool HasNoRetentionRules => RetentionRuleRows.Count == 0;
 
     /// <summary>A copy of the plan as last saved (unsaved edits are not part of a run).</summary>
     public BackupPlan SavedPlan() => _saved.Clone();
@@ -104,6 +111,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
         plan.Ignore = CurrentIgnoreSettings();
+        plan.Retention = RetentionRuleRows.Select(row => row.ToRule()).ToList();
         return plan;
     }
 
@@ -160,6 +168,35 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     {
         var text = IgnorePatternsText.TrimEnd('\r', '\n');
         IgnorePatternsText = text.Length == 0 ? pattern : text + Environment.NewLine + pattern;
+    }
+
+    [RelayCommand]
+    private void AddRetentionRule()
+    {
+        AddRetentionRow(new RetentionRule { Period = RetentionPeriod.Daily, Keep = 7 });
+        OnRetentionRulesEdited();
+    }
+
+    [RelayCommand]
+    private void RemoveRetentionRule(RetentionRuleViewModel? row)
+    {
+        if (row is null || !RetentionRuleRows.Remove(row))
+            return;
+        row.Changed -= OnRetentionRulesEdited;
+        OnRetentionRulesEdited();
+    }
+
+    private void AddRetentionRow(RetentionRule rule)
+    {
+        var row = new RetentionRuleViewModel(rule);
+        row.Changed += OnRetentionRulesEdited;
+        RetentionRuleRows.Add(row);
+    }
+
+    private void OnRetentionRulesEdited()
+    {
+        OnPropertyChanged(nameof(HasNoRetentionRules));
+        Touch();
     }
 
     public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());
@@ -221,10 +258,17 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);
             UseGlobalIgnoreDefaults = plan.Ignore.UseGlobalDefaults;
             HonorNestedIgnoreFiles = plan.Ignore.HonorNestedFiles;
+
+            foreach (var row in RetentionRuleRows)
+                row.Changed -= OnRetentionRulesEdited;
+            RetentionRuleRows.Clear();
+            foreach (var rule in plan.Retention)
+                AddRetentionRow(rule);
         }
         finally
         {
             _loading = false;
         }
+        OnPropertyChanged(nameof(HasNoRetentionRules));
     }
 }

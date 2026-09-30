@@ -175,6 +175,10 @@
                         <views:IgnorePreviewView />
                     </TabItem>
 
+                    <TabItem Header="Retention">
+                        <views:RetentionView />
+                    </TabItem>
+
                     <TabItem Header="History">
                         <views:HistoryView />
                     </TabItem>
