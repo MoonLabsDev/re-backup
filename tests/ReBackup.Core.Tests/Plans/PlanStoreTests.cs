@@ -139,6 +139,23 @@ public class PlanStoreTests : IDisposable
         result.Errors.Should().ContainSingle().Which.FilePath.Should().EndWith("bad.json");
     }
 
+    [Theory]
+    [InlineData("triggers")]
+    [InlineData("retention")]
+    public void A_list_with_an_empty_entry_is_reported(string list)
+    {
+        using var store = NewStore();
+        store.Save(new BackupPlan { Name = "Good" });
+        File.WriteAllText(store.PathFor("p1"), $$"""{ "id": "p1", "name": "Broken", "{{list}}": [null] }""");
+
+        var result = store.LoadAll();
+
+        result.Plans.Should().ContainSingle().Which.Name.Should().Be("Good");
+        result.Errors.Should().ContainSingle().Which.Message.Should().Contain("empty entry");
+        var act = () => store.TryLoad("p1");
+        act.Should().Throw<JsonException>();
+    }
+
     [Fact]
     public void Id_not_matching_file_name_is_reported()
     {

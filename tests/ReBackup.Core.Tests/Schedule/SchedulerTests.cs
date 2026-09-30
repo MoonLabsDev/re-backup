@@ -361,15 +361,17 @@ public class SchedulerTests : IDisposable
         scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
         scheduler.Start(_ => null);
 
-        // Advance to 02:00:01 (past the trigger)
+        // Advance to 02:00:32 (past the trigger; the checks due at 01:59:01 and 02:00:01 see 02:00:32)
         fakeTime.Advance(TimeSpan.FromSeconds(122));
         enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
 
-        // Set the clock back by 3 minutes (simulating a system clock adjustment)
+        // Set the clock back by 3 minutes (simulating a system clock adjustment): it reads 01:57:32
         offsetTime.Offset = TimeSpan.FromMinutes(-3);
 
-        // Advance 10 minutes - the trigger should not be run again
-        fakeTime.Advance(TimeSpan.FromMinutes(10));
+        // Advance minute by minute, so the checks see 01:58:32, 01:59:32, 02:00:32 (the trigger time again) … 02:07:32:
+        // the trigger must not be run again
+        for (var i = 0; i < 10; i++)
+            fakeTime.Advance(TimeSpan.FromMinutes(1));
         enqueued.Should().HaveCount(1);
     }
 
@@ -438,7 +440,7 @@ public class SchedulerTests : IDisposable
         scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
         scheduler.Start(_ => null);
 
-        // Advance to 02:00:01 (past the trigger)
+        // Advance to 02:00:32 (past the trigger; the checks due at 01:59:01 and 02:00:01 see 02:00:32)
         fakeTime.Advance(TimeSpan.FromSeconds(122));
         enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
 
