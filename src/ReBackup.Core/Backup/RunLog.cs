@@ -34,6 +34,9 @@ public sealed class RunLogEntry
     public List<SkippedEntry> Skipped { get; set; } = [];
     public List<string> RetentionDeleted { get; set; } = [];
 
+    /// <summary>Problems that are not about a source file, e.g. a version retention could not delete. They do not change the status.</summary>
+    public List<string> Warnings { get; set; } = [];
+
     public void AddSkipped(SkippedEntry entry)
     {
         SkippedCount++;
@@ -105,6 +108,7 @@ public sealed class RunLog
                     continue;
                 entry.Skipped ??= [];
                 entry.RetentionDeleted ??= [];
+                entry.Warnings ??= [];
                 entries.Add(entry);
             }
             catch (JsonException)

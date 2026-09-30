@@ -76,6 +76,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
             BackupPhase.Copying =>
                 $"{progress.FilesDone:N0} / {progress.FilesTotal:N0} files · " +
                 $"{ByteSize.Format(progress.BytesDone)} / {ByteSize.Format(progress.BytesTotal)}",
+            BackupPhase.Retention => "Removing old versions…",
             _ => "Finishing…",
         };
     }

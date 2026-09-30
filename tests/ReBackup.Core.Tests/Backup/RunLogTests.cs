@@ -8,6 +8,21 @@ public class RunLogTests : IDisposable
 {
     private readonly TempDir _tmp = new();
 
+    [Fact]
+    public void Warnings_round_trip_and_are_empty_for_older_lines()
+    {
+        var log = new RunLog(_tmp.PathOf("warnings.jsonl"));
+        File.WriteAllText(log.LogFile, "{\"runId\":\"old\",\"status\":\"Completed\"}\n");
+        var entry = new RunLogEntry { RunId = "new", Status = RunStatus.Completed };
+        entry.Warnings.Add("Retention could not delete \"x\": in use");
+        log.Append(entry);
+
+        var entries = log.ReadAll();
+
+        entries[0].Warnings.Should().BeEmpty();
+        entries[1].Warnings.Should().Equal("Retention could not delete \"x\": in use");
+    }
+
     public void Dispose() => _tmp.Dispose();
 
     private static RunLogEntry Entry(string id, RunStatus status) => new()

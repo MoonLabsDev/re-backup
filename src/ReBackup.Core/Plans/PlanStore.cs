@@ -45,14 +45,7 @@ public sealed class PlanStore : IDisposable
         {
             try
             {
-                var plan = JsonSerializer.Deserialize<BackupPlan>(File.ReadAllText(file), JsonDefaults.Options)
-                    ?? throw new JsonException("File is empty.");
-                var expectedId = Path.GetFileNameWithoutExtension(file);
-                if (!string.Equals(plan.Id, expectedId, StringComparison.OrdinalIgnoreCase))
-                    throw new JsonException($"Plan id \"{plan.Id}\" does not match file name \"{expectedId}\".");
-                plan.Ignore ??= new IgnoreSettings();
-                plan.Ignore.Patterns ??= [];
-                plans.Add(plan);
+                plans.Add(ReadPlan(file));
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
             {
@@ -63,6 +56,34 @@ public sealed class PlanStore : IDisposable
         return new PlanLoadResult(
             plans.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList(),
             errors);
+    }
+
+    /// <summary>The plan as it is saved right now; null when there is no file for it.</summary>
+    /// <exception cref="IOException">The file cannot be read.</exception>
+    /// <exception cref="UnauthorizedAccessException">Access is denied.</exception>
+    /// <exception cref="JsonException">The file is not a plan, or not the plan with this id.</exception>
+    public BackupPlan? TryLoad(string planId)
+    {
+        try
+        {
+            return ReadPlan(PathFor(planId));
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static BackupPlan ReadPlan(string file)
+    {
+        var plan = JsonSerializer.Deserialize<BackupPlan>(File.ReadAllText(file), JsonDefaults.Options)
+            ?? throw new JsonException("File is empty.");
+        var expectedId = Path.GetFileNameWithoutExtension(file);
+        if (!string.Equals(plan.Id, expectedId, StringComparison.OrdinalIgnoreCase))
+            throw new JsonException($"Plan id \"{plan.Id}\" does not match file name \"{expectedId}\".");
+        plan.Ignore ??= new IgnoreSettings();
+        plan.Ignore.Patterns ??= [];
+        return plan;
     }
 
     public void Save(BackupPlan plan)

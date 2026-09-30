@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FluentAssertions;
+using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Retention;
 using ReBackup.Core.Tests.TestSupport;
 
 namespace ReBackup.Core.Tests.Plans;
@@ -183,5 +185,96 @@ public class PlanStoreTests : IDisposable
         store.Delete("does-not-exist");
 
         store.LoadAll().Plans.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryLoad_returns_the_plan_as_saved()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Projects", Source = @"D:\Projects", Target = @"F:\Backups" };
+        plan.Retention.Add(new RetentionRule { Period = RetentionPeriod.Daily, Keep = 7 });
+        store.Save(plan);
+        store.Save(new BackupPlan { Name = "Another" });
+
+        var loaded = store.TryLoad(plan.Id);
+
+        loaded.Should().BeEquivalentTo(plan);
+
+        plan.Retention[0].Keep = 30;
+        store.Save(plan);
+        store.TryLoad(plan.Id)!.Retention.Should().ContainSingle().Which.Keep.Should().Be(30);
+    }
+
+    [Fact]
+    public void TryLoad_returns_null_for_an_unknown_id_and_after_a_delete()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Gone" };
+        store.Save(plan);
+        store.Delete(plan.Id);
+
+        store.TryLoad("does-not-exist").Should().BeNull();
+        store.TryLoad(plan.Id).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryLoad_returns_null_when_the_plans_folder_is_gone()
+    {
+        using var store = NewStore();
+        Directory.Delete(store.PlansDirectory);
+
+        store.TryLoad("p1").Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("")]
+    [InlineData("null")]
+    [InlineData("""{ "id": "other", "name": "X" }""")]
+    public void TryLoad_throws_for_a_damaged_file(string content)
+    {
+        using var store = NewStore();
+        File.WriteAllText(store.PathFor("p1"), content);
+
+        var act = () => store.TryLoad("p1");
+
+        act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void TryLoad_fills_in_a_missing_ignore_section_like_LoadAll()
+    {
+        using var store = NewStore();
+        File.WriteAllText(store.PathFor("p1"), """{ "id": "p1", "name": "X", "ignore": { "patterns": null } }""");
+
+        store.TryLoad("p1")!.Ignore.Patterns.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Retention_rules_round_trip()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Projects" };
+        plan.Retention.Add(new RetentionRule { Period = RetentionPeriod.Monthly, Anchor = "0", Keep = 12 });
+        plan.Retention.Add(new RetentionRule { Period = RetentionPeriod.Weekly, Anchor = "Sunday", Keep = 4 });
+        store.Save(plan);
+
+        var loaded = store.LoadAll().Plans.Single();
+
+        loaded.Retention.Should().HaveCount(2);
+        loaded.Retention[0].Period.Should().Be(RetentionPeriod.Monthly);
+        loaded.Retention[0].Anchor.Should().Be("0");
+        loaded.Retention[0].Keep.Should().Be(12);
+        loaded.Retention[1].Anchor.Should().Be("Sunday");
+        loaded.Clone().Retention.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void A_null_retention_section_loads_as_no_rules()
+    {
+        var plan = JsonSerializer.Deserialize<BackupPlan>("""{ "id": "p1", "name": "Keep", "retention": null }""",
+            JsonDefaults.Options)!;
+
+        plan.Retention.Should().BeEmpty();
     }
 }

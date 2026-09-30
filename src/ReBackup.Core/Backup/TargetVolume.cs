@@ -11,6 +11,9 @@ public interface ITargetVolume
 
     /// <summary>Renames a folder on the target.</summary>
     void MoveDirectory(string source, string destination);
+
+    /// <summary>Removes a folder and everything in it.</summary>
+    void DeleteDirectory(string path);
 }
 
 public sealed class PhysicalTargetVolume : ITargetVolume
@@ -32,6 +35,8 @@ public sealed class PhysicalTargetVolume : ITargetVolume
     }
 
     public void MoveDirectory(string source, string destination) => Directory.Move(source, destination);
+
+    public void DeleteDirectory(string path) => Directory.Delete(path, recursive: true);
 
     public Stream CreateFile(string path) =>
         new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize, FileOptions.SequentialScan);

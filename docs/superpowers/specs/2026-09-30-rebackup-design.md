@@ -81,7 +81,9 @@ Default `%AppData%\ReBackup\`. The location is changeable. The pointer to it is 
 }
 ```
 
-The plan name must be a valid folder-name fragment and unique across plans. Validation rejects: a missing source, a target inside the source, a source inside the target, and an empty name.
+The plan name must be a valid folder-name fragment and unique across plans. It must not end with `.partial` or `.deleting`. Validation rejects: a missing source, a target inside the source, a source inside the target, an empty name, and retention rules that are not valid (see 7.1).
+
+A Monthly anchor is stored as a JSON number, all other anchors as text. A Weekly anchor is a weekday name (`Sunday` or `Sun`).
 
 ### 4.3 Target layout
 
@@ -91,7 +93,9 @@ The plan name must be a valid folder-name fragment and unique across plans. Vali
   2026_09_30-18_00 Projects.partial/  in-progress run (never counted as a version)
 ```
 
-A folder counts as a version of the plan only if its name matches exactly `^\d{4}_\d{2}_\d{2}-\d{2}_\d{2} <PlanName>$`. Everything else in the target is ignored and never deleted.
+A folder is a version of the plan when its name is a timestamp plus a name (`^\d{4}_\d{2}_\d{2}-\d{2}_\d{2} <name>$`), its `re-manifest.json` carries the plan's id, **and** `<name>` is the `planName` recorded in that manifest (ignoring case). `<name>` does not have to be the plan's current name, so versions made before a plan was renamed stay with the plan. A folder with the plan's id whose name was changed by hand (an Explorer copy, a folder renamed to protect it), and folders that carry the plan's name but have no manifest, an unreadable manifest, or the manifest of another plan, are shown as "not managed": retention ignores them and never deletes them. Folders that are junctions or symbolic links are never versions. Everything else in the target is ignored and never deleted.
+
+A version that retention removes is first renamed to `<name>.deleting` and then deleted, with the manifest last. Folders ending in `.partial` or `.deleting` are never versions; leftovers of the plan are removed at the start of its next run.
 
 If a folder for the same minute already exists, the run waits until the next minute boundary before starting (manual runs show "starting at hh:mm").
 
@@ -106,13 +110,15 @@ Written into each version folder at the end of a successful copy.
   "planName": "Projects",
   "createdUtc": "2026-09-30T12:05:00Z",
   "source": "D:\\Projects",
+  "fileCount": 12034,
+  "totalBytes": 5368709120,
   "files": [
     { "path": "src/app.cs", "size": 1234, "mtimeUtc": "…", "hash": "xxh64:9f…" }
   ]
 }
 ```
 
-Hashes are xxHash64 (System.IO.Hashing), computed while copying. The manifest is excluded from its own file list.
+Hashes are xxHash64 (System.IO.Hashing), computed while copying. The manifest is excluded from its own file list. `fileCount` and `totalBytes` stand in front of `files`, so the plan id and the size of a version can be read without parsing the file list; manifests written before these fields existed are summed up from their file list.
 
 ### 4.5 Run log line
 
@@ -125,10 +131,11 @@ Hashes are xxHash64 (System.IO.Hashing), computed while copying. The manifest is
   "filesCopied": 12034, "bytesCopied": 5368709120,
   "skippedCount": 1,
   "skipped": [ { "path": "…", "reason": "locked by another program" } ],
-  "retentionDeleted": ["2026_09_01-02_00 Projects"] }
+  "retentionDeleted": ["2026_09_01-02_00 Projects"],
+  "warnings": ["Retention could not delete …"] }
 ```
 
-`version` is null when the run did not complete. `skipped` stores at most the first 1000 entries of a run; `skippedCount` counts all of them.
+`version` is null when the run did not complete. `skipped` stores at most the first 1000 entries of a run; `skippedCount` counts all of them. `warnings` holds problems that are not about a source file (retention); they do not change the status.
 
 ## 5. Core components
 
@@ -139,14 +146,15 @@ Hashes are xxHash64 (System.IO.Hashing), computed while copying. The manifest is
 | `IgnoreMatcher` | gitignore semantics; `Match(relativePath, isDir) → IgnoreResult(ignored, pattern, originFile)` |
 | `SourceIndexer` | Async enumeration into an `IndexNode` tree (name, size, mtime, counts); progress + cancellation; does not apply ignores |
 | `IndexEvaluator` | Applies an `IgnoreMatcher` to an index → per-node `Included / Ignored / Partial` + rolled-up included/ignored sizes |
-| `RetentionEngine` | Pure: `(versions, rules, now) → per-version Keep/Delete + reasons` |
-| `RetentionSimulator` | Generates future run times from triggers, applies the engine run by run over a 2-year horizon → steady-state count, estimated size, timeline |
+| `RetentionEngine` | Pure: `(versions, rules) → per-version Keep/Delete + reasons` |
+| `RetentionSimulator` | Takes future run times, applies the engine run by run over a 2-year horizon → steady-state count, estimated size, timeline |
 | `ScheduleCalculator` | Pure: `(triggers, lastRun, now) → nextRun, missedSinceLastRun` |
 | `BackupRunner` | Preflight → copy + hash → manifest → rename → retention; reports `IProgress<BackupProgress>` |
 | `BackupQueue` | Single worker; one job per plan at a time (duplicate enqueue is a no-op) |
 | `Scheduler` | Checks triggers every minute; on startup enqueues one catch-up run per plan that missed a trigger |
 | `RunLog` | Append/read JSONL per plan |
-| `VersionCatalog` | Finds version folders; loads manifests; falls back to a scan (size + mtime, no hash) |
+| `VersionCatalog` | Finds a plan's version folders (timestamp name + plan id in the manifest) with their size; loads manifests; falls back to a scan (size + mtime, no hash) |
+| `VersionRemover` | Removes a version folder: rename to `.deleting`, then delete, manifest last |
 | `VersionComparer` | `(versionA, versionB) → diff tree`; `FileHistory(path) → per-version status` |
 | `Restorer` | Copy a file/folder from a version to its original path or a chosen folder; conflict policy asked per operation (overwrite / skip / keep both) |
 
@@ -184,14 +192,14 @@ The newest completed version is always kept, even if no rule claims it. An empty
 
 ### 7.2 Execution
 
-Retention runs only after a successful run (`Completed` or `CompletedWithWarnings`). It deletes folders marked Delete. A folder that fails to delete is logged as a warning and doesn't fail the run.
+Retention runs only after a successful run (`Completed` or `CompletedWithWarnings`). It deletes folders marked Delete, oldest first, and never the version that run just made. A folder that fails to delete is logged as a warning and doesn't fail the run. Rules that are not valid skip retention with a warning. Retention applies the rules as they are saved at the moment it deletes, not as they were when the run was queued; if the plan no longer exists or its file cannot be read, nothing is deleted and the log gets a warning. A version that was renamed to `.deleting` but could not be removed completely counts as deleted in the log, with a warning about the remains.
 
-When `freeSpaceByRetention` is true and preflight finds too little space, the runner deletes Delete-marked versions first (oldest first), then re-checks. It never deletes versions that retention would keep.
+When `freeSpaceByRetention` is true and preflight finds too little space, the runner deletes the versions that retention would delete after this run (decided as if the new version already existed), oldest first, re-checking the free space after each one. It deletes nothing unless the sizes of those versions add up to enough room, it never deletes the newest existing version, and it never deletes versions that retention would keep. What it deleted is logged in `retentionDeleted` even if the run then fails.
 
 ### 7.3 Preview
 
 - **Now**: the versions in the target, each marked Keep (with reasons) or Delete, plus totals (count, size before/after). This recomputes live while rules are edited.
-- **Full extension**: `RetentionSimulator` generates run times from the plan's triggers for 2 years from now, seeded with the existing versions. It applies retention after each simulated run, then reports the steady-state count (the maximum over the last simulated year), the estimated size (count × average size of existing versions, or the current indexed included size if there are none), and the surviving versions at the horizon for a timeline chart, colored by the rule that keeps each one.
+- **Full extension**: `RetentionSimulator` takes the run times of the plan's triggers for 2 years from now (until the Schedule tab exists in phase 5, the Retention tab offers an assumed backup frequency instead), seeded with the existing versions. It applies retention after each simulated run, then reports the steady-state count (the maximum over the last simulated year), the estimated size (count × average size of existing versions, or the current indexed included size if there are none), and the surviving versions at the horizon for a timeline chart, colored by the rule that keeps each one.
 
 ## 8. Schedule semantics
 

@@ -294,7 +294,10 @@ public sealed partial class MainViewModel : ObservableObject
             return;
 
         if (editor is not null)
+        {
             LoadHistory(editor);
+            editor.RetentionPreview.ReloadIfLoaded();
+        }
         StatusMessage = result.Status switch
         {
             RunStatus.Completed => $"Backup of \"{update.PlanName}\" completed in {RunHistoryRow.FormatDuration(result.DurationMs)}.",
