@@ -11,9 +11,12 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AnchorHint))]
+    [NotifyPropertyChangedFor(nameof(Weekday))]
     private RetentionPeriod _period;
 
-    [ObservableProperty] private string _anchorText = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Weekday))]
+    private string _anchorText = "";
     [ObservableProperty] private string _keepText = "1";
     [ObservableProperty] private string? _error;
 
@@ -45,10 +48,26 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
         _ => "date as MM-DD, for example 01-01",
     };
 
+    /// <summary>
+    /// The anchor as an entry of <see cref="Weekdays"/>, for the weekday list of the view; null when the anchor is
+    /// not a weekday. Writes are ignored unless the rule is weekly and a weekday is chosen, so the list can never
+    /// blank the anchor of another period.
+    /// </summary>
+    public string? Weekday
+    {
+        get => Period == RetentionPeriod.Weekly && RetentionRules.TryGetWeekday(AnchorText, out var day) ? day.ToString() : null;
+        set
+        {
+            if (value is not null && Period == RetentionPeriod.Weekly)
+                AnchorText = value;
+        }
+    }
+
     partial void OnPeriodChanged(RetentionPeriod value)
     {
         if (!_ready)
             return;
+        var before = AnchorText;
         AnchorText = value switch
         {
             RetentionPeriod.Weekly => "Sunday",
@@ -56,10 +75,20 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
             RetentionPeriod.Yearly => "01-01",
             _ => "",
         };
-        OnEdited();
+        // A changed anchor already raised Changed itself.
+        if (AnchorText == before)
+            OnEdited();
     }
 
-    partial void OnAnchorTextChanged(string value) => OnEdited();
+    partial void OnAnchorTextChanged(string value)
+    {
+        if (value is null)
+        {
+            AnchorText = "";
+            return;
+        }
+        OnEdited();
+    }
 
     partial void OnKeepTextChanged(string value) => OnEdited();
 
