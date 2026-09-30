@@ -28,7 +28,7 @@ public sealed class TreemapControl : FrameworkElement
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
     public static readonly DependencyProperty SelectedProperty = DependencyProperty.Register(
-        nameof(Selected), typeof(EvaluatedNode), typeof(TreemapControl),
+        nameof(Selected), typeof(IPreviewEntry), typeof(TreemapControl),
         new FrameworkPropertyMetadata(null,
             FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
 
@@ -51,9 +51,9 @@ public sealed class TreemapControl : FrameworkElement
         set => SetValue(RootProperty, value);
     }
 
-    public EvaluatedNode? Selected
+    public IPreviewEntry? Selected
     {
-        get => (EvaluatedNode?)GetValue(SelectedProperty);
+        get => (IPreviewEntry?)GetValue(SelectedProperty);
         set => SetValue(SelectedProperty, value);
     }
 

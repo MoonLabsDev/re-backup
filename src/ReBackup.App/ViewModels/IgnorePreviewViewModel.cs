@@ -27,7 +27,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string _summary = "";
     [ObservableProperty] private EvaluatedNode? _root;
-    [ObservableProperty] private EvaluatedNode? _selectedNode;
+    [ObservableProperty] private IPreviewEntry? _selectedNode;
 
     public IgnorePreviewViewModel(Func<string> source, Func<IgnoreSettings> ignoreSettings,
         Func<IReadOnlyList<string>> globalDefaults)
@@ -38,16 +38,16 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         Tree.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(PreviewTreeViewModel.SelectedRow))
-                SelectedNode = Tree.SelectedRow?.Node;
+                SelectedNode = Tree.SelectedRow?.Entry;
         };
     }
 
     public PreviewTreeViewModel Tree { get; } = new();
 
-    partial void OnSelectedNodeChanged(EvaluatedNode? value)
+    partial void OnSelectedNodeChanged(IPreviewEntry? value)
     {
         // Selection coming from outside the tree (the treemap): show it in the tree.
-        if (value is not null && !ReferenceEquals(Tree.SelectedRow?.Node, value))
+        if (value is not null && !ReferenceEquals(Tree.SelectedRow?.Entry, value))
             Tree.Reveal(value);
     }
 

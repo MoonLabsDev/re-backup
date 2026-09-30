@@ -188,9 +188,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             ? extension
             : null;
 
-    /// <summary>The selected preview entry, unless it is the source root (which cannot be ignored).</summary>
-    private IndexNode? SelectedEntry() =>
-        Preview.SelectedNode?.Node is { RelativePath.Length: > 0 } node ? node : null;
+    /// <summary>The selected preview entry, unless it is the source root (which cannot be ignored) or a "loading" row.</summary>
+    private IPreviewEntry? SelectedEntry() =>
+        Preview.SelectedNode is { RelativePath.Length: > 0 } entry && entry is not LoadingPlaceholder ? entry : null;
 
     private void AppendPattern(string pattern)
     {
