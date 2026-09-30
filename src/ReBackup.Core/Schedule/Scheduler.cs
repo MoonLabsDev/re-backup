@@ -49,82 +49,23 @@ public sealed class Scheduler : IDisposable
         get { lock (_gate) return _paused; }
         set
         {
-            var due = new List<(string PlanId, RunTrigger Trigger)>();
+            List<(string PlanId, RunTrigger Trigger)> due = [];
             lock (_gate)
             {
                 if (_paused == value)
                     return;
 
                 var now = UtcNow;
-                if (value)
-                {
-                    // PAUSING: handle already-due runs only if scheduler is running
-                    if (_started && !_stopped)
-                    {
-                        // Queue due catch-ups first (like Check does)
-                        if (_catchUps.Count > 0 && now >= _catchUpAtUtc)
-                        {
-                            foreach (var id in _catchUps)
-                            {
-                                if (_plans.TryGetValue(id, out var plan) && plan.Enabled)
-                                    due.Add((id, RunTrigger.CatchUp));
-                            }
-                            _catchUps.Clear();
-                        }
-
-                        // Queue due scheduled runs, but skip plans that got catch-ups
-                        foreach (var plan in _plans.Values)
-                        {
-                            if (!plan.Enabled || due.Exists(d => string.Equals(d.PlanId, plan.Id, StringComparison.OrdinalIgnoreCase)))
-                                continue;
-
-                            var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
-                            if (now > since && LastDue(plan, since, now) is not null)
-                            {
-                                due.Add((plan.Id, RunTrigger.Scheduled));
-                                // The scheduled run covers the pending catch-up, as in Check
-                                _catchUps.Remove(plan.Id);
-                            }
-                        }
-                    }
-
-                    // Set _checkedUntil to max(existing, now) to never go backwards (e.g. after clock set-back)
-                    foreach (var id in _plans.Keys)
-                    {
-                        if (_checkedUntil.TryGetValue(id, out var checkedUntil))
-                            _checkedUntil[id] = now > checkedUntil ? now : checkedUntil;
-                        else
-                            _checkedUntil[id] = now;
-                    }
-                    _paused = true;
-                }
+                // Pausing still queues what was due before it (a check may just not have come yet), except before Start
+                // and after Dispose; resuming skips what passed meanwhile.
+                if (value && _started && !_stopped)
+                    due = CollectDue(now);
                 else
-                {
-                    // RESUMING: set _checkedUntil to max(existing, now) to not go backwards
-                    foreach (var id in _plans.Keys)
-                    {
-                        if (_checkedUntil.TryGetValue(id, out var checkedUntil))
-                            _checkedUntil[id] = now > checkedUntil ? now : checkedUntil;
-                        else
-                            _checkedUntil[id] = now;
-                    }
-                    _paused = false;
-                }
+                    AdvanceCheckedUntil(now);
+                _paused = value;
             }
 
-            // Queue any due runs outside the lock
-            foreach (var (planId, trigger) in due)
-            {
-                try
-                {
-                    _enqueue(planId, trigger);
-                }
-                catch (Exception)
-                {
-                    // enqueue failure must not stop pause
-                }
-            }
-
+            Enqueue(due);
             RaiseChanged();
         }
     }
@@ -209,18 +150,20 @@ public sealed class Scheduler : IDisposable
             foreach (var id in missed)
                 _catchUps.Add(id);
             _catchUpAtUtc = now + CatchUpDelay;
-            foreach (var id in _plans.Keys)
-            {
-                // Never move _checkedUntil backwards
-                if (_checkedUntil.TryGetValue(id, out var checkedUntil))
-                    _checkedUntil[id] = now > checkedUntil ? now : checkedUntil;
-                else
-                    _checkedUntil[id] = now;
-            }
-            var nextMinute = new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerMinute, DateTimeKind.Utc).AddMinutes(1);
-            _timer = _time.CreateTimer(_ => SafeCheck(), null, nextMinute + CheckOffset - now, CheckInterval);
+            AdvanceCheckedUntil(now);
+            // One-shot, re-armed after every check: a periodic timer drifts, and keeps its phase after a sleep or a
+            // clock change, so its checks would no longer come right after the full minute.
+            _timer = _time.CreateTimer(_ => SafeCheck(), null, DelayToNextCheck(now), Timeout.InfiniteTimeSpan);
         }
         RaiseChanged();
+    }
+
+    /// <summary>From <paramref name="nowUtc"/> to the next check time, the first hh:mm plus <see cref="CheckOffset"/> after it.</summary>
+    private static TimeSpan DelayToNextCheck(DateTime nowUtc)
+    {
+        var sinceLastCheckTime = nowUtc - CheckOffset;
+        var lastMinute = new DateTime(sinceLastCheckTime.Ticks - sinceLastCheckTime.Ticks % TimeSpan.TicksPerMinute, DateTimeKind.Utc);
+        return lastMinute + CheckInterval + CheckOffset - nowUtc;
     }
 
     /// <summary>
@@ -272,51 +215,98 @@ public sealed class Scheduler : IDisposable
         {
             // a failing check must not take down the app; the next one runs a minute later
         }
+        finally
+        {
+            ArmNextCheck();
+        }
+    }
+
+    /// <summary>Sets the timer to the next check time, computed from the current time; never after Dispose.</summary>
+    private void ArmNextCheck()
+    {
+        lock (_gate)
+        {
+            if (_stopped || _timer is not { } timer)
+                return;
+            try
+            {
+                timer.Change(DelayToNextCheck(UtcNow), Timeout.InfiniteTimeSpan);
+            }
+            catch (Exception)
+            {
+                // Nothing better to do; the check thread must not die.
+            }
+        }
     }
 
     private void Check()
     {
-        var due = new List<(string PlanId, RunTrigger Trigger)>();
+        List<(string PlanId, RunTrigger Trigger)> due;
         lock (_gate)
         {
             if (_stopped)
                 return;
-            var now = UtcNow;
+            due = CollectDue(UtcNow);
+        }
 
-            if (_catchUps.Count > 0 && now >= _catchUpAtUtc)
+        Enqueue(due);
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// Under the lock: the runs due at <paramref name="now"/> — due catch-ups (dropped when paused), and a Scheduled run
+    /// for every enabled plan with a trigger in (checked-until, now], which covers that plan's catch-up — and then moves
+    /// every plan's checked-until to <paramref name="now"/>, never backwards.
+    /// </summary>
+    private List<(string PlanId, RunTrigger Trigger)> CollectDue(DateTime now)
+    {
+        var due = new List<(string PlanId, RunTrigger Trigger)>();
+        if (_catchUps.Count > 0 && now >= _catchUpAtUtc)
+        {
+            if (!_paused)
             {
-                if (!_paused)
+                foreach (var id in _catchUps)
                 {
-                    foreach (var id in _catchUps)
-                    {
-                        if (_plans.TryGetValue(id, out var plan) && plan.Enabled)
-                            due.Add((id, RunTrigger.CatchUp));
-                    }
+                    if (_plans.TryGetValue(id, out var plan) && plan.Enabled)
+                        due.Add((id, RunTrigger.CatchUp));
                 }
-                _catchUps.Clear();
             }
+            _catchUps.Clear();
+        }
 
+        if (!_paused)
+        {
             foreach (var plan in _plans.Values)
             {
-                var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
-
-                // Never move _checkedUntil backwards
-                if (now > since)
-                    _checkedUntil[plan.Id] = now;
-
-                if (_paused || !plan.Enabled || due.Exists(d => string.Equals(d.PlanId, plan.Id, StringComparison.OrdinalIgnoreCase)))
+                if (!plan.Enabled || due.Exists(d => string.Equals(d.PlanId, plan.Id, StringComparison.OrdinalIgnoreCase)))
                     continue;
 
-                // Only compute LastDue when time has moved forward
+                // Only when time moved forward: after the clock was set back, triggers already handled must not run again.
+                var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
                 if (now > since && LastDue(plan, since, now) is not null)
                 {
                     due.Add((plan.Id, RunTrigger.Scheduled));
-                    // Remove from catch-ups so we don't queue a second run
-                    _catchUps.Remove(plan.Id);
+                    _catchUps.Remove(plan.Id);   // the scheduled run covers the catch-up
                 }
             }
         }
 
+        AdvanceCheckedUntil(now);
+        return due;
+    }
+
+    /// <summary>Under the lock: every plan has been handled up to <paramref name="now"/>, or later if the clock was set back.</summary>
+    private void AdvanceCheckedUntil(DateTime now)
+    {
+        foreach (var id in _plans.Keys)
+        {
+            if (!_checkedUntil.TryGetValue(id, out var checkedUntil) || now > checkedUntil)
+                _checkedUntil[id] = now;
+        }
+    }
+
+    private void Enqueue(List<(string PlanId, RunTrigger Trigger)> due)
+    {
         foreach (var (planId, trigger) in due)
         {
             try
@@ -328,7 +318,6 @@ public sealed class Scheduler : IDisposable
                 // The next plan must still be started.
             }
         }
-        RaiseChanged();
     }
 
     private DateTime? LastDue(ScheduledPlan plan, DateTime sinceUtc, DateTime nowUtc)

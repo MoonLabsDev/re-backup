@@ -232,7 +232,10 @@ public class SchedulerTests : IDisposable
         StartWith(Plan("p1", DailyAt("02:00")));
         var afterStart = changes;
 
-        Minutes(3);
+        // Minute by minute: the timer is re-armed from the clock after each check, so one longer step holds only one check
+        Minutes(1);
+        Minutes(1);
+        Minutes(1);
 
         (changes - afterStart).Should().Be(3);
     }
@@ -361,7 +364,7 @@ public class SchedulerTests : IDisposable
         scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
         scheduler.Start(_ => null);
 
-        // Advance to 02:00:32 (past the trigger; the checks due at 01:59:01 and 02:00:01 see 02:00:32)
+        // Advance to 02:00:32 (past the trigger; the check due at 01:59:01 sees 02:00:32)
         fakeTime.Advance(TimeSpan.FromSeconds(122));
         enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
 
@@ -440,7 +443,7 @@ public class SchedulerTests : IDisposable
         scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
         scheduler.Start(_ => null);
 
-        // Advance to 02:00:32 (past the trigger; the checks due at 01:59:01 and 02:00:01 see 02:00:32)
+        // Advance to 02:00:32 (past the trigger; the check due at 01:59:01 sees 02:00:32)
         fakeTime.Advance(TimeSpan.FromSeconds(122));
         enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
 
@@ -454,6 +457,72 @@ public class SchedulerTests : IDisposable
         // Advance 10 minutes - trigger should not run again
         fakeTime.Advance(TimeSpan.FromMinutes(10));
         enqueued.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Checks_realign_to_the_first_second_of_the_minute_after_the_clock_moved()
+    {
+        // FakeTimeProvider keeps a periodic timer aligned with its own clock, so the wall clock is moved instead: this is
+        // what a sleep, a drifting timer or a time correction looks like to the scheduler (the timer does not move with it).
+        var fakeTime = new FakeTimeProvider(Start);
+        fakeTime.SetLocalTimeZone(TimeZoneInfo.Utc);
+        var wallClock = new OffsetTimeProvider(fakeTime);
+        using var scheduler = new Scheduler((_, _) => { }, wallClock);
+        scheduler.UpdatePlans([Plan("p1", DailyAt("02:00"))]);
+        scheduler.Start(_ => null);
+        var checks = new List<DateTime>();
+        scheduler.Changed += () => checks.Add(wallClock.GetUtcNow().UtcDateTime);
+
+        fakeTime.Advance(TimeSpan.FromSeconds(31));   // the check at 01:59:01
+        wallClock.Offset = TimeSpan.FromSeconds(90.5);   // the wall clock jumps from 01:59:01 to 02:00:31.5
+        for (var i = 0; i < 300; i++)   // second by second, so every check sees (within a second) when it runs
+            fakeTime.Advance(TimeSpan.FromSeconds(1));
+
+        // The check already due a minute after the last one sees 02:01:31.5; from then on checks run at hh:mm:01(.5) again
+        // (a periodic timer would stay at hh:mm:31.5)
+        checks.Should().HaveCountGreaterThanOrEqualTo(5);
+        checks[0].Should().Be(Utc(9, 30, 1, 59).AddSeconds(1));
+        checks[1].Should().Be(Utc(9, 30, 2, 1).AddSeconds(31.5));
+        checks.Skip(2).Should().OnlyContain(check => check.Second == 1,
+            "every later check comes in the first seconds of a minute: {0}", string.Join(", ", checks.Select(c => c.ToString("HH:mm:ss.f"))));
+    }
+
+    /// <summary>
+    /// Runs a scheduler in "W. Europe Standard Time" from <paramref name="startUtc"/> (a hh:mm:01 instant) minute by
+    /// minute for <paramref name="hours"/> hours, so every check sees exactly hh:mm:01; returns when each run was queued.
+    /// </summary>
+    private static List<(DateTime QueuedUtc, RunTrigger Trigger)> RunThroughTheNight(DateTimeOffset startUtc, int hours,
+        params ScheduleTrigger[] triggers)
+    {
+        var time = new FakeTimeProvider(startUtc);
+        time.SetLocalTimeZone(TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time"));
+        var queued = new List<(DateTime, RunTrigger)>();
+        using var scheduler = new Scheduler((_, trigger) => queued.Add((time.GetUtcNow().UtcDateTime, trigger)), time);
+        scheduler.UpdatePlans([Plan("p1", triggers)]);
+        scheduler.Start(_ => null);
+
+        for (var i = 0; i < hours * 60; i++)
+            time.Advance(TimeSpan.FromMinutes(1));
+        return queued;
+    }
+
+    [Fact]
+    public void A_trigger_in_the_hour_that_repeats_when_summer_time_ends_runs_once()
+    {
+        // 2026-10-25: 03:00 CEST becomes 02:00 CET (01:00 UTC), so 02:30 local exists at 00:30 and at 01:30 UTC.
+        var queued = RunThroughTheNight(new DateTimeOffset(2026, 10, 24, 22, 0, 1, TimeSpan.Zero), 6, DailyAt("02:30"));
+
+        queued.Should().Equal((new DateTime(2026, 10, 25, 0, 30, 1, DateTimeKind.Utc), RunTrigger.Scheduled));
+    }
+
+    [Fact]
+    public void Triggers_in_the_hour_skipped_when_summer_time_starts_run_once_after_it()
+    {
+        // 2026-03-29: 02:00 CET becomes 03:00 CEST (01:00 UTC); 02:30 does not exist and moves to 03:00, like the other trigger.
+        var queued = RunThroughTheNight(new DateTimeOffset(2026, 3, 28, 22, 0, 1, TimeSpan.Zero), 6,
+            DailyAt("02:30"), DailyAt("03:00"));
+
+        queued.Should().Equal((new DateTime(2026, 3, 29, 1, 0, 1, DateTimeKind.Utc), RunTrigger.Scheduled));
     }
 
     [Fact]
