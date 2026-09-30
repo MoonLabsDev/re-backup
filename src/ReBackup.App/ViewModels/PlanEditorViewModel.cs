@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -6,6 +7,7 @@ using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
+using ReBackup.Core.Schedule;
 
 namespace ReBackup.App.ViewModels;
 
@@ -27,6 +29,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DisplayName))] private bool _isDirty;
     [ObservableProperty] private bool _isNew;
     [ObservableProperty] private IReadOnlyList<string> _errors = [];
+    [ObservableProperty] private IReadOnlyList<string> _nextRuns = [];
+    [ObservableProperty] private string _nextRunsNote = "";
 
     public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
         Func<IReadOnlyList<string>> globalIgnoreDefaults)
@@ -64,6 +68,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     public bool HasNoRetentionRules => RetentionRuleRows.Count == 0;
 
+    /// <summary>The triggers as edited.</summary>
+    public ObservableCollection<TriggerRowViewModel> TriggerRows { get; } = [];
+
     /// <summary>A copy of the plan as last saved (unsaved edits are not part of a run).</summary>
     public BackupPlan SavedPlan() => _saved.Clone();
 
@@ -90,7 +97,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
-    partial void OnEnabledChanged(bool value) => Touch();
+    partial void OnEnabledChanged(bool value)
+    {
+        RefreshNextRuns();
+        Touch();
+    }
     partial void OnFreeSpaceByRetentionChanged(bool value) => Touch();
 
     partial void OnIgnorePatternsTextChanged(string value)
@@ -121,6 +132,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
         plan.Ignore = CurrentIgnoreSettings();
         plan.Retention = RetentionRuleRows.Select(row => row.ToRule()).ToList();
+        plan.Triggers = TriggerRows.Select(row => row.ToTrigger()).ToList();
         return plan;
     }
 
@@ -209,6 +221,61 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
+    [RelayCommand]
+    private void AddTrigger()
+    {
+        AddTriggerRow(new ScheduleTrigger { Type = TriggerType.Daily, Time = "02:00" });
+        OnTriggersEdited();
+    }
+
+    [RelayCommand]
+    private void RemoveTrigger(TriggerRowViewModel? row)
+    {
+        if (row is null || !TriggerRows.Remove(row))
+            return;
+        row.Changed -= OnTriggersEdited;
+        OnTriggersEdited();
+    }
+
+    private void AddTriggerRow(ScheduleTrigger trigger)
+    {
+        var row = new TriggerRowViewModel(trigger);
+        row.Changed += OnTriggersEdited;
+        TriggerRows.Add(row);
+    }
+
+    private void OnTriggersEdited()
+    {
+        RefreshNextRuns();
+        Touch();
+    }
+
+    /// <summary>Recomputes the next five runs of the edited triggers from the current time.</summary>
+    public void RefreshNextRuns()
+    {
+        var triggers = TriggerRows.Select(row => row.ToTrigger()).ToList();
+        if (triggers.Count == 0)
+        {
+            NextRuns = [];
+            NextRunsNote = "No triggers: this plan runs only when started by hand.";
+            return;
+        }
+        if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
+        {
+            NextRuns = [];
+            NextRunsNote = "Correct the triggers above to see the next runs.";
+            return;
+        }
+
+        NextRuns = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local)
+            .Take(5)
+            .Select(time => time.ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture))
+            .ToList();
+        NextRunsNote = Enabled
+            ? "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed)."
+            : "The plan is disabled: it runs only when started by hand until it is enabled again.";
+    }
+
     public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());
 
     public bool TrySave(PlanStore store)
@@ -274,12 +341,19 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             RetentionRuleRows.Clear();
             foreach (var rule in plan.Retention)
                 AddRetentionRow(rule);
+
+            foreach (var row in TriggerRows)
+                row.Changed -= OnTriggersEdited;
+            TriggerRows.Clear();
+            foreach (var trigger in plan.Triggers)
+                AddTriggerRow(trigger);
         }
         finally
         {
             _loading = false;
         }
         OnPropertyChanged(nameof(HasNoRetentionRules));
+        RefreshNextRuns();
         RetentionPreview.RequestEvaluate();
     }
 }

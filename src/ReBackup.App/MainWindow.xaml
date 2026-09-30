@@ -171,6 +171,10 @@
                             </Grid>
                         </TabItem>
 
+                    <TabItem Header="Schedule">
+                        <views:ScheduleView />
+                    </TabItem>
+
                     <TabItem Header="Ignore &amp; Preview">
                         <views:IgnorePreviewView />
                     </TabItem>
