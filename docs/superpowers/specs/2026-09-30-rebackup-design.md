@@ -93,7 +93,7 @@ A Monthly anchor is stored as a JSON number, all other anchors as text. A Weekly
   2026_09_30-18_00 Projects.partial/  in-progress run (never counted as a version)
 ```
 
-A folder is a version of the plan when its name starts with a timestamp (`^\d{4}_\d{2}_\d{2}-\d{2}_\d{2} <name>$`) **and** its `re-manifest.json` carries the plan's id. The name after the timestamp does not have to be the plan's current name, so versions made before a plan was renamed stay with the plan. Folders that carry the plan's name but have no manifest, an unreadable manifest, or the manifest of another plan are shown as "not managed": retention ignores them and never deletes them. Everything else in the target is ignored and never deleted.
+A folder is a version of the plan when its name is a timestamp plus a name (`^\d{4}_\d{2}_\d{2}-\d{2}_\d{2} <name>$`), its `re-manifest.json` carries the plan's id, **and** `<name>` is the `planName` recorded in that manifest (ignoring case). `<name>` does not have to be the plan's current name, so versions made before a plan was renamed stay with the plan. A folder with the plan's id whose name was changed by hand (an Explorer copy, a folder renamed to protect it), and folders that carry the plan's name but have no manifest, an unreadable manifest, or the manifest of another plan, are shown as "not managed": retention ignores them and never deletes them. Folders that are junctions or symbolic links are never versions. Everything else in the target is ignored and never deleted.
 
 A version that retention removes is first renamed to `<name>.deleting` and then deleted, with the manifest last. Folders ending in `.partial` or `.deleting` are never versions; leftovers of the plan are removed at the start of its next run.
 
@@ -192,7 +192,7 @@ The newest completed version is always kept, even if no rule claims it. An empty
 
 ### 7.2 Execution
 
-Retention runs only after a successful run (`Completed` or `CompletedWithWarnings`). It deletes folders marked Delete, oldest first, and never the version that run just made. A folder that fails to delete is logged as a warning and doesn't fail the run. Rules that are not valid skip retention with a warning.
+Retention runs only after a successful run (`Completed` or `CompletedWithWarnings`). It deletes folders marked Delete, oldest first, and never the version that run just made. A folder that fails to delete is logged as a warning and doesn't fail the run. Rules that are not valid skip retention with a warning. Retention applies the rules as they are saved at the moment it deletes, not as they were when the run was queued; if the plan no longer exists or its file cannot be read, nothing is deleted and the log gets a warning. A version that was renamed to `.deleting` but could not be removed completely counts as deleted in the log, with a warning about the remains.
 
 When `freeSpaceByRetention` is true and preflight finds too little space, the runner deletes the versions that retention would delete after this run (decided as if the new version already existed), oldest first, re-checking the free space after each one. It deletes nothing unless the sizes of those versions add up to enough room, it never deletes the newest existing version, and it never deletes versions that retention would keep. What it deleted is logged in `retentionDeleted` even if the run then fails.
 

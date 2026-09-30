@@ -3995,3 +3995,42 @@ git commit -m "feat(app): full-extension estimate and retention timeline" -m "Co
 - Real triggers for the simulation (phase 5 replaces the assumed frequency with the plan's schedule).
 - `VersionCatalog` loading full manifests and the scan fallback, version comparison, restore (phase 6).
 - The Phase 3 UI items that are still open: status dot per plan row, current file and ETA, "starting at hh:mm".
+
+---
+
+## Carry-forward from Phase 4 execution (final review triage)
+
+Changed against the plan text above during reviews (the code and the spec are the reference now):
+- A folder is a version of a plan only if its name after the timestamp equals the `planName` in its manifest. Folders with the plan's id but another name (copied or renamed by hand) are listed as `Renamed` / "Not managed" and never deleted.
+- Folders that are junctions or symbolic links are never versions; `VersionRemover` refuses them, and links nested in a version are removed as links.
+- `VersionRemover.Remove` throws `VersionRemainsException` when the rename worked but the deletion did not; such a version counts as deleted in the log, with a warning. A version that cannot be renamed is not logged as deleted.
+- `.deleting` remains without a manifest are removed only when they are empty. Failed cleanups of remains are warnings in the run log.
+- The runner applies the retention rules as saved at the moment it deletes (`PlanStore.TryLoad` through a delegate), not the rules of the queued snapshot. Plan gone or unreadable: nothing is deleted, warning.
+- The weekday list of the rule editor binds a separate `Weekday` property.
+
+Not verified by anyone: the manual checklists of Tasks 7, 8 and 9 (the Retention tab has no automated tests).
+
+Entry conditions for Phase 5 (scheduler), in addition to those recorded after Phase 3:
+- Replace the assumed backup frequency of the Retention tab by the run times of the plan's triggers (`RetentionSimulator.Simulate` already takes run times).
+- Queued snapshots get older with a scheduler: check what else besides the retention rules should be read fresh when a run starts.
+- `PlanStore.TryLoad` has no retry; a plan file being saved at that moment skips retention for that run (safe, but a warning the user will not understand).
+
+Known limitations:
+- Retention also runs after a run that completed with warnings, and after a run over an empty or half-readable source. A degraded source therefore rotates good versions out over `keep` runs. A guard (for example: skip retention when the new version is drastically smaller than the previous one) is not built.
+- After a loss of the configuration, a re-created plan gets a new id: all old versions are "Not managed" and are never cleaned up. There is no function to adopt them.
+- A plan name that Windows normalises (trailing dot or space, only possible by editing the plan file) makes all its versions "Not managed".
+- The "now" list shows what the rules do with the versions that exist; it does not include the version of the next run. In steady state it shows "delete 0" although the next run will delete the oldest.
+- The full-extension number is the count after retention; while a backup is being copied the target holds one version more.
+- Refresh on the Retention tab while retention is deleting can block a rename (the run logs a warning; the next run deletes the version).
+- Read-only files in a version folder (only possible by hand) make its removal fail every run.
+- Rules that keep almost everything (for example Daily 9999) with "a backup every hour" make the simulation slow (tens of seconds; it runs in the background and is canceled by the next edit).
+- Status strip and tray notification do not mention retention warnings; only the History tab does.
+
+Later / nice to have:
+- Links: decide "is a link" by the reparse-point attribute instead of `LinkTarget` where deletion is concerned.
+- `VersionRemover` removes files directly instead of through `ITargetVolume`; no retry on the retention rename; the link walk is not cancelable.
+- Anchor converter writes any whole number as a JSON number whatever the period; a Daily rule with an anchor and duplicate rules are not flagged.
+- Retention preview: a failed evaluation leaves its error text until the next load; after Revert changes the target while the tab is visible the list stays empty until Refresh; the idle progress bar shows an empty track; the "Assume" list does nothing before the target was read.
+- Timeline: nothing is drawn below about 200 px width; no tooltips; fixed text colour.
+- Tests: tie-break of two versions with equal time, run at exactly the horizon, simulator with invalid rules, retention after `CompletedWithWarnings`, a manifest that is a directory.
+- Still open from Phase 3: status dot per plan row, current file and ETA, "starting at hh:mm".
