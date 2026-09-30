@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -6,6 +7,7 @@ using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
 
 namespace ReBackup.App.ViewModels;
@@ -18,14 +20,16 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IDialogService _dialogs;
     private readonly Action _openSettings;
     private readonly BackupQueue _queue;
+    private readonly Scheduler _scheduler;
     private readonly Action<Action> _runOnUi;
 
     [ObservableProperty] private PlanEditorViewModel? _selectedPlan;
     [ObservableProperty] private string? _statusMessage;
     [ObservableProperty] private string _queueStatus = "No backup running";
+    [ObservableProperty] private string _schedulerStatus = "";
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
-        Action openSettings, BackupQueue queue, Action<Action> runOnUi)
+        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi)
     {
         _store = store;
         _paths = paths;
@@ -33,6 +37,7 @@ public sealed partial class MainViewModel : ObservableObject
         _dialogs = dialogs;
         _openSettings = openSettings;
         _queue = queue;
+        _scheduler = scheduler;
         _runOnUi = runOnUi;
         _queue.Changed += update => _runOnUi(() => OnJobUpdate(update));
 
@@ -42,6 +47,8 @@ public sealed partial class MainViewModel : ObservableObject
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
+        PublishPlans();
+        RefreshSchedule();
     }
 
     /// <summary>Plan name and result of a finished run; raised on the UI thread.</summary>
@@ -116,6 +123,7 @@ public sealed partial class MainViewModel : ObservableObject
             SelectedPlan = Plans.FirstOrDefault();
 
         StatusMessage = LoadErrorText(result) ?? "Plans reloaded after a change on disk.";
+        PublishPlans();
     }
 
     [RelayCommand]
@@ -180,6 +188,7 @@ public sealed partial class MainViewModel : ObservableObject
             Plans.RemoveAt(index);
         RevalidateAll();
         SelectedPlan = Plans.Count == 0 ? null : Plans[Math.Clamp(index, 0, Plans.Count - 1)];
+        PublishPlans();
     }
 
     [RelayCommand]
@@ -191,10 +200,13 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
-            StatusMessage = editor.TrySave(_store)
+            var saved = editor.TrySave(_store);
+            StatusMessage = saved
                 ? $"Saved \"{editor.Name}\"."
                 : "Not saved: fix the errors shown in the plan.";
             RevalidateAll();
+            if (saved)
+                PublishPlans();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -244,6 +256,51 @@ public sealed partial class MainViewModel : ObservableObject
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase));
         return editor is not null && Start(editor);
     }
+
+    /// <summary>Queues a run the scheduler started. It uses the plan as saved; unsaved edits do not matter.</summary>
+    public void RunScheduled(string planId, RunTrigger trigger)
+    {
+        var editor = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase));
+        if (editor is null || editor.IsNew)
+            return;
+        var plan = editor.SavedPlan();
+        if (!plan.Enabled)
+            return;   // disabled after the scheduler decided
+        _queue.Enqueue(new BackupRequest(plan, _settings.DefaultIgnorePatterns.ToList(), trigger));
+    }
+
+    /// <summary>Updates the "next run" texts and the scheduler state. Called whenever the scheduler reports a change.</summary>
+    public void RefreshSchedule()
+    {
+        var paused = _scheduler.IsPaused;
+        SchedulerStatus = paused ? "Scheduler paused" : "";
+        foreach (var editor in Plans)
+            editor.Run.NextRunText = NextRunText(editor, paused);
+    }
+
+    private string NextRunText(PlanEditorViewModel editor, bool paused)
+    {
+        if (editor.IsNew)
+            return "";
+        var plan = editor.SavedPlan();
+        if (!plan.Enabled)
+            return "Disabled: runs only by hand";
+        if (plan.Triggers.Count == 0)
+            return "No schedule";
+        if (paused)
+            return "Scheduler paused";
+        return _scheduler.NextRunUtc(editor.Id) is { } next
+            ? "Next run " + next.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture)
+            : "No schedule";
+    }
+
+    /// <summary>Hands the saved state of all saved plans to the scheduler.</summary>
+    private void PublishPlans() =>
+        _scheduler.UpdatePlans(Plans
+            .Where(p => !p.IsNew)
+            .Select(p => p.SavedPlan())
+            .Select(plan => new ScheduledPlan(plan.Id, plan.Enabled, plan.Triggers))
+            .ToList());
 
     [RelayCommand]
     private void RunNow(PlanEditorViewModel? editor)

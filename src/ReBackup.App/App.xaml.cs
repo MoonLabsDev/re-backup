@@ -13,6 +13,7 @@ using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
 
 namespace ReBackup.App;
@@ -26,6 +27,7 @@ public partial class App : Application
     private AppSettings _settings = null!;
     private PlanStore _planStore = null!;
     private BackupQueue _queue = null!;
+    private Scheduler _scheduler = null!;
     private MainViewModel _mainViewModel = null!;
     private MainWindow _window = null!;
     private bool _exitRequested;
@@ -58,6 +60,7 @@ public partial class App : Application
         _window = new MainWindow { DataContext = _mainViewModel };
         _window.Closing += OnMainWindowClosing;
         CreateTrayIcon();
+        _scheduler.Start(planId => new RunLog(_paths.LogFileFor(planId)).ReadLast()?.StartUtc);
         _singleInstance.ListenForActivation(() => Dispatcher.InvokeAsync(ShowMainWindow));
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
@@ -112,8 +115,14 @@ public partial class App : Application
             // Versions are deleted by the rules as saved at that moment, not as they were when the run was queued.
             var runner = new BackupRunner(currentRules: planId => planStore.TryLoad(planId)?.Retention);
             var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
-            var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue,
+            MainViewModel? created = null;
+            // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
+            var scheduler = new Scheduler((planId, trigger) =>
+                Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
+            var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue, scheduler,
                 action => Dispatcher.InvokeAsync(action));
+            created = mainViewModel;
+            scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
             planStore.StartWatching();
 
@@ -123,6 +132,7 @@ public partial class App : Application
             _planStore = planStore;
             _mainViewModel = mainViewModel;
             _queue = queue;
+            _scheduler = scheduler;
         }
         catch
         {
@@ -139,6 +149,9 @@ public partial class App : Application
         var runMenu = new MenuItem { Header = "Run plan" };
         _trayMenu.Items.Add(CreateTrayMenuItem("Open", ShowMainWindow));
         _trayMenu.Items.Add(runMenu);
+        var pauseItem = CreateTrayMenuItem("Pause scheduler", () => _scheduler.IsPaused = !_scheduler.IsPaused);
+        _trayMenu.Items.Add(pauseItem);
+        _trayMenu.Opened += (_, _) => pauseItem.Header = _scheduler.IsPaused ? "Resume scheduler" : "Pause scheduler";
         _trayMenu.Items.Add(new Separator());
         _trayMenu.Items.Add(CreateTrayMenuItem("Exit", ExitApp));
         _trayMenu.Opened += (_, _) => FillRunMenu(runMenu);
@@ -163,11 +176,13 @@ public partial class App : Application
 
         _mainViewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName != nameof(MainViewModel.QueueStatus) || _exitRequested || _tray is null)
+            if (e.PropertyName is not (nameof(MainViewModel.QueueStatus) or nameof(MainViewModel.SchedulerStatus))
+                || _exitRequested || _tray is null)
                 return;
             try
             {
-                var text = "ReBackup — " + _mainViewModel.QueueStatus;
+                var text = "ReBackup — " + _mainViewModel.QueueStatus +
+                           (_mainViewModel.SchedulerStatus.Length > 0 ? " · " + _mainViewModel.SchedulerStatus : "");
                 _tray.ToolTipText = text.Length > 120 ? text[..119] + "…" : text;
             }
             catch (Exception)
@@ -223,10 +238,14 @@ public partial class App : Application
         }
     }
 
-    /// <summary>Cancels queued and running backups and waits briefly for the running one to clean up its partial folder.</summary>
+    /// <summary>
+    /// Stops the scheduler, closes the queue (canceling queued and running backups) and waits briefly for the running
+    /// one to clean up its partial folder. False when it did not stop in time.
+    /// </summary>
     private bool StopBackups(TimeSpan wait)
     {
-        _queue.CancelAll();
+        _scheduler?.Dispose();
+        _queue.Close();
         try
         {
             return _queue.WhenIdleAsync().Wait(wait);
@@ -362,6 +381,10 @@ public partial class App : Application
                 return;
             }
             StopBackups(TimeSpan.FromSeconds(15));
+        }
+        else
+        {
+            StopBackups(TimeSpan.Zero);
         }
 
         _exitRequested = true;
