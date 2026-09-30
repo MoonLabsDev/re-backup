@@ -34,6 +34,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _saved = plan.Clone();
         _allPlans = allPlans;
         Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
+        RetentionPreview = new RetentionPreviewViewModel(ToPlan);
         Preview.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(IgnorePreviewViewModel.SelectedNode))
@@ -54,6 +55,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     /// <summary>Queue state, progress and history of this plan.</summary>
     public PlanRunViewModel Run { get; } = new();
+
+    /// <summary>What the retention rules do with the versions in the target.</summary>
+    public RetentionPreviewViewModel RetentionPreview { get; }
 
     /// <summary>The retention rules as edited.</summary>
     public ObservableCollection<RetentionRuleViewModel> RetentionRuleRows { get; } = [];
@@ -80,7 +84,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
-    partial void OnTargetChanged(string value) => Touch();
+    partial void OnTargetChanged(string value)
+    {
+        RetentionPreview.Invalidate();
+        Touch();
+    }
+
     partial void OnEnabledChanged(bool value) => Touch();
     partial void OnFreeSpaceByRetentionChanged(bool value) => Touch();
 
@@ -196,6 +205,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     private void OnRetentionRulesEdited()
     {
         OnPropertyChanged(nameof(HasNoRetentionRules));
+        RetentionPreview.RequestEvaluate();
         Touch();
     }
 
@@ -270,5 +280,6 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             _loading = false;
         }
         OnPropertyChanged(nameof(HasNoRetentionRules));
+        RetentionPreview.RequestEvaluate();
     }
 }

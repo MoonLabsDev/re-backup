@@ -96,7 +96,56 @@
             </ScrollViewer>
         </StackPanel>
 
-        <!-- Row 1: versions in the target now (Task 8) -->
+        <DockPanel Grid.Row="1" Margin="0,12,0,0">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                <Button DockPanel.Dock="Right" Content="Refresh" Padding="10,2"
+                        Command="{Binding RetentionPreview.RefreshCommand}" />
+                <ProgressBar DockPanel.Dock="Right" Width="80" Height="12" Margin="0,0,8,0"
+                             IsIndeterminate="{Binding RetentionPreview.IsLoading}" />
+                <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="Versions in the target now" />
+            </DockPanel>
+
+            <TextBlock DockPanel.Dock="Top" Foreground="Firebrick" TextWrapping="Wrap"
+                       Text="{Binding RetentionPreview.Error}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding RetentionPreview.Error}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
+            <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" FontWeight="SemiBold" TextWrapping="Wrap"
+                       Text="{Binding RetentionPreview.NowSummary}" />
+
+            <ListView ItemsSource="{Binding RetentionPreview.NowRows}" MinHeight="80" SelectionMode="Single">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsDelete}" Value="True">
+                                <Setter Property="Foreground" Value="Firebrick" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsManaged}" Value="False">
+                                <Setter Property="Foreground" Value="Gray" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="Date" Width="120" DisplayMemberBinding="{Binding DateText}" />
+                        <GridViewColumn Header="Decision" Width="90" DisplayMemberBinding="{Binding DecisionText}" />
+                        <GridViewColumn Header="Kept by" Width="240" DisplayMemberBinding="{Binding ReasonText}" />
+                        <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
+                        <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
+                        <GridViewColumn Header="Folder" Width="240" DisplayMemberBinding="{Binding Name}" />
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </DockPanel>
         <!-- Row 2: full extension (Task 9) -->
     </Grid>
 </UserControl>
