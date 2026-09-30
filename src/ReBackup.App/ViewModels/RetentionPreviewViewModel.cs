@@ -189,15 +189,17 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     {
         _simulateCts?.Cancel();
         var cts = _simulateCts = new CancellationTokenSource();
-        var schedule = SelectedSchedule;
-        var now = DateTime.Now;
-        var owned = versions.Where(v => v.IsOwned).ToList();
-        var seeds = owned.Select(v => new RetentionVersion(v.Name, v.LocalTime)).ToList();
-        var sizes = owned.Where(v => v.TotalBytes is not null).Select(v => v.TotalBytes!.Value).ToList();
-        long? average = sizes.Count > 0 ? (long)sizes.Average() : _fallbackVersionBytes();
+        FullSummary = "Calculating…";
 
         try
         {
+            var schedule = SelectedSchedule;
+            var now = DateTime.Now;
+            var owned = versions.Where(v => v.IsOwned).ToList();
+            var seeds = owned.Select(v => new RetentionVersion(v.Name, v.LocalTime)).ToList();
+            var sizes = owned.Where(v => v.TotalBytes is not null).Select(v => v.TotalBytes!.Value).ToList();
+            long? average = sizes.Count > 0 ? (long)sizes.Average() : _fallbackVersionBytes();
+
             // The assumed backups run at 02:00 and then every interval.
             var result = await Task.Run(() => RetentionSimulator.Simulate(seeds, rules,
                 RetentionSimulator.Every(now.Date.AddHours(2), schedule.Interval), now, average, cts.Token), cts.Token);
@@ -207,9 +209,14 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         catch (OperationCanceledException)
         {
         }
-        catch (ArgumentException)
+        catch (Exception ex)
         {
-            // Evaluate() checked the rules already; if they are not valid after all there is nothing to show.
+            // Covers ArgumentException too: Evaluate() checked the rules already, so this is unexpected.
+            if (ReferenceEquals(_simulateCts, cts))
+            {
+                ClearSimulation();
+                FullSummary = $"The full extension could not be calculated: {ex.Message}";
+            }
         }
     }
 
@@ -230,7 +237,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 result.Survivors.Where(s => s.Reasons.Any(r => r.RuleIndex == ruleIndex)).Select(s => s.LocalTime).ToList()));
         }
 
-        var others = result.Survivors.Where(s => s.Reasons.All(r => r.RuleIndex < 0)).Select(s => s.LocalTime).ToList();
+        var others = result.Survivors.Where(s => s.Reasons.Count > 0 && s.Reasons.All(r => r.RuleIndex < 0)).Select(s => s.LocalTime).ToList();
         if (others.Count > 0)
             lanes.Add(new TimelineLane(rules.Count == 0 ? "All versions" : "Newest", others));
 
