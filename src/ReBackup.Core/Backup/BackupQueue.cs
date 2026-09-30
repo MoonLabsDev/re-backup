@@ -31,7 +31,12 @@ public sealed class BackupQueue
         _time = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>Raised on worker threads. Per job: Queued, Running (repeated with progress), then Finished or Removed.</summary>
+    /// <summary>
+    /// Per job: Queued, Running (repeated with progress), then Finished or Removed. Queued is raised on the enqueuing
+    /// thread, Removed on the canceling thread, Running and Finished on the worker. Queued, Removed and Finished are
+    /// raised while the queue's lock is held, so the events of one plan are always ordered across its jobs. Handlers
+    /// must therefore not block or call back into the queue; an exception thrown by a handler is swallowed.
+    /// </summary>
     public event Action<BackupJobUpdate>? Changed;
 
     public bool IsBusy
@@ -63,13 +68,12 @@ public sealed class BackupQueue
             _queued.Add(job);
 
             // Raised inside the lock so that the worker cannot report Running before Queued.
-            // Handlers must not block or call back into the queue.
             Raise(job, JobState.Queued);
 
             if (!_workerActive)
             {
-                _workerActive = true;
                 _worker = Task.Run(ProcessAsync);
+                _workerActive = true;
             }
         }
         return true;
@@ -78,48 +82,79 @@ public sealed class BackupQueue
     /// <summary>Cancels the running job of that plan or removes its queued job. False when there is neither.</summary>
     public bool Cancel(string planId)
     {
+        Job? running = null;
         Job? removed = null;
         lock (_gate)
         {
             if (_running?.PlanId == planId)
             {
-                _running.Cancellation.Cancel();
-                return true;
+                running = _running;
             }
-            var index = _queued.FindIndex(q => q.PlanId == planId);
-            if (index < 0)
-                return false;
-            removed = _queued[index];
-            _queued.RemoveAt(index);
+            else
+            {
+                var index = _queued.FindIndex(q => q.PlanId == planId);
+                if (index < 0)
+                    return false;
+                removed = _queued[index];
+                _queued.RemoveAt(index);
+                Raise(removed, JobState.Removed);
+            }
         }
 
-        Raise(removed, JobState.Removed);
-        removed.Cancellation.Dispose();
+        removed?.Cancellation.Dispose();
+        if (running is not null)
+            CancelToken(running);
         return true;
     }
 
     public void CancelAll()
     {
         List<Job> removed;
+        Job? running;
         lock (_gate)
         {
             removed = [.. _queued];
             _queued.Clear();
-            _running?.Cancellation.Cancel();
+            running = _running;
+            foreach (var job in removed)
+                Raise(job, JobState.Removed);
         }
 
         foreach (var job in removed)
-        {
-            Raise(job, JobState.Removed);
             job.Cancellation.Dispose();
+        if (running is not null)
+            CancelToken(running);
+    }
+
+    /// <summary>Completes when nothing is queued or running. Never faults.</summary>
+    public async Task WhenIdleAsync()
+    {
+        while (true)
+        {
+            Task worker;
+            lock (_gate)
+                worker = _worker;
+
+            try { await worker; }
+            catch (Exception) { }
+
+            lock (_gate)
+            {
+                if (_queued.Count == 0 && _running is null && !_workerActive)
+                    return;
+                // A new worker may have been started meanwhile; if the old one is still winding down, let it.
+                worker = _worker;
+            }
+            if (worker.IsCompleted)
+                await Task.Yield();
         }
     }
 
-    /// <summary>Completes when nothing is queued or running.</summary>
-    public Task WhenIdleAsync()
+    /// <summary>The worker may have disposed the source in the meantime.</summary>
+    private static void CancelToken(Job job)
     {
-        lock (_gate)
-            return _worker;
+        try { job.Cancellation.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task ProcessAsync()
@@ -139,10 +174,11 @@ public sealed class BackupQueue
                 _running = job;
             }
 
+            RunLogEntry? result = null;
             try
             {
                 Raise(job, JobState.Running);
-                var result = await RunAsync(job);
+                result = await RunAsync(job);
 
                 try
                 {
@@ -152,19 +188,21 @@ public sealed class BackupQueue
                 {
                     // The run itself is over; a log that cannot be written must not stop the queue.
                 }
-
-                lock (_gate)
-                    _running = null;
-                Raise(job, JobState.Finished, result: result);
             }
             catch (Exception)
             {
-                // Unexpected exception: ensure state cleanup and continue
-                lock (_gate)
-                    _running = null;
+                // Unexpected: fall through so that the state is cleaned up and the worker carries on.
             }
             finally
             {
+                // Clearing _running and raising Finished in one critical section keeps a concurrent Enqueue of
+                // the same plan from raising Queued before Finished.
+                lock (_gate)
+                {
+                    _running = null;
+                    if (result is not null)
+                        Raise(job, JobState.Finished, result: result);
+                }
                 job.Cancellation.Dispose();
             }
         }

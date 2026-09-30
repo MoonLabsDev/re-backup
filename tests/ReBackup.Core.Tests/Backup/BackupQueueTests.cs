@@ -254,6 +254,156 @@ public class BackupQueueTests : IDisposable
         result.Reason.Should().BeNull();
     }
 
+    [Fact]
+    public async Task Events_of_one_plan_stay_well_formed_when_Enqueue_and_Cancel_race_the_worker()
+    {
+        var sequence = new List<JobState>();
+        var seqLock = new object();
+        var queue = new BackupQueue(new ImmediateRunner(), planId => new RunLog(_tmp.PathOf($"{planId}.jsonl")));
+        queue.Changed += u =>
+        {
+            if (u.PlanId != "a" || u.Progress is not null)
+                return;
+            lock (seqLock)
+                sequence.Add(u.State);
+        };
+
+        using var stop = new CancellationTokenSource();
+        var racer = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                queue.Enqueue(Request("a"));
+                queue.Cancel("a");
+            }
+        });
+
+        for (var i = 0; i < 300; i++)
+        {
+            queue.Enqueue(Request("a"));
+            if (i % 50 == 0)
+                await Task.Yield();
+        }
+
+        stop.Cancel();
+        await racer.WaitAsync(Timeout);
+        await queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        JobState[] events;
+        lock (seqLock)
+            events = [.. sequence];
+        events.Should().NotBeEmpty();
+
+        JobState? last = null;
+        foreach (var state in events)
+        {
+            var ok = state switch
+            {
+                JobState.Queued => last is null or JobState.Finished or JobState.Removed,
+                JobState.Running => last == JobState.Queued,
+                JobState.Finished => last == JobState.Running,
+                JobState.Removed => last == JobState.Queued,
+                _ => false,
+            };
+            ok.Should().BeTrue($"{state} must not follow {last?.ToString() ?? "nothing"}");
+            last = state;
+        }
+        last.Should().BeOneOf(JobState.Finished, JobState.Removed);
+    }
+
+    [Fact]
+    public async Task WhenIdleAsync_does_not_complete_before_a_job_enqueued_meanwhile_has_finished()
+    {
+        var gate = new ManualResetEventSlim();
+        var queue = new BackupQueue(_runner, planId =>
+        {
+            if (planId == "a")
+                gate.Wait(Timeout);
+            return new RunLog(_tmp.PathOf($"{planId}.jsonl"));
+        });
+        queue.Changed += _updates.Enqueue;
+
+        queue.Enqueue(Request("a"));
+        await _runner.Started("a").WaitAsync(Timeout);
+        var idle = queue.WhenIdleAsync();
+
+        _runner.Complete("a", RunStatus.Completed);
+        queue.Enqueue(Request("b")).Should().BeTrue();
+        gate.Set();
+        await _runner.Started("b").WaitAsync(Timeout);
+        idle.IsCompleted.Should().BeFalse("b is still running");
+
+        _runner.Complete("b", RunStatus.Completed);
+        await idle.WaitAsync(Timeout);
+
+        States("b").Should().Equal("Queued", "Running", "Finished");
+        queue.IsBusy.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task WhenIdleAsync_completes_after_CancelAll_with_only_a_running_job()
+    {
+        _queue.Enqueue(Request("a"));
+        await _runner.Started("a").WaitAsync(Timeout);
+        var idle = _queue.WhenIdleAsync();
+
+        _queue.CancelAll();
+        await idle.WaitAsync(Timeout);
+
+        _queue.IsBusy.Should().BeFalse();
+        _updates.Last(u => u.PlanId == "a").Result!.Status.Should().Be(RunStatus.Canceled);
+    }
+
+    [Fact]
+    public async Task Cancel_and_CancelAll_do_not_run_token_callbacks_while_holding_the_queue_lock()
+    {
+        foreach (var useCancelAll in new[] { false, true })
+        {
+            BackupQueue? queue = null;
+            var runner = new CallbackProbeRunner(() => queue!.IsBusy);
+            queue = new BackupQueue(runner, planId => new RunLog(_tmp.PathOf($"{planId}.jsonl")));
+
+            queue.Enqueue(Request("a"));
+            await runner.Started.WaitAsync(Timeout);
+            if (useCancelAll)
+                queue.CancelAll();
+            else
+                queue.Cancel("a").Should().BeTrue();
+            await queue.WhenIdleAsync().WaitAsync(Timeout);
+
+            runner.CallbackSawFreeLock.Should().BeTrue($"cancelation (CancelAll: {useCancelAll}) must happen outside the lock");
+        }
+    }
+
+    private sealed class ImmediateRunner : IBackupRunner
+    {
+        public Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new RunLogEntry { RunId = request.Plan.Id, Status = RunStatus.Completed });
+    }
+
+    /// <summary>On cancellation, checks from another thread whether the queue's lock is free.</summary>
+    private sealed class CallbackProbeRunner(Func<bool> probe) : IBackupRunner
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task Started => _started.Task;
+        public bool CallbackSawFreeLock { get; private set; }
+
+        public async Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            using var registration = cancellationToken.Register(() =>
+            {
+                CallbackSawFreeLock = Task.Run(probe).Wait(TimeSpan.FromSeconds(1));
+                _done.TrySetResult();
+            });
+            _started.TrySetResult();
+            await _done.Task;
+            return new RunLogEntry { RunId = request.Plan.Id, Status = RunStatus.Canceled };
+        }
+    }
+
     /// <summary>A runner whose runs finish when the test says so.</summary>
     private sealed class FakeRunner : IBackupRunner
     {
