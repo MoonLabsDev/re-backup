@@ -139,22 +139,34 @@ public sealed class BackupQueue
                 _running = job;
             }
 
-            Raise(job, JobState.Running);
-            var result = await RunAsync(job);
-
             try
             {
-                _logForPlan(job.PlanId).Append(result);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // The run itself is over; a log that cannot be written must not stop the queue.
-            }
+                Raise(job, JobState.Running);
+                var result = await RunAsync(job);
 
-            lock (_gate)
-                _running = null;
-            Raise(job, JobState.Finished, result: result);
-            job.Cancellation.Dispose();
+                try
+                {
+                    _logForPlan(job.PlanId).Append(result);
+                }
+                catch (Exception)
+                {
+                    // The run itself is over; a log that cannot be written must not stop the queue.
+                }
+
+                lock (_gate)
+                    _running = null;
+                Raise(job, JobState.Finished, result: result);
+            }
+            catch (Exception)
+            {
+                // Unexpected exception: ensure state cleanup and continue
+                lock (_gate)
+                    _running = null;
+            }
+            finally
+            {
+                job.Cancellation.Dispose();
+            }
         }
     }
 
@@ -180,8 +192,18 @@ public sealed class BackupQueue
         }
     }
 
-    private void Raise(Job job, JobState state, BackupProgress? progress = null, RunLogEntry? result = null) =>
-        Changed?.Invoke(new BackupJobUpdate(job.PlanId, job.Request.Plan.Name, state, progress, result));
+    private void Raise(Job job, JobState state, BackupProgress? progress = null, RunLogEntry? result = null)
+    {
+        var update = new BackupJobUpdate(job.PlanId, job.Request.Plan.Name, state, progress, result);
+        if (Changed is null)
+            return;
+
+        foreach (Action<BackupJobUpdate> handler in Changed.GetInvocationList().Cast<Action<BackupJobUpdate>>())
+        {
+            try { handler(update); }
+            catch { }
+        }
+    }
 
     private sealed class Job(BackupRequest request)
     {

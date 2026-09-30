@@ -153,6 +153,107 @@ public class BackupQueueTests : IDisposable
         _queue.RunningPlanId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task A_handler_that_throws_does_not_stop_the_queue()
+    {
+        var goodUpdates = new ConcurrentQueue<BackupJobUpdate>();
+        _queue.Changed += u => throw new InvalidOperationException("handler fails");
+        _queue.Changed += goodUpdates.Enqueue;
+
+        _queue.Enqueue(Request("a"));
+        _queue.Enqueue(Request("b"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _runner.Complete("a", RunStatus.Completed);
+        await _runner.Started("b").WaitAsync(Timeout);
+        _runner.Complete("b", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _queue.IsBusy.Should().BeFalse();
+        goodUpdates.Where(u => u.PlanId == "a").Select(u => u.State.ToString()).Should()
+            .Equal("Queued", "Running", "Finished");
+        goodUpdates.Where(u => u.PlanId == "b").Select(u => u.State.ToString()).Should()
+            .Equal("Queued", "Running", "Finished");
+    }
+
+    [Fact]
+    public async Task A_logForPlan_that_throws_InvalidOperationException_does_not_stop_the_queue()
+    {
+        var logCallCount = 0;
+        var queue = new BackupQueue(_runner, planId =>
+        {
+            logCallCount++;
+            if (planId == "a")
+                throw new InvalidOperationException("log fails");
+            return new RunLog(_tmp.PathOf($"{planId}.jsonl"));
+        });
+        queue.Changed += _updates.Enqueue;
+
+        queue.Enqueue(Request("a"));
+        queue.Enqueue(Request("b"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _runner.Complete("a", RunStatus.Completed);
+        await _runner.Started("b").WaitAsync(Timeout);
+        _runner.Complete("b", RunStatus.Completed);
+        await queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        queue.IsBusy.Should().BeFalse();
+        logCallCount.Should().Be(2);
+        States("b").Should().Equal("Queued", "Running", "Finished");
+    }
+
+    [Fact]
+    public async Task Worker_restarts_after_idle()
+    {
+        _queue.Enqueue(Request("a"));
+        await _runner.Started("a").WaitAsync(Timeout);
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _queue.IsBusy.Should().BeFalse();
+
+        _queue.Enqueue(Request("b"));
+        await _runner.Started("b").WaitAsync(Timeout);
+        _runner.Complete("b", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        States("b").Should().Equal("Queued", "Running", "Finished");
+        _queue.IsBusy.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CancelAll_removes_queued_jobs_and_cancels_running_job()
+    {
+        _queue.Enqueue(Request("a"));
+        _queue.Enqueue(Request("b"));
+        _queue.Enqueue(Request("c"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _queue.CancelAll();
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _queue.IsBusy.Should().BeFalse();
+        States("a").Should().Equal("Queued", "Running", "Finished");
+        States("b").Should().Equal("Queued", "Removed");
+        States("c").Should().Equal("Queued", "Removed");
+        _updates.Last(u => u.PlanId == "a").Result!.Status.Should().Be(RunStatus.Canceled);
+    }
+
+    [Fact]
+    public async Task A_runner_that_throws_OperationCanceledException_is_reported_as_Canceled_with_null_Reason()
+    {
+        _queue.Enqueue(Request("a"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _runner.Fail("a", new OperationCanceledException());
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        var result = _updates.Last(u => u.PlanId == "a").Result!;
+        result.Status.Should().Be(RunStatus.Canceled);
+        result.Reason.Should().BeNull();
+    }
+
     /// <summary>A runner whose runs finish when the test says so.</summary>
     private sealed class FakeRunner : IBackupRunner
     {
