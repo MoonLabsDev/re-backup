@@ -18,6 +18,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     [ObservableProperty] private double _progressPercent;
     [ObservableProperty] private string _progressText = "";
     [ObservableProperty] private string _lastRunText = NeverRunText;
+    [ObservableProperty] private string _nextRunText = "";
 
     public ObservableCollection<RunHistoryRow> History { get; } = [];
 

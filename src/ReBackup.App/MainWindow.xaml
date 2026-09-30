@@ -12,6 +12,9 @@
             <StatusBarItem DockPanel.Dock="Right">
                 <TextBlock Text="{Binding QueueStatus}" />
             </StatusBarItem>
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding SchedulerStatus}" Foreground="DarkOrange" />
+            </StatusBarItem>
             <StatusBarItem>
                 <TextBlock Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
             </StatusBarItem>
@@ -51,6 +54,8 @@
                                     <TextBlock Text="{Binding Source}" Foreground="Gray" FontSize="11"
                                                TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding Run.LastRunText}" Foreground="Gray" FontSize="11"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Run.NextRunText}" Foreground="Gray" FontSize="11"
                                                TextTrimming="CharacterEllipsis" />
                                     <StackPanel>
                                         <StackPanel.Style>
@@ -170,6 +175,10 @@
                                 </ItemsControl>
                             </Grid>
                         </TabItem>
+
+                    <TabItem Header="Schedule">
+                        <views:ScheduleView />
+                    </TabItem>
 
                     <TabItem Header="Ignore &amp; Preview">
                         <views:IgnorePreviewView />

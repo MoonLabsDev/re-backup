@@ -409,6 +409,25 @@ public class BackupQueueTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Close_cancels_everything_and_refuses_new_jobs()
+    {
+        _queue.Enqueue(Request("a"));
+        _queue.Enqueue(Request("b"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _queue.Close();
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _queue.IsClosed.Should().BeTrue();
+        _queue.Enqueue(Request("c")).Should().BeFalse();
+        _queue.IsBusy.Should().BeFalse();
+        States("a").Should().Equal("Queued", "Running", "Finished");
+        _updates.Last(u => u.PlanId == "a").Result!.Status.Should().Be(RunStatus.Canceled);
+        States("b").Should().Equal("Queued", "Removed");
+        States("c").Should().BeEmpty();
+    }
+
     private sealed class ImmediateRunner : IBackupRunner
     {
         public Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,

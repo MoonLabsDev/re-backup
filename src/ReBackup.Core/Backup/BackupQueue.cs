@@ -22,6 +22,7 @@ public sealed class BackupQueue
     private readonly List<Job> _queued = [];
     private Job? _running;
     private bool _workerActive;
+    private bool _closed;
     private Task _worker = Task.CompletedTask;
 
     public BackupQueue(IBackupRunner runner, Func<string, RunLog> logForPlan, TimeProvider? timeProvider = null)
@@ -54,12 +55,23 @@ public sealed class BackupQueue
         get { lock (_gate) return _running?.PlanId; }
     }
 
-    /// <summary>False when that plan is already queued or running.</summary>
+    /// <summary>True after <see cref="Close"/>: no new jobs are accepted.</summary>
+    public bool IsClosed
+    {
+        get { lock (_gate) return _closed; }
+    }
+
+    /// <summary>False when that plan is already queued or running, or the queue is closed.</summary>
     public bool Enqueue(BackupRequest request)
     {
         var job = new Job(request);
         lock (_gate)
         {
+            if (_closed)
+            {
+                job.Cancellation.Dispose();
+                return false;
+            }
             if (_running?.PlanId == job.PlanId || _queued.Any(q => q.PlanId == job.PlanId))
             {
                 job.Cancellation.Dispose();
@@ -124,6 +136,14 @@ public sealed class BackupQueue
             job.Cancellation.Dispose();
         if (running is not null)
             CancelToken(running);
+    }
+
+    /// <summary>Cancels everything and refuses new jobs from now on. Used when the app exits or restarts.</summary>
+    public void Close()
+    {
+        lock (_gate)
+            _closed = true;
+        CancelAll();
     }
 
     /// <summary>Completes when nothing is queued or running. Never faults.</summary>

@@ -130,4 +130,50 @@ public class RunLogTests : IDisposable
         entry.Skipped.Should().HaveCount(1000);
         entry.Skipped[^1].Path.Should().Be("f999");
     }
+
+    [Fact]
+    public void ReadLast_of_a_missing_or_empty_log_is_null()
+    {
+        new RunLog(_tmp.PathOf("missing.jsonl")).ReadLast().Should().BeNull();
+        File.WriteAllText(_tmp.PathOf("empty.jsonl"), "");
+        new RunLog(_tmp.PathOf("empty.jsonl")).ReadLast().Should().BeNull();
+    }
+
+    [Fact]
+    public void ReadLast_returns_the_newest_entry_and_skips_a_damaged_last_line()
+    {
+        var log = new RunLog(_tmp.PathOf("p1.jsonl"));
+        log.Append(Entry("a", RunStatus.Completed));
+        log.Append(Entry("b", RunStatus.Error));
+
+        log.ReadLast()!.RunId.Should().Be("b");
+
+        File.AppendAllText(log.LogFile, "{ not json\n");
+        log.ReadLast()!.RunId.Should().Be("b");
+    }
+
+    [Fact]
+    public void ReadLast_reads_the_end_of_a_large_log()
+    {
+        var log = new RunLog(_tmp.PathOf("big.jsonl"));
+        for (var i = 0; i < 2000; i++)
+            log.Append(Entry(i.ToString(System.Globalization.CultureInfo.InvariantCulture), RunStatus.Completed));
+        new FileInfo(log.LogFile).Length.Should().BeGreaterThan(64 * 1024);
+
+        log.ReadLast()!.RunId.Should().Be("1999");
+    }
+
+    [Fact]
+    public void ReadLast_finds_an_entry_longer_than_the_part_it_reads_first()
+    {
+        var log = new RunLog(_tmp.PathOf("long.jsonl"));
+        for (var i = 0; i < 400; i++)
+            log.Append(Entry("small" + i, RunStatus.Completed));
+        var big = Entry("big", RunStatus.CompletedWithWarnings);
+        for (var i = 0; i < 1000; i++)
+            big.AddSkipped(new SkippedEntry($"some/rather/long/path/to/a/file/number/{i}.txt", "locked by another program"));
+        log.Append(big);
+
+        log.ReadLast()!.RunId.Should().Be("big");
+    }
 }

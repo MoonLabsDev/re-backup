@@ -1,0 +1,129 @@
+<UserControl x:Class="ReBackup.App.Views.ScheduleView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ReBackup.App.ViewModels">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,6">
+            <Button DockPanel.Dock="Right" Content="Add trigger" Padding="10,2" Command="{Binding AddTriggerCommand}" />
+            <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Text="Triggers — the plan runs at each of these local times" />
+        </DockPanel>
+
+        <ScrollViewer Grid.Row="1" MaxHeight="260" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding TriggerRows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox Width="90" ItemsSource="{x:Static vm:TriggerRowViewModel.Types}"
+                                          SelectedItem="{Binding Type}" />
+
+                                <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Type}" Value="Interval">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock Text="at" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBox Width="55" Text="{Binding TimeText, UpdateSourceTrigger=PropertyChanged}" />
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Type}" Value="Monthly">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock Text="on day" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBox Width="40" Text="{Binding DayText, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Text="(0 = last day, -1 = the day before)" Foreground="Gray"
+                                               VerticalAlignment="Center" Margin="6,0,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Type}" Value="Interval">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock Text="every" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBox Width="35" Text="{Binding EveryHoursText, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Text="hours from" VerticalAlignment="Center" Margin="6,0,6,0" />
+                                    <TextBox Width="55" Text="{Binding FromText, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Text="to" VerticalAlignment="Center" Margin="6,0,6,0" />
+                                    <TextBox Width="55" Text="{Binding ToText, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Text="(empty = whole day)" Foreground="Gray" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                </StackPanel>
+
+                                <Button Content="Remove" Padding="8,1" Margin="8,0,0,0"
+                                        Command="{Binding DataContext.RemoveTriggerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}" />
+                            </StackPanel>
+
+                            <ItemsControl Margin="98,4,0,0" ItemsSource="{Binding Weekdays}">
+                                <ItemsControl.Style>
+                                    <Style TargetType="ItemsControl">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Type}" Value="Weekly">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ItemsControl.Style>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked}" Margin="0,0,10,0" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Foreground="Firebrick" Text="{Binding Error}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Error}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+            <TextBlock FontWeight="SemiBold" Text="Next 5 runs" />
+            <ItemsControl Margin="0,4,0,0" ItemsSource="{Binding NextRuns}" />
+            <TextBlock Margin="0,6,0,0" Foreground="Gray" TextWrapping="Wrap" Text="{Binding NextRunsNote}" />
+        </StackPanel>
+    </Grid>
+</UserControl>

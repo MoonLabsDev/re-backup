@@ -3,6 +3,7 @@ using FluentAssertions;
 using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
+using ReBackup.Core.Schedule;
 using ReBackup.Core.Tests.TestSupport;
 
 namespace ReBackup.Core.Tests.Plans;
@@ -136,6 +137,23 @@ public class PlanStoreTests : IDisposable
 
         result.Plans.Should().ContainSingle().Which.Name.Should().Be("Good");
         result.Errors.Should().ContainSingle().Which.FilePath.Should().EndWith("bad.json");
+    }
+
+    [Theory]
+    [InlineData("triggers")]
+    [InlineData("retention")]
+    public void A_list_with_an_empty_entry_is_reported(string list)
+    {
+        using var store = NewStore();
+        store.Save(new BackupPlan { Name = "Good" });
+        File.WriteAllText(store.PathFor("p1"), $$"""{ "id": "p1", "name": "Broken", "{{list}}": [null] }""");
+
+        var result = store.LoadAll();
+
+        result.Plans.Should().ContainSingle().Which.Name.Should().Be("Good");
+        result.Errors.Should().ContainSingle().Which.Message.Should().Contain("empty entry");
+        var act = () => store.TryLoad("p1");
+        act.Should().Throw<JsonException>();
     }
 
     [Fact]
@@ -276,5 +294,30 @@ public class PlanStoreTests : IDisposable
             JsonDefaults.Options)!;
 
         plan.Retention.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Triggers_round_trip()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Projects" };
+        plan.Triggers.Add(new ScheduleTrigger { Type = TriggerType.Weekly, Days = ["Mon", "Wed"], Time = "18:00" });
+        store.Save(plan);
+
+        var loaded = store.LoadAll().Plans.Single();
+
+        loaded.Triggers.Should().ContainSingle();
+        loaded.Triggers[0].Days.Should().Equal("Mon", "Wed");
+        loaded.Triggers[0].Time.Should().Be("18:00");
+        loaded.Clone().Triggers.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_null_triggers_section_loads_as_no_triggers()
+    {
+        var plan = JsonSerializer.Deserialize<BackupPlan>("""{ "id": "p1", "name": "Keep", "triggers": null }""",
+            JsonDefaults.Options)!;
+
+        plan.Triggers.Should().BeEmpty();
     }
 }

@@ -151,8 +151,41 @@
             <DockPanel Margin="0,0,0,4">
                 <ComboBox DockPanel.Dock="Right" Width="190" DisplayMemberPath="Label"
                           ItemsSource="{x:Static vm:RetentionPreviewViewModel.Schedules}"
-                          SelectedItem="{Binding RetentionPreview.SelectedSchedule}" />
-                <TextBlock DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" Text="Assume" />
+                          SelectedItem="{Binding RetentionPreview.SelectedSchedule}">
+                    <ComboBox.Style>
+                        <Style TargetType="ComboBox">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ComboBox.Style>
+                </ComboBox>
+                <TextBlock DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" Text="Assume">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="Gray"
+                           Text="using the plan's triggers">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
                 <TextBlock FontWeight="SemiBold" VerticalAlignment="Center"
                            Text="Full extension — two years from now" />
             </DockPanel>

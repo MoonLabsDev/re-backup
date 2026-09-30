@@ -81,6 +81,11 @@ public sealed class PlanStore : IDisposable
         var expectedId = Path.GetFileNameWithoutExtension(file);
         if (!string.Equals(plan.Id, expectedId, StringComparison.OrdinalIgnoreCase))
             throw new JsonException($"Plan id \"{plan.Id}\" does not match file name \"{expectedId}\".");
+        // An entry written as null would reach the editor and the scheduler as a null reference.
+        if (plan.Triggers.Any(trigger => trigger is null))
+            throw new JsonException("The list of triggers contains an empty entry.");
+        if (plan.Retention.Any(rule => rule is null))
+            throw new JsonException("The list of retention rules contains an empty entry.");
         plan.Ignore ??= new IgnoreSettings();
         plan.Ignore.Patterns ??= [];
         return plan;
