@@ -6,6 +6,7 @@ using ReBackup.Core.Schedule;
 namespace ReBackup.Core.Tests.Schedule;
 
 // The clock starts at 2026-09-30 01:58:30 UTC, and local time is UTC. Checks run at hh:mm:01.
+// FakeTimeProvider.Advance fires due timers with the clock already at the end of the step.
 public class SchedulerTests : IDisposable
 {
     private static readonly DateTimeOffset Start = new(2026, 9, 30, 1, 58, 30, TimeSpan.Zero);
@@ -87,10 +88,10 @@ public class SchedulerTests : IDisposable
     {
         StartWith(_ => Utc(9, 20, 10), Plan("p1", DailyAt("12:00")));
 
-        Minutes(1);   // 01:59:30, check at 01:59:01 came before the catch-up delay was over
+        _time.Advance(TimeSpan.FromSeconds(31));   // the check at 01:59:01 comes before the catch-up time 01:59:30
         _enqueued.Should().BeEmpty();
 
-        Minutes(1);   // 02:00:30
+        _time.Advance(TimeSpan.FromSeconds(60));   // 02:00:01, past the check at 02:00:01
         _enqueued.Should().Equal(("p1", RunTrigger.CatchUp));
 
         Minutes(60);
@@ -244,5 +245,40 @@ public class SchedulerTests : IDisposable
         var again = () => _scheduler.Start(_ => null);
 
         again.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void A_trigger_between_start_and_the_catch_up_does_not_run_twice()
+    {
+        // Start at 01:58:30 with last run 09-20 10:00 and a trigger at 01:59
+        StartWith(_ => Utc(9, 20, 10), Plan("p1", DailyAt("01:59")));
+
+        // Advance to exactly 01:59:01 (the check runs after 31 seconds)
+        _time.Advance(TimeSpan.FromSeconds(31));
+        // The trigger at 01:59 is scheduled, so it runs; catch-up is removed
+        _enqueued.Should().Equal(("p1", RunTrigger.Scheduled));
+
+        // Advance to 02:05 (well past the catch-up time of 01:59:30)
+        _time.Advance(TimeSpan.FromSeconds(4 * 60 + 29));
+        // Still only one run queued (the scheduled one; catch-up is not queued)
+        _enqueued.Should().HaveCount(1);
+    }
+
+
+    [Fact]
+    public void Dispose_from_a_Changed_handler_does_not_throw()
+    {
+        StartWith(Plan("p1", DailyAt("02:00")));
+
+        // Add a handler that disposes the scheduler
+        _scheduler.Changed += () => _scheduler.Dispose();
+
+        // Advancing time should not throw even though a handler disposes the scheduler
+        _time.Advance(TimeSpan.FromSeconds(31));
+
+        // After dispose, nothing more is queued
+        _enqueued.Clear();
+        _time.Advance(TimeSpan.FromMinutes(1));
+        _enqueued.Should().BeEmpty();
     }
 }

@@ -1,4 +1,6 @@
+using System.Text.Json;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Json;
 
 namespace ReBackup.Core.Schedule;
 
@@ -21,6 +23,7 @@ public sealed class Scheduler : IDisposable
     private readonly TimeProvider _time;
     private readonly object _gate = new();
     private readonly Dictionary<string, ScheduledPlan> _plans = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _plansSerialized = new(StringComparer.OrdinalIgnoreCase);
 
     // Per plan: the instant up to which its triggers have been handled.
     private readonly Dictionary<string, DateTime> _checkedUntil = new(StringComparer.OrdinalIgnoreCase);
@@ -29,6 +32,7 @@ public sealed class Scheduler : IDisposable
     private ITimer? _timer;
     private bool _paused;
     private bool _stopped;
+    private bool _started;
 
     public Scheduler(Action<string, RunTrigger> enqueue, TimeProvider? timeProvider = null)
     {
@@ -50,9 +54,13 @@ public sealed class Scheduler : IDisposable
                 if (_paused == value)
                     return;
                 _paused = value;
-                var now = UtcNow;
-                foreach (var id in _plans.Keys)
-                    _checkedUntil[id] = now;
+                if (!value)
+                {
+                    // Only reset _checkedUntil when resuming, not when pausing
+                    var now = UtcNow;
+                    foreach (var id in _plans.Keys)
+                        _checkedUntil[id] = now;
+                }
             }
             RaiseChanged();
         }
@@ -67,15 +75,34 @@ public sealed class Scheduler : IDisposable
         lock (_gate)
         {
             var now = UtcNow;
-            _plans.Clear();
+            var newIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var plan in list)
             {
+                newIds.Add(plan.Id);
+                var serialized = JsonSerializer.Serialize(plan.Triggers, JsonDefaults.Options);
+
+                // Check if this plan is new or has changed
+                if (!_plans.ContainsKey(plan.Id) ||
+                    !_plansSerialized.TryGetValue(plan.Id, out var oldSerialized) ||
+                    oldSerialized != serialized ||
+                    _plans[plan.Id].Enabled != plan.Enabled)
+                {
+                    // Plan is new or changed (enabled flag or triggers): start from now
+                    _checkedUntil[plan.Id] = now;
+                    _plansSerialized[plan.Id] = serialized;
+                }
+
                 _plans[plan.Id] = plan;
-                _checkedUntil.TryAdd(plan.Id, now);
             }
-            foreach (var id in _checkedUntil.Keys.Where(id => !_plans.ContainsKey(id)).ToList())
+
+            // Remove plans that are no longer in the list
+            foreach (var id in _plans.Keys.Where(id => !newIds.Contains(id)).ToList())
+                _plans.Remove(id);
+            foreach (var id in _checkedUntil.Keys.Where(id => !newIds.Contains(id)).ToList())
                 _checkedUntil.Remove(id);
-            _catchUps.RemoveWhere(id => !_plans.ContainsKey(id));
+            foreach (var id in _plansSerialized.Keys.Where(id => !newIds.Contains(id)).ToList())
+                _plansSerialized.Remove(id);
+            _catchUps.RemoveWhere(id => !newIds.Contains(id));
         }
         RaiseChanged();
     }
@@ -91,8 +118,9 @@ public sealed class Scheduler : IDisposable
         List<ScheduledPlan> plans;
         lock (_gate)
         {
-            if (_timer is not null || _stopped)
+            if (_started || _stopped)
                 throw new InvalidOperationException("The scheduler can be started only once.");
+            _started = true;
             plans = [.. _plans.Values];
         }
 
@@ -121,7 +149,7 @@ public sealed class Scheduler : IDisposable
             foreach (var id in _plans.Keys)
                 _checkedUntil[id] = now;
             var nextMinute = new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerMinute, DateTimeKind.Utc).AddMinutes(1);
-            _timer = _time.CreateTimer(_ => Check(), null, nextMinute + CheckOffset - now, CheckInterval);
+            _timer = _time.CreateTimer(_ => SafeCheck(), null, nextMinute + CheckOffset - now, CheckInterval);
         }
         RaiseChanged();
     }
@@ -165,6 +193,18 @@ public sealed class Scheduler : IDisposable
         timer?.Dispose();
     }
 
+    private void SafeCheck()
+    {
+        try
+        {
+            Check();
+        }
+        catch (Exception)
+        {
+            // a failing check must not take down the app; the next one runs a minute later
+        }
+    }
+
     private void Check()
     {
         var due = new List<(string PlanId, RunTrigger Trigger)>();
@@ -174,7 +214,7 @@ public sealed class Scheduler : IDisposable
                 return;
             var now = UtcNow;
 
-            if (_catchUps.Count > 0 && now > _catchUpAtUtc)
+            if (_catchUps.Count > 0 && now >= _catchUpAtUtc)
             {
                 if (!_paused)
                 {
@@ -190,11 +230,21 @@ public sealed class Scheduler : IDisposable
             foreach (var plan in _plans.Values)
             {
                 var since = _checkedUntil.TryGetValue(plan.Id, out var checkedUntil) ? checkedUntil : now;
-                _checkedUntil[plan.Id] = now;
+
+                // Never move _checkedUntil backwards
+                if (now > since)
+                    _checkedUntil[plan.Id] = now;
+
                 if (_paused || !plan.Enabled || due.Exists(d => string.Equals(d.PlanId, plan.Id, StringComparison.OrdinalIgnoreCase)))
                     continue;
-                if (LastDue(plan, since, now) is not null)
+
+                // Only compute LastDue when time has moved forward
+                if (now > since && LastDue(plan, since, now) is not null)
+                {
                     due.Add((plan.Id, RunTrigger.Scheduled));
+                    // Remove from catch-ups so we don't queue a second run
+                    _catchUps.Remove(plan.Id);
+                }
             }
         }
 
@@ -228,9 +278,10 @@ public sealed class Scheduler : IDisposable
 
     private void RaiseChanged()
     {
-        if (Changed is null)
+        var handlers = Changed;
+        if (handlers is null)
             return;
-        foreach (var handler in Changed.GetInvocationList().Cast<Action>())
+        foreach (var handler in handlers.GetInvocationList().Cast<Action>())
         {
             try
             {
