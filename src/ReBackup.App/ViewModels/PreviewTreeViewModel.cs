@@ -7,6 +7,7 @@ namespace ReBackup.App.ViewModels;
 public sealed partial class PreviewTreeViewModel : ObservableObject
 {
     private EvaluatedNode? _root;
+    private bool _revealing;
 
     [ObservableProperty] private PreviewRowViewModel? _selectedRow;
 
@@ -38,25 +39,42 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         if (_root is null || Rows.Count == 0)
             return;
 
+        var previous = SelectedRow;
         var current = _root;
         var row = Rows[0];
         var path = target.Node.RelativePath;
-        if (path.Length > 0)
+        var found = true;
+        _revealing = true;   // the selection is assigned once at the end, not on every expansion
+        try
         {
-            foreach (var part in path.Split('/'))
+            if (path.Length > 0)
             {
-                var child = current.Children.FirstOrDefault(c => c.Node.Name.Equals(part, StringComparison.OrdinalIgnoreCase));
-                if (child is null)
-                    return;
-                row.IsExpanded = true;
-                var childRow = Rows.FirstOrDefault(r => ReferenceEquals(r.Node, child));
-                if (childRow is null)
-                    return;
-                current = child;
-                row = childRow;
+                foreach (var part in path.Split('/'))
+                {
+                    var child = current.Children.FirstOrDefault(c => c.Node.Name.Equals(part, StringComparison.OrdinalIgnoreCase));
+                    if (child is null)
+                    {
+                        found = false;
+                        break;
+                    }
+                    row.IsExpanded = true;
+                    var childRow = Rows.FirstOrDefault(r => ReferenceEquals(r.Node, child));
+                    if (childRow is null)
+                    {
+                        found = false;
+                        break;
+                    }
+                    current = child;
+                    row = childRow;
+                }
             }
         }
-        SelectedRow = row;
+        finally
+        {
+            _revealing = false;
+        }
+        // Expanding resets the list, which may have pushed a null selection back; always assign explicitly.
+        SelectedRow = found ? row : previous is not null && Rows.Contains(previous) ? previous : null;
     }
 
     internal void OnExpandedChanged(PreviewRowViewModel row, bool expanded)
@@ -65,6 +83,16 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         if (index < 0)
             return;
 
+        var selected = SelectedRow;
+        ApplyExpansion(row, index, expanded);
+
+        // The list view may drop its selection on a reset; put it back (or on the collapsed folder).
+        if (!_revealing && selected is not null)
+            SelectedRow = Rows.Contains(selected) ? selected : row;
+    }
+
+    private void ApplyExpansion(PreviewRowViewModel row, int index, bool expanded)
+    {
         if (expanded)
         {
             var children = Sorted(row.Node)

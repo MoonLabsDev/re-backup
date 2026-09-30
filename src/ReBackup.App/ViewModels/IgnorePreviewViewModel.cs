@@ -20,6 +20,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private SourceIndex? _index;
     private CancellationTokenSource? _indexCts;
     private CancellationTokenSource? _evaluateCts;
+    private int _evaluationVersion;
 
     [ObservableProperty] private bool _isIndexing;
     [ObservableProperty] private string _progressText = NotIndexedText;
@@ -54,8 +55,11 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     public void Invalidate()
     {
         _indexCts?.Cancel();
+        _indexCts = null;   // the aborted run must not touch the state below any more
         _evaluateCts?.Cancel();
+        _evaluationVersion++;
         _index = null;
+        IsIndexing = false;
         Root = null;
         Tree.SetRoot(null);
         Summary = "";
@@ -74,10 +78,15 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         try
         {
             await Task.Delay(ReevaluateDelay, cts.Token);
-            await EvaluateAsync(cts.Token);
+            if (_index is { } index)
+                await EvaluateAsync(index, cts.Token);
         }
         catch (OperationCanceledException)
         {
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
         }
     }
 
@@ -106,8 +115,10 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         {
             var index = await SourceIndexer.BuildAsync(source, progress, cts.Token);
             cts.Token.ThrowIfCancellationRequested();
-            _index = index;
-            await EvaluateAsync(cts.Token);
+            // A newer evaluation (pattern edit) can supersede this one; repeat until the new index is shown.
+            while (!await EvaluateAsync(index, cts.Token))
+            {
+            }
             IsIndexing = false;
             ProgressText = $"Indexed {index.FileCount:N0} files in {index.DirectoryCount:N0} folders.";
         }
@@ -117,6 +128,10 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
                 ProgressText = _index is null ? "Indexing canceled." : "Indexing canceled; showing the previous index.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Error = ex.Message;
+        }
+        catch (Exception ex)
         {
             Error = ex.Message;
         }
@@ -130,10 +145,10 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     [RelayCommand]
     private void CancelIndex() => _indexCts?.Cancel();
 
-    private async Task EvaluateAsync(CancellationToken cancellationToken)
+    /// <summary>Evaluates and publishes the index. False means a newer evaluation superseded this one.</summary>
+    private async Task<bool> EvaluateAsync(SourceIndex index, CancellationToken cancellationToken)
     {
-        if (_index is not { } index)
-            return;
+        var version = ++_evaluationVersion;
 
         // Snapshots, because the evaluation runs on a worker thread.
         var settings = _ignoreSettings();
@@ -143,10 +158,14 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             () => IndexEvaluator.Evaluate(index, IgnoreMatcher.ForPlan(settings, globalDefaults, index.IgnoreFiles), cancellationToken),
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        if (version != _evaluationVersion)
+            return false;
 
+        _index = index;
         Root = root;
         Tree.SetRoot(root);
         Summary = $"Included: {root.IncludedFiles:N0} files, {ByteSize.Format(root.IncludedSize)}   ·   " +
                   $"Ignored: {root.IgnoredFiles:N0} files, {ByteSize.Format(root.IgnoredSize)}";
+        return true;
     }
 }

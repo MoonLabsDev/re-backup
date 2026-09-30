@@ -9,6 +9,12 @@ public partial class IgnorePreviewView : UserControl
         InitializeComponent();
     }
 
+    private void OnRowRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        // Right-click does not select by itself; make the context menu act on the clicked row.
+        ((ListViewItem)sender).IsSelected = true;
+    }
+
     private void OnRowSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (RowsList.SelectedItem is { } row)

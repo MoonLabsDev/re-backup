@@ -79,6 +79,7 @@
                         <Style TargetType="ListViewItem">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="ToolTip" Value="{Binding StatusDetail}" />
+                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnRowRightButtonDown" />
                         </Style>
                     </ListView.ItemContainerStyle>
                     <ListView.View>

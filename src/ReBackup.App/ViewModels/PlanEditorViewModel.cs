@@ -2,6 +2,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Core.Ignore;
+using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
 
 namespace ReBackup.App.ViewModels;
@@ -31,6 +32,15 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _saved = plan.Clone();
         _allPlans = allPlans;
         Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
+        Preview.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(IgnorePreviewViewModel.SelectedNode))
+            {
+                IgnoreSelectedCommand.NotifyCanExecuteChanged();
+                IgnoreSelectedExtensionCommand.NotifyCanExecuteChanged();
+                UnignoreSelectedCommand.NotifyCanExecuteChanged();
+            }
+        };
         IsNew = isNew;
         LoadFrom(_saved);
         IsDirty = isNew;
@@ -106,29 +116,38 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         };
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanIgnoreSelected))]
     private void IgnoreSelected()
     {
         if (SelectedEntry() is { } node)
             AppendPattern("/" + IgnorePattern.EscapeLiteral(node.RelativePath) + (node.IsDirectory ? "/" : ""));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanIgnoreSelectedExtension))]
     private void IgnoreSelectedExtension()
     {
-        if (SelectedEntry() is { IsDirectory: false } node && Path.GetExtension(node.Name) is { Length: > 1 } extension)
+        if (SelectedExtension() is { } extension)
             AppendPattern("*" + IgnorePattern.EscapeLiteral(extension));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanIgnoreSelected))]
     private void UnignoreSelected()
     {
         if (SelectedEntry() is { } node)
             AppendPattern("!/" + IgnorePattern.EscapeLiteral(node.RelativePath) + (node.IsDirectory ? "/" : ""));
     }
 
+    private bool CanIgnoreSelected() => SelectedEntry() is not null;
+
+    private bool CanIgnoreSelectedExtension() => SelectedExtension() is not null;
+
+    private string? SelectedExtension() =>
+        SelectedEntry() is { IsDirectory: false } node && Path.GetExtension(node.Name) is { Length: > 1 } extension
+            ? extension
+            : null;
+
     /// <summary>The selected preview entry, unless it is the source root (which cannot be ignored).</summary>
-    private ReBackup.Core.Indexing.IndexNode? SelectedEntry() =>
+    private IndexNode? SelectedEntry() =>
         Preview.SelectedNode?.Node is { RelativePath.Length: > 0 } node ? node : null;
 
     private void AppendPattern(string pattern)
