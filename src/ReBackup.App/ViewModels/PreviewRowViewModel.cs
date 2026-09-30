@@ -63,7 +63,7 @@ public sealed class PreviewRowViewModel : ObservableObject
                     $"Re-included by \"{Node.Pattern.Text}\" ({Node.Pattern.Origin})",
                 _ => "Included",
             };
-            return Node.Node.Error is null ? detail : $"{detail}\nNot scanned:{Node.Node.Error}";
+            return Node.Node.Error is null ? detail : $"{detail}\nNot scanned: {Node.Node.Error}";
         }
     }
 }

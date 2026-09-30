@@ -26,7 +26,11 @@ public sealed record SourceIndex(
     IndexNode RootNode,
     IReadOnlyList<NestedIgnoreFile> IgnoreFiles,
     int FileCount,
-    int DirectoryCount);
+    int DirectoryCount)
+{
+    /// <summary>Relative paths of <c>.backupignore</c> files that could not be read; their patterns are not applied.</summary>
+    public IReadOnlyList<string> UnreadableIgnoreFiles { get; init; } = [];
+}
 
 public readonly record struct IndexProgress(int Files, int Directories, string CurrentDirectory);
 
@@ -52,7 +56,10 @@ public static class SourceIndexer
         var name = Path.GetFileName(fullRoot);
         var rootNode = walk.ScanDirectory(new DirectoryInfo(fullRoot), name.Length > 0 ? name : fullRoot, "", 0);
         progress?.Report(new IndexProgress(walk.Files, walk.Directories, fullRoot));
-        return new SourceIndex(fullRoot, rootNode, walk.IgnoreFiles, walk.Files, walk.Directories);
+        return new SourceIndex(fullRoot, rootNode, walk.IgnoreFiles, walk.Files, walk.Directories)
+        {
+            UnreadableIgnoreFiles = walk.UnreadableIgnoreFiles,
+        };
     }
 
     private sealed class Walk(IProgress<IndexProgress>? progress, CancellationToken cancellationToken)
@@ -60,6 +67,7 @@ public static class SourceIndexer
         private readonly Stopwatch _sinceReport = Stopwatch.StartNew();
 
         public List<NestedIgnoreFile> IgnoreFiles { get; } = [];
+        public List<string> UnreadableIgnoreFiles { get; } = [];
         public int Files { get; private set; }
         public int Directories { get; private set; }
 
@@ -148,7 +156,7 @@ public static class SourceIndexer
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
             {
-                // An unreadable ignore file is treated as if it had no patterns.
+                UnreadableIgnoreFiles.Add(IgnoreOrigins.ForNestedFile(directoryRelativePath));
             }
         }
 
