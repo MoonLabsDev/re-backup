@@ -141,10 +141,12 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
 
+        // Modal dialogs pump the dispatcher, so a reload may already have removed the editor.
         var index = Plans.IndexOf(editor);
-        Plans.Remove(editor);
+        if (index >= 0)
+            Plans.RemoveAt(index);
         RevalidateAll();
-        SelectedPlan = Plans.Count == 0 ? null : Plans[Math.Min(index, Plans.Count - 1)];
+        SelectedPlan = Plans.Count == 0 ? null : Plans[Math.Clamp(index, 0, Plans.Count - 1)];
     }
 
     [RelayCommand]

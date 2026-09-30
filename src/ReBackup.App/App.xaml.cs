@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.ComponentModel;
 using System.IO;
+using System.Security;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -33,25 +34,83 @@ public partial class App : Application
         base.OnStartup(e);
 
         _appDataRoot = ConfigLocation.DefaultAppDataRoot;
-        _paths = ConfigLocation.Resolve(_appDataRoot);
-        Directory.CreateDirectory(_paths.PlansDirectory);
-        Directory.CreateDirectory(_paths.LogsDirectory);
-
-        _settingsStore = new SettingsStore(_paths.SettingsFile);
-        _settings = _settingsStore.Load();
-        if (_settingsStore.LastLoadError is { } error)
-            _dialogs.ShowError("Settings", $"settings.json could not be read, defaults are used.\n\n{error}");
-
-        _planStore = new PlanStore(_paths.PlansDirectory);
-        _mainViewModel = new MainViewModel(_planStore, _paths, _dialogs, ShowSettings);
-        _planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(_mainViewModel.ReloadFromDisk);
-        _planStore.StartWatching();
+        if (!BootstrapConfiguration())
+        {
+            Shutdown();
+            return;
+        }
 
         _window = new MainWindow { DataContext = _mainViewModel };
         _window.Closing += OnMainWindowClosing;
         CreateTrayIcon();
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
+    }
+
+    /// <summary>Resolves the configuration folder and loads everything that lives in it; false means the app must exit.</summary>
+    private bool BootstrapConfiguration()
+    {
+        while (true)
+        {
+            var paths = ConfigLocation.Resolve(_appDataRoot);
+            try
+            {
+                LoadConfiguration(paths);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+            {
+                var choice = _dialogs.AskYesNoCancel("Configuration folder",
+                    $"The configuration folder {paths.Root} is not reachable:\n\n{ex.Message}\n\n" +
+                    "Yes = Retry, No = Use the default location for this session, Cancel = Exit");
+                if (choice is null)
+                    return false;
+                if (choice == true)
+                    continue;
+
+                try
+                {
+                    LoadConfiguration(new ConfigPaths(_appDataRoot));
+                    return true;
+                }
+                catch (Exception fallbackEx) when (fallbackEx is IOException or UnauthorizedAccessException or SecurityException)
+                {
+                    _dialogs.ShowError("Configuration folder",
+                        $"The default location {_appDataRoot} is not usable either:\n\n{fallbackEx.Message}");
+                    return false;
+                }
+            }
+        }
+    }
+
+    private void LoadConfiguration(ConfigPaths paths)
+    {
+        Directory.CreateDirectory(paths.PlansDirectory);
+        Directory.CreateDirectory(paths.LogsDirectory);
+
+        var settingsStore = new SettingsStore(paths.SettingsFile);
+        var settings = settingsStore.Load();
+        var planStore = new PlanStore(paths.PlansDirectory);
+        try
+        {
+            var mainViewModel = new MainViewModel(planStore, paths, _dialogs, ShowSettings);
+            planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
+            planStore.StartWatching();
+
+            _paths = paths;
+            _settingsStore = settingsStore;
+            _settings = settings;
+            _planStore = planStore;
+            _mainViewModel = mainViewModel;
+        }
+        catch
+        {
+            planStore.Dispose();
+            throw;
+        }
+
+        if (_settingsStore.LastLoadError is { } error)
+            _dialogs.ShowError("Settings", $"settings.json could not be read, defaults are used.\n\n{error}");
     }
 
     private void CreateTrayIcon()

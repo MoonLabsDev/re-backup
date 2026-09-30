@@ -50,4 +50,26 @@ public class SettingsStoreTests : IDisposable
         settings.CloseToTray.Should().BeTrue();
         store.LastLoadError.Should().NotBeNullOrEmpty();
     }
+
+    [Fact]
+    public void Locked_file_yields_defaults_and_reports_error()
+    {
+        var path = _tmp.WriteFile("settings.json", "{}");
+        var store = new SettingsStore(path);
+        using var held = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var settings = store.Load();
+
+        settings.CloseToTray.Should().BeTrue();
+        store.LastLoadError.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void Null_ignore_patterns_fall_back_to_built_in_defaults()
+    {
+        var path = _tmp.WriteFile("settings.json", """{ "defaultIgnorePatterns": null }""");
+        var store = new SettingsStore(path);
+
+        store.Load().DefaultIgnorePatterns.Should().Equal(AppSettings.BuiltInIgnoreDefaults);
+    }
 }

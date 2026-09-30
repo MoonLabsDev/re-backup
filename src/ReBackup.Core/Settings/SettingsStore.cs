@@ -10,7 +10,7 @@ public sealed class SettingsStore
 
     public string SettingsFile { get; }
 
-    /// <summary>Set when the last <see cref="Load"/> found a corrupt file and fell back to defaults.</summary>
+    /// <summary>Set when the last <see cref="Load"/> found a corrupt or unreadable file and fell back to defaults.</summary>
     public string? LastLoadError { get; private set; }
 
     public AppSettings Load()
@@ -20,10 +20,12 @@ public sealed class SettingsStore
             return new AppSettings();
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFile), JsonDefaults.Options)
+            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFile), JsonDefaults.Options)
                 ?? new AppSettings();
+            settings.DefaultIgnorePatterns ??= [.. AppSettings.BuiltInIgnoreDefaults];
+            return settings;
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             LastLoadError = ex.Message;
             return new AppSettings();

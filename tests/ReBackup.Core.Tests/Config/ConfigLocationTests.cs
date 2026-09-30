@@ -30,6 +30,17 @@ public class ConfigLocationTests : IDisposable
     }
 
     [Fact]
+    public void Resolve_with_locked_pointer_falls_back_to_app_data_root()
+    {
+        var appData = AppData;
+        var pointer = Path.Combine(appData, "location.json");
+        File.WriteAllText(pointer, """{ "configFolder": "E:\cfg" }""");
+        using var held = new FileStream(pointer, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        ConfigLocation.Resolve(appData).Root.Should().Be(appData);
+    }
+
+    [Fact]
     public void Resolve_follows_pointer_file()
     {
         var appData = AppData;

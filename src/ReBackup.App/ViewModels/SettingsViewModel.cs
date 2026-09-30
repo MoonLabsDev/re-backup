@@ -62,6 +62,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             mode = ConfigMoveMode.UseExisting;
         }
 
+        if (HasOtherEdits() && !_dialogs.Confirm("Configuration folder",
+                "Your other changes in this dialog will not be saved. Continue?"))
+            return;
+
         if (!_confirmRestart())
             return;
 
@@ -82,6 +86,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         CloseRequested?.Invoke(this, false);
     }
 
+    private bool HasOtherEdits() =>
+        CloseToTray != _settings.CloseToTray
+        || StartWithWindows != _settings.StartWithWindows
+        || !ParsePatterns().SequenceEqual(_settings.DefaultIgnorePatterns);
+
+    private List<string> ParsePatterns() => DefaultIgnorePatterns
+        .Split((char)10)
+        .Select(line => line.TrimEnd((char)13, (char)32, (char)9))
+        .Where(line => line.Length > 0)
+        .ToList();
+
     [RelayCommand]
     private void Save()
     {
@@ -95,11 +110,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             StartupRegistration.Apply(StartWithWindows);
             registryChanged = StartWithWindows != oldStartWithWindows;
 
-            _settings.DefaultIgnorePatterns = DefaultIgnorePatterns
-                .Split('\n')
-                .Select(line => line.TrimEnd('\r', ' ', '\t'))
-                .Where(line => line.Length > 0)
-                .ToList();
+            _settings.DefaultIgnorePatterns = ParsePatterns();
             _settings.CloseToTray = CloseToTray;
             _settings.StartWithWindows = StartWithWindows;
             _store.Save(_settings);

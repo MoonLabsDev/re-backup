@@ -30,9 +30,9 @@ public static class ConfigLocation
                 if (!string.IsNullOrWhiteSpace(pointer?.ConfigFolder))
                     return new ConfigPaths(pointer.ConfigFolder);
             }
-            catch (JsonException)
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
             {
-                // Fall back to the default location.
+                // Corrupt or unreadable pointer: fall back to the default location.
             }
         }
         return new ConfigPaths(appDataRoot);
