@@ -226,7 +226,7 @@ Bottom status strip: queue state and the current job's progress.
 3. **Ignore & Preview**
    - Left: pattern editor (multiline), global-defaults toggle, nested-files toggle.
    - Right: **Index now** (progress + cancel). Tree columns: name, size, files, % of parent, size bar, status (Included / Ignored / Partial). The tooltip on an ignored node shows the matching pattern and its origin.
-   - Below the tree: treemap (squarified) of the selected tree node, with ignored areas greyed out. Clicking a rectangle selects the node in the tree, and the other way around.
+   - Below the tree: treemap (squarified) of the whole source, with ignored areas greyed out and the selected entry outlined. Clicking a rectangle selects that entry and reveals it in the tree; selecting a tree row outlines it in the treemap.
    - Summary: included vs. ignored size and count.
    - Context menu on a node: *Ignore this*, *Ignore all \*.ext*, *Un-ignore* (adds a `!` pattern).
    - Pattern edits re-evaluate against the cached index after a 300 ms debounce, with no rescan. The index is cached per plan for the session.
