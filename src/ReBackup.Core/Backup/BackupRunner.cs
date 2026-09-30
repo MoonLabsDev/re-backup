@@ -49,11 +49,21 @@ public sealed class BackupRunner : IBackupRunner
 
     private readonly ITargetVolume _volume;
     private readonly TimeProvider _time;
+    private readonly Func<string, IReadOnlyList<RetentionRule>?>? _currentRules;
 
-    public BackupRunner(ITargetVolume? volume = null, TimeProvider? timeProvider = null)
+    /// <param name="volume">The target's file system; the real one when null.</param>
+    /// <param name="timeProvider">The clock; the system clock when null.</param>
+    /// <param name="currentRules">
+    /// Gives the retention rules of a plan (by its id) as they are saved right now; null when the plan no longer
+    /// exists. A run can take hours and the rules can be changed meanwhile, so versions are deleted by these rules
+    /// and not by those of the request. Without it, the rules of the request are used.
+    /// </param>
+    public BackupRunner(ITargetVolume? volume = null, TimeProvider? timeProvider = null,
+        Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null)
     {
         _volume = volume ?? new PhysicalTargetVolume();
         _time = timeProvider ?? TimeProvider.System;
+        _currentRules = currentRules;
     }
 
     public async Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
@@ -128,7 +138,11 @@ public sealed class BackupRunner : IBackupRunner
         return entry;
     }
 
-    /// <summary>Index, evaluate and preflight. Writes nothing except creating the target folder and removing leftovers.</summary>
+    /// <summary>
+    /// Index, evaluate and preflight. Copies nothing yet, but changes the target: it creates the target folder,
+    /// removes leftovers of earlier runs and, when the plan allows it and the space is short, deletes old versions
+    /// to make room.
+    /// </summary>
     private BackupWork Prepare(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         var plan = request.Plan;
@@ -181,7 +195,7 @@ public sealed class BackupRunner : IBackupRunner
     private long FreeSpaceByRetention(BackupPlan plan, long required, long free, RunLogEntry entry,
         CancellationToken cancellationToken)
     {
-        if (plan.Retention.Count == 0)
+        if (ResolveRules(plan, entry, "Old versions were not deleted to free space") is not { Count: > 0 } rules)
             return free;
 
         List<VersionInfo> candidates;
@@ -189,7 +203,7 @@ public sealed class BackupRunner : IBackupRunner
         {
             var versions = VersionCatalog.List(plan.Target, plan.Id, plan.Name, cancellationToken);
             var newest = versions.LastOrDefault(v => v.IsOwned);
-            candidates = RetentionPlanner.Decide(versions, plan.Retention, upcomingRun: _time.GetLocalNow().DateTime)
+            candidates = RetentionPlanner.Decide(versions, rules, upcomingRun: _time.GetLocalNow().DateTime)
                 .Where(d => d.Delete && !ReferenceEquals(d.Version, newest))
                 .Select(d => d.Version)
                 .ToList();
@@ -253,10 +267,12 @@ public sealed class BackupRunner : IBackupRunner
     {
         foreach (var directory in Directory.EnumerateDirectories(plan.Target).ToList())
         {
+            var name = Path.GetFileName(directory);
+            if (!VersionName.IsTransient(name))
+                continue;
             if (new DirectoryInfo(directory).LinkTarget is not null)
                 continue;   // never follow a link out of the target
 
-            var name = Path.GetFileName(directory);
             if (name.EndsWith(VersionName.PartialSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 if (!VersionName.TryParse(name[..^VersionName.PartialSuffix.Length], plan.Name, out _))
@@ -313,7 +329,9 @@ public sealed class BackupRunner : IBackupRunner
 
     /// <summary>
     /// Remains belong to the plan by their manifest. The manifest is deleted last, so remains without one that still
-    /// hold files are not ours by construction; empty ones are removed when the name matches.
+    /// hold files are not ours by construction; empty ones are removed when the name matches. Everything else is
+    /// left alone, also remains of a folder that was copied or renamed by hand
+    /// (<see cref="VersionOwnership.Renamed"/>): retention never renamed that folder, a person did.
     /// </summary>
     private static bool IsOwnRemains(string directory, BackupPlan plan, string folderPlanName) =>
         VersionCatalog.Probe(directory, plan.Id).Ownership switch
@@ -329,7 +347,7 @@ public sealed class BackupRunner : IBackupRunner
     private void ApplyRetention(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
-        if (plan.Retention.Count == 0)
+        if (ResolveRules(plan, entry, "Retention was skipped") is not { Count: > 0 } rules)
             return;
 
         progress?.Report(new BackupProgress(BackupPhase.Retention, entry.FilesCopied, entry.FilesCopied,
@@ -339,7 +357,7 @@ public sealed class BackupRunner : IBackupRunner
         try
         {
             var versions = VersionCatalog.List(plan.Target, plan.Id, plan.Name);
-            doomed = RetentionPlanner.Decide(versions, plan.Retention).Where(d => d.Delete).Select(d => d.Version).ToList();
+            doomed = RetentionPlanner.Decide(versions, rules).Where(d => d.Delete).Select(d => d.Version).ToList();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -359,8 +377,36 @@ public sealed class BackupRunner : IBackupRunner
     }
 
     /// <summary>
+    /// The rules a deletion pass applies. A run can take hours and the rules can be changed and saved meanwhile, so
+    /// the rules saved right now count when the runner can look them up; otherwise those of the request. Null
+    /// means: delete nothing in this pass. The reason is then added as a warning that starts with
+    /// <paramref name="skippedText"/>.
+    /// </summary>
+    private IReadOnlyList<RetentionRule>? ResolveRules(BackupPlan plan, RunLogEntry entry, string skippedText)
+    {
+        if (_currentRules is null)
+            return plan.Retention;
+
+        IReadOnlyList<RetentionRule>? rules;
+        try
+        {
+            rules = _currentRules(plan.Id);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            entry.Warnings.Add($"{skippedText}: the plan's current rules could not be read: {ex.Message}");
+            return null;
+        }
+
+        if (rules is null)
+            entry.Warnings.Add($"{skippedText}: the plan no longer exists.");
+        return rules;
+    }
+
+    /// <summary>
     /// Removes one version. True when the folder no longer is a version: it is gone, or it was renamed and only
-    /// its remains are left (the next run of the plan removes them). False when nothing was changed.
+    /// its remains are left (the next run of the plan removes them). False when nothing was changed; that is also
+    /// the answer when the folder or the whole target has vanished, because nothing was deleted then.
     /// </summary>
     private bool TryRemoveVersion(VersionInfo version, RunLogEntry entry, string failurePrefix)
     {
@@ -368,14 +414,14 @@ public sealed class BackupRunner : IBackupRunner
         {
             VersionRemover.Remove(version.Path, _volume);
         }
+        catch (VersionRemainsException ex)
+        {
+            entry.Warnings.Add($"\"{version.Name}\" was removed from the versions, but its remains could not be deleted yet: {ex.Message}");
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            if (Directory.Exists(version.Path))
-            {
-                entry.Warnings.Add($"{failurePrefix}: {ex.Message}");
-                return false;
-            }
-            entry.Warnings.Add($"\"{version.Name}\" was removed from the versions, but its remains could not be deleted yet: {ex.Message}");
+            entry.Warnings.Add($"{failurePrefix}: {ex.Message}");
+            return false;
         }
         entry.RetentionDeleted.Add(version.Name);
         return true;

@@ -1,3 +1,4 @@
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Core.Backup;
@@ -19,6 +20,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private readonly Func<BackupPlan> _plan;
     private readonly Func<long?> _fallbackVersionBytes;
     private IReadOnlyList<VersionInfo>? _versions;
+    private bool _targetMissing;   // belongs to _versions: the target folder did not exist when they were read
     private CancellationTokenSource? _loadCts;
     private CancellationTokenSource? _evaluateCts;
     private CancellationTokenSource? _simulateCts;
@@ -75,6 +77,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _loadCts = null;   // the aborted load must not touch the state below any more
         _evaluateCts?.Cancel();
         _versions = null;
+        _targetMissing = false;
         IsLoading = false;
         Error = null;
         NowRows.ReplaceAll([]);
@@ -116,11 +119,15 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         Error = null;
         try
         {
-            var versions = await Task.Run(
-                () => VersionCatalog.List(plan.Target, plan.Id, plan.Name, cts.Token), cts.Token);
+            var (versions, targetMissing) = await Task.Run(() =>
+            {
+                var missing = string.IsNullOrWhiteSpace(plan.Target) || !Directory.Exists(plan.Target);
+                return (VersionCatalog.List(plan.Target, plan.Id, plan.Name, cts.Token), missing);
+            }, cts.Token);
             if (!ReferenceEquals(_loadCts, cts))
                 return;
             _versions = versions;
+            _targetMissing = targetMissing;
             Evaluate();
         }
         catch (OperationCanceledException)
@@ -131,6 +138,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (ReferenceEquals(_loadCts, cts))
             {
                 _versions = null;
+                _targetMissing = false;
                 NowRows.ReplaceAll([]);
                 NowSummary = "";
                 ClearSimulation();
@@ -169,7 +177,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         var deleted = managed.Where(d => d.Delete).ToList();
         var unmanaged = decisions.Count - managed.Count;
         NowSummary = decisions.Count == 0
-            ? "There are no versions in the target yet."
+            ? _targetMissing ? "The target folder does not exist (yet)." : "There are no versions in the target yet."
             : $"{managed.Count:N0} versions, {ByteSize.Format(SizeOf(managed))}  →  the rules keep " +
               $"{managed.Count - deleted.Count:N0} and delete {deleted.Count:N0} (frees {ByteSize.Format(SizeOf(deleted))})" +
               (unmanaged > 0 ? $"  ·  {unmanaged:N0} not managed" : "");

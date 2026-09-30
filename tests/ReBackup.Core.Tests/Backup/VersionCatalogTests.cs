@@ -40,6 +40,50 @@ public class VersionCatalogTests : IDisposable
     }
 
     [Fact]
+    public void A_version_is_owned_whatever_the_case_of_its_name()
+    {
+        VersionFolder.Create(_target, "2026_09_01-02_00 PROJECTS", "p1", manifestPlanName: "projects");
+
+        List().Should().ContainSingle().Which.Ownership.Should().Be(VersionOwnership.Owned);
+    }
+
+    [Theory]
+    [InlineData("2026_09_01-02_00 Projects - Copy")]   // an Explorer copy
+    [InlineData("2026_09_01-02_00 Projects KEEP")]     // renamed to protect it
+    [InlineData("2026_09_01-02_00 Project")]
+    [InlineData("2026_09_01-02_00  Projects")]
+    [InlineData("2026_09_01-02_00 Holiday")]           // no longer named like the plan at all
+    public void A_folder_copied_or_renamed_by_hand_is_listed_as_renamed_and_not_owned(string folderName)
+    {
+        VersionFolder.Create(_target, folderName, "p1", bytes: 25, manifestPlanName: "Projects");
+
+        var version = List().Should().ContainSingle().Which;
+
+        version.Name.Should().Be(folderName);
+        version.Ownership.Should().Be(VersionOwnership.Renamed);
+        version.IsOwned.Should().BeFalse();
+        version.TotalBytes.Should().BeNull();
+        version.FileCount.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_folder_renamed_to_the_plans_new_name_by_hand_is_not_owned_either()
+    {
+        // Made as "Old name"; the plan is called "Projects" now and somebody renamed the folder to match.
+        VersionFolder.Create(_target, "2026_09_01-02_00 Projects", "p1", manifestPlanName: "Old name");
+
+        List().Should().ContainSingle().Which.Ownership.Should().Be(VersionOwnership.Renamed);
+    }
+
+    [Fact]
+    public void A_copy_of_another_plans_version_stays_unlisted()
+    {
+        VersionFolder.Create(_target, "2026_09_01-02_00 Other - Copy", "other", manifestPlanName: "Other");
+
+        List().Should().BeEmpty();
+    }
+
+    [Fact]
     public void Folders_named_like_the_plan_but_not_owned_are_listed_as_such()
     {
         VersionFolder.Create(_target, "2026_09_01-02_00 Projects", "other");
@@ -106,6 +150,24 @@ public class VersionCatalogTests : IDisposable
         VersionCatalog.Probe(own, "p2").Should().Be((VersionOwnership.Foreign, (ManifestHeader?)null));
         VersionCatalog.Probe(empty, "p1").Should().Be((VersionOwnership.NoManifest, (ManifestHeader?)null));
         VersionCatalog.Probe(_tmp.PathOf("nowhere"), "p1").Should().Be((VersionOwnership.NoManifest, (ManifestHeader?)null));
+    }
+
+    [Fact]
+    public void Probe_compares_the_folder_name_with_the_plan_name_in_the_manifest()
+    {
+        var copy = VersionFolder.Create(_target, "2026_09_01-02_00 Projects - Copy", "p1", manifestPlanName: "Projects");
+        var unnamed = VersionFolder.Create(_target, "notes", "p1", manifestPlanName: "Projects");
+        var remains = VersionFolder.Create(_target, "2026_09_02-02_00 Projects.deleting", "p1", manifestPlanName: "Projects");
+        var partial = VersionFolder.Create(_target, "2026_09_03-02_00 Projects.partial", "p1", manifestPlanName: "Projects");
+        var copiedRemains = VersionFolder.Create(_target, "2026_09_04-02_00 Projects - Copy.deleting", "p1", manifestPlanName: "Projects");
+
+        VersionCatalog.Probe(copy, "p1").Should().Be((VersionOwnership.Renamed, (ManifestHeader?)null));
+        VersionCatalog.Probe(unnamed, "p1").Should().Be((VersionOwnership.Renamed, (ManifestHeader?)null));
+        VersionCatalog.Probe(copiedRemains, "p1").Should().Be((VersionOwnership.Renamed, (ManifestHeader?)null));
+        VersionCatalog.Probe(remains, "p1").Ownership.Should().Be(VersionOwnership.Owned, "the suffix is not part of the name");
+        VersionCatalog.Probe(partial, "p1").Ownership.Should().Be(VersionOwnership.Owned, "the suffix is not part of the name");
+        VersionCatalog.Probe(remains + Path.DirectorySeparatorChar, "p1").Ownership.Should().Be(VersionOwnership.Owned);
+        VersionCatalog.Probe(copy, "p2").Ownership.Should().Be(VersionOwnership.Foreign, "the plan id comes first");
     }
 
     [Fact]

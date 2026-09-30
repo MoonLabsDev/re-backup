@@ -109,7 +109,9 @@ public partial class App : Application
         var planStore = new PlanStore(paths.PlansDirectory);
         try
         {
-            var queue = new BackupQueue(new BackupRunner(), planId => new RunLog(paths.LogFileFor(planId)));
+            // Versions are deleted by the rules as saved at that moment, not as they were when the run was queued.
+            var runner = new BackupRunner(currentRules: planId => planStore.TryLoad(planId)?.Retention);
+            var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
             var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue,
                 action => Dispatcher.InvokeAsync(action));
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);

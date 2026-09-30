@@ -16,12 +16,16 @@ public sealed class ScriptedVolume : ITargetVolume
     /// <summary>Gets the path of a folder to delete; true makes it fail.</summary>
     public Func<string, bool> FailDelete { get; init; } = _ => false;
 
+    /// <summary>Runs right before a rename and gets its source path: the moment to change something behind the runner's back.</summary>
+    public Action<string>? BeforeMove { get; init; }
+
     public long GetAvailableFreeSpace(string directory) => FreeSpace?.Invoke() ?? _inner.GetAvailableFreeSpace(directory);
 
     public Stream CreateFile(string path) => _inner.CreateFile(path);
 
     public void MoveDirectory(string source, string destination)
     {
+        BeforeMove?.Invoke(source);
         if (FailMove(source))
             throw new IOException("the folder is in use");
         _inner.MoveDirectory(source, destination);

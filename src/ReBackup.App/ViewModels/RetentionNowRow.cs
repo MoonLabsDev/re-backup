@@ -24,6 +24,7 @@ public sealed class RetentionNowRow
             {
                 VersionOwnership.NoManifest => "no manifest in the folder",
                 VersionOwnership.Foreign => "the manifest belongs to another plan",
+                VersionOwnership.Renamed => "renamed or copied by hand",
                 _ => "the manifest cannot be read",
             };
     }

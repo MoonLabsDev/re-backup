@@ -4,7 +4,10 @@ namespace ReBackup.Core.Backup;
 
 public enum VersionOwnership
 {
-    /// <summary>The manifest carries the plan's id: retention manages this version.</summary>
+    /// <summary>
+    /// The manifest carries the plan's id and the folder still has the name it was created under: retention
+    /// manages this version.
+    /// </summary>
     Owned,
 
     /// <summary>Named like a version of the plan, but there is no manifest.</summary>
@@ -15,6 +18,12 @@ public enum VersionOwnership
 
     /// <summary>Named like a version of the plan, but the manifest cannot be read.</summary>
     Unreadable,
+
+    /// <summary>
+    /// The manifest carries the plan's id, but the folder name is not the one the version was created under
+    /// (renamed or copied by hand).
+    /// </summary>
+    Renamed,
 }
 
 /// <summary>A version folder in a target. Only <see cref="VersionOwnership.Owned"/> versions are ever deleted.</summary>
@@ -28,10 +37,11 @@ public sealed record VersionInfo(string Name, string Path, DateTime LocalTime, V
 public static class VersionCatalog
 {
     /// <summary>
-    /// The versions of a plan, oldest first. A folder belongs to the plan when its name starts with a timestamp
-    /// and its manifest carries the plan's id, whatever plan name the folder ends with: versions made before a
-    /// rename stay with the plan. Folders that only carry the plan's current name are listed as not owned.
-    /// Folders that are links are left out.
+    /// The versions of a plan, oldest first. A folder belongs to the plan when its manifest carries the plan's id
+    /// and its name is a timestamp followed by the plan name recorded in that manifest, i.e. the name the version
+    /// was created under: versions made before the plan was renamed stay with the plan, while a folder that was
+    /// copied or renamed by hand is listed as <see cref="VersionOwnership.Renamed"/> and is not owned. Folders
+    /// that only carry the plan's current name are listed as not owned too. Folders that are links are left out.
     /// </summary>
     /// <exception cref="IOException">The target cannot be listed.</exception>
     /// <exception cref="UnauthorizedAccessException">Access to the target is denied.</exception>
@@ -54,7 +64,9 @@ public static class VersionCatalog
                 continue;
 
             var (ownership, header) = Probe(directory, planId);
-            if (ownership != VersionOwnership.Owned && !folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase))
+            // A folder whose manifest is ours is always listed; any other only when it is named like the plan.
+            if (ownership is not (VersionOwnership.Owned or VersionOwnership.Renamed) &&
+                !folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             var fileCount = header?.FileCount;
@@ -81,15 +93,22 @@ public static class VersionCatalog
         return versions;
     }
 
-    /// <summary>Whether the manifest in a folder carries the plan's id. Never throws. The header is returned for owned folders only.</summary>
+    /// <summary>
+    /// Whether a folder is a version of the plan: its manifest carries the plan's id and the folder is named after
+    /// the plan name in that manifest (a ".partial" or ".deleting" suffix aside). Never throws. The header is
+    /// returned for owned folders only.
+    /// </summary>
     public static (VersionOwnership Ownership, ManifestHeader? Header) Probe(string versionDirectory, string planId)
     {
         try
         {
             var header = ManifestReader.ReadHeader(System.IO.Path.Combine(versionDirectory, VersionName.ManifestFileName));
-            return planId.Length > 0 && string.Equals(header.PlanId, planId, StringComparison.OrdinalIgnoreCase)
+            if (planId.Length == 0 || !string.Equals(header.PlanId, planId, StringComparison.OrdinalIgnoreCase))
+                return (VersionOwnership.Foreign, null);
+
+            return HasNameOf(versionDirectory, header.PlanName)
                 ? (VersionOwnership.Owned, header)
-                : (VersionOwnership.Foreign, null);
+                : (VersionOwnership.Renamed, null);
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -99,5 +118,22 @@ public static class VersionCatalog
         {
             return (VersionOwnership.Unreadable, null);
         }
+    }
+
+    /// <summary>True when the folder's name is a timestamp followed by exactly <paramref name="manifestPlanName"/>.</summary>
+    private static bool HasNameOf(string versionDirectory, string manifestPlanName)
+    {
+        var name = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(versionDirectory));
+        foreach (var suffix in (ReadOnlySpan<string>)[VersionName.PartialSuffix, VersionName.DeletingSuffix])
+        {
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                name = name[..^suffix.Length];
+                break;
+            }
+        }
+
+        return VersionName.TryParseAny(name, out _, out var folderPlanName) &&
+               folderPlanName.Equals(manifestPlanName, StringComparison.OrdinalIgnoreCase);
     }
 }

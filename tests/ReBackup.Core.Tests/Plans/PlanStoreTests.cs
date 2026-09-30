@@ -188,6 +188,69 @@ public class PlanStoreTests : IDisposable
     }
 
     [Fact]
+    public void TryLoad_returns_the_plan_as_saved()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Projects", Source = @"D:\Projects", Target = @"F:\Backups" };
+        plan.Retention.Add(new RetentionRule { Period = RetentionPeriod.Daily, Keep = 7 });
+        store.Save(plan);
+        store.Save(new BackupPlan { Name = "Another" });
+
+        var loaded = store.TryLoad(plan.Id);
+
+        loaded.Should().BeEquivalentTo(plan);
+
+        plan.Retention[0].Keep = 30;
+        store.Save(plan);
+        store.TryLoad(plan.Id)!.Retention.Should().ContainSingle().Which.Keep.Should().Be(30);
+    }
+
+    [Fact]
+    public void TryLoad_returns_null_for_an_unknown_id_and_after_a_delete()
+    {
+        using var store = NewStore();
+        var plan = new BackupPlan { Name = "Gone" };
+        store.Save(plan);
+        store.Delete(plan.Id);
+
+        store.TryLoad("does-not-exist").Should().BeNull();
+        store.TryLoad(plan.Id).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryLoad_returns_null_when_the_plans_folder_is_gone()
+    {
+        using var store = NewStore();
+        Directory.Delete(store.PlansDirectory);
+
+        store.TryLoad("p1").Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("")]
+    [InlineData("null")]
+    [InlineData("""{ "id": "other", "name": "X" }""")]
+    public void TryLoad_throws_for_a_damaged_file(string content)
+    {
+        using var store = NewStore();
+        File.WriteAllText(store.PathFor("p1"), content);
+
+        var act = () => store.TryLoad("p1");
+
+        act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void TryLoad_fills_in_a_missing_ignore_section_like_LoadAll()
+    {
+        using var store = NewStore();
+        File.WriteAllText(store.PathFor("p1"), """{ "id": "p1", "name": "X", "ignore": { "patterns": null } }""");
+
+        store.TryLoad("p1")!.Ignore.Patterns.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Retention_rules_round_trip()
     {
         using var store = NewStore();
