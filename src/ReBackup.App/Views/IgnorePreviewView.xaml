@@ -127,9 +127,8 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
-                            <GridViewColumn Header="Backup size" Width="85" DisplayMemberBinding="{Binding BackupSizeText}" />
                             <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
+                            <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
                             <GridViewColumn Header="% of parent" Width="130">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
@@ -142,6 +141,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
+                            <GridViewColumn Header="Backup size" Width="85" DisplayMemberBinding="{Binding BackupSizeText}" />
                             <GridViewColumn Header="% of parent backup" Width="130">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
