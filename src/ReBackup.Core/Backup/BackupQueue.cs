@@ -135,7 +135,7 @@ public sealed class BackupQueue
             lock (_gate)
                 worker = _worker;
 
-            try { await worker; }
+            try { await worker.ConfigureAwait(false); }
             catch (Exception) { }
 
             lock (_gate)
@@ -146,7 +146,7 @@ public sealed class BackupQueue
                 worker = _worker;
             }
             if (worker.IsCompleted)
-                await Task.Yield();
+                await Task.Delay(1).ConfigureAwait(false);
         }
     }
 

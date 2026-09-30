@@ -29,6 +29,7 @@ public partial class App : Application
     private MainViewModel _mainViewModel = null!;
     private MainWindow _window = null!;
     private bool _exitRequested;
+    private bool _exiting;
     private TaskbarIcon? _tray;
     private readonly ContextMenu _trayMenu = new();
     private SingleInstance? _singleInstance;
@@ -160,14 +161,26 @@ public partial class App : Application
 
         _mainViewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(MainViewModel.QueueStatus) && _tray is not null)
-                _tray.ToolTipText = "ReBackup — " + _mainViewModel.QueueStatus;
+            if (e.PropertyName != nameof(MainViewModel.QueueStatus) || _exitRequested || _tray is null)
+                return;
+            try
+            {
+                var text = "ReBackup — " + _mainViewModel.QueueStatus;
+                _tray.ToolTipText = text.Length > 120 ? text[..119] + "…" : text;
+            }
+            catch (Exception)
+            {
+                // A tray failure must never take the app down.
+            }
         };
         _mainViewModel.RunFinished += ShowRunNotification;
     }
 
     private void ShowRunNotification(string planName, RunLogEntry result)
     {
+        if (_exitRequested || _tray is null)
+            return;
+
         var duration = RunHistoryRow.FormatDuration(result.DurationMs);
         var (icon, message) = result.Status switch
         {
@@ -178,33 +191,56 @@ public partial class App : Application
             RunStatus.Full => (NotificationIcon.Error, $"Aborted, the target is full. {result.Reason}"),
             _ => (NotificationIcon.Error, $"Aborted with an error. {result.Reason}"),
         };
-        _tray?.ShowNotification($"Backup \"{planName}\"", message, icon);
+        try
+        {
+            _tray.ShowNotification($"Backup \"{planName}\"", message, icon);
+        }
+        catch (Exception)
+        {
+            // A tray failure must never take the app down.
+        }
     }
 
     private void FillRunMenu(MenuItem runMenu)
     {
-        runMenu.Items.Clear();
-        foreach (var (id, name, canRun) in _mainViewModel.RunnablePlans)
+        try
         {
-            var item = CreateTrayMenuItem(name, () => _mainViewModel.RunPlan(id));
-            item.IsEnabled = canRun;
-            runMenu.Items.Add(item);
+            runMenu.Items.Clear();
+            foreach (var (id, name, canRun) in _mainViewModel.RunnablePlans)
+            {
+                // A single underscore would be taken as an access key.
+                var item = CreateTrayMenuItem(name.Replace("_", "__"), () => _mainViewModel.RunPlan(id));
+                item.IsEnabled = canRun;
+                runMenu.Items.Add(item);
+            }
+            runMenu.IsEnabled = runMenu.Items.Count > 0;
         }
-        runMenu.IsEnabled = runMenu.Items.Count > 0;
+        catch (Exception)
+        {
+            runMenu.IsEnabled = false;
+        }
     }
 
     /// <summary>Cancels queued and running backups and waits briefly for the running one to clean up its partial folder.</summary>
-    private void StopBackups(TimeSpan wait)
+    private bool StopBackups(TimeSpan wait)
     {
         _queue.CancelAll();
         try
         {
-            _queue.WhenIdleAsync().Wait(wait);
+            return _queue.WhenIdleAsync().Wait(wait);
         }
         catch (AggregateException)
         {
             // The worker never faults; this only guards the wait itself.
+            return false;
         }
+    }
+
+    private void DisposeTray()
+    {
+        var tray = _tray;
+        _tray = null;
+        tray?.Dispose();
     }
 
     internal static MenuItem CreateTrayMenuItem(string header, Action action)
@@ -239,8 +275,17 @@ public partial class App : Application
     private void Restart()
     {
         _exitRequested = true;
-        StopBackups(TimeSpan.FromSeconds(15));
-        _tray?.Dispose();
+        if (!StopBackups(TimeSpan.FromSeconds(15)))
+        {
+            // Keep the lock: a second copy must not run next to a backup that is still stopping.
+            DisposeTray();
+            _planStore.Dispose();
+            _dialogs.ShowInfo("ReBackup", "A running backup could not be stopped in time. Please start ReBackup again manually.");
+            Shutdown();
+            return;
+        }
+
+        DisposeTray();
         _planStore.Dispose();
         _singleInstance?.Dispose();   // the new process needs the lock; released only after the backups stopped
         try
@@ -268,12 +313,12 @@ public partial class App : Application
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
-        base.OnSessionEnding(e);
         _exitRequested = true;
         if (_queue is not null)
             StopBackups(TimeSpan.FromSeconds(3));
-        _tray?.Dispose();
+        DisposeTray();
         _planStore?.Dispose();
+        base.OnSessionEnding(e);
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -293,21 +338,31 @@ public partial class App : Application
 
     private void ExitApp()
     {
+        if (_exiting)
+            return;
+        _exiting = true;
+
         if (_mainViewModel.HasUnsavedChanges && !_window.IsVisible)
             ShowMainWindow();
         if (!ConfirmDiscardUnsaved())
+        {
+            _exiting = false;
             return;
+        }
 
         if (_queue.IsBusy)
         {
             if (!_dialogs.Confirm("Backup in progress",
                     "A backup is running or queued.\n\nCancel it and exit ReBackup?"))
+            {
+                _exiting = false;
                 return;
+            }
             StopBackups(TimeSpan.FromSeconds(15));
         }
 
         _exitRequested = true;
-        _tray?.Dispose();
+        DisposeTray();
         _planStore.Dispose();
         Shutdown();
     }

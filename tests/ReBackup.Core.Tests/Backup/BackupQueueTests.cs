@@ -154,6 +154,40 @@ public class BackupQueueTests : IDisposable
     }
 
     [Fact]
+    public async Task WhenIdleAsync_can_be_waited_on_synchronously_from_a_thread_with_a_blocked_synchronization_context()
+    {
+        var waited = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                SynchronizationContext.SetSynchronizationContext(new NonPumpingContext());
+                _queue.Enqueue(Request("a"));
+                _runner.Started("a").Wait(Timeout);
+                _queue.CancelAll();
+                waited.SetResult(_queue.WhenIdleAsync().Wait(Timeout));
+            }
+            catch (Exception ex)
+            {
+                waited.SetException(ex);
+            }
+        });
+        thread.Start();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        (await waited.Task.WaitAsync(TimeSpan.FromSeconds(15))).Should().BeTrue();
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    private sealed class NonPumpingContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            // Like a dispatcher whose thread is blocked: the callback is never run.
+        }
+    }
+
+    [Fact]
     public async Task A_handler_that_throws_does_not_stop_the_queue()
     {
         var goodUpdates = new ConcurrentQueue<BackupJobUpdate>();
