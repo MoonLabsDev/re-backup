@@ -27,7 +27,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         var result = _store.LoadAll();
         foreach (var plan in result.Plans)
-            Plans.Add(new PlanEditorViewModel(plan, isNew: false, AllPlans));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans));
+        RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
     }
@@ -41,15 +42,34 @@ public sealed partial class MainViewModel : ObservableObject
 
     public void ReloadFromDisk()
     {
-        var result = _store.LoadAll();
+        PlanLoadResult result;
+        try
+        {
+            result = _store.LoadAll();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusMessage = $"Plans could not be reloaded: {ex.Message}";
+            return;
+        }
+
         var loaded = result.Plans.ToDictionary(p => p.Id, StringComparer.OrdinalIgnoreCase);
+        var unreadable = result.Errors
+            .Select(e => Path.GetFileNameWithoutExtension(e.FilePath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var editor in Plans.ToList())
         {
             if (loaded.Remove(editor.Id, out var plan))
             {
-                if (!editor.IsDirty)
+                if (editor.IsDirty)
+                    editor.MarkAsExisting();
+                else
                     editor.ReplaceSaved(plan);
+            }
+            else if (unreadable.Contains(editor.Id))
+            {
+                // File exists but cannot be read right now: leave the editor untouched.
             }
             else if (!editor.IsNew)
             {
@@ -61,7 +81,9 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         foreach (var plan in loaded.Values)
-            Plans.Add(new PlanEditorViewModel(plan, isNew: false, AllPlans));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans));
+
+        RevalidateAll();
 
         if (SelectedPlan is null || !Plans.Contains(SelectedPlan))
             SelectedPlan = Plans.FirstOrDefault();
@@ -73,7 +95,8 @@ public sealed partial class MainViewModel : ObservableObject
     private void NewPlan()
     {
         var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans);
-        Plans.Add(editor);
+        AddEditor(editor);
+        RevalidateAll();
         SelectedPlan = editor;
     }
 
@@ -96,19 +119,31 @@ public sealed partial class MainViewModel : ObservableObject
             try
             {
                 _store.Delete(editor.Id);
-                var logFile = _paths.LogFileFor(editor.Id);
-                if (deleteLog == true && File.Exists(logFile))
-                    File.Delete(logFile);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 _dialogs.ShowError("Delete plan", ex.Message);
                 return;
             }
+
+            if (deleteLog == true)
+            {
+                try
+                {
+                    var logFile = _paths.LogFileFor(editor.Id);
+                    if (File.Exists(logFile))
+                        File.Delete(logFile);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _dialogs.ShowError("Delete plan", $"The plan was deleted, but its run history could not be: {ex.Message}");
+                }
+            }
         }
 
         var index = Plans.IndexOf(editor);
         Plans.Remove(editor);
+        RevalidateAll();
         SelectedPlan = Plans.Count == 0 ? null : Plans[Math.Min(index, Plans.Count - 1)];
     }
 
@@ -116,7 +151,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void Save()
     {
         var editor = SelectedPlan;
-        if (editor is null)
+        if (editor is null || !editor.IsDirty)
             return;
 
         try
@@ -124,6 +159,7 @@ public sealed partial class MainViewModel : ObservableObject
             StatusMessage = editor.TrySave(_store)
                 ? $"Saved \"{editor.Name}\"."
                 : "Not saved: fix the errors shown in the plan.";
+            RevalidateAll();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -142,9 +178,12 @@ public sealed partial class MainViewModel : ObservableObject
         {
             Plans.Remove(editor);
             SelectedPlan = Plans.FirstOrDefault();
-            return;
         }
-        editor.Revert();
+        else
+        {
+            editor.Revert();
+        }
+        RevalidateAll();
     }
 
     [RelayCommand]
@@ -163,6 +202,22 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void OpenSettings() => _openSettings();
+
+    private void AddEditor(PlanEditorViewModel editor)
+    {
+        editor.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(PlanEditorViewModel.Name))
+                RevalidateAll();
+        };
+        Plans.Add(editor);
+    }
+
+    private void RevalidateAll()
+    {
+        foreach (var editor in Plans)
+            editor.Validate();
+    }
 
     private IEnumerable<BackupPlan> AllPlans() => Plans.Select(p => p.ToPlan());
 

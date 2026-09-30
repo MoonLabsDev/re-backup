@@ -91,6 +91,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     /// <summary>The file was deleted on disk while this editor had unsaved edits; saving recreates it.</summary>
     public void MarkAsNew() => IsNew = true;
 
+    /// <summary>The file exists on disk again after having been unreadable or missing.</summary>
+    public void MarkAsExisting() => IsNew = false;
+
     private void Touch()
     {
         if (_loading)
