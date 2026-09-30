@@ -2687,9 +2687,39 @@ git commit -m "feat(app): tray status, run notifications, run-plan menu and exit
 
 ---
 
-## Carry-forward (not in this plan)
+## Carry-forward from Phase 3 execution (final review triage)
 
-- Retention after a successful run, `retentionDeleted`, and `freeSpaceByRetention` in the preflight: Phase 4.
-- Scheduled and catch-up runs, "Pause scheduler" in the tray: Phase 5.
-- Free space on network shares (UNC paths) is not checked before the run; a full share is only detected while copying.
-- File symbolic links are copied as the file they point to.
+Entry conditions for Phase 4 (retention deletes version folders):
+- Before retention or preflight freeing deletes a folder, require both `VersionName.TryParse` and a `re-manifest.json` whose `planId` matches the plan. A version is "ours" by name and content, not by name alone.
+- Decide what happens to versions stored under a plan's old name after a rename (they are orphans today; a different plan later given that name would inherit them by name).
+- Put version enumeration in one place (`VersionCatalog`) and use it for the collision check, retention and leftovers.
+- `BackupRunner.DeleteLeftovers` probes for a manifest with `File.Exists`, which returns false on an I/O error; make that check fail-safe (do not delete what cannot be probed).
+- Retention after a successful run, `retentionDeleted`, and `freeSpaceByRetention` in the preflight.
+
+Entry conditions for Phase 5 (scheduler enqueues from a timer thread):
+- `BackupQueue.Close()`: cancel everything and make `Enqueue` return false; stop the scheduler before it on exit and restart.
+- A cheap "last entry" read on `RunLog` (today the whole log is parsed on the UI thread at startup and after each run).
+- Validate a plan before enqueuing it, or share `PlanValidator.ValidateName` with the runner (the runner's own checks do not reject names ending in a dot or space, or reserved device names).
+- Define which run statuses count as "last run". `StartUtc` is taken before indexing and the same-minute wait, so it can differ from the minute in the version name.
+- Scheduled and catch-up runs, "Pause scheduler" in the tray.
+
+Phase 3 UI items from the spec that were not built:
+- A status dot per plan row (idle / queued / running / last failed); today the row has text only.
+- Current file and ETA in the progress text (`BackupProgress.CurrentFile` is reported by Core but not shown).
+- "Starting at hh:mm" while a run waits for the next minute because that minute's folder already exists.
+
+Known limitations:
+- Free space on network shares (UNC paths) and on volumes mounted into a folder is not checked before the run; a full target is only detected while copying.
+- File symbolic links are copied as the file they point to, and always produce a "changed while it was copied" warning, because the index records the link's own size.
+- "Changed while it was copied" also fires for a file that changed between the index scan and its copy, and can fire for files another program holds open.
+- Only the manifest is flushed to disk before the rename. A power loss right after a run can leave a version whose data is not yet on disk.
+- A run that crashes between writing the manifest and the rename leaves a `.partial` folder with a manifest. It is never cleaned up automatically (it could be another plan's version) and blocks that minute's name.
+- The single-instance lock is per Windows session, not per user: the same user logged on twice (console and remote desktop) can run two copies.
+- A plan file removed from disk while its backup is running: the run continues, but the row disappears; if the file comes back, the row shows "Run now" although the run is still active.
+- Counters `filesCopied` and `bytesCopied` of an aborted run show what was copied before the abort, although that data was deleted.
+- Quota-exceeded errors end a run as Error, not Full.
+
+Later / nice to have:
+- Anchor the `Backup*/` rule in `.gitignore` (today two exceptions keep the source folders tracked).
+- Tests: a known-answer xxHash64 vector, files larger than the 1 MB buffer, the mid-read lock path, access denied, cancel during the same-minute wait, disk full while writing the manifest.
+- A second start during the first instance's startup is not signalled; `_exiting` stays set if the exit confirmation throws; the row's action column changes width between "Run now" and "Cancel".
