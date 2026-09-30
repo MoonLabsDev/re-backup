@@ -1,0 +1,27 @@
+<UserControl x:Class="ReBackup.App.Views.IgnorePreviewView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" MinWidth="200" />
+            <ColumnDefinition Width="8" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <DockPanel Grid.Column="0">
+            <TextBlock DockPanel.Dock="Top" Text="Ignore patterns (gitignore syntax, one per line)"
+                       FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4" />
+            <CheckBox DockPanel.Dock="Bottom" Margin="0,6,0,0"
+                      Content="Honor .backupignore files inside the source"
+                      IsChecked="{Binding HonorNestedIgnoreFiles}" />
+            <CheckBox DockPanel.Dock="Bottom" Margin="0,8,0,0"
+                      Content="Also apply the global default patterns"
+                      IsChecked="{Binding UseGlobalIgnoreDefaults}" />
+            <TextBox AcceptsReturn="True" FontFamily="Consolas"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     Text="{Binding IgnorePatternsText, UpdateSourceTrigger=PropertyChanged}" />
+        </DockPanel>
+
+        <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" Background="Transparent" />
+    </Grid>
+</UserControl>

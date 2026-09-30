@@ -15,6 +15,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private string _target = "";
     [ObservableProperty] private bool _enabled;
     [ObservableProperty] private bool _freeSpaceByRetention;
+    [ObservableProperty] private string _ignorePatternsText = "";
+    [ObservableProperty] private bool _useGlobalIgnoreDefaults;
+    [ObservableProperty] private bool _honorNestedIgnoreFiles;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DisplayName))] private bool _isDirty;
     [ObservableProperty] private bool _isNew;
     [ObservableProperty] private IReadOnlyList<string> _errors = [];
@@ -44,6 +47,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     partial void OnTargetChanged(string value) => Touch();
     partial void OnEnabledChanged(bool value) => Touch();
     partial void OnFreeSpaceByRetentionChanged(bool value) => Touch();
+    partial void OnIgnorePatternsTextChanged(string value) => Touch();
+    partial void OnUseGlobalIgnoreDefaultsChanged(bool value) => Touch();
+    partial void OnHonorNestedIgnoreFilesChanged(bool value) => Touch();
 
     public BackupPlan ToPlan()
     {
@@ -53,7 +59,23 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         plan.Target = Target;
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
+        plan.Ignore = CurrentIgnoreSettings();
         return plan;
+    }
+
+    /// <summary>A snapshot of the ignore section as currently edited. Trailing blank lines are dropped.</summary>
+    public IgnoreSettings CurrentIgnoreSettings()
+    {
+        var lines = IgnorePatternsText.Split('\n').Select(line => line.TrimEnd('\r')).ToList();
+        while (lines.Count > 0 && lines[^1].Length == 0)
+            lines.RemoveAt(lines.Count - 1);
+
+        return new IgnoreSettings
+        {
+            UseGlobalDefaults = UseGlobalIgnoreDefaults,
+            HonorNestedFiles = HonorNestedIgnoreFiles,
+            Patterns = lines,
+        };
     }
 
     public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());
@@ -112,6 +134,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             Target = plan.Target;
             Enabled = plan.Enabled;
             FreeSpaceByRetention = plan.FreeSpaceByRetention;
+            IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);
+            UseGlobalIgnoreDefaults = plan.Ignore.UseGlobalDefaults;
+            HonorNestedIgnoreFiles = plan.Ignore.HonorNestedFiles;
         }
         finally
         {
