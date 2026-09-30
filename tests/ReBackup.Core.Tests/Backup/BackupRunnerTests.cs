@@ -186,6 +186,34 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Cancellation_reports_the_cleanup_of_the_partial_folder()
+    {
+        using var cts = new CancellationTokenSource();
+        var volume = new FakeVolume { OnCreateFile = _ => cts.Cancel() };
+        var reports = new List<BackupProgress>();
+
+        await Runner(volume).RunAsync(Request(Plan()), new SyncProgress(reports.Add), cts.Token);
+
+        reports[^1].Phase.Should().Be(BackupPhase.CleaningUp);
+    }
+
+    [Fact]
+    public async Task Reports_the_folder_creation_before_copying()
+    {
+        var reports = new List<BackupProgress>();
+
+        await Runner().RunAsync(Request(Plan()), new SyncProgress(reports.Add));
+
+        var folders = reports.Where(p => p.Phase == BackupPhase.CreatingFolders).ToList();
+        folders.Should().NotBeEmpty();
+        folders.Should().OnlyContain(p => p.FilesTotal == 2 && p.BytesTotal == 0);
+        folders[^1].FilesDone.Should().Be(2);
+        folders[^1].Fraction.Should().Be(1);
+        reports.FindLastIndex(p => p.Phase == BackupPhase.CreatingFolders)
+            .Should().BeLessThan(reports.FindIndex(p => p.Phase == BackupPhase.Copying));
+    }
+
+    [Fact]
     public async Task Too_little_free_space_aborts_as_Full_before_writing()
     {
         var volume = new FakeVolume { FreeSpace = 16 };   // 16 bytes needed + 5 % does not fit

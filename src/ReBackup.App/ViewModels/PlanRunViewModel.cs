@@ -10,6 +10,16 @@ public sealed partial class PlanRunViewModel : ObservableObject
 {
     private const string NeverRunText = "Never run";
 
+    /// <summary>No estimate before this much copying time: the first seconds are too noisy.</summary>
+    private static readonly TimeSpan EtaWarmUp = TimeSpan.FromSeconds(5);
+
+    private readonly TimeProvider _time;
+    private long? _copyStarted;
+    private long _copyStartBytes;
+    private bool _canceling;
+
+    public PlanRunViewModel(TimeProvider? timeProvider = null) => _time = timeProvider ?? TimeProvider.System;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsActive), nameof(IsRunning))]
     private JobState? _state;
@@ -32,6 +42,8 @@ public sealed partial class PlanRunViewModel : ObservableObject
         switch (update.State)
         {
             case JobState.Queued:
+                _canceling = false;
+                _copyStarted = null;
                 State = JobState.Queued;
                 IsIndeterminate = true;
                 ProgressPercent = 0;
@@ -47,12 +59,24 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 break;
 
             default:
+                _canceling = false;
+                _copyStarted = null;
                 State = null;
                 IsIndeterminate = false;
                 ProgressPercent = 0;
                 ProgressText = "";
                 break;
         }
+    }
+
+    /// <summary>Shows at once that the cancel was requested; the run may still need a moment to stop.</summary>
+    public void MarkCanceling()
+    {
+        if (State != JobState.Running)
+            return;
+        _canceling = true;
+        IsIndeterminate = true;
+        ProgressText = "Canceling…";
     }
 
     /// <summary>Entries oldest first, as read from the log; shown newest first.</summary>
@@ -69,16 +93,50 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
     private void ShowProgress(BackupProgress progress)
     {
-        IsIndeterminate = progress.Phase == BackupPhase.Indexing;
+        if (progress.Phase == BackupPhase.CleaningUp)
+            _canceling = false;
+        else if (_canceling)
+            return;   // keep "Canceling…" until the run has stopped or starts cleaning up
+
+        IsIndeterminate = progress.Phase is BackupPhase.Indexing or BackupPhase.CleaningUp;
         ProgressPercent = progress.Fraction * 100;
         ProgressText = progress.Phase switch
         {
             BackupPhase.Indexing => $"Indexing… {progress.FilesDone:N0} files",
+            BackupPhase.CreatingFolders => $"Creating folders… {progress.FilesDone:N0} / {progress.FilesTotal:N0}",
             BackupPhase.Copying =>
                 $"{progress.FilesDone:N0} / {progress.FilesTotal:N0} files · " +
-                $"{ByteSize.Format(progress.BytesDone)} / {ByteSize.Format(progress.BytesTotal)}",
+                $"{ByteSize.Format(progress.BytesDone)} / {ByteSize.Format(progress.BytesTotal)}" + EtaText(progress),
+            BackupPhase.CleaningUp => "Stopped — removing the incomplete copy…",
             BackupPhase.Retention => "Removing old versions…",
             _ => "Finishing…",
         };
     }
+
+    /// <summary>Remaining copy time from the average rate since the copying began; "" while it is not known yet.</summary>
+    private string EtaText(BackupProgress progress)
+    {
+        var now = _time.GetTimestamp();
+        if (_copyStarted is not { } started)
+        {
+            _copyStarted = now;
+            _copyStartBytes = progress.BytesDone;
+            return "";
+        }
+
+        var elapsed = _time.GetElapsedTime(started, now);
+        var copied = progress.BytesDone - _copyStartBytes;
+        if (elapsed < EtaWarmUp || copied <= 0)
+            return "";
+        var remaining = TimeSpan.FromSeconds(
+            Math.Max(0, progress.BytesTotal - progress.BytesDone) * elapsed.TotalSeconds / copied);
+        return " · " + FormatRemaining(remaining);
+    }
+
+    public static string FormatRemaining(TimeSpan remaining) => remaining.TotalSeconds switch
+    {
+        < 60 => "less than a minute left",
+        < 3600 => $"about {Math.Ceiling(remaining.TotalMinutes):0} min left",
+        _ => $"about {(int)remaining.TotalHours} h {remaining.Minutes:00} min left",
+    };
 }

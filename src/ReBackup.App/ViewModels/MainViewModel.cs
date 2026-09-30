@@ -340,7 +340,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         editor ??= SelectedPlan;
         if (editor is not null && _queue.Cancel(editor.Id))
+        {
+            editor.Run.MarkCanceling();
             StatusMessage = $"Canceling the backup of \"{editor.Name}\"…";
+        }
     }
 
     private bool Start(PlanEditorViewModel editor)
