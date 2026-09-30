@@ -28,14 +28,25 @@ public partial class App : Application
     private bool _exitRequested;
     private TaskbarIcon? _tray;
     private readonly ContextMenu _trayMenu = new();
+    private SingleInstance? _singleInstance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
+        var restarted = e.Args.Contains("--restarted", StringComparer.OrdinalIgnoreCase);
+        _singleInstance = SingleInstance.TryAcquire(restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
+        if (_singleInstance is null)
+        {
+            SingleInstance.SignalRunningInstance();
+            Shutdown();
+            return;
+        }
+
         _appDataRoot = ConfigLocation.DefaultAppDataRoot;
         if (!BootstrapConfiguration())
         {
+            _singleInstance.Dispose();
             Shutdown();
             return;
         }
@@ -43,6 +54,7 @@ public partial class App : Application
         _window = new MainWindow { DataContext = _mainViewModel };
         _window.Closing += OnMainWindowClosing;
         CreateTrayIcon();
+        _singleInstance.ListenForActivation(() => Dispatcher.InvokeAsync(ShowMainWindow));
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
     }
@@ -171,9 +183,10 @@ public partial class App : Application
         _exitRequested = true;
         _tray?.Dispose();
         _planStore.Dispose();
+        _singleInstance?.Dispose();
         try
         {
-            Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false });
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--restarted") { UseShellExecute = false });
         }
         catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
@@ -200,6 +213,7 @@ public partial class App : Application
         _exitRequested = true;
         _tray?.Dispose();
         _planStore.Dispose();
+        _singleInstance?.Dispose();
     }
 
     private bool ConfirmDiscardUnsaved()
@@ -221,6 +235,7 @@ public partial class App : Application
         _exitRequested = true;
         _tray?.Dispose();
         _planStore.Dispose();
+        _singleInstance?.Dispose();
         Shutdown();
     }
 }
