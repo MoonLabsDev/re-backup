@@ -19,6 +19,7 @@ public sealed class PlanStore : IDisposable
     private readonly object _timerLock = new();
     private FileSystemWatcher? _watcher;
     private Timer? _debounce;
+    private bool _disposed;
 
     public PlanStore(string plansDirectory)
     {
@@ -78,29 +79,44 @@ public sealed class PlanStore : IDisposable
 
     public void StartWatching()
     {
-        if (_watcher is not null)
-            return;
-
-        _watcher = new FileSystemWatcher(PlansDirectory, "*.json")
+        lock (_timerLock)
         {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-            IncludeSubdirectories = false,
-        };
-        _watcher.Created += OnFileEvent;
-        _watcher.Changed += OnFileEvent;
-        _watcher.Deleted += OnFileEvent;
-        _watcher.Renamed += OnFileEvent;
-        _watcher.EnableRaisingEvents = true;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_watcher is not null)
+                return;
+
+            _watcher = new FileSystemWatcher(PlansDirectory, "*.json")
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                IncludeSubdirectories = false,
+            };
+            _watcher.Created += OnFileEvent;
+            _watcher.Changed += OnFileEvent;
+            _watcher.Deleted += OnFileEvent;
+            _watcher.Renamed += OnFileEvent;
+            _watcher.EnableRaisingEvents = true;
+        }
     }
+
+    private static bool IsJson(string path) => path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
 
     private void OnFileEvent(object? sender, FileSystemEventArgs e)
     {
-        if (!e.FullPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        var relevant = IsJson(e.FullPath);
+        var oldRelevant = e is RenamedEventArgs r && IsJson(r.OldFullPath);
+        if (!relevant && !oldRelevant)
             return;
 
-        _pending[e.FullPath] = 0;
         lock (_timerLock)
         {
+            if (_disposed)
+                return;
+
+            if (relevant)
+                _pending[e.FullPath] = 0;
+            if (oldRelevant)
+                _pending[((RenamedEventArgs)e).OldFullPath] = 0;
+
             _debounce ??= new Timer(_ => FlushPending());
             _debounce.Change(DebounceDelay, Timeout.InfiniteTimeSpan);
         }
@@ -110,12 +126,28 @@ public sealed class PlanStore : IDisposable
     // watcher event arrived before Save() returned.
     private void FlushPending()
     {
-        var paths = _pending.Keys.ToList();
-        foreach (var path in paths)
-            _pending.TryRemove(path, out _);
+        var removed = new List<string>();
+        lock (_timerLock)
+        {
+            if (_disposed)
+                return;
+            foreach (var path in _pending.Keys.ToList())
+            {
+                if (_pending.TryRemove(path, out _))
+                    removed.Add(path);
+            }
+        }
 
-        if (paths.Any(p => !IsOwnWrite(p)))
-            ExternalChange?.Invoke(this, EventArgs.Empty);
+        if (!removed.Any(p => !IsOwnWrite(p)))
+            return;
+
+        lock (_timerLock)
+        {
+            if (_disposed)
+                return;
+        }
+
+        ExternalChange?.Invoke(this, EventArgs.Empty);
     }
 
     private bool IsOwnWrite(string path)
@@ -136,8 +168,29 @@ public sealed class PlanStore : IDisposable
 
     public void Dispose()
     {
-        _watcher?.Dispose();
+        FileSystemWatcher? watcher;
+        Timer? timer;
         lock (_timerLock)
-            _debounce?.Dispose();
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            watcher = _watcher;
+            timer = _debounce;
+            _watcher = null;
+            _debounce = null;
+        }
+
+        if (watcher is not null)
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Created -= OnFileEvent;
+            watcher.Changed -= OnFileEvent;
+            watcher.Deleted -= OnFileEvent;
+            watcher.Renamed -= OnFileEvent;
+            watcher.Dispose();
+        }
+
+        timer?.Dispose();
     }
 }
