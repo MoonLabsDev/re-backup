@@ -102,6 +102,59 @@ public class SourceIndexerTests : IDisposable
         index.FileCount.Should().Be(3);
     }
 
+    [Fact]
+    public void Folders_nested_deeper_than_the_limit_are_not_scanned()
+    {
+        var source = _tmp.PathOf("src");
+        _tmp.CreateDir("src");
+
+        // Build a chain of nested folders
+        var path = source;
+        for (int i = 0; i < SourceIndexer.MaxDepth + 2; i++)
+        {
+            path = Path.Combine(path, "d");
+        }
+
+        // Create the deep chain - use \\?\ prefix if needed for long paths
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (PathTooLongException)
+        {
+            Directory.CreateDirectory(@"\\?" + Path.GetFullPath(path));
+        }
+
+        // Put a file in the deepest folder
+        File.WriteAllText(Path.Combine(path, "deep.txt"), "content");
+
+        // Build the index
+        var index = SourceIndexer.Build(source);
+        index.Should().NotBeNull("build does not throw");
+
+        // Walk the chain iteratively to find the cutoff point
+        var current = index.RootNode;
+        int depth = 0;
+        while (current.Children.SingleOrDefault(c => c.Name == "d") is { } dNode)
+        {
+            // If this child is blocked, don't increment depth or move to it
+            if (dNode.Error == "Folder nesting too deep.")
+                break;
+
+            depth++;
+            current = dNode;
+        }
+
+        // The node at depth MaxDepth should have a child "d" that is blocked
+        depth.Should().Be(SourceIndexer.MaxDepth, "we should traverse down to MaxDepth");
+
+        // The node at depth MaxDepth should have a child "d" node that has Error set
+        var blockedNode = current.Children.Single(c => c.Name == "d");
+        blockedNode.Error.Should().Be("Folder nesting too deep.");
+        blockedNode.Children.Should().BeEmpty("blocked node has no children");
+        blockedNode.IsDirectory.Should().BeTrue();
+    }
+
     private sealed class SyncProgress(Action<IndexProgress> onReport) : IProgress<IndexProgress>
     {
         public void Report(IndexProgress value) => onReport(value);

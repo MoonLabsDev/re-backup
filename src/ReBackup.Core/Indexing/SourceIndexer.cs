@@ -32,6 +32,9 @@ public readonly record struct IndexProgress(int Files, int Directories, string C
 
 public static class SourceIndexer
 {
+    /// <summary>Folders nested deeper than this are not scanned.</summary>
+    public const int MaxDepth = 256;
+
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(200);
 
     public static Task<SourceIndex> BuildAsync(string root, IProgress<IndexProgress>? progress = null,
@@ -47,7 +50,7 @@ public static class SourceIndexer
 
         var walk = new Walk(progress, cancellationToken);
         var name = Path.GetFileName(fullRoot);
-        var rootNode = walk.ScanDirectory(new DirectoryInfo(fullRoot), name.Length > 0 ? name : fullRoot, "");
+        var rootNode = walk.ScanDirectory(new DirectoryInfo(fullRoot), name.Length > 0 ? name : fullRoot, "", 0);
         progress?.Report(new IndexProgress(walk.Files, walk.Directories, fullRoot));
         return new SourceIndex(fullRoot, rootNode, walk.IgnoreFiles, walk.Files, walk.Directories);
     }
@@ -60,7 +63,7 @@ public static class SourceIndexer
         public int Files { get; private set; }
         public int Directories { get; private set; }
 
-        public IndexNode ScanDirectory(DirectoryInfo directory, string name, string relativePath)
+        public IndexNode ScanDirectory(DirectoryInfo directory, string name, string relativePath, int depth)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ReportThrottled(directory.FullName);
@@ -88,9 +91,20 @@ public static class SourceIndexer
                                 Error = "Link is not followed.",
                             });
                         }
+                        else if (depth + 1 > SourceIndexer.MaxDepth)
+                        {
+                            children.Add(new IndexNode
+                            {
+                                Name = subdirectory.Name,
+                                RelativePath = childPath,
+                                IsDirectory = true,
+                                LastWriteUtc = subdirectory.LastWriteTimeUtc,
+                                Error = "Folder nesting too deep.",
+                            });
+                        }
                         else
                         {
-                            children.Add(ScanDirectory(subdirectory, subdirectory.Name, childPath));
+                            children.Add(ScanDirectory(subdirectory, subdirectory.Name, childPath, depth + 1));
                         }
                     }
                     else if (entry is FileInfo file)
