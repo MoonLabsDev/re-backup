@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using ReBackup.App.Services;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Settings;
 
 namespace ReBackup.App.ViewModels;
 
@@ -12,22 +13,24 @@ public sealed partial class MainViewModel : ObservableObject
 {
     private readonly PlanStore _store;
     private readonly ConfigPaths _paths;
+    private readonly AppSettings _settings;
     private readonly IDialogService _dialogs;
     private readonly Action _openSettings;
 
     [ObservableProperty] private PlanEditorViewModel? _selectedPlan;
     [ObservableProperty] private string? _statusMessage;
 
-    public MainViewModel(PlanStore store, ConfigPaths paths, IDialogService dialogs, Action openSettings)
+    public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs, Action openSettings)
     {
         _store = store;
         _paths = paths;
+        _settings = settings;
         _dialogs = dialogs;
         _openSettings = openSettings;
 
         var result = _store.LoadAll();
         foreach (var plan in result.Plans)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
@@ -81,7 +84,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         foreach (var plan in loaded.Values)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults));
 
         RevalidateAll();
 
@@ -94,7 +97,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void NewPlan()
     {
-        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans);
+        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans, GlobalIgnoreDefaults);
         AddEditor(editor);
         RevalidateAll();
         SelectedPlan = editor;
@@ -222,6 +225,9 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private IEnumerable<BackupPlan> AllPlans() => Plans.Select(p => p.ToPlan());
+
+    // Read on every use, so edits made in the settings dialog apply to the next evaluation.
+    private IReadOnlyList<string> GlobalIgnoreDefaults() => _settings.DefaultIgnorePatterns;
 
     private string UniqueName(string baseName)
     {

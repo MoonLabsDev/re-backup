@@ -8,4 +8,10 @@ public partial class IgnorePreviewView : UserControl
     {
         InitializeComponent();
     }
+
+    private void OnRowSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (RowsList.SelectedItem is { } row)
+            RowsList.ScrollIntoView(row);
+    }
 }

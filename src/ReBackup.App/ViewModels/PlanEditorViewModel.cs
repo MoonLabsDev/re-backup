@@ -1,4 +1,7 @@
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using ReBackup.Core.Ignore;
 using ReBackup.Core.Plans;
 
 namespace ReBackup.App.ViewModels;
@@ -22,15 +25,20 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _isNew;
     [ObservableProperty] private IReadOnlyList<string> _errors = [];
 
-    public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans)
+    public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
+        Func<IReadOnlyList<string>> globalIgnoreDefaults)
     {
         _saved = plan.Clone();
         _allPlans = allPlans;
+        Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
         IsNew = isNew;
         LoadFrom(_saved);
         IsDirty = isNew;
         Validate();
     }
+
+    /// <summary>Index and preview of this plan's source; cached for the session.</summary>
+    public IgnorePreviewViewModel Preview { get; }
 
     public string Id => _saved.Id;
 
@@ -43,13 +51,33 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
-    partial void OnSourceChanged(string value) => Touch();
+    partial void OnSourceChanged(string value)
+    {
+        Preview.Invalidate();
+        Touch();
+    }
+
     partial void OnTargetChanged(string value) => Touch();
     partial void OnEnabledChanged(bool value) => Touch();
     partial void OnFreeSpaceByRetentionChanged(bool value) => Touch();
-    partial void OnIgnorePatternsTextChanged(string value) => Touch();
-    partial void OnUseGlobalIgnoreDefaultsChanged(bool value) => Touch();
-    partial void OnHonorNestedIgnoreFilesChanged(bool value) => Touch();
+
+    partial void OnIgnorePatternsTextChanged(string value)
+    {
+        Preview.RequestReevaluate();
+        Touch();
+    }
+
+    partial void OnUseGlobalIgnoreDefaultsChanged(bool value)
+    {
+        Preview.RequestReevaluate();
+        Touch();
+    }
+
+    partial void OnHonorNestedIgnoreFilesChanged(bool value)
+    {
+        Preview.RequestReevaluate();
+        Touch();
+    }
 
     public BackupPlan ToPlan()
     {
@@ -76,6 +104,37 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             HonorNestedFiles = HonorNestedIgnoreFiles,
             Patterns = lines,
         };
+    }
+
+    [RelayCommand]
+    private void IgnoreSelected()
+    {
+        if (SelectedEntry() is { } node)
+            AppendPattern("/" + IgnorePattern.EscapeLiteral(node.RelativePath) + (node.IsDirectory ? "/" : ""));
+    }
+
+    [RelayCommand]
+    private void IgnoreSelectedExtension()
+    {
+        if (SelectedEntry() is { IsDirectory: false } node && Path.GetExtension(node.Name) is { Length: > 1 } extension)
+            AppendPattern("*" + IgnorePattern.EscapeLiteral(extension));
+    }
+
+    [RelayCommand]
+    private void UnignoreSelected()
+    {
+        if (SelectedEntry() is { } node)
+            AppendPattern("!/" + IgnorePattern.EscapeLiteral(node.RelativePath) + (node.IsDirectory ? "/" : ""));
+    }
+
+    /// <summary>The selected preview entry, unless it is the source root (which cannot be ignored).</summary>
+    private ReBackup.Core.Indexing.IndexNode? SelectedEntry() =>
+        Preview.SelectedNode?.Node is { RelativePath.Length: > 0 } node ? node : null;
+
+    private void AppendPattern(string pattern)
+    {
+        var text = IgnorePatternsText.TrimEnd('\r', '\n');
+        IgnorePatternsText = text.Length == 0 ? pattern : text + Environment.NewLine + pattern;
     }
 
     public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());

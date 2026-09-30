@@ -93,7 +93,7 @@ public partial class App : Application
         var planStore = new PlanStore(paths.PlansDirectory);
         try
         {
-            var mainViewModel = new MainViewModel(planStore, paths, _dialogs, ShowSettings);
+            var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
             planStore.StartWatching();
 

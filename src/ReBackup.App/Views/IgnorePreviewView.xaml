@@ -23,5 +23,117 @@
         </DockPanel>
 
         <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" Background="Transparent" />
+
+        <DockPanel Grid.Column="2">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <Button DockPanel.Dock="Left" Content="Index now" Padding="10,2"
+                        Command="{Binding Preview.IndexCommand}" />
+                <Button DockPanel.Dock="Left" Content="Cancel" Padding="10,2" Margin="6,0,0,0"
+                        Command="{Binding Preview.CancelIndexCommand}"
+                        IsEnabled="{Binding Preview.IsIndexing}" />
+                <ProgressBar DockPanel.Dock="Left" Width="80" Height="12" Margin="8,0,0,0"
+                             IsIndeterminate="{Binding Preview.IsIndexing}" />
+                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Text="{Binding Preview.ProgressText}" />
+            </DockPanel>
+
+            <TextBlock DockPanel.Dock="Top" Foreground="Firebrick" TextWrapping="Wrap"
+                       Text="{Binding Preview.Error}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Preview.Error}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
+            <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" FontWeight="SemiBold"
+                       Text="{Binding Preview.Summary}" />
+
+            <Grid x:Name="PreviewArea">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <ListView x:Name="RowsList" Grid.Row="0" SelectionMode="Single"
+                          ItemsSource="{Binding Preview.Tree.Rows}"
+                          SelectedItem="{Binding Preview.Tree.SelectedRow}"
+                          SelectionChanged="OnRowSelectionChanged"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Ignore this" Command="{Binding IgnoreSelectedCommand}" />
+                            <MenuItem Header="Ignore all files with this extension"
+                                      Command="{Binding IgnoreSelectedExtensionCommand}" />
+                            <MenuItem Header="Un-ignore this" Command="{Binding UnignoreSelectedCommand}" />
+                        </ContextMenu>
+                    </ListView.ContextMenu>
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="ToolTip" Value="{Binding StatusDetail}" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Name" Width="300">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="{Binding Indent}">
+                                            <ToggleButton Width="16" Height="16" Padding="0" Margin="0,0,4,0"
+                                                          FontSize="9" IsChecked="{Binding IsExpanded}">
+                                                <ToggleButton.Style>
+                                                    <Style TargetType="ToggleButton">
+                                                        <Setter Property="Content" Value="+" />
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsChecked" Value="True">
+                                                                <Setter Property="Content" Value="−" />
+                                                            </Trigger>
+                                                            <DataTrigger Binding="{Binding IsExpandable}" Value="False">
+                                                                <Setter Property="Visibility" Value="Hidden" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ToggleButton.Style>
+                                            </ToggleButton>
+                                            <TextBlock Text="{Binding Name}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsIgnored}" Value="True">
+                                                                <Setter Property="Foreground" Value="Gray" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
+                            <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
+                            <GridViewColumn Header="% of parent" Width="130">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <ProgressBar Height="14" Maximum="100"
+                                                         Value="{Binding PercentOfParent, Mode=OneWay}" />
+                                            <TextBlock HorizontalAlignment="Center" FontSize="11"
+                                                       Text="{Binding PercentText}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Status" Width="80" DisplayMemberBinding="{Binding StatusText}" />
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </Grid>
+        </DockPanel>
     </Grid>
 </UserControl>
