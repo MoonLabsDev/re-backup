@@ -162,6 +162,8 @@ public partial class App : Application
 
         if (viewModel.RestartRequired)
             Restart();
+        else
+            _mainViewModel.ReevaluatePreviews();
     }
 
     private void Restart()

@@ -62,6 +62,14 @@ public class IgnoreMatcherTests
     }
 
     [Fact]
+    public void Null_lines_are_skipped()
+    {
+        var matcher = IgnoreMatcher.Create([null!, "*.a"], [null!], [new NestedIgnoreFile("", [null!, "*.b"])]);
+
+        matcher.Patterns.Should().HaveCount(2);
+    }
+
+    [Fact]
     public void Nested_file_only_applies_below_its_folder()
     {
         var matcher = IgnoreMatcher.Create([], [], [new NestedIgnoreFile("sub", ["*.txt"])]);

@@ -38,6 +38,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     public ObservableCollection<PlanEditorViewModel> Plans { get; } = [];
 
+    /// <summary>Re-applies the patterns in every open preview, e.g. after the global defaults changed.</summary>
+    public void ReevaluatePreviews()
+    {
+        foreach (var editor in Plans)
+            editor.Preview.RequestReevaluate();
+    }
+
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
 
     public IEnumerable<string> UnsavedPlanNames =>

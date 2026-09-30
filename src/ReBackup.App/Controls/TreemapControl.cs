@@ -158,6 +158,15 @@ public sealed class TreemapControl : FrameworkElement
         return null;
     }
 
+    /// <summary>FNV-1a over the upper-invariant characters, so extension colours are the same on every run.</summary>
+    private static uint StableHash(string text)
+    {
+        var hash = 2166136261u;
+        foreach (var ch in text)
+            hash = (hash ^ char.ToUpperInvariant(ch)) * 16777619u;
+        return hash;
+    }
+
     private static Brush BrushFor(EvaluatedNode node)
     {
         if (node.Status == IncludeStatus.Ignored)
@@ -168,8 +177,7 @@ public sealed class TreemapControl : FrameworkElement
         var name = node.Node.Name;
         var dot = name.LastIndexOf('.');
         var extension = dot < 0 ? "" : name[dot..];
-        var hash = string.GetHashCode(extension, StringComparison.OrdinalIgnoreCase) & 0x7FFFFFFF;
-        return Palette[hash % Palette.Length];
+        return Palette[(int)(StableHash(extension) % (uint)Palette.Length)];
     }
 
     private static Brush Frozen(byte r, byte g, byte b)

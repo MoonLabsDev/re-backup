@@ -155,6 +155,46 @@ public class SourceIndexerTests : IDisposable
         blockedNode.IsDirectory.Should().BeTrue();
     }
 
+    [Fact]
+    public void Junction_folders_are_not_followed()
+    {
+        _tmp.WriteFile(@"src\real\inside.txt", "x");
+        var source = _tmp.PathOf("src");
+        var linkPath = _tmp.PathOf(@"src\link");
+        var targetPath = _tmp.PathOf(@"src\real");
+
+        var startInfo = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{linkPath}\" \"{targetPath}\"")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using (var process = System.Diagnostics.Process.Start(startInfo)!)
+        {
+            var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+                Assert.Fail($"mklink failed ({process.ExitCode}): {output}");
+        }
+
+        try
+        {
+            var index = SourceIndexer.Build(source);
+
+            var link = index.RootNode.Children.Single(c => c.Name == "link");
+            link.IsDirectory.Should().BeTrue();
+            link.Children.Should().BeEmpty();
+            link.Error.Should().Be("Link is not followed.");
+            index.RootNode.Children.Single(c => c.Name == "real").Children.Should().ContainSingle(c => c.Name == "inside.txt");
+            index.FileCount.Should().Be(1);
+        }
+        finally
+        {
+            Directory.Delete(linkPath);
+        }
+    }
+
     private sealed class SyncProgress(Action<IndexProgress> onReport) : IProgress<IndexProgress>
     {
         public void Report(IndexProgress value) => onReport(value);

@@ -43,7 +43,8 @@ public sealed class PreviewRowViewModel : ObservableObject
     public string SizeText => ByteSize.Format(Node.TotalSize);
     public string FilesText => Node.Node.IsDirectory ? Node.TotalFiles.ToString("N0", CultureInfo.CurrentCulture) : "";
     public string PercentText => PercentOfParent.ToString("0.0", CultureInfo.CurrentCulture) + " %";
-    public string StatusText => Node.Status.ToString();
+    public string StatusText =>
+        Node.Node.Error is not null && Node.Status != IncludeStatus.Ignored ? "Not scanned" : Node.Status.ToString();
     public bool IsIgnored => Node.Status == IncludeStatus.Ignored;
 
     public string StatusDetail
@@ -62,7 +63,7 @@ public sealed class PreviewRowViewModel : ObservableObject
                     $"Re-included by \"{Node.Pattern.Text}\" ({Node.Pattern.Origin})",
                 _ => "Included",
             };
-            return Node.Node.Error is null ? detail : $"{detail}\nCould not be read: {Node.Node.Error}";
+            return Node.Node.Error is null ? detail : $"{detail}\nNot scanned:{Node.Node.Error}";
         }
     }
 }

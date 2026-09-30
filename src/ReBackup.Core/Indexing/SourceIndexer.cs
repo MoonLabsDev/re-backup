@@ -80,7 +80,7 @@ public static class SourceIndexer
                     if (entry is DirectoryInfo subdirectory)
                     {
                         Directories++;
-                        if (subdirectory.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                        if (subdirectory.LinkTarget is not null)
                         {
                             children.Add(new IndexNode
                             {

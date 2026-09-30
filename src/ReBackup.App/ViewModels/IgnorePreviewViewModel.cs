@@ -127,10 +127,6 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             if (ReferenceEquals(_indexCts, cts))
                 ProgressText = _index is null ? "Indexing canceled." : "Indexing canceled; showing the previous index.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Error = ex.Message;
-        }
         catch (Exception ex)
         {
             Error = ex.Message;
@@ -162,6 +158,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             return false;
 
         _index = index;
+        Error = null;
         Root = root;
         Tree.SetRoot(root);
         Summary = $"Included: {root.IncludedFiles:N0} files, {ByteSize.Format(root.IncludedSize)}   ·   " +

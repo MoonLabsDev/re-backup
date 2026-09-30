@@ -85,6 +85,8 @@ public sealed class IgnoreMatcher
     {
         foreach (var line in lines)
         {
+            if (line is null)
+                continue;
             if (IgnorePattern.Parse(line, origin, baseDirectory) is { } pattern)
                 patterns.Add(pattern);
         }

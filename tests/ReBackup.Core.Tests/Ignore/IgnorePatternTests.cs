@@ -41,6 +41,8 @@ public class IgnorePatternTests
     [InlineData("file[0-9].txt", "file5.txt", false, true)]
     [InlineData("file[!0-9].txt", "file5.txt", false, false)]
     [InlineData("file[!0-9].txt", "filex.txt", false, true)]
+    [InlineData("a[!x]b", "a/b", false, false)]
+    [InlineData("a[!x]b", "ayb", false, true)]
     // escapes
     [InlineData("\\#notes", "#notes", false, true)]
     [InlineData("\\!important", "!important", false, true)]

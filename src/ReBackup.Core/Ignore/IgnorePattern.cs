@@ -220,7 +220,7 @@ public sealed class IgnorePattern
 
         sb.Append('[');
         if (negate)
-            sb.Append('^');
+            sb.Append("^/");   // a class never matches a slash
         foreach (var ch in glob.AsSpan(contentStart, i - contentStart))
         {
             if (ch is '\\' or '[' or ']' or '^')
