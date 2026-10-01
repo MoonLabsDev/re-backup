@@ -1,6 +1,7 @@
 using System.Globalization;
 using ReBackup.Core.Backup;
 using ReBackup.Core.IO;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Versions;
 
@@ -72,13 +73,13 @@ public static class Restorer
         RestoreMode mode)
     {
         if (!Path.IsPathFullyQualified(destinationRoot))
-            throw new ArgumentException("The destination must be an absolute path.", nameof(destinationRoot));
+            throw new ArgumentException(CoreTexts.English("core.restore.destinationNotAbsolute"), nameof(destinationRoot));
         versionFolder = PathUtil.Normalize(versionFolder);
         destinationRoot = PathUtil.Normalize(destinationRoot);
         if (!Directory.Exists(versionFolder))
-            throw new DirectoryNotFoundException($"The version folder \"{versionFolder}\" does not exist.");
+            throw new DirectoryNotFoundException(CoreTexts.English("core.restore.versionMissing", ("folder", versionFolder)));
         if (PathUtil.IsSameOrInside(destinationRoot, versionFolder))
-            throw new ArgumentException("The destination must not be the version folder or inside it.", nameof(destinationRoot));
+            throw new ArgumentException(CoreTexts.English("core.restore.destinationInVersion"), nameof(destinationRoot));
 
         var directories = new List<string>();
         var files = new List<RestoreFile>();
@@ -91,14 +92,14 @@ public static class Restorer
             var relative = CheckRelative(relativePath);
             var source = relative.Length == 0 ? versionFolder : Path.GetFullPath(Path.Combine(versionFolder, relative));
             if (!PathUtil.IsSameOrInside(source, versionFolder))
-                throw new ArgumentException($"\"{relativePath}\" is outside the version.", nameof(relativePaths));
+                throw new ArgumentException(CoreTexts.English("core.restore.outside", ("path", relativePath)), nameof(relativePaths));
             if (FindLink(source, versionFolder, includeRoot: false) is { } linkInside)
-                throw new ArgumentException($"\"{relativePath}\" goes through the link \"{linkInside}\".", nameof(relativePaths));
+                throw new ArgumentException(CoreTexts.English("core.restore.throughLink", ("path", relativePath), ("link", linkInside)), nameof(relativePaths));
             var name = relative.Length == 0 ? Path.GetFileName(versionFolder) : Path.GetFileName(relative);
             if (mode == RestoreMode.ToFolder)
             {
                 if (names.TryGetValue(name, out var earlier) && !string.Equals(earlier, relative, StringComparison.OrdinalIgnoreCase))
-                    throw new ArgumentException($"Two selected items are called \"{name}\"; they would end up in the same place.", nameof(relativePaths));
+                    throw new ArgumentException(CoreTexts.English("core.restore.sameName", ("name", name)), nameof(relativePaths));
                 names[name] = relative;
             }
             var destination = mode == RestoreMode.Original
@@ -108,20 +109,20 @@ public static class Restorer
             if (File.Exists(source))
             {
                 if (IsLink(source))
-                    throw new ArgumentException($"\"{relativePath}\" is a link.", nameof(relativePaths));
+                    throw new ArgumentException(CoreTexts.English("core.restore.isLink", ("path", relativePath)), nameof(relativePaths));
                 if (IsManifest(source, versionFolder))
-                    throw new ArgumentException("The manifest is not part of the backup.", nameof(relativePaths));
+                    throw new ArgumentException(CoreTexts.English("core.restore.manifest"), nameof(relativePaths));
                 AddFile(files, seen, source, destination, new FileInfo(source).Length, destinationRoot);
             }
             else if (Directory.Exists(source))
             {
                 if (IsLink(source))
-                    throw new ArgumentException($"\"{relativePath}\" is a link.", nameof(relativePaths));
+                    throw new ArgumentException(CoreTexts.English("core.restore.isLink", ("path", relativePath)), nameof(relativePaths));
                 AddFolder(directories, files, planFailures, seen, source, destination, versionFolder, destinationRoot);
             }
             else
             {
-                throw new ArgumentException($"\"{relativePath}\" does not exist in the version.", nameof(relativePaths));
+                throw new ArgumentException(CoreTexts.English("core.restore.notInVersion", ("path", relativePath)), nameof(relativePaths));
             }
         }
 
@@ -190,7 +191,7 @@ public static class Restorer
                             break;
                         default:
                             if (Directory.Exists(target))
-                                throw new IOException("A folder with this name exists.");
+                                throw new IOException(CoreTexts.English("core.restore.folderExists"));
                             overwrite = true;
                             break;
                     }
@@ -332,7 +333,7 @@ public static class Restorer
     private static void ThrowIfLink(string folder, string destinationRoot)
     {
         if (FindLink(folder, destinationRoot, includeRoot: true) is not null)
-            throw new IOException("the destination folder is a link");
+            throw new IOException(CoreTexts.English("core.restore.destinationLink"));
     }
 
     private static void AddFolder(List<string> directories, List<RestoreFile> files, List<RestoreFailure> planFailures,
@@ -381,7 +382,7 @@ public static class Restorer
     private static void CheckInside(string destination, string destinationRoot)
     {
         if (!PathUtil.IsSameOrInside(destination, destinationRoot))
-            throw new ArgumentException($"\"{destination}\" is outside the destination.");
+            throw new ArgumentException(CoreTexts.English("core.restore.outsideDestination", ("path", destination)));
     }
 
     /// <summary>The path with back slashes; rooted paths, drive letters and "." or ".." segments are rejected.</summary>
@@ -390,7 +391,7 @@ public static class Restorer
         var relative = relativePath.Replace('/', Path.DirectorySeparatorChar).Trim(Path.DirectorySeparatorChar);
         if (Path.IsPathRooted(relativePath) || relative.Contains(Path.VolumeSeparatorChar) ||
             relative.Split(Path.DirectorySeparatorChar).Any(part => part is "." or ".." || (relative.Length > 0 && part.Length == 0)))
-            throw new ArgumentException($"\"{relativePath}\" is not a path inside the version.", nameof(relativePath));
+            throw new ArgumentException(CoreTexts.English("core.restore.notAPath", ("path", relativePath)), nameof(relativePath));
         return relative;
     }
 
@@ -406,8 +407,8 @@ public static class Restorer
 
     private static string Reason(Exception exception) => exception switch
     {
-        UnauthorizedAccessException => "access denied (read-only, or in use by another program)",
-        IOException io when (io.HResult & 0xFFFF) is ErrorSharingViolation or ErrorLockViolation => "locked by another program",
+        UnauthorizedAccessException => CoreTexts.English("core.restore.accessDenied"),
+        IOException io when (io.HResult & 0xFFFF) is ErrorSharingViolation or ErrorLockViolation => CoreTexts.English("core.file.locked"),
         _ => exception.Message,
     };
 

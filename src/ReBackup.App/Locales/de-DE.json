@@ -103,7 +103,80 @@
       "invalid": "Die Aufbewahrungsregel ist ungültig: {problem}"
     },
     "run": {
-      "nameUnusable": "Der Planname „{name}“ kann nicht verwendet werden: {problem}"
+      "nameUnusable": "Der Planname „{name}“ kann nicht verwendet werden: {problem}",
+      "sourceMissing": "Der Quellordner „{source}“ existiert nicht.",
+      "noTarget": "Es ist kein Zielordner festgelegt.",
+      "nameNotFolder": "Der Planname „{name}“ kann nicht als Ordnername verwendet werden.",
+      "namePartial": "Der Planname darf nicht auf „.partial“ enden.",
+      "nameDeleting": "Der Planname darf nicht auf „.deleting“ enden.",
+      "targetInsideSource": "Der Zielordner ist der Quellordner oder liegt darin.",
+      "sourceInsideTarget": "Der Quellordner liegt im Zielordner.",
+      "sourceUnreadable": "Der Quellordner konnte nicht gelesen werden: {error}",
+      "notEnoughSpace": "Das Backup braucht {required}, auf dem Ziel sind aber nur {free} frei.",
+      "targetFull": "Auf dem Ziel ist während des Backups der Platz ausgegangen.",
+      "sourceGone": "Der Quellordner ist nicht mehr verfügbar.",
+      "retentionFailed": "Die Aufbewahrung wurde übersprungen: {error}",
+      "retentionRulesUnreadable": "Die Aufbewahrung wurde übersprungen: Die aktuellen Regeln des Plans konnten nicht gelesen werden: {error}",
+      "retentionPlanGone": "Die Aufbewahrung wurde übersprungen: Den Plan gibt es nicht mehr.",
+      "retentionDeleteFailed": "Die Aufbewahrung konnte „{version}“ nicht löschen: {error}",
+      "freeSpaceRulesUnreadable": "Alte Versionen wurden nicht gelöscht, um Platz zu schaffen: Die aktuellen Regeln des Plans konnten nicht gelesen werden: {error}",
+      "freeSpacePlanGone": "Alte Versionen wurden nicht gelöscht, um Platz zu schaffen: Den Plan gibt es nicht mehr.",
+      "freeSpaceExamineFailed": "Alte Versionen konnten nicht geprüft werden, um Platz zu schaffen: {error}",
+      "freeSpaceDeleteFailed": "„{version}“ konnte nicht gelöscht werden, um Platz zu schaffen: {error}",
+      "remainsFailed": "Reste einer früheren Löschung konnten nicht entfernt werden („{name}“): {error}",
+      "removedRemainsLeft": "„{version}“ wurde aus den Versionen entfernt, seine Reste konnten aber noch nicht gelöscht werden: {error}",
+      "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
+    },
+    "skip": {
+      "ignoreFileUnreadable": "Ignorierdatei konnte nicht gelesen werden; ihre Muster wurden nicht angewendet",
+      "reservedName": "der Name ist für das Backup-Manifest reserviert",
+      "changed": "wurde während des Kopierens geändert; die Kopie ist möglicherweise inkonsistent"
+    },
+    "file": {
+      "noLongerExists": "existiert nicht mehr",
+      "accessDenied": "Zugriff verweigert",
+      "locked": "von einem anderen Programm gesperrt"
+    },
+    "scan": {
+      "link": "Verknüpfung wird nicht verfolgt.",
+      "tooDeep": "Ordner zu tief verschachtelt."
+    },
+    "restore": {
+      "destinationNotAbsolute": "Das Ziel muss ein absoluter Pfad sein.",
+      "versionMissing": "Der Versionsordner „{folder}“ existiert nicht.",
+      "destinationInVersion": "Das Ziel darf nicht der Versionsordner sein oder darin liegen.",
+      "outside": "„{path}“ liegt außerhalb der Version.",
+      "throughLink": "„{path}“ führt über die Verknüpfung „{link}“.",
+      "sameName": "Zwei ausgewählte Einträge heißen „{name}“; sie würden am selben Ort landen.",
+      "isLink": "„{path}“ ist eine Verknüpfung.",
+      "manifest": "Das Manifest gehört nicht zum Backup.",
+      "notInVersion": "„{path}“ existiert nicht in der Version.",
+      "folderExists": "Ein Ordner mit diesem Namen existiert bereits.",
+      "destinationLink": "der Zielordner ist eine Verknüpfung",
+      "outsideDestination": "„{path}“ liegt außerhalb des Ziels.",
+      "notAPath": "„{path}“ ist kein Pfad innerhalb der Version.",
+      "accessDenied": "Zugriff verweigert (schreibgeschützt oder von einem anderen Programm verwendet)"
+    },
+    "index": {
+      "targetUnavailable": "Der Zielordner „{folder}“ ist nicht verfügbar."
+    },
+    "manifest": {
+      "empty": "Das Manifest ist leer.",
+      "unreadable": "Das Manifest kann nicht gelesen werden: {error}",
+      "endsEarly": "Das Manifest endet zu früh.",
+      "valueTooLarge": "Ein einzelner Wert des Manifests ist zu groß.",
+      "notObject": "Ein Manifest ist ein JSON-Objekt.",
+      "entryNotObject": "Ein Dateieintrag ist ein JSON-Objekt.",
+      "entryNoPath": "Ein Dateieintrag hat keinen Pfad."
+    },
+    "planFile": {
+      "empty": "Die Datei ist leer.",
+      "idMismatch": "Die Plan-ID „{id}“ passt nicht zum Dateinamen „{file}“.",
+      "emptyTrigger": "Die Liste der Auslöser enthält einen leeren Eintrag.",
+      "emptyRule": "Die Liste der Aufbewahrungsregeln enthält einen leeren Eintrag."
+    },
+    "config": {
+      "containsConfiguration": "Der gewählte Ordner enthält bereits eine ReBackup-Konfiguration."
     }
   }
 }

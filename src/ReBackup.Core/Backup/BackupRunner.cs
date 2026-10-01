@@ -49,7 +49,7 @@ public sealed class BackupRunner : IBackupRunner
     private const int ErrorHandleDiskFull = 39;
     private const int ErrorDiskFull = 112;
     private const int MoveAttempts = 5;
-    private const string NoLongerExists = "no longer exists";
+    private static readonly string NoLongerExists = CoreTexts.English("core.file.noLongerExists");
     private static readonly TimeSpan MoveRetryDelay = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
@@ -124,7 +124,7 @@ public sealed class BackupRunner : IBackupRunner
         catch (IOException ex) when (IsDiskFull(ex))
         {
             entry.Status = RunStatus.Full;
-            entry.Reason = "The target ran out of space during the backup.";
+            entry.Reason = CoreTexts.English("core.run.targetFull");
         }
         catch (Exception ex)
         {
@@ -150,7 +150,7 @@ public sealed class BackupRunner : IBackupRunner
             catch (Exception ex)
             {
                 // The backup itself is done; whatever goes wrong here must not turn it into a failure.
-                entry.Warnings.Add($"Retention was skipped: {ex.Message}");
+                entry.Warnings.Add(CoreTexts.English("core.run.retentionFailed", ("error", ex.Message)));
             }
         }
 
@@ -168,22 +168,22 @@ public sealed class BackupRunner : IBackupRunner
     {
         var plan = request.Plan;
         if (string.IsNullOrWhiteSpace(plan.Source) || !Directory.Exists(plan.Source))
-            throw new BackupAbortException(RunStatus.Error, $"Source folder \"{plan.Source}\" does not exist.");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceMissing", ("source", plan.Source)));
         if (string.IsNullOrWhiteSpace(plan.Target))
-            throw new BackupAbortException(RunStatus.Error, "No target folder is set.");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.noTarget"));
         if (string.IsNullOrWhiteSpace(plan.Name) || plan.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            throw new BackupAbortException(RunStatus.Error, $"The plan name \"{plan.Name}\" cannot be used as a folder name.");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.nameNotFolder", ("name", plan.Name)));
         if (plan.Name.EndsWith(VersionName.PartialSuffix, StringComparison.OrdinalIgnoreCase))
-            throw new BackupAbortException(RunStatus.Error, "The plan name must not end with \".partial\".");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.namePartial"));
         if (plan.Name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
-            throw new BackupAbortException(RunStatus.Error, "The plan name must not end with \".deleting\".");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.nameDeleting"));
         if (PlanValidator.NameErrors(plan.Name) is [var nameProblem, ..])
             throw new BackupAbortException(RunStatus.Error,
                 CoreTexts.English("core.run.nameUnusable", ("name", plan.Name), ("problem", nameProblem)));
         if (PathUtil.IsSameOrInside(plan.Target, plan.Source))
-            throw new BackupAbortException(RunStatus.Error, "The target folder is the source folder or inside it.");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.targetInsideSource"));
         if (PathUtil.IsSameOrInside(plan.Source, plan.Target))
-            throw new BackupAbortException(RunStatus.Error, "The source folder is inside the target folder.");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceInsideTarget"));
 
         Directory.CreateDirectory(plan.Target);
         DeleteLeftovers(plan, entry);
@@ -193,11 +193,11 @@ public sealed class BackupRunner : IBackupRunner
         var matcher = IgnoreMatcher.ForPlan(plan.Ignore, request.GlobalIgnoreDefaults, index.IgnoreFiles);
         var root = IndexEvaluator.Evaluate(index, matcher, cancellationToken);
         if (root.Node.Error is { } rootError)
-            throw new BackupAbortException(RunStatus.Error, $"The source folder could not be read: {rootError}");
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceUnreadable", ("error", rootError)));
 
         var work = new BackupWork(index.Root);
         foreach (var path in index.UnreadableIgnoreFiles)
-            work.Skipped.Add(new SkippedEntry(path, "ignore file could not be read; its patterns were not applied"));
+            work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.ignoreFileUnreadable")));
         Collect(root, work);
 
         var required = (long)Math.Ceiling(work.TotalBytes * FreeSpaceMargin);
@@ -207,7 +207,7 @@ public sealed class BackupRunner : IBackupRunner
         if (required > free)
         {
             throw new BackupAbortException(RunStatus.Full,
-                $"The backup needs {ByteSize.Format(required)} but only {ByteSize.Format(free)} is free on the target.");
+                CoreTexts.English("core.run.notEnoughSpace", ("required", ByteSize.Format(required)), ("free", ByteSize.Format(free))));
         }
         return work;
     }
@@ -219,7 +219,7 @@ public sealed class BackupRunner : IBackupRunner
     private long FreeSpaceByRetention(BackupPlan plan, long required, long free, RunLogEntry entry,
         CancellationToken cancellationToken)
     {
-        if (ResolveRules(plan, entry, "Old versions were not deleted to free space") is not { Count: > 0 } rules)
+        if (ResolveRules(plan, entry, "core.run.freeSpaceRulesUnreadable", "core.run.freeSpacePlanGone") is not { Count: > 0 } rules)
             return free;
 
         List<VersionInfo> candidates;
@@ -234,7 +234,7 @@ public sealed class BackupRunner : IBackupRunner
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            entry.Warnings.Add($"Old versions could not be examined to free space: {ex.Message}");
+            entry.Warnings.Add(CoreTexts.English("core.run.freeSpaceExamineFailed", ("error", ex.Message)));
             return free;
         }
 
@@ -244,7 +244,7 @@ public sealed class BackupRunner : IBackupRunner
         foreach (var version in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!TryRemoveVersion(version, entry, $"\"{version.Name}\" could not be deleted to free space"))
+            if (!TryRemoveVersion(version, entry, "core.run.freeSpaceDeleteFailed"))
                 continue;
 
             free = _volume.GetAvailableFreeSpace(plan.Target);
@@ -264,7 +264,7 @@ public sealed class BackupRunner : IBackupRunner
         {
             if (path.Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
             {
-                work.Skipped.Add(new SkippedEntry(path, "the name is reserved for the backup manifest"));
+                work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.reservedName")));
                 return;
             }
             work.Files.Add(node.Node);
@@ -274,7 +274,7 @@ public sealed class BackupRunner : IBackupRunner
 
         if (path.Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
         {
-            work.Skipped.Add(new SkippedEntry(path, "the name is reserved for the backup manifest"));
+            work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.reservedName")));
             return;
         }
 
@@ -319,7 +319,7 @@ public sealed class BackupRunner : IBackupRunner
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    entry.Warnings.Add($"Remains of an earlier removal could not be deleted (\"{name}\"): {ex.Message}");
+                    entry.Warnings.Add(CoreTexts.English("core.run.remainsFailed", ("name", name), ("error", ex.Message)));
                 }
             }
         }
@@ -380,7 +380,7 @@ public sealed class BackupRunner : IBackupRunner
         }
         catch (Exception ex)
         {
-            entry.Warnings.Add($"The version index could not be updated: {ex.Message}");
+            entry.Warnings.Add(CoreTexts.English("core.run.indexFailed", ("error", ex.Message)));
         }
     }
 
@@ -388,7 +388,7 @@ public sealed class BackupRunner : IBackupRunner
     private void ApplyRetention(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
-        if (ResolveRules(plan, entry, "Retention was skipped") is not { Count: > 0 } rules)
+        if (ResolveRules(plan, entry, "core.run.retentionRulesUnreadable", "core.run.retentionPlanGone") is not { Count: > 0 } rules)
             return;
 
         progress?.Report(new BackupProgress(BackupPhase.Retention, entry.FilesCopied, entry.FilesCopied,
@@ -402,7 +402,7 @@ public sealed class BackupRunner : IBackupRunner
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            entry.Warnings.Add($"Retention was skipped: {ex.Message}");
+            entry.Warnings.Add(CoreTexts.English("core.run.retentionFailed", ("error", ex.Message)));
             return;
         }
 
@@ -413,17 +413,18 @@ public sealed class BackupRunner : IBackupRunner
             if (version.Name.Equals(entry.Version, StringComparison.OrdinalIgnoreCase))
                 continue;   // never the version this run just made, whatever the clock or the rules say
 
-            TryRemoveVersion(version, entry, $"Retention could not delete \"{version.Name}\"");
+            TryRemoveVersion(version, entry, "core.run.retentionDeleteFailed");
         }
     }
 
     /// <summary>
     /// The rules a deletion pass applies. A run can take hours and the rules can be changed and saved meanwhile, so
     /// the rules saved right now count when the runner can look them up; otherwise those of the request. Null
-    /// means: delete nothing in this pass. The reason is then added as a warning that starts with
-    /// <paramref name="skippedText"/>.
+    /// means: delete nothing in this pass. The reason is then added as a warning: <paramref name="rulesUnreadableKey"/>
+    /// (with the error) or <paramref name="planGoneKey"/>.
     /// </summary>
-    private IReadOnlyList<RetentionRule>? ResolveRules(BackupPlan plan, RunLogEntry entry, string skippedText)
+    private IReadOnlyList<RetentionRule>? ResolveRules(BackupPlan plan, RunLogEntry entry, string rulesUnreadableKey,
+        string planGoneKey)
     {
         if (_currentRules is null)
             return plan.Retention;
@@ -435,12 +436,12 @@ public sealed class BackupRunner : IBackupRunner
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            entry.Warnings.Add($"{skippedText}: the plan's current rules could not be read: {ex.Message}");
+            entry.Warnings.Add(CoreTexts.English(rulesUnreadableKey, ("error", ex.Message)));
             return null;
         }
 
         if (rules is null)
-            entry.Warnings.Add($"{skippedText}: the plan no longer exists.");
+            entry.Warnings.Add(CoreTexts.English(planGoneKey));
         return rules;
     }
 
@@ -449,7 +450,7 @@ public sealed class BackupRunner : IBackupRunner
     /// its remains are left (the next run of the plan removes them). False when nothing was changed; that is also
     /// the answer when the folder or the whole target has vanished, because nothing was deleted then.
     /// </summary>
-    private bool TryRemoveVersion(VersionInfo version, RunLogEntry entry, string failurePrefix)
+    private bool TryRemoveVersion(VersionInfo version, RunLogEntry entry, string failureKey)
     {
         try
         {
@@ -457,11 +458,11 @@ public sealed class BackupRunner : IBackupRunner
         }
         catch (VersionRemainsException ex)
         {
-            entry.Warnings.Add($"\"{version.Name}\" was removed from the versions, but its remains could not be deleted yet: {ex.Message}");
+            entry.Warnings.Add(CoreTexts.English("core.run.removedRemainsLeft", ("version", version.Name), ("error", ex.Message)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            entry.Warnings.Add($"{failurePrefix}: {ex.Message}");
+            entry.Warnings.Add(CoreTexts.English(failureKey, ("version", version.Name), ("error", ex.Message)));
             return false;
         }
         entry.RetentionDeleted.Add(version.Name);
@@ -544,7 +545,7 @@ public sealed class BackupRunner : IBackupRunner
             if (copied is null)
             {
                 if (skipReason == NoLongerExists && !Directory.Exists(work.SourceRoot))
-                    throw new BackupAbortException(RunStatus.Error, "The source folder is no longer available.");
+                    throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
                 entry.AddSkipped(new SkippedEntry(file.RelativePath, skipReason!));
             }
             else
@@ -552,7 +553,7 @@ public sealed class BackupRunner : IBackupRunner
                 if (changed)
                 {
                     entry.AddSkipped(new SkippedEntry(file.RelativePath,
-                        "changed while it was copied; the copy may be inconsistent"));
+                        CoreTexts.English("core.skip.changed")));
                 }
                 manifest.Files.Add(copied);
                 entry.FilesCopied++;
@@ -629,7 +630,7 @@ public sealed class BackupRunner : IBackupRunner
                 }
                 catch (IOException ex) when (IsLocked(ex))
                 {
-                    skipReason = "locked by another program";
+                    skipReason = CoreTexts.English("core.file.locked");
                     break;
                 }
 
@@ -678,8 +679,8 @@ public sealed class BackupRunner : IBackupRunner
     private static string? SourceSkipReason(Exception exception) => exception switch
     {
         FileNotFoundException or DirectoryNotFoundException => NoLongerExists,
-        UnauthorizedAccessException => "access denied",
-        IOException io when IsLocked(io) => "locked by another program",
+        UnauthorizedAccessException => CoreTexts.English("core.file.accessDenied"),
+        IOException io when IsLocked(io) => CoreTexts.English("core.file.locked"),
         _ => null,
     };
 

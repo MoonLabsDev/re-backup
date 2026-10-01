@@ -82,4 +82,24 @@ public class LocaleFileTests
             .Select(pair => pair.Key)
             .Should().BeEmpty();
     }
+
+    [Theory]
+    [InlineData(AppLanguages.English)]
+    [InlineData(AppLanguages.German)]
+    public void The_core_keys_of_a_file_are_exactly_the_Core_templates(string language)
+    {
+        var fileKeys = Load(language).Entries.Keys.Where(key => key.StartsWith("core.", StringComparison.Ordinal));
+
+        fileKeys.Should().BeEquivalentTo(CoreTexts.Templates.Keys);
+    }
+
+    [Fact]
+    public void A_stored_English_reason_is_shown_in_German()
+    {
+        var labels = new Labels(Load(AppLanguages.English), Load(AppLanguages.German), CultureInfo.GetCultureInfo("de-DE"));
+        var stored = "The plan name \"Projects.\" cannot be used: Name must not end with a dot.";
+
+        labels.Format(CoreTexts.Recognize(stored)!)
+            .Should().Be("Der Planname „Projects.“ kann nicht verwendet werden: Der Name darf nicht mit einem Punkt enden.");
+    }
 }

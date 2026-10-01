@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.IO;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 
 namespace ReBackup.Core.Indexing;
@@ -94,7 +95,7 @@ public sealed class LiveScan
     {
         var fullRoot = PathUtil.Normalize(root);
         if (!Directory.Exists(fullRoot))
-            throw new DirectoryNotFoundException($"Source folder \"{fullRoot}\" does not exist.");
+            throw new DirectoryNotFoundException(CoreTexts.English("core.run.sourceMissing", ("source", fullRoot)));
 
         // A copy: the caller's settings may be edited while the scan runs.
         var snapshot = new IgnoreSettings
@@ -222,11 +223,11 @@ public sealed class LiveScan
                     folder.Depth + 1, ignored, pattern, folder.IsIgnored);
                 if (subdirectory.LinkTarget is not null)
                 {
-                    Close(child, "Link is not followed.");
+                    Close(child, CoreTexts.English("core.scan.link"));
                 }
                 else if (folder.Depth + 1 > SourceIndexer.MaxDepth)
                 {
-                    Close(child, "Folder nesting too deep.");
+                    Close(child, CoreTexts.English("core.scan.tooDeep"));
                 }
                 else
                 {

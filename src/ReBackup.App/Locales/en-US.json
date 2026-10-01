@@ -103,7 +103,80 @@
       "invalid": "The retention rule is not valid: {problem}"
     },
     "run": {
-      "nameUnusable": "The plan name \"{name}\" cannot be used: {problem}"
+      "nameUnusable": "The plan name \"{name}\" cannot be used: {problem}",
+      "sourceMissing": "Source folder \"{source}\" does not exist.",
+      "noTarget": "No target folder is set.",
+      "nameNotFolder": "The plan name \"{name}\" cannot be used as a folder name.",
+      "namePartial": "The plan name must not end with \".partial\".",
+      "nameDeleting": "The plan name must not end with \".deleting\".",
+      "targetInsideSource": "The target folder is the source folder or inside it.",
+      "sourceInsideTarget": "The source folder is inside the target folder.",
+      "sourceUnreadable": "The source folder could not be read: {error}",
+      "notEnoughSpace": "The backup needs {required} but only {free} is free on the target.",
+      "targetFull": "The target ran out of space during the backup.",
+      "sourceGone": "The source folder is no longer available.",
+      "retentionFailed": "Retention was skipped: {error}",
+      "retentionRulesUnreadable": "Retention was skipped: the plan's current rules could not be read: {error}",
+      "retentionPlanGone": "Retention was skipped: the plan no longer exists.",
+      "retentionDeleteFailed": "Retention could not delete \"{version}\": {error}",
+      "freeSpaceRulesUnreadable": "Old versions were not deleted to free space: the plan's current rules could not be read: {error}",
+      "freeSpacePlanGone": "Old versions were not deleted to free space: the plan no longer exists.",
+      "freeSpaceExamineFailed": "Old versions could not be examined to free space: {error}",
+      "freeSpaceDeleteFailed": "\"{version}\" could not be deleted to free space: {error}",
+      "remainsFailed": "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
+      "removedRemainsLeft": "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
+      "indexFailed": "The version index could not be updated: {error}"
+    },
+    "skip": {
+      "ignoreFileUnreadable": "ignore file could not be read; its patterns were not applied",
+      "reservedName": "the name is reserved for the backup manifest",
+      "changed": "changed while it was copied; the copy may be inconsistent"
+    },
+    "file": {
+      "noLongerExists": "no longer exists",
+      "accessDenied": "access denied",
+      "locked": "locked by another program"
+    },
+    "scan": {
+      "link": "Link is not followed.",
+      "tooDeep": "Folder nesting too deep."
+    },
+    "restore": {
+      "destinationNotAbsolute": "The destination must be an absolute path.",
+      "versionMissing": "The version folder \"{folder}\" does not exist.",
+      "destinationInVersion": "The destination must not be the version folder or inside it.",
+      "outside": "\"{path}\" is outside the version.",
+      "throughLink": "\"{path}\" goes through the link \"{link}\".",
+      "sameName": "Two selected items are called \"{name}\"; they would end up in the same place.",
+      "isLink": "\"{path}\" is a link.",
+      "manifest": "The manifest is not part of the backup.",
+      "notInVersion": "\"{path}\" does not exist in the version.",
+      "folderExists": "A folder with this name exists.",
+      "destinationLink": "the destination folder is a link",
+      "outsideDestination": "\"{path}\" is outside the destination.",
+      "notAPath": "\"{path}\" is not a path inside the version.",
+      "accessDenied": "access denied (read-only, or in use by another program)"
+    },
+    "index": {
+      "targetUnavailable": "The target folder \"{folder}\" is not available."
+    },
+    "manifest": {
+      "empty": "The manifest is empty.",
+      "unreadable": "The manifest cannot be read: {error}",
+      "endsEarly": "The manifest ends too early.",
+      "valueTooLarge": "A single value of the manifest is too large.",
+      "notObject": "A manifest is a JSON object.",
+      "entryNotObject": "A file entry is a JSON object.",
+      "entryNoPath": "A file entry has no path."
+    },
+    "planFile": {
+      "empty": "File is empty.",
+      "idMismatch": "Plan id \"{id}\" does not match file name \"{file}\".",
+      "emptyTrigger": "The list of triggers contains an empty entry.",
+      "emptyRule": "The list of retention rules contains an empty entry."
+    },
+    "config": {
+      "containsConfiguration": "The chosen folder already contains a ReBackup configuration."
     }
   }
 }

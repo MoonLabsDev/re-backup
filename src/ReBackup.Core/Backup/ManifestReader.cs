@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ReBackup.Core.Json;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Backup;
 
@@ -49,7 +50,7 @@ public static class ManifestReader
     private static BackupManifest ReadManifest(Stream stream)
     {
         var manifest = JsonSerializer.Deserialize<BackupManifest>(stream, JsonDefaults.Options)
-                       ?? throw new JsonException("The manifest is empty.");
+                       ?? throw new JsonException(CoreTexts.English("core.manifest.empty"));
         manifest.PlanId ??= "";
         manifest.PlanName ??= "";
         manifest.Files ??= [];

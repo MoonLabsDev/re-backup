@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.IO;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Indexing;
 
@@ -50,7 +51,7 @@ public static class SourceIndexer
     {
         var fullRoot = PathUtil.Normalize(root);
         if (!Directory.Exists(fullRoot))
-            throw new DirectoryNotFoundException($"Source folder \"{fullRoot}\" does not exist.");
+            throw new DirectoryNotFoundException(CoreTexts.English("core.run.sourceMissing", ("source", fullRoot)));
 
         var walk = new Walk(progress, cancellationToken);
         var name = Path.GetFileName(fullRoot);
@@ -96,7 +97,7 @@ public static class SourceIndexer
                                 RelativePath = childPath,
                                 IsDirectory = true,
                                 LastWriteUtc = subdirectory.LastWriteTimeUtc,
-                                Error = "Link is not followed.",
+                                Error = CoreTexts.English("core.scan.link"),
                             });
                         }
                         else if (depth + 1 > SourceIndexer.MaxDepth)
@@ -107,7 +108,7 @@ public static class SourceIndexer
                                 RelativePath = childPath,
                                 IsDirectory = true,
                                 LastWriteUtc = subdirectory.LastWriteTimeUtc,
-                                Error = "Folder nesting too deep.",
+                                Error = CoreTexts.English("core.scan.tooDeep"),
                             });
                         }
                         else

@@ -52,6 +52,13 @@ public sealed class Loc : INotifyPropertyChanged
     /// <summary>A message (e.g. from a Core validator) in the applied language.</summary>
     public static string F(Message message) => Instance._labels.Format(message);
 
+    /// <summary>
+    /// A text Core wrote in English (a run log reason, warning or skip reason) or raised (an exception message): in
+    /// the applied language when it is recognized, otherwise as it is (e.g. a message from Windows).
+    /// </summary>
+    public static string Known(string? text) =>
+        string.IsNullOrEmpty(text) ? "" : CoreTexts.Recognize(text) is { } message ? F(message) : text;
+
     /// <summary>Binds a property of an element made in code (e.g. a tray menu item) to a label.</summary>
     public static void Bind(DependencyObject target, DependencyProperty property, string key) =>
         BindingOperations.SetBinding(target, property, BindingFor(key));

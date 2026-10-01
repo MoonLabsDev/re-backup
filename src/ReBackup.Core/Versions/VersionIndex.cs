@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Versions;
 
@@ -91,7 +92,7 @@ public sealed partial class VersionIndex
         if (targetFolder is not null && !Directory.Exists(targetFolder))
         {
             // An offline target lists no versions; that must not wipe the index.
-            return new IndexSyncResult(0, 0, 0, [$"The target folder \"{targetFolder}\" is not available."]);
+            return new IndexSyncResult(0, 0, 0, [CoreTexts.English("core.index.targetUnavailable", ("folder", targetFolder))]);
         }
 
         var known = ReadStamps();
@@ -211,7 +212,7 @@ public sealed partial class VersionIndex
 
         var folder = new DirectoryInfo(versionFolder);
         if (!folder.Exists)
-            throw new DirectoryNotFoundException($"The version folder \"{versionFolder}\" does not exist.");
+            throw new DirectoryNotFoundException(CoreTexts.English("core.restore.versionMissing", ("folder", versionFolder)));
         var count = folder.EnumerateFileSystemInfos().Count();
         return string.Create(CultureInfo.InvariantCulture, $"s:{folder.LastWriteTimeUtc.Ticks}:{count}");
     }

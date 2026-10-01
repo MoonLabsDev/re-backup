@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ReBackup.Core.IO;
 using ReBackup.Core.Json;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Config;
 
@@ -54,7 +55,7 @@ public static class ConfigLocation
         if (mode == ConfigMoveMode.CopyCurrent)
         {
             if (ContainsConfiguration(target.Root))
-                throw new InvalidOperationException("The chosen folder already contains a ReBackup configuration.");
+                throw new InvalidOperationException(CoreTexts.English("core.config.containsConfiguration"));
 
             Directory.CreateDirectory(target.PlansDirectory);
             Directory.CreateDirectory(target.LogsDirectory);
