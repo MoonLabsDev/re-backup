@@ -555,5 +555,133 @@
       "deleted": "Durch die Aufbewahrung gelöscht:",
       "warnings": "Warnungen:"
     }
+  },
+  "versions": {
+    "title": "VERSIONEN",
+    "list": "Versionen",
+    "refreshToolTip": "Ziel erneut lesen und den Index aktualisieren",
+    "refreshName": "Versionen aktualisieren",
+    "empty": "Noch keine Versionen im Ziel",
+    "savePlan": "Den Plan speichern, um seine Versionen zu sehen.",
+    "copyMissing": "Die Kopie in „{version}“ existiert nicht mehr.",
+    "sync": {
+      "reading": "Ziel wird gelesen …",
+      "waiting": "Warte auf den Index …",
+      "errors": "{count} Version(en) konnten nicht indiziert werden: {errors}",
+      "indexing": "Indiziere {current} von {total}",
+      "indexingVersion": "Indiziere {current} von {total} · {version} · {files:N0} Dateien"
+    },
+    "index": {
+      "notIndexed": "nicht indiziert",
+      "indexing": "wird indiziert …",
+      "indexed": "indiziert",
+      "failed": "konnte nicht indiziert werden"
+    },
+    "notManaged": {
+      "noManifest": "Nicht verwaltet: kein Manifest",
+      "foreign": "Nicht verwaltet: Manifest eines anderen Plans",
+      "unreadable": "Nicht verwaltet: Manifest nicht lesbar",
+      "renamed": "Nicht verwaltet: von Hand umbenannt oder kopiert"
+    },
+    "toolbar": {
+      "search": "Namen suchen (Teil eines Namens oder * und ?)",
+      "searchToolTip": "Ein Teil eines Namens oder ein Muster mit * und ?",
+      "compareWith": "Vergleichen mit",
+      "swapToolTip": "Tauschen: den Baum der anderen Version zeigen",
+      "swapName": "Versionen tauschen",
+      "changedOnly": "Nur Änderungen",
+      "openToolTip": "Die Datei öffnen (die Kopie in der Version)",
+      "showInExplorer": "Im Explorer zeigen",
+      "restoreOriginal": "Am ursprünglichen Ort wiederherstellen",
+      "restoreOriginalToolTip": "Die Auswahl dorthin zurückkopieren, woher sie stammt",
+      "restore": "Wiederherstellen",
+      "restoreTo": "Wiederherstellen nach …",
+      "restoreToName": "In einen Ordner wiederherstellen",
+      "restoreToToolTip": "Die Auswahl in einen gewählten Ordner kopieren",
+      "cancelRestore": "Wiederherstellung abbrechen",
+      "cancelRestoreToolTip": "Nach der aktuellen Datei anhalten"
+    },
+    "menu": { "restoreOriginal": "Am ursprünglichen Ort wiederherstellen …" },
+    "compare": { "notManaged": " (nicht verwaltet)" },
+    "tree": {
+      "name": "Versionsbaum",
+      "selectVersion": "Eine Version auswählen.",
+      "notIndexed": "Diese Version konnte nicht indiziert werden.",
+      "indexing": "Wird indiziert …",
+      "otherIndexing": "Die Vergleichsversion wird indiziert …",
+      "unreadable": "Die Version kann nicht aus dem Index gelesen werden: {error}",
+      "noFiles": "Diese Version enthält keine Dateien.",
+      "cannotRead": "Nicht lesbar: {error}",
+      "loading": "Wird geladen …",
+      "emptyFolder": "Leerer Ordner"
+    },
+    "search": {
+      "results": "Suchergebnisse",
+      "notIndexed": "Die Version ist noch nicht indiziert.",
+      "none": "Keine Treffer",
+      "capped": "Die ersten {limit} Treffer",
+      "count": "{count:N0} Treffer",
+      "failed": "Die Suche ist fehlgeschlagen: {error}"
+    },
+    "history": {
+      "name": "Dateiverlauf",
+      "title": "VERLAUF VON {name}",
+      "unreadable": "VERLAUF VON {name} – nicht lesbar: {error}",
+      "showCopy": "Diese Kopie im Explorer zeigen"
+    }
+  },
+  "restore": {
+    "title": "Wiederherstellen",
+    "notInVersion": "„{path}“ existiert nicht mehr in der Version.",
+    "runnable": "„{name}“ ist ein Programm, Skript oder eine Verknüpfung und wird nicht aus einem Backup gestartet. Stattdessen wird sein Ordner gezeigt.",
+    "cannotOpen": "„{path}“ kann nicht geöffnet werden: Es existiert nicht mehr in der Version, oder kein Programm öffnet es.",
+    "canceling": "Wird abgebrochen …",
+    "cancelingAfterFile": "Abbruch nach der aktuellen Datei …",
+    "reindexing": "Die Version wird neu indiziert; nach dem Neuladen des Baums erneut versuchen.",
+    "wholeVersion": "die ganze Version",
+    "item": "„{path}“",
+    "originUnknown": "Der ursprüngliche Ort dieser Version ist nicht bekannt. „Wiederherstellen nach …“ verwenden.",
+    "backupRunningWarning": "\n\nEin Backup dieses Plans ist eingereiht oder läuft; es kann die wiederhergestellten Dateien mitsichern.",
+    "confirmTitle": "Am ursprünglichen Ort wiederherstellen",
+    "confirm": "{item} aus der Version vom {date} wiederherstellen nach\n{destination}?\n\nDort wird nichts gelöscht; was mit bereits vorhandenen Dateien geschieht, entscheiden Sie.{warning}",
+    "pickFolder": "Wiederherstellen nach …",
+    "insideTarget": "Das Ziel liegt im Zielordner „{target}“ des Plans, in dem seine Versionen liegen. Einen Ordner außerhalb wählen.",
+    "preparing": "Wiederherstellung wird vorbereitet …",
+    "canceledNothing": "Wiederherstellung abgebrochen; es wurde nichts geschrieben.",
+    "unreadableNote": " {count:N0} Teil(e) der Version konnten nicht gelesen werden.",
+    "cannotRestore": "{item} kann nicht wiederhergestellt werden: {reason}",
+    "restoring": "Wird wiederhergestellt …",
+    "restoringFrom": "{item} wird aus {date} wiederhergestellt …",
+    "progress": "Wiederherstellen: {done:N0} von {total:N0} Dateien · {percent:0} %",
+    "stopped": "Die Wiederherstellung wurde angehalten: {error}",
+    "failures": "{summary}\n\n{count:N0} Einträge konnten nicht nach {root} wiederhergestellt werden:",
+    "conflictsOriginal": "{count:N0} Datei(en) existieren bereits am ursprünglichen Ort:\n{examples}{more}\n\nWas soll mit ihnen geschehen?",
+    "conflictsFolder": "{count:N0} Datei(en) existieren bereits in {folder}:\n{examples}{more}\n\nWas soll mit ihnen geschehen?",
+    "unreadable": "{count:N0} Teil(e) der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt. Den Rest wiederherstellen?",
+    "restoreRest": "Rest wiederherstellen",
+    "summary": {
+      "copied": "{count:N0} kopiert",
+      "keptBoth": "{count:N0} neben der vorhandenen Datei abgelegt",
+      "skipped": "{count:N0} übersprungen",
+      "failed": "{count:N0} fehlgeschlagen",
+      "finished": "Wiederherstellung abgeschlossen: {parts}.",
+      "canceled": "Wiederherstellung abgebrochen: {parts}."
+    }
+  },
+  "dialog": {
+    "conflict": {
+      "note": "„Beide behalten“ legt die Kopie der Version neben die vorhandene Datei, mit der Zeit der Version im Namen. Es wird nie etwas gelöscht.",
+      "detailsName": "Nicht lesbare Teile der Version",
+      "details": "{count:N0} Teil(e) der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt:",
+      "overwrite": "Überschreiben",
+      "overwriteToolTip": "Die vorhandenen Dateien durch die Kopien der Version ersetzen",
+      "skip": "Überspringen",
+      "skipToolTip": "Die vorhandenen Dateien unverändert lassen",
+      "keepBoth": "Beide behalten"
+    },
+    "failures": {
+      "linesName": "Pfade und Gründe",
+      "more": "… und {count:N0} weitere"
+    }
   }
 }

@@ -52,7 +52,7 @@ public sealed partial class MainViewModel : ObservableObject
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex)
     {
         _folders = folders;
-        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(LocText.Raw(text)));
+        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text));
         Theme = theme;
         Language = language;
         Loc.LanguageChanged += (_, _) => OnLanguageChanged();

@@ -1,6 +1,6 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 
 namespace ReBackup.App;
@@ -27,9 +27,10 @@ public partial class FailuresDialog : Window
             AutomationProperties.SetName(ConfirmButton, confirmText);
             ConfirmButton.Visibility = Visibility.Visible;
             ConfirmButton.IsDefault = true;
-            CloseButton.Content = "Cancel";
+            // Replaces the label binding of the XAML: this dialog lives only as long as one question.
+            CloseButton.Content = Loc.T("common.cancel");
             CloseButton.IsDefault = false;
-            AutomationProperties.SetName(CloseButton, "Cancel");
+            AutomationProperties.SetName(CloseButton, Loc.T("common.cancel"));
         }
     }
 
@@ -38,7 +39,7 @@ public partial class FailuresDialog : Window
     {
         var shown = string.Join(Environment.NewLine, lines.Take(MaxLines));
         return lines.Count > MaxLines
-            ? shown + Environment.NewLine + string.Create(CultureInfo.CurrentCulture, $"… and {lines.Count - MaxLines:N0} more")
+            ? shown + Environment.NewLine + Loc.F("dialog.failures.more", ("count", lines.Count - MaxLines))
             : shown;
     }
 

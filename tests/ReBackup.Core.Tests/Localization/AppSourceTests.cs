@@ -13,10 +13,7 @@ public class AppSourceTests
     /// <summary>XAML files whose texts are not moved to the label files yet. Each migration task removes its files.</summary>
     private static readonly string[] NotYetMigrated =
     [
-        "ConflictDialog.xaml",
-        "FailuresDialog.xaml",
         "SettingsWindow.xaml",
-        "Views/VersionsView.xaml",
     ];
 
     private static readonly string[] TextProperties =

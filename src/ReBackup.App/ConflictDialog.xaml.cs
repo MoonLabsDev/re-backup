@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Windows;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Versions;
 
@@ -18,8 +18,7 @@ public partial class ConflictDialog : Window
         if (details.Count > 0)
         {
             DetailsPanel.Visibility = Visibility.Visible;
-            DetailsTitle.Text = string.Create(CultureInfo.CurrentCulture,
-                $"{details.Count:N0} part(s) of the version cannot be read; their files are not restored:");
+            DetailsTitle.Text = Loc.F("dialog.conflict.details", ("count", details.Count));
             DetailsText.Text = FailuresDialog.Join(details);
         }
     }

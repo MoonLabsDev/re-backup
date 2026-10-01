@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.Core.IO;
 using ReBackup.Core.Versions;
 
@@ -43,7 +43,11 @@ public sealed partial class VersionsViewModel
     private bool _isRestoring;
 
     /// <summary>"Restoring 120 of 300 files · 34 %" while a restore runs (Versions tab and plan card).</summary>
-    [ObservableProperty] private string _restoreText = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RestoreText))]
+    private LocText _restoreProgress = LocText.Empty;
+
+    public string RestoreText => RestoreProgress.ToString();
 
     [ObservableProperty] private double _restoreFraction;
 
@@ -92,13 +96,13 @@ public sealed partial class VersionsViewModel
         if (IsRunnable(Path.GetExtension(selection.Node.Name)))
         {
             if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
-                _context.ReportStatus($"\"{path}\" no longer exists in the version.");
+                _context.ReportStatus(LocText.Of("restore.notInVersion", ("path", path)));
             else
-                _context.ReportStatus($"\"{selection.Node.Name}\" is a program, script or shortcut; it is not run from a backup. Its folder is shown instead.");
+                _context.ReportStatus(LocText.Of("restore.runnable", ("name", selection.Node.Name)));
             return;
         }
         if (!await Task.Run(() => _files.OpenFile(folder, path)))
-            _context.ReportStatus($"\"{path}\" cannot be opened: it no longer exists in the version, or no program opens it.");
+            _context.ReportStatus(LocText.Of("restore.cannotOpen", ("path", path)));
     }
 
     /// <summary>Shows the selected entry in Explorer, selected in its folder.</summary>
@@ -109,7 +113,7 @@ public sealed partial class VersionsViewModel
             return;
         var (folder, path) = (selection.Version.Info.Path, selection.Node.Path);
         if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
-            _context.ReportStatus($"\"{path}\" no longer exists in the version.");
+            _context.ReportStatus(LocText.Of("restore.notInVersion", ("path", path)));
     }
 
     [RelayCommand(CanExecute = nameof(CanRestore))]
@@ -125,7 +129,7 @@ public sealed partial class VersionsViewModel
             return;
         cts.Cancel();
         // Planning cannot be interrupted (it writes nothing); the copy stops after the current file.
-        RestoreText = _restoreRun is null ? "Canceling…" : "Canceling after the current file…";
+        RestoreProgress = _restoreRun is null ? LocText.Of("restore.canceling") : LocText.Of("restore.cancelingAfterFile");
     }
 
     /// <summary>
@@ -144,7 +148,7 @@ public sealed partial class VersionsViewModel
     {
         var selection = Selection;
         if (selection is null && Tree.SelectedNode is { IsMessage: false })
-            _context.ReportStatus("The version is being indexed again; try once the tree has been reloaded.");
+            _context.ReportStatus(LocText.Of("restore.reindexing"));
         return selection;
     }
 
@@ -158,10 +162,10 @@ public sealed partial class VersionsViewModel
             return;
         var (node, version) = selection;
         var dialogs = _context.Dialogs;
-        var itemText = node.Path.Length == 0 ? "the whole version" : $"\"{node.Path}\"";
+        var item = node.Path.Length == 0 ? LocText.Of("restore.wholeVersion") : LocText.Of("restore.item", ("path", node.Path));
         var relative = node.Path;
         var versionFolder = version.Info.Path;
-        var versionDate = version.DateText;
+        var versionDate = new LocText(() => version.DateText);
 
         string root;
         if (mode == RestoreMode.Original)
@@ -172,31 +176,29 @@ public sealed partial class VersionsViewModel
                 : _savedPlan()?.Source;
             if (string.IsNullOrWhiteSpace(source) || !Path.IsPathFullyQualified(source))
             {
-                dialogs.ShowError("Restore", "The original location of this version is not known. Use \"Restore to…\".");
+                dialogs.ShowError(Loc.T("restore.title"), Loc.T("restore.originUnknown"));
                 return;
             }
             root = source;
             var warning = _isBackupActive()
-                ? "\n\nA backup of this plan is queued or running; it may pick up the restored files."
+                ? Loc.T("restore.backupRunningWarning")
                 : "";
-            if (!dialogs.ConfirmDefaultNo("Restore to the original location",
-                    $"Restore {itemText} from the version of {versionDate} to\n" +
-                    $"{Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))}?\n\n" +
-                    $"Nothing there is deleted; you choose what happens to files that exist already.{warning}"))
+            if (!dialogs.ConfirmDefaultNo(Loc.T("restore.confirmTitle"),
+                    Loc.F("restore.confirm", ("item", item), ("date", versionDate),
+                        ("destination", Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))),
+                        ("warning", warning))))
                 return;
         }
         else
         {
-            if (dialogs.PickFolder("Restore to…", null) is not { } folder)
+            if (dialogs.PickFolder(Loc.T("restore.pickFolder"), null) is not { } folder)
                 return;
             root = folder;
         }
 
         if (InsideTarget(root, mode == RestoreMode.Original ? relative : Path.GetFileName(relative)) is { } target)
         {
-            dialogs.ShowError("Restore",
-                $"The destination is inside the plan's target folder \"{target}\", where its versions are stored. " +
-                "Choose a folder outside it.");
+            dialogs.ShowError(Loc.T("restore.title"), Loc.F("restore.insideTarget", ("target", target)));
             return;
         }
 
@@ -204,7 +206,7 @@ public sealed partial class VersionsViewModel
         var cts = _restoreCts = new CancellationTokenSource();
         IsRestoring = true;
         RestoreFraction = 0;
-        RestoreText = "Preparing the restore…";
+        RestoreProgress = LocText.Of("restore.preparing");
         try
         {
             RestorePlan plan;
@@ -214,7 +216,7 @@ public sealed partial class VersionsViewModel
             }
             catch (OperationCanceledException)
             {
-                _context.ReportStatus("Restore canceled; nothing was written.");
+                _context.ReportStatus(LocText.Of("restore.canceledNothing"));
                 return;
             }
             catch (Exception ex)
@@ -223,30 +225,30 @@ public sealed partial class VersionsViewModel
                 var reason = ex is ArgumentException { ParamName: { } name }
                     ? ex.Message.Replace($" (Parameter '{name}')", "", StringComparison.Ordinal)
                     : ex.Message;
-                dialogs.ShowError("Restore", $"{itemText} cannot be restored: {reason}");
+                dialogs.ShowError(Loc.T("restore.title"), Loc.F("restore.cannotRestore", ("item", item), ("reason", Loc.Known(reason))));
                 return;
             }
             if (cts.IsCancellationRequested)
             {
-                _context.ReportStatus("Restore canceled; nothing was written.");
+                _context.ReportStatus(LocText.Of("restore.canceledNothing"));
                 return;
             }
 
             if (Ask(plan, mode, root) is not { } policy)
             {
-                _context.ReportStatus("Restore canceled; nothing was written." + UnreadableNote(plan));
+                _context.ReportStatus(CanceledNothing(plan));
                 return;
             }
 
-            RestoreText = "Restoring…";
-            _context.ReportStatus($"Restoring {itemText} from {versionDate}…");
+            RestoreProgress = LocText.Of("restore.restoring");
+            _context.ReportStatus(LocText.Of("restore.restoringFrom", ("item", item), ("date", versionDate)));
             var progress = new ThrottledProgress(new Progress<RestoreProgress>(p =>
             {
                 if (!IsRestoring || !ReferenceEquals(_restoreCts, cts) || cts.IsCancellationRequested)
                     return;
                 RestoreFraction = p.Fraction;
-                RestoreText = string.Create(CultureInfo.CurrentCulture,
-                    $"Restoring {p.FilesDone:N0} of {p.FilesTotal:N0} files · {p.Fraction * 100:0} %");
+                RestoreProgress = LocText.Of("restore.progress",
+                    ("done", p.FilesDone), ("total", p.FilesTotal), ("percent", p.Fraction * 100));
             }));
 
             RestoreResult result;
@@ -258,8 +260,9 @@ public sealed partial class VersionsViewModel
             }
             catch (Exception ex)
             {
-                _context.ReportStatus($"The restore stopped: {ex.Message}");
-                dialogs.ShowError("Restore", $"The restore stopped: {ex.Message}");
+                var stopped = new LocText(() => Loc.F("restore.stopped", ("error", Loc.Known(ex.Message))));
+                _context.ReportStatus(stopped);
+                dialogs.ShowError(Loc.T("restore.title"), stopped.ToString());
                 return;
             }
 
@@ -267,9 +270,8 @@ public sealed partial class VersionsViewModel
             _context.ReportStatus(summary);
             if (result.Failures.Count > 0)
             {
-                dialogs.ShowFailures("Restore",
-                    string.Create(CultureInfo.CurrentCulture,
-                        $"{summary}\n\n{result.Failures.Count:N0} item(s) could not be restored to {root}:"),
+                dialogs.ShowFailures(Loc.T("restore.title"),
+                    Loc.F("restore.failures", ("summary", summary), ("count", result.Failures.Count), ("root", root)),
                     Lines(result.Failures));
             }
         }
@@ -280,7 +282,7 @@ public sealed partial class VersionsViewModel
                 _restoreCts = null;
                 _restoreRun = null;
                 IsRestoring = false;
-                RestoreText = "";
+                RestoreProgress = LocText.Empty;
                 RestoreFraction = 0;
             }
             cts.Dispose();
@@ -297,20 +299,19 @@ public sealed partial class VersionsViewModel
         var unreadable = Lines(plan.PlanFailures);
         if (plan.Conflicts.Count > 0)
         {
-            var count = plan.Conflicts.Count.ToString("N0", CultureInfo.CurrentCulture);
-            var where = mode == RestoreMode.Original ? "the original location" : root;
             var examples = string.Join("\n", plan.Conflicts.Take(FailuresInMessage)
                 .Select(f => "  " + Path.GetRelativePath(plan.DestinationRoot, f.Destination)));
             var more = plan.Conflicts.Count > FailuresInMessage ? "\n  …" : "";
-            return dialogs.AskConflictPolicy("Restore",
-                $"{count} file(s) already exist in {where}:\n{examples}{more}\n\nWhat should happen to them?", unreadable);
+            var message = mode == RestoreMode.Original
+                ? Loc.F("restore.conflictsOriginal", ("count", plan.Conflicts.Count), ("examples", examples), ("more", more))
+                : Loc.F("restore.conflictsFolder", ("count", plan.Conflicts.Count), ("folder", root), ("examples", examples),
+                    ("more", more));
+            return dialogs.AskConflictPolicy(Loc.T("restore.title"), message, unreadable);
         }
         if (unreadable.Count > 0)
         {
-            return dialogs.ConfirmFailures("Restore",
-                string.Create(CultureInfo.CurrentCulture,
-                    $"{unreadable.Count:N0} part(s) of the version cannot be read; their files will not be restored. Restore the rest?"),
-                unreadable, "Restore the rest")
+            return dialogs.ConfirmFailures(Loc.T("restore.title"),
+                Loc.F("restore.unreadable", ("count", unreadable.Count)), unreadable, Loc.T("restore.restoreRest"))
                 ? ConflictPolicy.Skip   // there are no conflicts: the policy does not matter
                 : null;
         }
@@ -359,25 +360,31 @@ public sealed partial class VersionsViewModel
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AssocIsDangerous(string pszAssoc);
 
-    private static string UnreadableNote(RestorePlan plan) => plan.PlanFailures.Count == 0
-        ? ""
-        : string.Create(CultureInfo.CurrentCulture, $" {plan.PlanFailures.Count:N0} part(s) of the version could not be read.");
+    /// <summary>"Restore canceled; nothing was written.", with the parts of the version that could not be read.</summary>
+    private static LocText CanceledNothing(RestorePlan plan)
+    {
+        var unreadable = plan.PlanFailures.Count;
+        return new LocText(() => Loc.T("restore.canceledNothing") +
+                                 (unreadable == 0 ? "" : Loc.F("restore.unreadableNote", ("count", unreadable))));
+    }
 
     private static List<string> Lines(IReadOnlyList<RestoreFailure> failures) =>
-        failures.Select(f => $"{f.Path}: {f.Reason}").ToList();
+        failures.Select(f => $"{f.Path}: {Loc.Known(f.Reason)}").ToList();
 
-    private static string Summary(RestoreResult result)
+    private static LocText Summary(RestoreResult result) => new(() =>
     {
-        var parts = new List<string> { $"{result.Copied:N0} copied" };
+        var parts = new List<string> { Loc.F("restore.summary.copied", ("count", result.Copied)) };
         if (result.KeptBoth > 0)
-            parts.Add($"{result.KeptBoth:N0} kept beside the existing file");
+            parts.Add(Loc.F("restore.summary.keptBoth", ("count", result.KeptBoth)));
         if (result.Skipped > 0)
-            parts.Add($"{result.Skipped:N0} skipped");
+            parts.Add(Loc.F("restore.summary.skipped", ("count", result.Skipped)));
         if (result.Failures.Count > 0)
-            parts.Add($"{result.Failures.Count:N0} failed");
-        return (result.Canceled ? "Restore canceled: " : "Restore finished: ") +
-               string.Join(", ", parts) + ".";
-    }
+            parts.Add(Loc.F("restore.summary.failed", ("count", result.Failures.Count)));
+        var joined = string.Join(", ", parts);
+        return result.Canceled
+            ? Loc.F("restore.summary.canceled", ("parts", joined))
+            : Loc.F("restore.summary.finished", ("parts", joined));
+    });
 
     /// <summary>
     /// Passes a restore's progress on (from the copying thread) at most every <see cref="ProgressInterval"/>, and always

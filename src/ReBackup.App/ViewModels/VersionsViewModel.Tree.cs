@@ -1,8 +1,8 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
@@ -43,11 +43,29 @@ public sealed partial class VersionsViewModel
     [ObservableProperty] private string _searchText = "";
 
     [ObservableProperty] private bool _isSearchActive;
-    [ObservableProperty] private string _searchSummary = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SearchSummary))]
+    private LocText _searchSummaryText = LocText.Empty;
+
+    public string SearchSummary => SearchSummaryText.ToString();
     [ObservableProperty] private SearchHitRow? _selectedSearchHit;
 
     [ObservableProperty] private bool _showHistory;
-    [ObservableProperty] private string _historyTitle = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HistoryTitle))]
+    private LocText _historyTitleText = LocText.Empty;
+
+    public string HistoryTitle => HistoryTitleText.ToString();
+
+    partial void OnRefreshTexts()
+    {
+        RebuildCompareChoices();   // the labels of not-managed versions
+        Tree.RefreshTexts();
+        foreach (var row in SearchResults)
+            row.Refresh();
+        foreach (var row in HistoryRows)
+            row.Refresh();
+    }
 
     public VersionTreeViewModel Tree { get; } = new();
 
@@ -134,7 +152,7 @@ public sealed partial class VersionsViewModel
             return;
         var path = row.RelativePath;
         if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
-            _context.ReportStatus($"The copy in \"{row.VersionName}\" no longer exists.");
+            _context.ReportStatus(LocText.Of("versions.copyMissing", ("version", row.VersionName)));
     }
 
     /// <summary>Rebuilds the "Compare with" box; true when version B is no longer the same (it left the list).</summary>
@@ -144,7 +162,7 @@ public sealed partial class VersionsViewModel
         var choices = new List<CompareChoice> { NoCompare };
         choices.AddRange(VersionRows
             .Where(row => !ReferenceEquals(row, SelectedVersion))
-            .Select(row => new CompareChoice(row.DateText + (row.IsManaged ? "" : " (not managed)"), row)));
+            .Select(row => new CompareChoice(row.DateText + (row.IsManaged ? "" : Loc.T("versions.compare.notManaged")), row)));
         _suppressReload++;
         try
         {
@@ -203,12 +221,12 @@ public sealed partial class VersionsViewModel
 
         if (SelectedVersion is not { } a)
         {
-            Tree.ShowMessage(VersionRows.Count == 0 ? "" : "Select a version.");
+            Tree.ShowMessage(VersionRows.Count == 0 ? LocText.Empty : LocText.Of("versions.tree.selectVersion"));
             return;
         }
         if (_index is not { } index || a.Indexed is not { } versionA)
         {
-            Tree.ShowMessage(a.IndexState == IndexState.Failed ? "This version could not be indexed." : "Indexing…");
+            Tree.ShowMessage(a.IndexState == IndexState.Failed ? LocText.Of("versions.tree.notIndexed") : LocText.Of("versions.tree.indexing"));
             return;
         }
 
@@ -216,7 +234,7 @@ public sealed partial class VersionsViewModel
         if (IsComparing && other is null)
         {
             // B is listed but not (or no longer) indexed: no comparison until its sync gives it an id.
-            Tree.ShowMessage("The version to compare with is being indexed…");
+            Tree.ShowMessage(LocText.Of("versions.tree.otherIndexing"));
             return;
         }
 
@@ -240,7 +258,7 @@ public sealed partial class VersionsViewModel
         catch (Exception ex)
         {
             if (generation == _treeGeneration)
-                Tree.ShowMessage($"The version cannot be read from the index: {ex.Message}");
+                Tree.ShowMessage(LocText.Of("versions.tree.unreadable", ("error", ex.Message)));
         }
     }
 
@@ -291,7 +309,7 @@ public sealed partial class VersionsViewModel
         {
             IsSearchActive = false;
             SearchResults.ReplaceAll([]);
-            SearchSummary = "";
+            SearchSummaryText = LocText.Empty;
             return;
         }
 
@@ -302,7 +320,7 @@ public sealed partial class VersionsViewModel
             if (_index is not { } index || SelectedVersion?.Indexed is not { } version)
             {
                 SearchResults.ReplaceAll([]);
-                SearchSummary = "The version is not indexed yet.";
+                SearchSummaryText = LocText.Of("versions.search.notIndexed");
                 return;
             }
 
@@ -311,9 +329,9 @@ public sealed partial class VersionsViewModel
             if (!ReferenceEquals(_searchCts, cts) || SelectedVersion?.Indexed?.Id != version.Id)
                 return;
             SearchResults.ReplaceAll(hits.Select(hit => new SearchHitRow(hit)));
-            SearchSummary = hits.Count == 0 ? "No matches"
-                : hits.Count >= VersionIndex.SearchLimit ? $"The first {VersionIndex.SearchLimit} matches"
-                : string.Create(CultureInfo.CurrentCulture, $"{hits.Count:N0} matches");
+            SearchSummaryText = hits.Count == 0 ? LocText.Of("versions.search.none")
+                : hits.Count >= VersionIndex.SearchLimit ? LocText.Of("versions.search.capped", ("limit", VersionIndex.SearchLimit))
+                : LocText.Of("versions.search.count", ("count", hits.Count));
         }
         catch (OperationCanceledException)
         {
@@ -321,7 +339,7 @@ public sealed partial class VersionsViewModel
         catch (Exception ex)
         {
             if (ReferenceEquals(_searchCts, cts))
-                SearchSummary = $"The search failed: {ex.Message}";
+                SearchSummaryText = LocText.Of("versions.search.failed", ("error", ex.Message));
         }
     }
 
@@ -347,7 +365,7 @@ public sealed partial class VersionsViewModel
             return;
         }
 
-        HistoryTitle = "HISTORY OF " + node.Name;
+        HistoryTitleText = LocText.Of("versions.history.title", ("name", node.Name));
         ShowHistory = true;
         try
         {
@@ -364,7 +382,7 @@ public sealed partial class VersionsViewModel
             if (generation != _historyGeneration)
                 return;
             HistoryRows.ReplaceAll([]);
-            HistoryTitle = $"HISTORY OF {node.Name} — cannot be read: {ex.Message}";
+            HistoryTitleText = LocText.Of("versions.history.unreadable", ("name", node.Name), ("error", ex.Message));
         }
     }
 }

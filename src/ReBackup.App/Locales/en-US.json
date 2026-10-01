@@ -555,5 +555,133 @@
       "deleted": "Deleted by retention:",
       "warnings": "Warnings:"
     }
+  },
+  "versions": {
+    "title": "VERSIONS",
+    "list": "Versions",
+    "refreshToolTip": "Read the target again and update the index",
+    "refreshName": "Refresh versions",
+    "empty": "No versions in the target yet",
+    "savePlan": "Save the plan to see its versions.",
+    "copyMissing": "The copy in \"{version}\" no longer exists.",
+    "sync": {
+      "reading": "Reading the target…",
+      "waiting": "Waiting for the index…",
+      "errors": "{count} version(s) could not be indexed: {errors}",
+      "indexing": "Indexing {current} of {total}",
+      "indexingVersion": "Indexing {current} of {total} · {version} · {files:N0} files"
+    },
+    "index": {
+      "notIndexed": "not indexed",
+      "indexing": "indexing…",
+      "indexed": "indexed",
+      "failed": "could not be indexed"
+    },
+    "notManaged": {
+      "noManifest": "Not managed: no manifest",
+      "foreign": "Not managed: manifest of another plan",
+      "unreadable": "Not managed: manifest cannot be read",
+      "renamed": "Not managed: renamed or copied by hand"
+    },
+    "toolbar": {
+      "search": "Search names (substring, or * and ?)",
+      "searchToolTip": "A part of a name, or a pattern with * and ?",
+      "compareWith": "Compare with",
+      "swapToolTip": "Swap: show the other version's tree",
+      "swapName": "Swap versions",
+      "changedOnly": "Changed only",
+      "openToolTip": "Open the file (the copy in the version)",
+      "showInExplorer": "Show in Explorer",
+      "restoreOriginal": "Restore to original location",
+      "restoreOriginalToolTip": "Copy the selection back to where it came from",
+      "restore": "Restore",
+      "restoreTo": "Restore to…",
+      "restoreToName": "Restore to a folder",
+      "restoreToToolTip": "Copy the selection into a folder you choose",
+      "cancelRestore": "Cancel the restore",
+      "cancelRestoreToolTip": "Stop after the current file"
+    },
+    "menu": { "restoreOriginal": "Restore to original location…" },
+    "compare": { "notManaged": " (not managed)" },
+    "tree": {
+      "name": "Version tree",
+      "selectVersion": "Select a version.",
+      "notIndexed": "This version could not be indexed.",
+      "indexing": "Indexing…",
+      "otherIndexing": "The version to compare with is being indexed…",
+      "unreadable": "The version cannot be read from the index: {error}",
+      "noFiles": "This version holds no files.",
+      "cannotRead": "Cannot be read: {error}",
+      "loading": "Loading…",
+      "emptyFolder": "Empty folder"
+    },
+    "search": {
+      "results": "Search results",
+      "notIndexed": "The version is not indexed yet.",
+      "none": "No matches",
+      "capped": "The first {limit} matches",
+      "count": "{count:N0} matches",
+      "failed": "The search failed: {error}"
+    },
+    "history": {
+      "name": "File history",
+      "title": "HISTORY OF {name}",
+      "unreadable": "HISTORY OF {name} — cannot be read: {error}",
+      "showCopy": "Show this copy in Explorer"
+    }
+  },
+  "restore": {
+    "title": "Restore",
+    "notInVersion": "\"{path}\" no longer exists in the version.",
+    "runnable": "\"{name}\" is a program, script or shortcut; it is not run from a backup. Its folder is shown instead.",
+    "cannotOpen": "\"{path}\" cannot be opened: it no longer exists in the version, or no program opens it.",
+    "canceling": "Canceling…",
+    "cancelingAfterFile": "Canceling after the current file…",
+    "reindexing": "The version is being indexed again; try once the tree has been reloaded.",
+    "wholeVersion": "the whole version",
+    "item": "\"{path}\"",
+    "originUnknown": "The original location of this version is not known. Use \"Restore to…\".",
+    "backupRunningWarning": "\n\nA backup of this plan is queued or running; it may pick up the restored files.",
+    "confirmTitle": "Restore to the original location",
+    "confirm": "Restore {item} from the version of {date} to\n{destination}?\n\nNothing there is deleted; you choose what happens to files that exist already.{warning}",
+    "pickFolder": "Restore to…",
+    "insideTarget": "The destination is inside the plan's target folder \"{target}\", where its versions are stored. Choose a folder outside it.",
+    "preparing": "Preparing the restore…",
+    "canceledNothing": "Restore canceled; nothing was written.",
+    "unreadableNote": " {count:N0} part(s) of the version could not be read.",
+    "cannotRestore": "{item} cannot be restored: {reason}",
+    "restoring": "Restoring…",
+    "restoringFrom": "Restoring {item} from {date}…",
+    "progress": "Restoring {done:N0} of {total:N0} files · {percent:0} %",
+    "stopped": "The restore stopped: {error}",
+    "failures": "{summary}\n\n{count:N0} item(s) could not be restored to {root}:",
+    "conflictsOriginal": "{count:N0} file(s) already exist in the original location:\n{examples}{more}\n\nWhat should happen to them?",
+    "conflictsFolder": "{count:N0} file(s) already exist in {folder}:\n{examples}{more}\n\nWhat should happen to them?",
+    "unreadable": "{count:N0} part(s) of the version cannot be read; their files will not be restored. Restore the rest?",
+    "restoreRest": "Restore the rest",
+    "summary": {
+      "copied": "{count:N0} copied",
+      "keptBoth": "{count:N0} kept beside the existing file",
+      "skipped": "{count:N0} skipped",
+      "failed": "{count:N0} failed",
+      "finished": "Restore finished: {parts}.",
+      "canceled": "Restore canceled: {parts}."
+    }
+  },
+  "dialog": {
+    "conflict": {
+      "note": "Keep both writes the version's copy next to the existing file, with the version's time in its name. Nothing is ever deleted.",
+      "detailsName": "Parts of the version that cannot be read",
+      "details": "{count:N0} part(s) of the version cannot be read; their files are not restored:",
+      "overwrite": "Overwrite",
+      "overwriteToolTip": "Replace the existing files with the version's copies",
+      "skip": "Skip",
+      "skipToolTip": "Leave the existing files as they are",
+      "keepBoth": "Keep both"
+    },
+    "failures": {
+      "linesName": "Paths and reasons",
+      "more": "… and {count:N0} more"
+    }
   }
 }

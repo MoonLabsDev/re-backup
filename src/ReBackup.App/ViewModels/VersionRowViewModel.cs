@@ -1,7 +1,6 @@
-using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
@@ -32,12 +31,12 @@ public sealed partial class VersionRowViewModel : ObservableObject
 
     public string Name => Info.Name;
 
-    public string DateText => Info.LocalTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+    public string DateText => Formats.DateAndTime(Info.LocalTime);
 
-    public string SizeText => (Info.TotalBytes ?? Indexed?.TotalBytes) is { } bytes ? ByteSize.Format(bytes) : "—";
+    public string SizeText => (Info.TotalBytes ?? Indexed?.TotalBytes) is { } bytes ? Formats.Bytes(bytes) : "—";
 
     public string FilesText =>
-        (Info.FileCount ?? Indexed?.FileCount) is { } count ? count.ToString("N0", CultureInfo.CurrentCulture) + " files" : "—";
+        (Info.FileCount ?? Indexed?.FileCount) is { } count ? Loc.F("common.fileCount", ("count", count)) : "—";
 
     /// <summary>Retention manages it; the others are greyed and never deleted.</summary>
     public bool IsManaged => Info.IsOwned;
@@ -45,18 +44,21 @@ public sealed partial class VersionRowViewModel : ObservableObject
     /// <summary>Why a folder is not managed; empty for managed versions.</summary>
     public string ReasonText => Info.Ownership switch
     {
-        VersionOwnership.NoManifest => "Not managed: no manifest",
-        VersionOwnership.Foreign => "Not managed: manifest of another plan",
-        VersionOwnership.Unreadable => "Not managed: manifest cannot be read",
-        VersionOwnership.Renamed => "Not managed: renamed or copied by hand",
+        VersionOwnership.NoManifest => Loc.T("versions.notManaged.noManifest"),
+        VersionOwnership.Foreign => Loc.T("versions.notManaged.foreign"),
+        VersionOwnership.Unreadable => Loc.T("versions.notManaged.unreadable"),
+        VersionOwnership.Renamed => Loc.T("versions.notManaged.renamed"),
         _ => "",
     };
 
     public string IndexStateText => IndexState switch
     {
-        IndexState.Indexing => "indexing…",
-        IndexState.Indexed => "indexed",
-        IndexState.Failed => "could not be indexed",
-        _ => "not indexed",
+        IndexState.Indexing => Loc.T("versions.index.indexing"),
+        IndexState.Indexed => Loc.T("versions.index.indexed"),
+        IndexState.Failed => Loc.T("versions.index.failed"),
+        _ => Loc.T("versions.index.notIndexed"),
     };
+
+    /// <summary>The language changed: every text of the row is read again.</summary>
+    public void Refresh() => OnPropertyChanged(string.Empty);
 }
