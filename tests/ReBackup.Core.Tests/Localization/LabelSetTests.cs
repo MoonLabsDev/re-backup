@@ -58,4 +58,45 @@ public class LabelSetTests
         set.TryGet("a", out _).Should().BeFalse();
         set.TryGet("a.b", out _).Should().BeTrue();
     }
+
+    [Fact]
+    public void An_object_with_one_and_other_is_a_plural_label()
+    {
+        var set = LabelSet.Parse("""{ "a": { "files": { "one": "{count} file", "other": "{count:N0} files" } } }""");
+
+        set.Plurals.Should().BeEquivalentTo(["a.files"]);
+        set.IsPlural("a.files").Should().BeTrue();
+        set.Entries.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["a.files.one"] = "{count} file",
+            ["a.files.other"] = "{count:N0} files",
+        });
+        set.TryGet("a.files", out var text).Should().BeTrue();
+        text.Should().Be("{count:N0} files", "the plain text of a plural label is its other form");
+        set.TryGet("a.files", 1, out text).Should().BeTrue();
+        text.Should().Be("{count} file");
+        set.TryGet("a.files", 2, out text).Should().BeTrue();
+        text.Should().Be("{count:N0} files");
+    }
+
+    [Fact]
+    public void An_object_with_other_members_is_no_plural()
+    {
+        var set = LabelSet.Parse("""{ "a": { "one": "x", "other": "y", "few": "z" }, "b": { "one": "x" } }""");
+
+        set.Plurals.Should().BeEmpty();
+        set.IsPlural("a").Should().BeFalse();
+        set.TryGet("a.one", out _).Should().BeTrue();
+        set.TryGet("b.one", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_plain_label_ignores_the_count()
+    {
+        var set = LabelSet.Parse("""{ "a": "{count} x" }""");
+
+        set.TryGet("a", 1, out var text).Should().BeTrue();
+        text.Should().Be("{count} x");
+        set.TryGet("missing", 1, out _).Should().BeFalse();
+    }
 }

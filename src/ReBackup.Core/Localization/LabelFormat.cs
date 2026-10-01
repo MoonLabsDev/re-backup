@@ -39,6 +39,30 @@ public static class LabelFormat
             .Distinct(StringComparer.Ordinal).ToList();
 
     /// <summary>
+    /// The placeholders of a template as written, <c>name</c> or <c>name:format</c>, once each, in order of first
+    /// appearance (the same name with two formats is listed twice).
+    /// </summary>
+    public static IReadOnlyList<string> PlaceholderSpecs(string template) =>
+        Tokenize(template).Where(token => token.IsPlaceholder)
+            .Select(token => token.Format is null ? token.Text : token.Text + ":" + token.Format)
+            .Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>
+    /// Whether a <c>count</c> argument takes the "one" form of a plural label: a number that is 1 or -1 (the rule of
+    /// English and German). Anything that is not a number takes the "other" form.
+    /// </summary>
+    public static bool IsOne(object? count) =>
+        count switch
+        {
+            byte or sbyte or short or ushort or int or uint or long or ulong =>
+                Convert.ToDecimal(count, System.Globalization.CultureInfo.InvariantCulture) is 1m or -1m,
+            decimal value => value is 1m or -1m,
+            double value => value is 1.0 or -1.0,
+            float value => value is 1f or -1f,
+            _ => false,
+        };
+
+    /// <summary>
     /// Reads the arguments back out of a text that <see cref="Format"/> produced from <paramref name="template"/>
     /// (as text); null when the text does not have the template's shape.
     /// </summary>

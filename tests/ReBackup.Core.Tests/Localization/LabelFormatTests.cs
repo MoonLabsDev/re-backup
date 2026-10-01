@@ -95,4 +95,33 @@ public class LabelFormatTests
         LabelFormat.LiteralLength("ab{c}d{{").Should().Be(4);
         LabelFormat.LiteralLength("{text}").Should().Be(0);
     }
+
+    [Fact]
+    public void PlaceholderSpecs_list_name_and_format()
+    {
+        LabelFormat.PlaceholderSpecs("{b} and {a:N0} and {b} {{c}} {a}").Should().Equal("b", "a:N0", "a");
+        LabelFormat.PlaceholderSpecs("no placeholders").Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(-1, true)]
+    [InlineData(0, false)]
+    [InlineData(2, false)]
+    public void IsOne_is_true_for_plus_or_minus_one(int count, bool expected)
+    {
+        LabelFormat.IsOne(count).Should().Be(expected);
+        LabelFormat.IsOne((long)count).Should().Be(expected);
+        LabelFormat.IsOne((double)count).Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsOne_is_false_for_anything_but_a_number()
+    {
+        LabelFormat.IsOne(null).Should().BeFalse();
+        LabelFormat.IsOne("1").Should().BeFalse();
+        LabelFormat.IsOne(true).Should().BeFalse();
+        LabelFormat.IsOne(1.0000001).Should().BeFalse();
+        LabelFormat.IsOne(1m).Should().BeTrue();
+    }
 }
