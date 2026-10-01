@@ -381,5 +381,79 @@
       "paused": "Der Zeitplaner ist pausiert.",
       "unsaved": "Ungespeicherte Änderungen gelten nach dem Speichern."
     }
+  },
+  "ignore": {
+    "patterns": {
+      "title": "IGNORIERMUSTER",
+      "syntax": "gitignore-Syntax, ein Muster pro Zeile",
+      "nested": ".backupignore-Dateien in der Quelle beachten",
+      "global": "Auch die globalen Standardmuster anwenden",
+      "name": "Ignoriermuster",
+      "resize": "Größe des Musterbereichs ändern"
+    },
+    "index": {
+      "now": "Jetzt indizieren",
+      "toolTip": "Den Quellordner scannen",
+      "cancel": "Scan abbrechen"
+    },
+    "sizes": {
+      "show": "Anzeigen",
+      "name": "Angezeigte Größen",
+      "inBackup": "Im Backup",
+      "inBackupToolTip": "Zeigt, was ins Backup kommt; ignorierte Einträge zeigen —",
+      "total": "Gesamt",
+      "totalToolTip": "Zeigt die Gesamtgröße, ignorierte Einträge eingeschlossen"
+    },
+    "tree": {
+      "name": "Vorschaubaum",
+      "ignoreThis": "Dies ignorieren",
+      "ignoreExtension": "Alle Dateien mit dieser Endung ignorieren",
+      "unignore": "Nicht mehr ignorieren",
+      "percent": "% des Ordners"
+    },
+    "treemap": {
+      "resize": "Größe der Treemap ändern",
+      "hover": "Für Pfad und Größen auf eine Kachel zeigen",
+      "byBackup": "Größe nach Backup-Inhalt; ignorierte Einträge fehlen",
+      "byTotal": "Größe nach Gesamtgröße; ignorierte Einträge grau",
+      "empty": "Die Treemap erscheint nach dem Scan.",
+      "toolTip": "{path}\n{total}, im Backup {included} – {status}"
+    },
+    "patternNote": "Änderungen an den Mustern gelten, sobald der Scan fertig ist.",
+    "sourceMissing": "Der Quellordner existiert nicht.",
+    "progress": {
+      "notIndexed": "Noch nicht indiziert.",
+      "indexed": "{files:N0} Dateien in {folders:N0} Ordnern indiziert.",
+      "live": "Bisher {files:N0} Dateien, {folders:N0} Ordner – {waiting:N0} Ordner ausstehend",
+      "canceledPrevious": "Indizieren abgebrochen; der vorherige Index wird angezeigt.",
+      "canceledIncomplete": "Scan abgebrochen – unvollständig.",
+      "failedPrevious": "Indizieren fehlgeschlagen; der vorherige Index wird angezeigt.",
+      "failedIncomplete": "Scan fehlgeschlagen – unvollständig."
+    },
+    "summary": {
+      "live": "Bisher – enthalten: {includedFiles:N0} Dateien, {includedSize}   ·   ignoriert: {ignoredFiles:N0} Dateien, {ignoredSize}",
+      "done": "Enthalten: {includedFiles:N0} Dateien, {includedSize}   ·   Ignoriert: {ignoredFiles:N0} Dateien, {ignoredSize}"
+    },
+    "pill": {
+      "inBackup": "im Backup {prefix}{size} · {prefix}{files:N0} Dateien",
+      "ignored": "ignoriert {prefix}{size} · {prefix}{files:N0} Dateien"
+    },
+    "row": {
+      "placeholder": "wird geladen …",
+      "waiting": "wartet",
+      "loading": "lädt",
+      "notScanned": "Nicht gescannt",
+      "ignoredByParent": "Ignoriert, weil ein übergeordneter Ordner durch „{pattern}“ ({origin}) ignoriert wird",
+      "ignoredBy": "Ignoriert durch „{pattern}“ ({origin})",
+      "partly": "Teilweise ignoriert: {size} in {files:N0} Dateien werden übersprungen",
+      "reincluded": "Wieder einbezogen durch „{pattern}“ ({origin})",
+      "included": "Enthalten",
+      "stillScanning": "Wird noch gescannt; die Zahlen wachsen noch.",
+      "notScannedReason": "Nicht gescannt: {error}"
+    },
+    "origin": {
+      "globalDefaults": "Globale Standardmuster",
+      "plan": "Plan"
+    }
   }
 }

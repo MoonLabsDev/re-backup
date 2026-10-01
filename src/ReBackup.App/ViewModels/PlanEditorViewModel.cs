@@ -329,6 +329,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         foreach (var row in RetentionRuleRows)
             row.RefreshTexts();
         Run.RefreshTexts();
+        Preview.RefreshTexts();
     }
 
     public bool TrySave(PlanStore store)

@@ -381,5 +381,79 @@
       "paused": "The scheduler is paused.",
       "unsaved": "Unsaved changes take effect after Save."
     }
+  },
+  "ignore": {
+    "patterns": {
+      "title": "IGNORE PATTERNS",
+      "syntax": "gitignore syntax, one per line",
+      "nested": "Honor .backupignore files inside the source",
+      "global": "Also apply the global default patterns",
+      "name": "Ignore patterns",
+      "resize": "Resize the pattern panel"
+    },
+    "index": {
+      "now": "Index now",
+      "toolTip": "Scan the source folder",
+      "cancel": "Cancel the scan"
+    },
+    "sizes": {
+      "show": "Show",
+      "name": "Sizes shown",
+      "inBackup": "In backup",
+      "inBackupToolTip": "Show what goes into the backup; ignored entries show —",
+      "total": "Total",
+      "totalToolTip": "Show the total, ignored entries included"
+    },
+    "tree": {
+      "name": "Preview tree",
+      "ignoreThis": "Ignore this",
+      "ignoreExtension": "Ignore all files with this extension",
+      "unignore": "Un-ignore this",
+      "percent": "% of parent"
+    },
+    "treemap": {
+      "resize": "Resize the treemap",
+      "hover": "Hover a tile for its path and sizes",
+      "byBackup": "Sized by what is in the backup; ignored entries are left out",
+      "byTotal": "Sized by the total; ignored entries in grey",
+      "empty": "The treemap appears after the scan.",
+      "toolTip": "{path}\n{total}, backup {included} — {status}"
+    },
+    "patternNote": "Changes to the patterns are applied when the scan is finished.",
+    "sourceMissing": "The source folder does not exist.",
+    "progress": {
+      "notIndexed": "Not indexed yet.",
+      "indexed": "Indexed {files:N0} files in {folders:N0} folders.",
+      "live": "{files:N0} files, {folders:N0} folders so far — {waiting:N0} folders waiting",
+      "canceledPrevious": "Indexing canceled; showing the previous index.",
+      "canceledIncomplete": "Scan canceled — incomplete.",
+      "failedPrevious": "Indexing failed; showing the previous index.",
+      "failedIncomplete": "Scan failed — incomplete."
+    },
+    "summary": {
+      "live": "So far — included: {includedFiles:N0} files, {includedSize}   ·   ignored: {ignoredFiles:N0} files, {ignoredSize}",
+      "done": "Included: {includedFiles:N0} files, {includedSize}   ·   Ignored: {ignoredFiles:N0} files, {ignoredSize}"
+    },
+    "pill": {
+      "inBackup": "in backup {prefix}{size} · {prefix}{files:N0} files",
+      "ignored": "ignored {prefix}{size} · {prefix}{files:N0} files"
+    },
+    "row": {
+      "placeholder": "loading …",
+      "waiting": "waiting",
+      "loading": "loading",
+      "notScanned": "Not scanned",
+      "ignoredByParent": "Ignored because a parent folder is ignored by \"{pattern}\" ({origin})",
+      "ignoredBy": "Ignored by \"{pattern}\" ({origin})",
+      "partly": "Partly ignored: {size} in {files:N0} files are skipped",
+      "reincluded": "Re-included by \"{pattern}\" ({origin})",
+      "included": "Included",
+      "stillScanning": "Still being scanned; the numbers still grow.",
+      "notScannedReason": "Not scanned: {error}"
+    },
+    "origin": {
+      "globalDefaults": "Global defaults",
+      "plan": "Plan"
+    }
   }
 }

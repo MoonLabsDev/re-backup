@@ -1,8 +1,8 @@
-using System.Globalization;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
+using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
-using ReBackup.Core.IO;
 
 namespace ReBackup.App.ViewModels;
 
@@ -56,16 +56,16 @@ public sealed class PreviewRowViewModel : ObservableObject
 
     private string Prefix => IsLoading ? "≥ " : "";
 
-    public string SizeText => IsPlaceholder ? "" : Prefix + ByteSize.Format(Entry.TotalSize);
+    public string SizeText => IsPlaceholder ? "" : Prefix + Formats.Bytes(Entry.TotalSize);
 
     /// <summary>What the backup of this entry takes: its size without the ignored parts.</summary>
     public string BackupSizeText =>
         IsPlaceholder ? ""
         : Entry.Status == IncludeStatus.Ignored ? "—"
-        : Prefix + ByteSize.Format(Entry.IncludedSize);
+        : Prefix + Formats.Bytes(Entry.IncludedSize);
 
     public string FilesText =>
-        Entry.IsDirectory ? Prefix + Entry.TotalFiles.ToString("N0", CultureInfo.CurrentCulture) : "";
+        Entry.IsDirectory ? Prefix + Formats.Count(Entry.TotalFiles) : "";
 
     public double PercentOfParent => Share(Entry.TotalSize, Parent.TotalSize);
 
@@ -73,12 +73,12 @@ public sealed class PreviewRowViewModel : ObservableObject
     public double BackupPercentOfParent => Share(Entry.IncludedSize, Parent.IncludedSize);
 
     public string PercentText =>
-        IsPlaceholder ? "" : PercentOfParent.ToString("0.0", CultureInfo.CurrentCulture) + " %";
+        IsPlaceholder ? "" : PercentOfParent.ToString("0.0", Loc.Culture) + " %";
 
     public string BackupPercentText =>
         IsPlaceholder ? ""
         : Entry.Status == IncludeStatus.Ignored ? "—"
-        : BackupPercentOfParent.ToString("0.0", CultureInfo.CurrentCulture) + " %";
+        : BackupPercentOfParent.ToString("0.0", Loc.Culture) + " %";
 
     // The values the tree shows; they follow the tree's "In backup | Total" toggle.
     private bool InBackup => _tree.ShowInBackup;
@@ -87,7 +87,7 @@ public sealed class PreviewRowViewModel : ObservableObject
     public string ShownFilesText =>
         !Entry.IsDirectory ? ""
         : ShowsDash ? "—"
-        : Prefix + (InBackup ? Entry.IncludedFiles : Entry.TotalFiles).ToString("N0", CultureInfo.CurrentCulture);
+        : Prefix + Formats.Count(InBackup ? Entry.IncludedFiles : Entry.TotalFiles);
 
     public string ShownSizeText => InBackup ? BackupSizeText : SizeText;
 
@@ -97,9 +97,9 @@ public sealed class PreviewRowViewModel : ObservableObject
 
     public string StatusText =>
         IsPlaceholder ? ""
-        : IsLoading ? (Entry.State == ScanState.Waiting ? "waiting" : "loading")
-        : Entry.Error is not null && Entry.Status != IncludeStatus.Ignored ? "Not scanned"
-        : Entry.Status.ToString();
+        : IsLoading ? (Entry.State == ScanState.Waiting ? Loc.T("ignore.row.waiting") : Loc.T("ignore.row.loading"))
+        : Entry.Error is not null && Entry.Status != IncludeStatus.Ignored ? Loc.T("ignore.row.notScanned")
+        : Loc.T("enum.includeStatus." + Entry.Status);
 
     public bool IsIgnored => !IsPlaceholder && Entry.Status == IncludeStatus.Ignored;
     public bool IsPartial => !IsLoading && Entry.Status == IncludeStatus.Partial;
@@ -111,23 +111,33 @@ public sealed class PreviewRowViewModel : ObservableObject
         {
             if (IsPlaceholder)
                 return null;
+            var pattern = Entry.Pattern?.Text;
+            var origin = OriginText(Entry.Pattern?.Origin);
             var detail = Entry.Status switch
             {
                 IncludeStatus.Ignored when Entry.IgnoredByParent =>
-                    $"Ignored because a parent folder is ignored by \"{Entry.Pattern?.Text}\" ({Entry.Pattern?.Origin})",
-                IncludeStatus.Ignored =>
-                    $"Ignored by \"{Entry.Pattern?.Text}\" ({Entry.Pattern?.Origin})",
+                    Loc.F("ignore.row.ignoredByParent", ("pattern", pattern), ("origin", origin)),
+                IncludeStatus.Ignored => Loc.F("ignore.row.ignoredBy", ("pattern", pattern), ("origin", origin)),
                 IncludeStatus.Partial =>
-                    $"Partly ignored: {ByteSize.Format(Entry.IgnoredSize)} in {Entry.IgnoredFiles:N0} files are skipped",
-                _ when Entry.Pattern is not null =>
-                    $"Re-included by \"{Entry.Pattern.Text}\" ({Entry.Pattern.Origin})",
-                _ => "Included",
+                    Loc.F("ignore.row.partly", ("size", Formats.Bytes(Entry.IgnoredSize)), ("files", Entry.IgnoredFiles)),
+                _ when Entry.Pattern is not null => Loc.F("ignore.row.reincluded", ("pattern", pattern), ("origin", origin)),
+                _ => Loc.T("ignore.row.included"),
             };
             if (IsLoading)
-                detail = "Still being scanned; the numbers still grow.\n" + detail;
-            return Entry.Error is null ? detail : $"{detail}\nNot scanned: {Entry.Error}";
+                detail = Loc.T("ignore.row.stillScanning") + "\n" + detail;
+            return Entry.Error is null
+                ? detail
+                : detail + "\n" + Loc.F("ignore.row.notScannedReason", ("error", Loc.Known(Entry.Error)));
         }
     }
+
+    /// <summary>Where a pattern comes from, as shown: the global defaults, the plan, or the path of a nested ignore file.</summary>
+    internal static string? OriginText(string? origin) => origin switch
+    {
+        IgnoreOrigins.GlobalDefaults => Loc.T("ignore.origin.globalDefaults"),
+        IgnoreOrigins.Plan => Loc.T("ignore.origin.plan"),
+        _ => origin,
+    };
 
     /// <summary>Re-reads every value (a running scan changes them).</summary>
     public void Refresh() => OnPropertyChanged(string.Empty);

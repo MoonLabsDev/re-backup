@@ -1,3 +1,4 @@
+using ReBackup.App.Localization;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 
@@ -6,7 +7,7 @@ namespace ReBackup.App.ViewModels;
 /// <summary>The "loading …" row shown in an expanded folder of which nothing has been listed yet.</summary>
 public sealed class LoadingPlaceholder(string parentPath) : IPreviewEntry
 {
-    public string Name => "loading …";
+    public string Name => Loc.T("ignore.row.placeholder");
     public string RelativePath { get; } = parentPath + "/…";
     public bool IsDirectory => false;
     public string? Error => null;
