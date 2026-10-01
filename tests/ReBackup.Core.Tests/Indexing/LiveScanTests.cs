@@ -142,6 +142,21 @@ public class LiveScanTests : IDisposable
     }
 
     [Fact]
+    public async Task ChildCount_equals_the_number_of_children_for_live_and_evaluated_entries()
+    {
+        WriteFixture();
+        var scan = LiveScan.Start(_source, Settings("*.tmp"), []);
+        var index = await scan.Completion.WaitAsync(Timeout);
+        IPreviewEntry evaluated = IndexEvaluator.Evaluate(index, IgnoreMatcher.Create([], ["*.tmp"], []));
+
+        foreach (IPreviewEntry live in new[] { scan.Root, Child(scan.Root, "sub"), Child(scan.Root, "empty"), Child(scan.Root, "a.txt") })
+            live.ChildCount.Should().Be(live.GetChildren().Count, live.RelativePath);
+        scan.Root.ChildCount.Should().BeGreaterThan(0);
+        evaluated.ChildCount.Should().Be(evaluated.GetChildren().Count);
+        evaluated.ChildCount.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task A_folder_is_done_only_when_everything_below_it_is_done()
     {
         _tmp.WriteFile(@"source\a\b\f.txt", "f");

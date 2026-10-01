@@ -324,6 +324,7 @@ public sealed class LiveScan
         List<string> unreadable;
         lock (_gate)
         {
+            // Found in scan order, not SourceIndexer's walk order; harmless, IgnoreMatcher.ForPlan sorts by depth and name.
             ignoreFiles = [.. _ignoreFiles];
             unreadable = [.. _unreadableIgnoreFiles];
         }

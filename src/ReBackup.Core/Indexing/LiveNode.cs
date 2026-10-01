@@ -92,6 +92,15 @@ public sealed class LiveNode : IPreviewEntry
         }
     }
 
+    public int ChildCount
+    {
+        get
+        {
+            lock (_gate)
+                return _children.Count;
+        }
+    }
+
     public IReadOnlyList<IPreviewEntry> GetChildren() => Children;
 
     internal void SetState(ScanState state) => Volatile.Write(ref _state, (int)state);
@@ -100,7 +109,8 @@ public sealed class LiveNode : IPreviewEntry
 
     /// <summary>
     /// Adds a child. A file's size, and an ignored entry below a folder that is not ignored, are added to this folder
-    /// and every folder above it, the outermost first, so that a folder read after its parent does not show more.
+    /// and every folder above it, the outermost first. That guarantees child &lt;= parent only for a reader that reads
+    /// the child BEFORE the parent (a parent read first can be updated before the child is read).
     /// </summary>
     internal void Add(LiveNode child)
     {

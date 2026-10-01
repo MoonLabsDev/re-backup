@@ -48,7 +48,7 @@ public sealed class PreviewRowViewModel : ObservableObject
     /// <summary>A folder of a running scan that is not finished yet; its values still grow.</summary>
     public bool IsLoading => Entry.IsDirectory && Entry.State != ScanState.Done;
 
-    public bool IsExpandable => Entry.IsDirectory && (IsLoading || Entry.GetChildren().Count > 0);
+    public bool IsExpandable => Entry.IsDirectory && (IsLoading || Entry.ChildCount > 0);
     public string Name => Entry.Name;
     public Thickness Indent => new(Depth * IndentPerLevel, 0, 0, 0);
 

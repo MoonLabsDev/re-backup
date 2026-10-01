@@ -20,5 +20,6 @@ public sealed class LoadingPlaceholder(string parentPath) : IPreviewEntry
     public int IgnoredFiles => 0;
     public long TotalSize => 0;
     public int TotalFiles => 0;
+    public int ChildCount => 0;
     public IReadOnlyList<IPreviewEntry> GetChildren() => [];
 }

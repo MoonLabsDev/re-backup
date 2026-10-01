@@ -40,6 +40,8 @@ public sealed class EvaluatedNode : IPreviewEntry
     /// <summary>An evaluation is always of a finished index.</summary>
     public ScanState State => ScanState.Done;
 
+    public int ChildCount => Children.Count;
+
     public IReadOnlyList<IPreviewEntry> GetChildren() => Children;
 }
 

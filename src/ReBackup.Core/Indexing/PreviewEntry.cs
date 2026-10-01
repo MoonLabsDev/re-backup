@@ -35,6 +35,9 @@ public interface IPreviewEntry
     long TotalSize { get; }
     int TotalFiles { get; }
 
+    /// <summary>The number of children as of now; cheaper than <c>GetChildren().Count</c> for a running scan.</summary>
+    int ChildCount { get; }
+
     /// <summary>The children as they are now; for a running scan a copy that does not change afterwards.</summary>
     IReadOnlyList<IPreviewEntry> GetChildren();
 }

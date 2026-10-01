@@ -127,6 +127,11 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         if (!expanded)
             return;
 
+        // An open folder that is still waiting (open before the scan started, or kept open by path) goes first;
+        // prioritising one that is already wanted is a cheap no-op, so this may run on every refresh.
+        if (entry.State == ScanState.Waiting)
+            LoadingFolderExpanded?.Invoke(entry);
+
         var children = entry.GetChildren();
         if (children.Count == 0)
         {

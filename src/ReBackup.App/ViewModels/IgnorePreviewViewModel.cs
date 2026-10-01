@@ -40,6 +40,9 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
 
     [ObservableProperty] private IPreviewEntry? _selectedNode;
 
+    /// <summary>Included size of the last complete evaluation; kept during a rescan (Root is null then). Null when none.</summary>
+    public long? LastEvaluatedIncludedSize { get; private set; }
+
     public IgnorePreviewViewModel(Func<string> source, Func<IgnoreSettings> ignoreSettings,
         Func<IReadOnlyList<string>> globalDefaults)
     {
@@ -79,6 +82,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         _evaluateCts?.Cancel();
         _evaluationVersion++;
         _index = null;
+        LastEvaluatedIncludedSize = null;
         IsIndexing = false;
         Root = null;
         Tree.SetRoot(null);
@@ -169,14 +173,9 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
                 return;
             _scan = null;
             IsIndexing = false;
-            if (_index is { } previous)
+            if (_index is not null)
             {
-                // Stop as soon as this scan was superseded (Invalidate / a new scan): the old index must not be published.
-                var shown = false;
-                while (ReferenceEquals(_indexCts, cts) && !(shown = await EvaluateAsync(previous, CancellationToken.None)))
-                {
-                }
-                if (shown && ReferenceEquals(_indexCts, cts))
+                if (await ShowPreviousIndexAsync(cts))
                     ProgressText = "Indexing canceled; showing the previous index.";
             }
             else
@@ -190,7 +189,15 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             if (!ReferenceEquals(_indexCts, cts))
                 return;
             _scan = null;
-            Tree.Refresh();
+            IsIndexing = false;
+            // Like a cancel: show the previous index again (so the tree, the index and the progress line agree),
+            // or keep the partial tree when there is none. The error stays visible either way.
+            var restored = _index is not null && await ShowPreviousIndexAsync(cts);
+            if (!ReferenceEquals(_indexCts, cts))
+                return;
+            if (!restored)
+                Tree.Refresh();
+            ProgressText = restored ? "Indexing failed; showing the previous index." : "Scan failed — incomplete.";
             Error = ex.Message;
         }
         finally
@@ -198,6 +205,29 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             if (ReferenceEquals(_indexCts, cts))
                 IsIndexing = false;
         }
+    }
+
+    /// <summary>
+    /// Re-evaluates the previous index and shows it. Stops as soon as the scan was superseded (Invalidate / a new
+    /// scan), because the old index must not be published then. True when it was shown.
+    /// </summary>
+    private async Task<bool> ShowPreviousIndexAsync(CancellationTokenSource cts)
+    {
+        var shown = false;
+        try
+        {
+            while (_index is { } previous && ReferenceEquals(_indexCts, cts) &&
+                   !(shown = await EvaluateAsync(previous, CancellationToken.None)))
+            {
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (ReferenceEquals(_indexCts, cts))
+                Error = ex.Message;   // must not escape the command
+            return false;
+        }
+        return shown && ReferenceEquals(_indexCts, cts);
     }
 
     [RelayCommand]
@@ -229,6 +259,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             return false;
 
         _index = index;
+        LastEvaluatedIncludedSize = root.IncludedSize;
         Error = null;
         Root = root;
         Tree.SetRoot(root);
