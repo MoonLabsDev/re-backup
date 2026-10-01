@@ -138,7 +138,7 @@ public static class Restorer
     }
 
     /// <summary>
-    /// Copies the plan's files. Each file is written to <c>&lt;name&gt;.rebackup-tmp</c> next to its target first and
+    /// Copies the plan's files. Each file is written to <c>&lt;name&gt;.&lt;8 hex&gt;.rebackup-tmp</c> next to its target first and
     /// then renamed; it keeps the version's last write time. A file that cannot be written is recorded as a failure
     /// and the rest continues. Cancellation stops before the next file (a half-written temp file is removed).
     /// </summary>

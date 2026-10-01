@@ -78,8 +78,46 @@ public sealed partial class VersionTreeViewModel : ObservableObject
         _changedOnly = changedOnly;
         _roots = roots.Count == 0 ? [new VersionTreeNode("This version holds no files.", 0)] : roots;
         Rebuild();
+        await LoadExpandedPendingAsync(index, generation);
+        if (generation != _generation)
+            return;
         if (SelectedNode is null && _lastSelectedPathId is { } selectedId)
             SelectedNode = Rows.FirstOrDefault(r => !r.IsMessage && r.PathId == selectedId);
+    }
+
+    /// <summary>
+    /// Folders expanded while the tree was loading have no children yet (the load worked from a snapshot): loads them.
+    /// </summary>
+    private async Task LoadExpandedPendingAsync(VersionIndex index, long generation)
+    {
+        while (generation == _generation)
+        {
+            var pending = new List<VersionTreeNode>();
+            CollectPending(_roots, pending);
+            if (pending.Count == 0)
+                return;
+            var (versionId, otherId, statuses) = (_versionId, _otherId, _statuses);
+            var loaded = await Task.Run(() => pending
+                .Select(n => (Node: n, Children: Load(index, versionId, otherId, statuses, n.PathId, n.Depth + 1))).ToList());
+            if (generation != _generation)
+                return;
+            foreach (var (node, children) in loaded)
+                node.Children = children;
+            Rebuild();
+        }
+    }
+
+    private void CollectPending(List<VersionTreeNode> nodes, List<VersionTreeNode> pending)
+    {
+        foreach (var node in nodes)
+        {
+            if (!node.IsDirectory || !_expanded.Contains(node.PathId))
+                continue;
+            if (node.Children is null)
+                pending.Add(node);
+            else
+                CollectPending(node.Children, pending);
+        }
     }
 
     partial void OnSelectedNodeChanged(VersionTreeNode? value)

@@ -211,7 +211,7 @@ public sealed partial class VersionIndex
             return name => name.Contains(pattern, StringComparison.OrdinalIgnoreCase);
 
         var regex = new Regex("^" + Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".") + "$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.NonBacktracking);
         return regex.IsMatch;
     }
 

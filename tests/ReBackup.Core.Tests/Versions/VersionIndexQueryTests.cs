@@ -186,6 +186,23 @@ public class VersionIndexQueryTests : IDisposable
     }
 
     [Fact]
+    public void A_wildcard_pattern_with_many_stars_over_a_long_name_stays_fast_and_correct()
+    {
+        var name = new string('a', 60) + ".txt";
+        Write(_target, "2026_09_30-14_05", [File(name, "1"), File(new string('a', 60) + "b", "2")]);
+        var version = Sync().Single();
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var none = _index.Search(version.Id, "*a*a*a*a*a*a*a*a*c");
+        var one = _index.Search(version.Id, "*a*a*a*a*a*a*a*a*b");
+        watch.Stop();
+
+        none.Should().BeEmpty();
+        one.Select(h => h.Path).Should().Equal(new string('a', 60) + "b");
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public void Limits_the_number_of_search_hits()
     {
         Write(_target, "2026_09_30-14_05", Enumerable.Range(0, 30).Select(i => File($"f{i:00}.txt", "x")));

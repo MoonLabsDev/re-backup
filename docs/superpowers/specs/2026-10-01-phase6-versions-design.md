@@ -75,7 +75,7 @@ file → the db is deleted and rebuilt.
 file to copy (source, destination) and the conflicts (destination exists). `Restorer.Run(plan, ConflictPolicy, progress, ct)`:
 - `mode` Original: destination = the version's source (manifest `source`; for scans: the plan's current source) + relative path.
   `mode` To folder: destination = chosen folder + the selected item's name (a folder keeps its structure below it).
-- Policies: Overwrite (write to `<name>.rebackup-tmp` next to the target, then replace; keep the version's mtime),
+- Policies: Overwrite (write to `<name>.<8 hex>.rebackup-tmp` next to the target, then replace; keep the version's mtime),
   Skip, KeepBoth (`name (2026_09_30-14_05).ext`, adding ` 2`, ` 3`… if that exists too).
 - Never deletes or moves anything at the destination other than replacing a conflicting file under Overwrite.
 - Locked / read-only / access denied → recorded in `RestoreResult.Failures` (path + reason), the rest continues.

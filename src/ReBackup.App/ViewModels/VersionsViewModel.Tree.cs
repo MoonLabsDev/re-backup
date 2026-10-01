@@ -21,6 +21,9 @@ public sealed partial class VersionsViewModel
     private int _treeGeneration;
     private int _historyGeneration;
     private bool _treeReloadPosted;
+
+    /// <summary>What the tree currently shows (null while it loads or shows a message).</summary>
+    private (VersionIndex Index, IndexedVersion A, IndexedVersion? B)? _shown;
     private CancellationTokenSource? _searchCts;
     private VersionRowViewModel? _watchedA;
     private VersionRowViewModel? _watchedB;
@@ -63,7 +66,11 @@ public sealed partial class VersionsViewModel
 
     partial void OnIndexReady()
     {
-        RebuildCompareChoices();
+        var compareChanged = RebuildCompareChoices();
+        // A sync that left A's and B's rows (and the index) as they were does not recompute the tree or the comparison.
+        if (!compareChanged && _shown is { } shown && ReferenceEquals(shown.Index, _index) &&
+            shown.A == SelectedVersion?.Indexed && shown.B == SelectedCompare?.Row?.Indexed)
+            return;
         RequestTreeReload();
     }
 
@@ -165,6 +172,7 @@ public sealed partial class VersionsViewModel
     private void RequestTreeReload()
     {
         _treeGeneration++;   // a reload that is still querying drops its result
+        _shown = null;
         Tree.Suspend();
         if (SynchronizationContext.Current is not { } ui)
         {
@@ -188,6 +196,7 @@ public sealed partial class VersionsViewModel
     private async Task ReloadTreeAsync()
     {
         var generation = ++_treeGeneration;
+        _shown = null;
         WatchRows(SelectedVersion, SelectedCompare?.Row);
         if (!IsComparing)
             ChangedOnly = false;
@@ -225,6 +234,8 @@ public sealed partial class VersionsViewModel
                     return;
             }
             await Tree.ShowAsync(index, versionA.Id, other?.Id, statuses, ChangedOnly);
+            if (generation == _treeGeneration)
+                _shown = (index, versionA, other);
         }
         catch (Exception ex)
         {

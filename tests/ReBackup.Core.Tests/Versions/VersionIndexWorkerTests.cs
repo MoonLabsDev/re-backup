@@ -88,11 +88,20 @@ public class VersionIndexWorkerTests : IDisposable
     public async Task Work_runs_off_the_calling_thread()
     {
         var worker = Worker();
+        var workThread = 0;
+        using var started = new ManualResetEventSlim();
+
+        var work = worker.RunAsync("p1", _ =>
+        {
+            workThread = Environment.CurrentManagedThreadId;
+            started.Set();
+        });
+        // Block this thread synchronously: the work cannot be running on it while it waits.
+        started.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
         var caller = Environment.CurrentManagedThreadId;
 
-        var thread = await worker.RunAsync("p1", _ => Environment.CurrentManagedThreadId);
-
-        thread.Should().NotBe(caller);
+        workThread.Should().NotBe(caller);
+        await work;
     }
 
     [Fact]
