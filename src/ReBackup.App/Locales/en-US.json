@@ -32,7 +32,8 @@
     "path": "Path",
     "version": "Version",
     "unnamed": "(unnamed)",
-    "fileCount": "{count:N0} files",
+    "fileCount": { "one": "{count} file", "other": "{count:N0} files" },
+    "folderCount": { "one": "{count} folder", "other": "{count:N0} folders" },
     "duration": {
       "hms": "{hours} h {minutes:00} min {seconds:00} s",
       "ms": "{minutes} min {seconds:00} s",
@@ -58,6 +59,7 @@
     "title": "Settings",
     "language": {
       "title": "LANGUAGE",
+      "name": "Language",
       "note": "Applies at once."
     },
     "windowTitle": "ReBackup settings",
@@ -240,7 +242,10 @@
       "configuration": "Configuration: {path}",
       "reloadFailed": "Plans could not be reloaded: {error}",
       "reloaded": "Plans reloaded after a change on disk.",
-      "loadErrors": "{count} plan file(s) could not be read: {details}",
+      "loadErrors": {
+        "one": "{count} plan file could not be read: {details}",
+        "other": "{count} plan files could not be read: {details}"
+      },
       "deleteCancelBackup": "Cancel the backup of \"{plan}\" before deleting the plan.",
       "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
       "saved": "Saved \"{plan}\".",
@@ -252,7 +257,10 @@
       "alreadyQueued": "\"{plan}\" is already queued or running.",
       "removed": "The queued backup of \"{plan}\" was removed.",
       "completed": "Backup of \"{plan}\" completed in {duration}.",
-      "completedSkipped": "Backup of \"{plan}\" completed with {count:N0} skipped entries.",
+      "completedSkipped": {
+        "one": "Backup of \"{plan}\" completed with {count} skipped entry.",
+        "other": "Backup of \"{plan}\" completed with {count:N0} skipped entries."
+      },
       "canceled": "Backup of \"{plan}\" was canceled.",
       "aborted": "Backup of \"{plan}\" was aborted: {reason}",
       "indexError": "The version index of \"{plan}\" could not be updated: {error}",
@@ -263,7 +271,7 @@
       "running": "Backing up \"{plan}\"",
       "percent": " — {percent:0} %",
       "waiting": " · {count} queued",
-      "queued": "{count} backup(s) queued"
+      "queued": { "one": "{count} backup queued", "other": "{count} backups queued" }
     },
     "scheduler": { "paused": "Scheduler paused" }
   },
@@ -273,7 +281,7 @@
     "runNow": "Run now",
     "retryNow": "Retry now",
     "queued": "Queued",
-    "after": "after “{plan}”",
+    "after": "after \"{plan}\"",
     "startsNext": "starts next",
     "canceling": "Canceling",
     "stopping": "Stopping",
@@ -284,7 +292,7 @@
     "indexing": "Indexing…",
     "creatingFolders": "Creating folders",
     "copying": "Copying…",
-    "copyDetail": "{bytes} · {count:N0} files",
+    "copyDetail": { "one": "{bytes} · {count} file", "other": "{bytes} · {count:N0} files" },
     "finishing": "Finishing",
     "removingOld": "removing old versions…",
     "completingVersion": "completing the version…",
@@ -332,7 +340,10 @@
     "notification": {
       "title": "Backup \"{plan}\"",
       "completed": "Completed in {duration}.",
-      "completedSkipped": "Completed in {duration}, {count:N0} entries were skipped.",
+      "completedSkipped": {
+        "one": "Completed in {duration}, {count} entry was skipped.",
+        "other": "Completed in {duration}, {count:N0} entries were skipped."
+      },
       "canceled": "Canceled after {duration}.",
       "full": "Aborted after {duration}, the target is full. {reason}",
       "error": "Aborted after {duration} with an error. {reason}"
@@ -393,7 +404,7 @@
       "dayOfMonth": "Day of month",
       "dayHint": "0 = last day, -1 = the day before",
       "every": "every",
-      "everyHours": "Every hours",
+      "everyHours": "Interval in hours",
       "hoursFrom": "hours from",
       "from": "From",
       "to": "to",
@@ -451,20 +462,20 @@
     "sourceMissing": "The source folder does not exist.",
     "progress": {
       "notIndexed": "Not indexed yet.",
-      "indexed": "Indexed {files:N0} files in {folders:N0} folders.",
-      "live": "{files:N0} files, {folders:N0} folders so far — {waiting:N0} folders waiting",
+      "indexed": "Indexed {files} in {folders}.",
+      "live": "{files}, {folders} so far — {waiting} waiting",
       "canceledPrevious": "Indexing canceled; showing the previous index.",
       "canceledIncomplete": "Scan canceled — incomplete.",
       "failedPrevious": "Indexing failed; showing the previous index.",
       "failedIncomplete": "Scan failed — incomplete."
     },
     "summary": {
-      "live": "So far — included: {includedFiles:N0} files, {includedSize}   ·   ignored: {ignoredFiles:N0} files, {ignoredSize}",
-      "done": "Included: {includedFiles:N0} files, {includedSize}   ·   Ignored: {ignoredFiles:N0} files, {ignoredSize}"
+      "live": "So far — included: {includedFiles}, {includedSize}   ·   ignored: {ignoredFiles}, {ignoredSize}",
+      "done": "Included: {includedFiles}, {includedSize}   ·   Ignored: {ignoredFiles}, {ignoredSize}"
     },
     "pill": {
-      "inBackup": "in backup {prefix}{size} · {prefix}{files:N0} files",
-      "ignored": "ignored {prefix}{size} · {prefix}{files:N0} files"
+      "inBackup": "in backup {prefix}{size} · {prefix}{files}",
+      "ignored": "ignored {prefix}{size} · {prefix}{files}"
     },
     "row": {
       "placeholder": "loading …",
@@ -473,7 +484,7 @@
       "notScanned": "Not scanned",
       "ignoredByParent": "Ignored because a parent folder is ignored by \"{pattern}\" ({origin})",
       "ignoredBy": "Ignored by \"{pattern}\" ({origin})",
-      "partly": "Partly ignored: {size} in {files:N0} files are skipped",
+      "partly": "Partly ignored: {size} in {files} are skipped",
       "reincluded": "Re-included by \"{pattern}\" ({origin})",
       "included": "Included",
       "stillScanning": "Still being scanned; the numbers still grow.",
@@ -523,7 +534,10 @@
       "fixTriggers": "Correct the plan's triggers on the Plan tab to see the full extension.",
       "failed": "The full extension could not be calculated: {error}",
       "noRules": "No rules, so nothing is ever deleted: with {frequency} there are {count:N0} versions after two years{size}.{cut}",
-      "withRules": "With {frequency} the target holds up to {count:N0} versions{size}.{cut}",
+      "withRules": {
+        "one": "With {frequency} the target holds up to {count} version{size}.{cut}",
+        "other": "With {frequency} the target holds up to {count:N0} versions{size}.{cut}"
+      },
       "size": ", about {size}",
       "cut": " The simulation stopped after {runs:N0} runs."
     },
@@ -549,7 +563,10 @@
       "noVersions": "There are no versions in the target yet.",
       "empty": "No versions yet",
       "fixRules": "Correct the rules above to see what they keep.",
-      "summary": "{count:N0} versions, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})",
+      "summary": {
+        "one": "{count} version, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})",
+        "other": "{count:N0} versions, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})"
+      },
       "unmanaged": "  ·  {count:N0} not managed",
       "openInExplorer": "Open in Explorer",
       "openFolder": "Open the version folder"
@@ -595,9 +612,12 @@
     "sync": {
       "reading": "Reading the target…",
       "waiting": "Waiting for the index…",
-      "errors": "{count} version(s) could not be indexed: {errors}",
+      "errors": {
+        "one": "{count} version could not be indexed: {errors}",
+        "other": "{count} versions could not be indexed: {errors}"
+      },
       "indexing": "Indexing {current} of {total}",
-      "indexingVersion": "Indexing {current} of {total} · {version} · {files:N0} files"
+      "indexingVersion": "Indexing {current} of {total} · {version} · {files}"
     },
     "index": {
       "notIndexed": "not indexed",
@@ -648,7 +668,7 @@
       "notIndexed": "The version is not indexed yet.",
       "none": "No matches",
       "capped": "The first {limit} matches",
-      "count": "{count:N0} matches",
+      "count": { "one": "{count} match", "other": "{count:N0} matches" },
       "failed": "The search failed: {error}"
     },
     "history": {
@@ -666,26 +686,46 @@
     "canceling": "Canceling…",
     "cancelingAfterFile": "Canceling after the current file…",
     "reindexing": "The version is being indexed again; try once the tree has been reloaded.",
-    "wholeVersion": "the whole version",
     "item": "\"{path}\"",
     "originUnknown": "The original location of this version is not known. Use \"Restore to…\".",
     "backupRunningWarning": "\n\nA backup of this plan is queued or running; it may pick up the restored files.",
     "confirmTitle": "Restore to the original location",
     "confirm": "Restore {item} from the version of {date} to\n{destination}?\n\nNothing there is deleted; you choose what happens to files that exist already.{warning}",
+    "confirmVersion": "Restore the whole version of {date} to\n{destination}?\n\nNothing there is deleted; you choose what happens to files that exist already.{warning}",
     "pickFolder": "Restore to…",
     "insideTarget": "The destination is inside the plan's target folder \"{target}\", where its versions are stored. Choose a folder outside it.",
     "preparing": "Preparing the restore…",
     "canceledNothing": "Restore canceled; nothing was written.",
-    "unreadableNote": " {count:N0} part(s) of the version could not be read.",
+    "unreadableNote": {
+      "one": " {count} part of the version could not be read.",
+      "other": " {count:N0} parts of the version could not be read."
+    },
     "cannotRestore": "{item} cannot be restored: {reason}",
+    "cannotRestoreVersion": "The version cannot be restored: {reason}",
     "restoring": "Restoring…",
-    "restoringFrom": "Restoring {item} from {date}…",
-    "progress": "Restoring {done:N0} of {total:N0} files · {percent:0} %",
+    "restoringFrom": "Restoring {item} from the version of {date}…",
+    "restoringVersion": "Restoring the whole version of {date}…",
+    "progress": {
+      "one": "Restoring {done:N0} of {count} file · {percent:0} %",
+      "other": "Restoring {done:N0} of {count:N0} files · {percent:0} %"
+    },
     "stopped": "The restore stopped: {error}",
-    "failures": "{summary}\n\n{count:N0} item(s) could not be restored to {root}:",
-    "conflictsOriginal": "{count:N0} file(s) already exist in the original location:\n{examples}{more}\n\nWhat should happen to them?",
-    "conflictsFolder": "{count:N0} file(s) already exist in {folder}:\n{examples}{more}\n\nWhat should happen to them?",
-    "unreadable": "{count:N0} part(s) of the version cannot be read; their files will not be restored. Restore the rest?",
+    "failures": {
+      "one": "{summary}\n\n{count} item could not be restored to {root}:",
+      "other": "{summary}\n\n{count:N0} items could not be restored to {root}:"
+    },
+    "conflictsOriginal": {
+      "one": "{count} file already exists in the original location:\n{examples}{more}\n\nWhat should happen to it?",
+      "other": "{count:N0} files already exist in the original location:\n{examples}{more}\n\nWhat should happen to them?"
+    },
+    "conflictsFolder": {
+      "one": "{count} file already exists in {folder}:\n{examples}{more}\n\nWhat should happen to it?",
+      "other": "{count:N0} files already exist in {folder}:\n{examples}{more}\n\nWhat should happen to them?"
+    },
+    "unreadable": {
+      "one": "{count} part of the version cannot be read; its files will not be restored. Restore the rest?",
+      "other": "{count:N0} parts of the version cannot be read; their files will not be restored. Restore the rest?"
+    },
     "restoreRest": "Restore the rest",
     "summary": {
       "copied": "{count:N0} copied",
@@ -700,7 +740,10 @@
     "conflict": {
       "note": "Keep both writes the version's copy next to the existing file, with the version's time in its name. Nothing is ever deleted.",
       "detailsName": "Parts of the version that cannot be read",
-      "details": "{count:N0} part(s) of the version cannot be read; their files are not restored:",
+      "details": {
+        "one": "{count} part of the version cannot be read; its files are not restored:",
+        "other": "{count:N0} parts of the version cannot be read; their files are not restored:"
+      },
       "overwrite": "Overwrite",
       "overwriteToolTip": "Replace the existing files with the version's copies",
       "skip": "Skip",

@@ -32,7 +32,8 @@
     "path": "Pfad",
     "version": "Version",
     "unnamed": "(unbenannt)",
-    "fileCount": "{count:N0} Dateien",
+    "fileCount": { "one": "{count} Datei", "other": "{count:N0} Dateien" },
+    "folderCount": { "one": "{count} Ordner", "other": "{count:N0} Ordner" },
     "duration": {
       "hms": "{hours} h {minutes:00} min {seconds:00} s",
       "ms": "{minutes} min {seconds:00} s",
@@ -58,6 +59,7 @@
     "title": "Einstellungen",
     "language": {
       "title": "SPRACHE",
+      "name": "Sprache",
       "note": "Gilt sofort."
     },
     "windowTitle": "ReBackup-Einstellungen",
@@ -124,7 +126,7 @@
       "empty": "die Regel ist leer.",
       "unknownPeriod": "der Zeitraum ist unbekannt.",
       "keep": "die Anzahl muss eine Zahl von 1 bis {max} sein.",
-      "weekday": "der Anker muss ein Wochentag sein, zum Beispiel Sunday.",
+      "weekday": "der Anker muss ein Wochentag sein, zum Beispiel „Sunday“ (englischer Name, wie in der Plandatei).",
       "monthDay": "der Anker muss ein Tag zwischen 1 und 31 sein, 0 für den letzten Tag des Monats oder -1 bis -30 für Tage davor.",
       "yearDate": "der Anker muss ein Datum im Format MM-TT sein, zum Beispiel 01-01.",
       "invalid": "Die Aufbewahrungsregel ist ungültig: {problem}"
@@ -240,7 +242,10 @@
       "configuration": "Konfiguration: {path}",
       "reloadFailed": "Die Pläne konnten nicht neu geladen werden: {error}",
       "reloaded": "Pläne nach einer Änderung auf dem Datenträger neu geladen.",
-      "loadErrors": "{count} Plandatei(en) konnten nicht gelesen werden: {details}",
+      "loadErrors": {
+        "one": "{count} Plandatei konnte nicht gelesen werden: {details}",
+        "other": "{count} Plandateien konnten nicht gelesen werden: {details}"
+      },
       "deleteCancelBackup": "Vor dem Löschen des Plans das Backup von „{plan}“ abbrechen.",
       "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
       "saved": "„{plan}“ gespeichert.",
@@ -252,7 +257,10 @@
       "alreadyQueued": "„{plan}“ ist bereits eingereiht oder läuft.",
       "removed": "Das eingereihte Backup von „{plan}“ wurde entfernt.",
       "completed": "Backup von „{plan}“ in {duration} abgeschlossen.",
-      "completedSkipped": "Backup von „{plan}“ abgeschlossen, {count:N0} Einträge übersprungen.",
+      "completedSkipped": {
+        "one": "Backup von „{plan}“ abgeschlossen, {count} Eintrag übersprungen.",
+        "other": "Backup von „{plan}“ abgeschlossen, {count:N0} Einträge übersprungen."
+      },
       "canceled": "Backup von „{plan}“ wurde abgebrochen.",
       "aborted": "Backup von „{plan}“ ist fehlgeschlagen: {reason}",
       "indexError": "Der Versionsindex von „{plan}“ konnte nicht aktualisiert werden: {error}",
@@ -263,7 +271,7 @@
       "running": "Backup von „{plan}“ läuft",
       "percent": " – {percent:0} %",
       "waiting": " · {count} wartend",
-      "queued": "{count} Backup(s) eingereiht"
+      "queued": { "one": "{count} Backup eingereiht", "other": "{count} Backups eingereiht" }
     },
     "scheduler": { "paused": "Zeitplaner pausiert" }
   },
@@ -284,7 +292,7 @@
     "indexing": "Indizieren …",
     "creatingFolders": "Ordner anlegen",
     "copying": "Kopieren …",
-    "copyDetail": "{bytes} · {count:N0} Dateien",
+    "copyDetail": { "one": "{bytes} · {count} Datei", "other": "{bytes} · {count:N0} Dateien" },
     "finishing": "Abschließen",
     "removingOld": "alte Versionen werden entfernt …",
     "completingVersion": "Version wird abgeschlossen …",
@@ -332,7 +340,10 @@
     "notification": {
       "title": "Backup „{plan}“",
       "completed": "In {duration} abgeschlossen.",
-      "completedSkipped": "In {duration} abgeschlossen, {count:N0} Einträge wurden übersprungen.",
+      "completedSkipped": {
+        "one": "In {duration} abgeschlossen, {count} Eintrag wurde übersprungen.",
+        "other": "In {duration} abgeschlossen, {count:N0} Einträge wurden übersprungen."
+      },
       "canceled": "Nach {duration} abgebrochen.",
       "full": "Nach {duration} abgebrochen, das Ziel ist voll. {reason}",
       "error": "Nach {duration} mit einem Fehler abgebrochen. {reason}"
@@ -393,7 +404,7 @@
       "dayOfMonth": "Tag im Monat",
       "dayHint": "0 = letzter Tag, -1 = der Tag davor",
       "every": "alle",
-      "everyHours": "Stundenintervall",
+      "everyHours": "Intervall in Stunden",
       "hoursFrom": "Stunden von",
       "from": "Von",
       "to": "bis",
@@ -451,20 +462,20 @@
     "sourceMissing": "Der Quellordner existiert nicht.",
     "progress": {
       "notIndexed": "Noch nicht indiziert.",
-      "indexed": "{files:N0} Dateien in {folders:N0} Ordnern indiziert.",
-      "live": "Bisher {files:N0} Dateien, {folders:N0} Ordner – {waiting:N0} Ordner ausstehend",
+      "indexed": "Indiziert: {files}, {folders}.",
+      "live": "Bisher {files}, {folders} – {waiting} ausstehend",
       "canceledPrevious": "Indizieren abgebrochen; der vorherige Index wird angezeigt.",
       "canceledIncomplete": "Scan abgebrochen – unvollständig.",
       "failedPrevious": "Indizieren fehlgeschlagen; der vorherige Index wird angezeigt.",
       "failedIncomplete": "Scan fehlgeschlagen – unvollständig."
     },
     "summary": {
-      "live": "Bisher – enthalten: {includedFiles:N0} Dateien, {includedSize}   ·   ignoriert: {ignoredFiles:N0} Dateien, {ignoredSize}",
-      "done": "Enthalten: {includedFiles:N0} Dateien, {includedSize}   ·   Ignoriert: {ignoredFiles:N0} Dateien, {ignoredSize}"
+      "live": "Bisher – enthalten: {includedFiles}, {includedSize}   ·   ignoriert: {ignoredFiles}, {ignoredSize}",
+      "done": "Enthalten: {includedFiles}, {includedSize}   ·   Ignoriert: {ignoredFiles}, {ignoredSize}"
     },
     "pill": {
-      "inBackup": "im Backup {prefix}{size} · {prefix}{files:N0} Dateien",
-      "ignored": "ignoriert {prefix}{size} · {prefix}{files:N0} Dateien"
+      "inBackup": "im Backup {prefix}{size} · {prefix}{files}",
+      "ignored": "ignoriert {prefix}{size} · {prefix}{files}"
     },
     "row": {
       "placeholder": "wird geladen …",
@@ -473,7 +484,7 @@
       "notScanned": "Nicht gescannt",
       "ignoredByParent": "Ignoriert, weil ein übergeordneter Ordner durch „{pattern}“ ({origin}) ignoriert wird",
       "ignoredBy": "Ignoriert durch „{pattern}“ ({origin})",
-      "partly": "Teilweise ignoriert: {size} in {files:N0} Dateien werden übersprungen",
+      "partly": "Teilweise ignoriert: {size} in {files} werden übersprungen",
       "reincluded": "Wieder einbezogen durch „{pattern}“ ({origin})",
       "included": "Enthalten",
       "stillScanning": "Wird noch gescannt; die Zahlen wachsen noch.",
@@ -523,7 +534,10 @@
       "fixTriggers": "Die Auslöser des Plans im Tab „Plan“ korrigieren, um die volle Ausdehnung zu sehen.",
       "failed": "Die volle Ausdehnung konnte nicht berechnet werden: {error}",
       "noRules": "Keine Regeln, daher wird nie etwas gelöscht: Mit {frequency} gibt es nach zwei Jahren {count:N0} Versionen{size}.{cut}",
-      "withRules": "Mit {frequency} enthält das Ziel bis zu {count:N0} Versionen{size}.{cut}",
+      "withRules": {
+        "one": "Mit {frequency} enthält das Ziel bis zu {count} Version{size}.{cut}",
+        "other": "Mit {frequency} enthält das Ziel bis zu {count:N0} Versionen{size}.{cut}"
+      },
       "size": ", etwa {size}",
       "cut": " Die Simulation endete nach {runs:N0} Läufen."
     },
@@ -549,7 +563,10 @@
       "noVersions": "Im Ziel gibt es noch keine Versionen.",
       "empty": "Noch keine Versionen",
       "fixRules": "Die Regeln oben korrigieren, um zu sehen, was sie behalten.",
-      "summary": "{count:N0} Versionen, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)",
+      "summary": {
+        "one": "{count} Version, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)",
+        "other": "{count:N0} Versionen, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)"
+      },
       "unmanaged": "  ·  {count:N0} nicht verwaltet",
       "openInExplorer": "Im Explorer öffnen",
       "openFolder": "Versionsordner öffnen"
@@ -594,10 +611,13 @@
     "copyMissing": "Die Kopie in „{version}“ existiert nicht mehr.",
     "sync": {
       "reading": "Ziel wird gelesen …",
-      "waiting": "Warte auf den Index …",
-      "errors": "{count} Version(en) konnten nicht indiziert werden: {errors}",
-      "indexing": "Indiziere {current} von {total}",
-      "indexingVersion": "Indiziere {current} von {total} · {version} · {files:N0} Dateien"
+      "waiting": "Auf den Index wird gewartet …",
+      "errors": {
+        "one": "{count} Version konnte nicht indiziert werden: {errors}",
+        "other": "{count} Versionen konnten nicht indiziert werden: {errors}"
+      },
+      "indexing": "Index wird erstellt: {current} von {total}",
+      "indexingVersion": "Index wird erstellt: {current} von {total} · {version} · {files}"
     },
     "index": {
       "notIndexed": "nicht indiziert",
@@ -648,7 +668,7 @@
       "notIndexed": "Die Version ist noch nicht indiziert.",
       "none": "Keine Treffer",
       "capped": "Die ersten {limit} Treffer",
-      "count": "{count:N0} Treffer",
+      "count": { "one": "{count} Treffer", "other": "{count:N0} Treffer" },
       "failed": "Die Suche ist fehlgeschlagen: {error}"
     },
     "history": {
@@ -666,26 +686,46 @@
     "canceling": "Wird abgebrochen …",
     "cancelingAfterFile": "Abbruch nach der aktuellen Datei …",
     "reindexing": "Die Version wird neu indiziert; nach dem Neuladen des Baums erneut versuchen.",
-    "wholeVersion": "die ganze Version",
     "item": "„{path}“",
     "originUnknown": "Der ursprüngliche Ort dieser Version ist nicht bekannt. „Wiederherstellen nach …“ verwenden.",
     "backupRunningWarning": "\n\nEin Backup dieses Plans ist eingereiht oder läuft; es kann die wiederhergestellten Dateien mitsichern.",
     "confirmTitle": "Am ursprünglichen Ort wiederherstellen",
     "confirm": "{item} aus der Version vom {date} wiederherstellen nach\n{destination}?\n\nDort wird nichts gelöscht; was mit bereits vorhandenen Dateien geschieht, entscheiden Sie.{warning}",
+    "confirmVersion": "Die gesamte Version vom {date} wiederherstellen nach\n{destination}?\n\nDort wird nichts gelöscht; was mit bereits vorhandenen Dateien geschieht, entscheiden Sie.{warning}",
     "pickFolder": "Wiederherstellen nach …",
-    "insideTarget": "Das Ziel liegt im Zielordner „{target}“ des Plans, in dem seine Versionen liegen. Einen Ordner außerhalb wählen.",
+    "insideTarget": "Der gewählte Ordner liegt im Zielordner „{target}“ des Plans, in dem seine Versionen liegen. Einen Ordner außerhalb wählen.",
     "preparing": "Wiederherstellung wird vorbereitet …",
     "canceledNothing": "Wiederherstellung abgebrochen; es wurde nichts geschrieben.",
-    "unreadableNote": " {count:N0} Teil(e) der Version konnten nicht gelesen werden.",
+    "unreadableNote": {
+      "one": " {count} Teil der Version konnte nicht gelesen werden.",
+      "other": " {count:N0} Teile der Version konnten nicht gelesen werden."
+    },
     "cannotRestore": "{item} kann nicht wiederhergestellt werden: {reason}",
+    "cannotRestoreVersion": "Die Version kann nicht wiederhergestellt werden: {reason}",
     "restoring": "Wird wiederhergestellt …",
-    "restoringFrom": "{item} wird aus {date} wiederhergestellt …",
-    "progress": "Wiederherstellen: {done:N0} von {total:N0} Dateien · {percent:0} %",
+    "restoringFrom": "{item} wird aus der Version vom {date} wiederhergestellt …",
+    "restoringVersion": "Die gesamte Version vom {date} wird wiederhergestellt …",
+    "progress": {
+      "one": "Wiederherstellen: {done:N0} von {count} Datei · {percent:0} %",
+      "other": "Wiederherstellen: {done:N0} von {count:N0} Dateien · {percent:0} %"
+    },
     "stopped": "Die Wiederherstellung wurde angehalten: {error}",
-    "failures": "{summary}\n\n{count:N0} Einträge konnten nicht nach {root} wiederhergestellt werden:",
-    "conflictsOriginal": "{count:N0} Datei(en) existieren bereits am ursprünglichen Ort:\n{examples}{more}\n\nWas soll mit ihnen geschehen?",
-    "conflictsFolder": "{count:N0} Datei(en) existieren bereits in {folder}:\n{examples}{more}\n\nWas soll mit ihnen geschehen?",
-    "unreadable": "{count:N0} Teil(e) der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt. Den Rest wiederherstellen?",
+    "failures": {
+      "one": "{summary}\n\n{count} Eintrag konnte nicht nach {root} wiederhergestellt werden:",
+      "other": "{summary}\n\n{count:N0} Einträge konnten nicht nach {root} wiederhergestellt werden:"
+    },
+    "conflictsOriginal": {
+      "one": "{count} Datei existiert bereits am ursprünglichen Ort:\n{examples}{more}\n\nWas soll mit ihr geschehen?",
+      "other": "{count:N0} Dateien existieren bereits am ursprünglichen Ort:\n{examples}{more}\n\nWas soll mit ihnen geschehen?"
+    },
+    "conflictsFolder": {
+      "one": "{count} Datei existiert bereits in {folder}:\n{examples}{more}\n\nWas soll mit ihr geschehen?",
+      "other": "{count:N0} Dateien existieren bereits in {folder}:\n{examples}{more}\n\nWas soll mit ihnen geschehen?"
+    },
+    "unreadable": {
+      "one": "{count} Teil der Version kann nicht gelesen werden; seine Dateien werden nicht wiederhergestellt. Den Rest wiederherstellen?",
+      "other": "{count:N0} Teile der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt. Den Rest wiederherstellen?"
+    },
     "restoreRest": "Rest wiederherstellen",
     "summary": {
       "copied": "{count:N0} kopiert",
@@ -700,7 +740,10 @@
     "conflict": {
       "note": "„Beide behalten“ legt die Kopie der Version neben die vorhandene Datei, mit der Zeit der Version im Namen. Es wird nie etwas gelöscht.",
       "detailsName": "Nicht lesbare Teile der Version",
-      "details": "{count:N0} Teil(e) der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt:",
+      "details": {
+        "one": "{count} Teil der Version kann nicht gelesen werden; seine Dateien werden nicht wiederhergestellt:",
+        "other": "{count:N0} Teile der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt:"
+      },
       "overwrite": "Überschreiben",
       "overwriteToolTip": "Die vorhandenen Dateien durch die Kopien der Version ersetzen",
       "skip": "Überspringen",

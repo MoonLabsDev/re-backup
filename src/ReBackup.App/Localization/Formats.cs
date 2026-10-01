@@ -1,4 +1,5 @@
 using ReBackup.Core.IO;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.App.Localization;
 
@@ -20,4 +21,10 @@ public static class Formats
     public static string Count(long count) => count.ToString("N0", Loc.Culture);
 
     public static string Bytes(long bytes) => ByteSize.Format(bytes, Loc.Culture);
+
+    /// <summary>"1 file" / "2 files", as an argument of a label that holds several counts.</summary>
+    public static Message Files(long count) => Message.Of("common.fileCount", ("count", count));
+
+    /// <summary>"1 folder" / "2 folders", as an argument of a label that holds several counts.</summary>
+    public static Message Folders(long count) => Message.Of("common.folderCount", ("count", count));
 }

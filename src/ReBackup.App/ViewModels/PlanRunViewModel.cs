@@ -255,6 +255,9 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
     private void UpdateCard()
     {
+        // Set in every state, so it follows a language switch while the plan is queued or running.
+        var last = LastRun?.Entry;
+        RunToolTip = last?.Status is RunStatus.Error or RunStatus.Full ? Loc.T("card.retryNow") : Loc.T("card.runNow");
         if (State == JobState.Queued)
             ShowQueued();
         else if (State == JobState.Running)
@@ -332,7 +335,6 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private void ShowIdle()
     {
         var last = LastRun?.Entry;
-        RunToolTip = last?.Status is RunStatus.Error or RunStatus.Full ? Loc.T("card.retryNow") : Loc.T("card.runNow");
         var nextRun = _nextRun.ToString();
 
         if (!_enabled)

@@ -162,7 +162,9 @@ public sealed partial class VersionsViewModel
             return;
         var (node, version) = selection;
         var dialogs = _context.Dialogs;
-        var item = node.Path.Length == 0 ? LocText.Of("restore.wholeVersion") : LocText.Of("restore.item", ("path", node.Path));
+        // The whole version has sentences of its own (no "the whole version from the version of …").
+        var whole = node.Path.Length == 0;
+        var item = LocText.Of("restore.item", ("path", node.Path));
         var relative = node.Path;
         var versionFolder = version.Info.Path;
         var versionDate = new LocText(() => version.DateText);
@@ -184,7 +186,7 @@ public sealed partial class VersionsViewModel
                 ? Loc.T("restore.backupRunningWarning")
                 : "";
             if (!dialogs.ConfirmDefaultNo(Loc.T("restore.confirmTitle"),
-                    Loc.F("restore.confirm", ("item", item), ("date", versionDate),
+                    Loc.F(whole ? "restore.confirmVersion" : "restore.confirm", ("item", item), ("date", versionDate),
                         ("destination", Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))),
                         ("warning", warning))))
                 return;
@@ -225,7 +227,8 @@ public sealed partial class VersionsViewModel
                 var reason = ex is ArgumentException { ParamName: { } name }
                     ? ex.Message.Replace($" (Parameter '{name}')", "", StringComparison.Ordinal)
                     : ex.Message;
-                dialogs.ShowError(Loc.T("restore.title"), Loc.F("restore.cannotRestore", ("item", item), ("reason", Loc.Known(reason))));
+                dialogs.ShowError(Loc.T("restore.title"), Loc.F(whole ? "restore.cannotRestoreVersion" : "restore.cannotRestore",
+                    ("item", item), ("reason", Loc.Known(reason))));
                 return;
             }
             if (cts.IsCancellationRequested)
@@ -241,14 +244,14 @@ public sealed partial class VersionsViewModel
             }
 
             RestoreProgress = LocText.Of("restore.restoring");
-            _context.ReportStatus(LocText.Of("restore.restoringFrom", ("item", item), ("date", versionDate)));
+            _context.ReportStatus(LocText.Of(whole ? "restore.restoringVersion" : "restore.restoringFrom", ("item", item), ("date", versionDate)));
             var progress = new ThrottledProgress(new Progress<RestoreProgress>(p =>
             {
                 if (!IsRestoring || !ReferenceEquals(_restoreCts, cts) || cts.IsCancellationRequested)
                     return;
                 RestoreFraction = p.Fraction;
                 RestoreProgress = LocText.Of("restore.progress",
-                    ("done", p.FilesDone), ("total", p.FilesTotal), ("percent", p.Fraction * 100));
+                    ("done", p.FilesDone), ("count", p.FilesTotal), ("percent", p.Fraction * 100));
             }));
 
             RestoreResult result;

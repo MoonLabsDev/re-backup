@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Markup;
@@ -17,7 +19,8 @@ public sealed class Loc : INotifyPropertyChanged
 {
     private const string ResourcePrefix = "ReBackup.App.Locales.";
     private static readonly Dictionary<string, LabelSet> Sets = new(StringComparer.Ordinal);
-    private static readonly LabelSet EnglishSet = SetFor(AppLanguages.English);
+    /// <summary>The English labels; an empty set (every text shows its key) when even they cannot be read.</summary>
+    private static readonly LabelSet EnglishSet = TryLoad(AppLanguages.English) ?? LabelSet.Parse("{}");
     private static bool _windowHookRegistered;
 
     private Labels _labels = new(EnglishSet, EnglishSet, CultureInfo.GetCultureInfo(AppLanguages.English));
@@ -104,14 +107,30 @@ public sealed class Loc : INotifyPropertyChanged
             new RoutedEventHandler((sender, _) => ((Window)sender).Language = XmlLanguage.GetLanguage(Instance.Language)));
     }
 
+    /// <summary>The labels of <paramref name="language"/>; English when its file is missing or broken.</summary>
     private static LabelSet SetFor(string language)
     {
+        if (language == AppLanguages.English)
+            return EnglishSet;
         if (Sets.TryGetValue(language, out var set))
             return set;
-        using var stream = typeof(Loc).Assembly.GetManifestResourceStream(ResourcePrefix + language + ".json")
-            ?? throw new InvalidOperationException($"The label file {language}.json is not embedded in the app.");
-        set = LabelSet.Parse(stream);
+        set = TryLoad(language) ?? EnglishSet;
         Sets[language] = set;
         return set;
+    }
+
+    /// <summary>The embedded label file of <paramref name="language"/>; null when it is missing or cannot be read.</summary>
+    private static LabelSet? TryLoad(string language)
+    {
+        try
+        {
+            using var stream = typeof(Loc).Assembly.GetManifestResourceStream(ResourcePrefix + language + ".json");
+            return stream is null ? null : LabelSet.Parse(stream);
+        }
+        catch (Exception ex) when (ex is FormatException or IOException or DecoderFallbackException)
+        {
+            System.Diagnostics.Debug.WriteLine($"The label file {language}.json cannot be read: {ex.Message}");
+            return null;
+        }
     }
 }

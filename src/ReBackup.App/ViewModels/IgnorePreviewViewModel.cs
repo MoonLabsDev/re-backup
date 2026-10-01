@@ -201,7 +201,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             {
             }
             IsIndexing = false;
-            Progress = LocText.Of("ignore.progress.indexed", ("files", index.FileCount), ("folders", index.DirectoryCount));
+            Progress = LocText.Of("ignore.progress.indexed", ("files", Formats.Files(index.FileCount)),
+                ("folders", Formats.Folders(index.DirectoryCount)));
             RequestReevaluate();   // in case the patterns were edited while the result was being evaluated
         }
         catch (OperationCanceledException)
@@ -274,7 +275,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     {
         Tree.Refresh();
         Progress = LocText.Of("ignore.progress.live",
-            ("files", scan.Files), ("folders", scan.Directories), ("waiting", scan.WaitingFolders));
+            ("files", Formats.Files(scan.Files)), ("folders", Formats.Folders(scan.Directories)),
+            ("waiting", Formats.Folders(scan.WaitingFolders)));
         var root = scan.Root;
         SummaryText = SummaryOf("ignore.summary.live", root);
         SetPills(root, "≥ ");
@@ -285,8 +287,9 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     {
         var (includedFiles, includedSize, ignoredFiles, ignoredSize) =
             (root.IncludedFiles, root.IncludedSize, root.IgnoredFiles, root.IgnoredSize);
-        return new LocText(() => Loc.F(key, ("includedFiles", includedFiles), ("includedSize", Formats.Bytes(includedSize)),
-            ("ignoredFiles", ignoredFiles), ("ignoredSize", Formats.Bytes(ignoredSize))));
+        return new LocText(() => Loc.F(key, ("includedFiles", Formats.Files(includedFiles)),
+            ("includedSize", Formats.Bytes(includedSize)), ("ignoredFiles", Formats.Files(ignoredFiles)),
+            ("ignoredSize", Formats.Bytes(ignoredSize))));
     }
 
     private void SetPills(IPreviewEntry root, string prefix)
@@ -294,9 +297,9 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         var (includedSize, includedFiles, ignoredSize, ignoredFiles) =
             (root.IncludedSize, root.IncludedFiles, root.IgnoredSize, root.IgnoredFiles);
         InBackupPill = new LocText(() => Loc.F("ignore.pill.inBackup",
-            ("prefix", prefix), ("size", Formats.Bytes(includedSize)), ("files", includedFiles)));
+            ("prefix", prefix), ("size", Formats.Bytes(includedSize)), ("files", Formats.Files(includedFiles))));
         IgnoredPill = new LocText(() => Loc.F("ignore.pill.ignored",
-            ("prefix", prefix), ("size", Formats.Bytes(ignoredSize)), ("files", ignoredFiles)));
+            ("prefix", prefix), ("size", Formats.Bytes(ignoredSize)), ("files", Formats.Files(ignoredFiles))));
     }
 
     /// <summary>Evaluates and publishes the index. False means a newer evaluation superseded this one.</summary>

@@ -119,7 +119,7 @@ public sealed class PreviewRowViewModel : ObservableObject
                     Loc.F("ignore.row.ignoredByParent", ("pattern", pattern), ("origin", origin)),
                 IncludeStatus.Ignored => Loc.F("ignore.row.ignoredBy", ("pattern", pattern), ("origin", origin)),
                 IncludeStatus.Partial =>
-                    Loc.F("ignore.row.partly", ("size", Formats.Bytes(Entry.IgnoredSize)), ("files", Entry.IgnoredFiles)),
+                    Loc.F("ignore.row.partly", ("size", Formats.Bytes(Entry.IgnoredSize)), ("files", Formats.Files(Entry.IgnoredFiles))),
                 _ when Entry.Pattern is not null => Loc.F("ignore.row.reincluded", ("pattern", pattern), ("origin", origin)),
                 _ => Loc.T("ignore.row.included"),
             };

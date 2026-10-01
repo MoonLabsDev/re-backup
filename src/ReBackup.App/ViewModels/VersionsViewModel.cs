@@ -302,7 +302,7 @@ public sealed partial class VersionsViewModel : ObservableObject
         Sync = progress.Finished
             ? LocText.Of("versions.sync.indexing", ("current", progress.Current), ("total", progress.Total))
             : LocText.Of("versions.sync.indexingVersion", ("current", progress.Current), ("total", progress.Total),
-                ("version", progress.VersionName), ("files", progress.FilesImported));
+                ("version", progress.VersionName), ("files", Formats.Files(progress.FilesImported)));
     }
 
     private void ApplyIndexed(IReadOnlyList<IndexedVersion> versions, IReadOnlyList<string> errors)

@@ -298,7 +298,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="{l:Loc common.status}" Width="96">
+                            <GridViewColumn Header="{l:Loc common.status}" Width="124">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">

@@ -75,7 +75,7 @@
             <DockPanel>
                 <Border DockPanel.Dock="Right" VerticalAlignment="Center" Padding="3" CornerRadius="8" BorderThickness="1"
                         Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
-                        AutomationProperties.Name="{l:Loc settings.language.title}">
+                        AutomationProperties.Name="{l:Loc settings.language.name}">
                     <StackPanel Orientation="Horizontal">
                         <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Language" Margin="2,0,0,0"
                                      IsChecked="{Binding IsGerman}" AutomationProperties.Name="{l:Loc language.de-DE}">
