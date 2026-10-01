@@ -387,7 +387,7 @@
                     <!-- Tab content: every view stays alive; only the chosen one is visible. -->
                     <Grid>
                         <views:PlanView Visibility="{Binding IsChecked, ElementName=PlanTab, Converter={StaticResource BoolToVisibility}}" />
-                        <views:IgnorePreviewView Margin="12,8"
+                        <views:IgnorePreviewView
                                                  Visibility="{Binding IsChecked, ElementName=IgnoreTab, Converter={StaticResource BoolToVisibility}}" />
                         <views:RetentionView Margin="12,8"
                                              Visibility="{Binding IsChecked, ElementName=RetentionTab, Converter={StaticResource BoolToVisibility}}" />

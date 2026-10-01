@@ -78,6 +78,21 @@ public sealed class PreviewRowViewModel : ObservableObject
         : Entry.Status == IncludeStatus.Ignored ? "—"
         : BackupPercentOfParent.ToString("0.0", CultureInfo.CurrentCulture) + " %";
 
+    // The values the tree shows; they follow the tree's "In backup | Total" toggle.
+    private bool InBackup => _tree.ShowInBackup;
+    private bool ShowsDash => InBackup && IsIgnored;
+
+    public string ShownFilesText =>
+        !Entry.IsDirectory ? ""
+        : ShowsDash ? "—"
+        : Prefix + (InBackup ? Entry.IncludedFiles : Entry.TotalFiles).ToString("N0", CultureInfo.CurrentCulture);
+
+    public string ShownSizeText => InBackup ? BackupSizeText : SizeText;
+
+    public double ShownPercent => ShowsDash ? 0 : InBackup ? BackupPercentOfParent : PercentOfParent;
+
+    public string ShownPercentText => InBackup ? BackupPercentText : PercentText;
+
     public string StatusText =>
         IsPlaceholder ? ""
         : IsLoading ? (Entry.State == ScanState.Waiting ? "waiting" : "loading")

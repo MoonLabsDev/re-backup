@@ -35,6 +35,12 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     [ObservableProperty] private string? _error;
     [ObservableProperty] private string _summary = "";
 
+    /// <summary>Size and files that go into the backup, for the summary pill ("" before the first scan).</summary>
+    [ObservableProperty] private string _inBackupText = "";
+
+    /// <summary>Size and files that are ignored, for the summary pill ("" before the first scan).</summary>
+    [ObservableProperty] private string _ignoredText = "";
+
     /// <summary>The evaluated tree of the last complete scan (treemap, sizes); null while a scan runs.</summary>
     [ObservableProperty] private EvaluatedNode? _root;
 
@@ -87,6 +93,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         Root = null;
         Tree.SetRoot(null);
         Summary = "";
+        InBackupText = "";
+        IgnoredText = "";
         Error = null;
         ProgressText = NotIndexedText;
     }
@@ -240,6 +248,13 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         var root = scan.Root;
         Summary = $"So far — included: {root.IncludedFiles:N0} files, {ByteSize.Format(root.IncludedSize)}   ·   " +
                   $"ignored: {root.IgnoredFiles:N0} files, {ByteSize.Format(root.IgnoredSize)}";
+        SetPills(root, "≥ ");
+    }
+
+    private void SetPills(IPreviewEntry root, string prefix)
+    {
+        InBackupText = $"in backup {prefix}{ByteSize.Format(root.IncludedSize)} · {prefix}{root.IncludedFiles:N0} files";
+        IgnoredText = $"ignored {prefix}{ByteSize.Format(root.IgnoredSize)} · {prefix}{root.IgnoredFiles:N0} files";
     }
 
     /// <summary>Evaluates and publishes the index. False means a newer evaluation superseded this one.</summary>
@@ -265,6 +280,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         Tree.SetRoot(root);
         Summary = $"Included: {root.IncludedFiles:N0} files, {ByteSize.Format(root.IncludedSize)}   ·   " +
                   $"Ignored: {root.IgnoredFiles:N0} files, {ByteSize.Format(root.IgnoredSize)}";
+        SetPills(root, "");
         return true;
     }
 }
