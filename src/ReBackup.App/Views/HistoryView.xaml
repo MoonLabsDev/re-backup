@@ -18,10 +18,10 @@
             <DataGrid.RowDetailsTemplate>
                 <DataTemplate>
                     <TextBox Margin="12,4" IsReadOnly="True" BorderThickness="0" Background="Transparent"
-                             FontFamily="Consolas" MaxHeight="200" VerticalScrollBarVisibility="Auto"
+                             FontFamily="{StaticResource Font.Mono}" FontSize="12" MaxHeight="200" VerticalScrollBarVisibility="Auto"
                              Text="{Binding Details, Mode=OneWay}">
                         <TextBox.Style>
-                            <Style TargetType="TextBox">
+                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding HasDetails}" Value="False">
                                         <Setter Property="Visibility" Value="Collapsed" />

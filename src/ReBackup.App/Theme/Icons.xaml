@@ -1,0 +1,31 @@
+<!--
+    Icon glyphs of "Segoe Fluent Icons, Segoe MDL2 Assets" (Font.Icon). Show them with TextBlock.Icon or Button.Icon:
+    <TextBlock Style="{StaticResource TextBlock.Icon}" Text="{StaticResource Icon.Play}" />
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <sys:String x:Key="Icon.Play">&#xE768;</sys:String>
+    <sys:String x:Key="Icon.Stop">&#xE71A;</sys:String>
+    <sys:String x:Key="Icon.Add">&#xE710;</sys:String>
+    <sys:String x:Key="Icon.Delete">&#xE74D;</sys:String>
+    <sys:String x:Key="Icon.OpenFolder">&#xE838;</sys:String>
+    <sys:String x:Key="Icon.Save">&#xE74E;</sys:String>
+    <sys:String x:Key="Icon.Undo">&#xE7A7;</sys:String>
+    <sys:String x:Key="Icon.Refresh">&#xE72C;</sys:String>
+    <sys:String x:Key="Icon.Settings">&#xE713;</sys:String>
+    <sys:String x:Key="Icon.Clock">&#xE823;</sys:String>
+    <sys:String x:Key="Icon.Calendar">&#xE787;</sys:String>
+    <sys:String x:Key="Icon.History">&#xE81C;</sys:String>
+    <sys:String x:Key="Icon.Shield">&#xEA18;</sys:String>
+    <sys:String x:Key="Icon.Hide">&#xED1A;</sys:String>
+    <sys:String x:Key="Icon.Edit">&#xE70F;</sys:String>
+    <sys:String x:Key="Icon.Cancel">&#xE711;</sys:String>
+    <sys:String x:Key="Icon.ChevronDown">&#xE70D;</sys:String>
+    <sys:String x:Key="Icon.Plan">&#xE8F1;</sys:String>
+
+    <!-- Used by the control templates. -->
+    <sys:String x:Key="Icon.ChevronUp">&#xE70E;</sys:String>
+    <sys:String x:Key="Icon.ChevronRight">&#xE76C;</sys:String>
+    <sys:String x:Key="Icon.CheckMark">&#xE73E;</sys:String>
+</ResourceDictionary>

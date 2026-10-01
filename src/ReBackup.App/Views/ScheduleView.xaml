@@ -51,7 +51,7 @@
                                     </StackPanel.Style>
                                     <TextBlock Text="on day" VerticalAlignment="Center" Margin="0,0,6,0" />
                                     <TextBox Width="40" Text="{Binding DayText, UpdateSourceTrigger=PropertyChanged}" />
-                                    <TextBlock Text="(0 = last day, -1 = the day before)" Foreground="Gray"
+                                    <TextBlock Text="(0 = last day, -1 = the day before)" Foreground="{StaticResource Brush.TextMuted}"
                                                VerticalAlignment="Center" Margin="6,0,0,0" />
                                 </StackPanel>
 
@@ -72,7 +72,7 @@
                                     <TextBox Width="55" Text="{Binding FromText, UpdateSourceTrigger=PropertyChanged}" />
                                     <TextBlock Text="to" VerticalAlignment="Center" Margin="6,0,6,0" />
                                     <TextBox Width="55" Text="{Binding ToText, UpdateSourceTrigger=PropertyChanged}" />
-                                    <TextBlock Text="(empty = whole day)" Foreground="Gray" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                    <TextBlock Text="(empty = whole day)" Foreground="{StaticResource Brush.TextMuted}" VerticalAlignment="Center" Margin="6,0,0,0" />
                                 </StackPanel>
 
                                 <Button Content="Remove" Padding="8,1" Margin="8,0,0,0"
@@ -103,7 +103,7 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <TextBlock Foreground="Firebrick" Text="{Binding Error}">
+                            <TextBlock Foreground="{StaticResource Brush.Danger}" Text="{Binding Error}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Style.Triggers>
@@ -123,7 +123,7 @@
         <StackPanel Grid.Row="2" Margin="0,12,0,0">
             <TextBlock FontWeight="SemiBold" Text="Next 5 runs" />
             <ItemsControl Margin="0,4,0,0" ItemsSource="{Binding NextRuns}" />
-            <TextBlock Margin="0,6,0,0" Foreground="Gray" TextWrapping="Wrap" Text="{Binding NextRunsNote}" />
+            <TextBlock Margin="0,6,0,0" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" Text="{Binding NextRunsNote}" />
         </StackPanel>
     </Grid>
 </UserControl>

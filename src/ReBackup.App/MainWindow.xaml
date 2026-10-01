@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:ReBackup.App.Views"
-        Title="ReBackup" Width="1100" Height="700" MinWidth="800" MinHeight="500">
+        Title="ReBackup" Width="1100" Height="700" MinWidth="800" MinHeight="500"
+        Style="{StaticResource {x:Type Window}}">
     <Window.InputBindings>
         <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
     </Window.InputBindings>
@@ -13,7 +14,7 @@
                 <TextBlock Text="{Binding QueueStatus}" />
             </StatusBarItem>
             <StatusBarItem DockPanel.Dock="Right">
-                <TextBlock Text="{Binding SchedulerStatus}" Foreground="DarkOrange" />
+                <TextBlock Text="{Binding SchedulerStatus}" Foreground="{StaticResource Brush.Warning}" />
             </StatusBarItem>
             <StatusBarItem>
                 <TextBlock Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
@@ -36,7 +37,7 @@
                 <ListBox ItemsSource="{Binding Plans}" SelectedItem="{Binding SelectedPlan}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         </Style>
                     </ListBox.ItemContainerStyle>
@@ -51,11 +52,11 @@
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Source}" Foreground="Gray" FontSize="11"
+                                    <TextBlock Text="{Binding Source}" Foreground="{StaticResource Brush.TextMuted}" FontSize="11"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Run.LastRunText}" Foreground="Gray" FontSize="11"
+                                    <TextBlock Text="{Binding Run.LastRunText}" Foreground="{StaticResource Brush.TextMuted}" FontSize="11"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Run.NextRunText}" Foreground="Gray" FontSize="11"
+                                    <TextBlock Text="{Binding Run.NextRunText}" Foreground="{StaticResource Brush.TextMuted}" FontSize="11"
                                                TextTrimming="CharacterEllipsis" />
                                     <StackPanel>
                                         <StackPanel.Style>
@@ -80,7 +81,7 @@
                                             Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}">
                                         <Button.Style>
-                                            <Style TargetType="Button">
+                                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Run.IsActive}" Value="True">
                                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -93,7 +94,7 @@
                                             Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}">
                                         <Button.Style>
-                                            <Style TargetType="Button">
+                                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Run.IsActive}" Value="False">
                                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -118,7 +119,7 @@
                 </StackPanel>
                 <TabControl DataContext="{Binding SelectedPlan}">
                     <TabControl.Style>
-                        <Style TargetType="TabControl">
+                        <Style TargetType="TabControl" BasedOn="{StaticResource {x:Type TabControl}}">
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding}" Value="{x:Null}">
                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -169,7 +170,7 @@
                                 <ItemsControl Grid.Row="5" Grid.ColumnSpan="3" Margin="0,8,0,0" ItemsSource="{Binding Errors}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding}" Foreground="Firebrick" />
+                                            <TextBlock Text="{Binding}" Foreground="{StaticResource Brush.Danger}" />
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

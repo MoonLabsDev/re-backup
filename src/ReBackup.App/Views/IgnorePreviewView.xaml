@@ -12,7 +12,7 @@
         <DockPanel Grid.Column="0">
             <TextBlock DockPanel.Dock="Top" Text="Ignore patterns (gitignore syntax, one per line)"
                        FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4" />
-            <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" Foreground="DarkOrange" TextWrapping="Wrap"
+            <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" Foreground="{StaticResource Brush.Warning}" TextWrapping="Wrap"
                        Text="{Binding Preview.PatternNote}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
@@ -30,7 +30,7 @@
             <CheckBox DockPanel.Dock="Bottom" Margin="0,8,0,0"
                       Content="Also apply the global default patterns"
                       IsChecked="{Binding UseGlobalIgnoreDefaults}" />
-            <TextBox AcceptsReturn="True" FontFamily="Consolas"
+            <TextBox AcceptsReturn="True" Style="{StaticResource TextBox.Code}"
                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                      Text="{Binding IgnorePatternsText, UpdateSourceTrigger=PropertyChanged}" />
         </DockPanel>
@@ -50,7 +50,7 @@
                            Text="{Binding Preview.ProgressText}" />
             </DockPanel>
 
-            <TextBlock DockPanel.Dock="Top" Foreground="Firebrick" TextWrapping="Wrap"
+            <TextBlock DockPanel.Dock="Top" Foreground="{StaticResource Brush.Danger}" TextWrapping="Wrap"
                        Text="{Binding Preview.Error}">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
@@ -88,22 +88,22 @@
                         </ContextMenu>
                     </ListView.ContextMenu>
                     <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
+                        <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="ToolTip" Value="{Binding StatusDetail}" />
                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnRowRightButtonDown" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsPartial}" Value="True">
-                                    <Setter Property="Background" Value="#FFF6D8" />
+                                    <Setter Property="Background" Value="{StaticResource Brush.PartialRow}" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsIgnored}" Value="True">
-                                    <Setter Property="Background" Value="#FBE3E1" />
+                                    <Setter Property="Background" Value="{StaticResource Brush.IgnoredRow}" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsLoading}" Value="True">
-                                    <Setter Property="Foreground" Value="Gray" />
+                                    <Setter Property="Foreground" Value="{StaticResource Brush.TextFaint}" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
-                                    <Setter Property="Foreground" Value="Gray" />
+                                    <Setter Property="Foreground" Value="{StaticResource Brush.TextFaint}" />
                                     <Setter Property="FontStyle" Value="Italic" />
                                 </DataTrigger>
                             </Style.Triggers>
@@ -118,7 +118,7 @@
                                             <ToggleButton Width="16" Height="16" Padding="0" Margin="0,0,4,0"
                                                           FontSize="9" IsChecked="{Binding IsExpanded}">
                                                 <ToggleButton.Style>
-                                                    <Style TargetType="ToggleButton">
+                                                    <Style TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
                                                         <Setter Property="Content" Value="+" />
                                                         <Style.Triggers>
                                                             <Trigger Property="IsChecked" Value="True">
@@ -136,7 +136,7 @@
                                                     <Style TargetType="TextBlock">
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsIgnored}" Value="True">
-                                                                <Setter Property="Foreground" Value="Gray" />
+                                                                <Setter Property="Foreground" Value="{StaticResource Brush.TextFaint}" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -165,7 +165,7 @@
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <Grid>
-                                            <ProgressBar Height="14" Maximum="100" Foreground="#2E9E48"
+                                            <ProgressBar Height="14" Maximum="100" Foreground="{StaticResource Brush.Accent}"
                                                          Value="{Binding BackupPercentOfParent, Mode=OneWay}" />
                                             <TextBlock HorizontalAlignment="Center" FontSize="11"
                                                        Text="{Binding BackupPercentText}" />
@@ -192,16 +192,16 @@
                                             <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
-                                                        <Setter Property="Fill" Value="#2E9E48" />
+                                                        <Setter Property="Fill" Value="{StaticResource Brush.Accent}" />
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsPartial}" Value="True">
-                                                                <Setter Property="Fill" Value="#E0A800" />
+                                                                <Setter Property="Fill" Value="{StaticResource Brush.Warning}" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsIgnored}" Value="True">
-                                                                <Setter Property="Fill" Value="#D93025" />
+                                                                <Setter Property="Fill" Value="{StaticResource Brush.Danger}" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsNotScanned}" Value="True">
-                                                                <Setter Property="Fill" Value="Gray" />
+                                                                <Setter Property="Fill" Value="{StaticResource Brush.TextFaint}" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsLoading}" Value="True">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -226,12 +226,12 @@
                     <CheckBox x:Name="HideIgnoredBox" DockPanel.Dock="Top" Margin="0,0,0,4"
                               Content="Hide ignored entries in the treemap (sizes then show what is backed up)" />
                     <Grid>
-                        <Border BorderBrush="#ABADB3" BorderThickness="1">
+                        <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
                             <controls:TreemapControl Root="{Binding Preview.Root}"
                                                      Selected="{Binding Preview.SelectedNode}"
                                                      HideIgnored="{Binding IsChecked, ElementName=HideIgnoredBox}" />
                         </Border>
-                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Gray"
+                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Brush.TextMuted}"
                                    Text="The treemap appears after the scan.">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
