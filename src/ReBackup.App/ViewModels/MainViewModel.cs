@@ -18,6 +18,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ConfigPaths _paths;
     private readonly AppSettings _settings;
     private readonly IDialogService _dialogs;
+    private readonly IFolderOpener _folders;
     private readonly Action _openSettings;
     private readonly BackupQueue _queue;
     private readonly Scheduler _scheduler;
@@ -29,8 +30,10 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _schedulerStatus = "";
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
-        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme)
+        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
+        IFolderOpener folders)
     {
+        _folders = folders;
         Theme = theme;
         _store = store;
         _paths = paths;
@@ -44,7 +47,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var result = _store.LoadAll();
         foreach (var plan in result.Plans)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
@@ -119,7 +122,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         foreach (var plan in loaded.Values)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders));
 
         RevalidateAll();
 
@@ -133,7 +136,8 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void NewPlan()
     {
-        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans, GlobalIgnoreDefaults);
+        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans, GlobalIgnoreDefaults,
+            _folders);
         AddEditor(editor);
         RevalidateAll();
         SelectedPlan = editor;
@@ -423,7 +427,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll());
+            editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll(),
+                editor.IsNew ? null : editor.SavedPlan().Target);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

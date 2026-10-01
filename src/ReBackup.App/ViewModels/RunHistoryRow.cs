@@ -1,4 +1,5 @@
 using System.Globalization;
+using CommunityToolkit.Mvvm.ComponentModel;
 using ReBackup.Core.Backup;
 using ReBackup.Core.IO;
 
@@ -13,11 +14,35 @@ public enum RunOutcome
 }
 
 /// <summary>One run of a plan, formatted for the History tab.</summary>
-public sealed class RunHistoryRow
+public sealed partial class RunHistoryRow : ObservableObject
 {
     private readonly RunLogEntry _entry;
 
-    public RunHistoryRow(RunLogEntry entry) => _entry = entry;
+    /// <summary>Whether the run's version folder existed in the target when the history was loaded.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpenVersionToolTip))]
+    private bool _canOpenVersion;
+
+    /// <param name="target">The plan's target; the version folder is looked up there once, now.</param>
+    public RunHistoryRow(RunLogEntry entry, string? target = null)
+    {
+        _entry = entry;
+        Target = target;
+        _canOpenVersion = HasVersion && Core.Backup.VersionName.ExistingFolderIn(target, entry.Version) is not null;
+    }
+
+    /// <summary>The target the version was looked up in.</summary>
+    public string? Target { get; }
+
+    /// <summary>The version folder the run produced; null when it produced none.</summary>
+    public string? VersionName => _entry.Version;
+
+    public bool HasVersion => !string.IsNullOrEmpty(_entry.Version);
+
+    public string OpenVersionToolTip => CanOpenVersion ? $"Open {_entry.Version} in Explorer" : "Version no longer exists";
+
+    /// <summary>The folder was found missing when it was to be opened.</summary>
+    public void MarkVersionMissing() => CanOpenVersion = false;
 
     public string StartText => _entry.StartUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
     public string DurationText => FormatDuration(_entry.DurationMs);

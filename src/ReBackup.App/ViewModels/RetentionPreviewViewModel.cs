@@ -1,6 +1,7 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.IO;
 using ReBackup.Core.Plans;
@@ -23,7 +24,9 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
 
     private readonly Func<BackupPlan> _plan;
     private readonly Func<long?> _fallbackVersionBytes;
+    private readonly IFolderOpener _folders;
     private IReadOnlyList<VersionInfo>? _versions;
+    private string? _versionsTarget;   // belongs to _versions: the target they were read from
     private bool _targetMissing;   // belongs to _versions: the target folder did not exist when they were read
     private CancellationTokenSource? _loadCts;
     private CancellationTokenSource? _evaluateCts;
@@ -52,10 +55,12 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
 
     /// <param name="plan">Gives the plan as currently edited.</param>
     /// <param name="fallbackVersionBytes">Size of one version when the target has none yet; null when unknown.</param>
-    public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes)
+    /// <param name="folders">Opens a version folder in Explorer.</param>
+    public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes, IFolderOpener folders)
     {
         _plan = plan;
         _fallbackVersionBytes = fallbackVersionBytes;
+        _folders = folders;
     }
 
     /// <summary>
@@ -115,6 +120,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _loadCts = null;   // the aborted load must not touch the state below any more
         _evaluateCts?.Cancel();
         _versions = null;
+        _versionsTarget = null;
         OnPropertyChanged(nameof(ShowEmpty));
         _targetMissing = false;
         IsLoading = false;
@@ -149,6 +155,16 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     [RelayCommand]
     private Task RefreshAsync() => LoadAsync();
 
+    /// <summary>Shows the row's version folder in Explorer; reads the target again when the folder is gone.</summary>
+    [RelayCommand]
+    private void OpenVersionFolder(RetentionNowRow? row)
+    {
+        if (row is null || _versionsTarget is null)
+            return;
+        if (!_folders.OpenVersionFolder(_versionsTarget, row.Name))
+            _ = LoadAsync();
+    }
+
     private async Task LoadAsync()
     {
         _loadCts?.Cancel();
@@ -166,6 +182,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (!ReferenceEquals(_loadCts, cts))
                 return;
             _versions = versions;
+            _versionsTarget = plan.Target;
             _targetMissing = targetMissing;
             OnPropertyChanged(nameof(ShowEmpty));
             OnPropertyChanged(nameof(EmptyText));
@@ -179,6 +196,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (ReferenceEquals(_loadCts, cts))
             {
                 _versions = null;
+                _versionsTarget = null;
                 _targetMissing = false;
                 NowRows.ReplaceAll([]);
                 NowSummary = "";

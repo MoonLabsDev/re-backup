@@ -2,6 +2,9 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </UserControl.Resources>
     <Grid Margin="24,20">
         <Border Style="{StaticResource Border.Card}" Padding="0,18,0,0">
             <DockPanel>
@@ -45,6 +48,22 @@
                         <DataGridTextColumn Header="Files" Width="70" Binding="{Binding FilesText}" />
                         <DataGridTextColumn Header="Size" Width="80" Binding="{Binding SizeText}" />
                         <DataGridTextColumn Header="Reason" Width="*" Binding="{Binding Reason}" />
+                        <!-- Opens the version the run produced; disabled when that folder no longer exists (checked
+                             when the history loads). -->
+                        <DataGridTemplateColumn Width="48" CanUserResize="False" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource Button.Icon}" Width="28" Height="26" FontSize="13"
+                                            HorizontalAlignment="Center" Content="{StaticResource Icon.OpenFolder}"
+                                            AutomationProperties.Name="Open the version folder"
+                                            ToolTip="{Binding OpenVersionToolTip}" ToolTipService.ShowOnDisabled="True"
+                                            Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}"
+                                            IsEnabled="{Binding CanOpenVersion}"
+                                            Command="{Binding DataContext.OpenRunVersionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                     <DataGrid.RowDetailsTemplate>
                         <DataTemplate>

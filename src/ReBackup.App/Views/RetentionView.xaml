@@ -414,10 +414,24 @@
                                 <GridView>
                                     <GridViewColumn Header="Date" Width="120" DisplayMemberBinding="{Binding DateText}" />
                                     <GridViewColumn Header="Decision" Width="90" DisplayMemberBinding="{Binding DecisionText}" />
-                                    <GridViewColumn Header="Kept by" Width="240" DisplayMemberBinding="{Binding ReasonText}" />
+                                    <GridViewColumn Header="Kept by" Width="210" DisplayMemberBinding="{Binding ReasonText}" />
                                     <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
                                     <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
-                                    <GridViewColumn Header="Folder" Width="240" DisplayMemberBinding="{Binding Name}" />
+                                    <GridViewColumn Header="Folder" Width="260">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Left" Style="{StaticResource Button.Icon}" Width="26" Height="26"
+                                                            Margin="0,0,6,0" FontSize="13" Content="{StaticResource Icon.OpenFolder}"
+                                                            ToolTip="Open in Explorer" AutomationProperties.Name="Open the version folder"
+                                                            Command="{Binding DataContext.RetentionPreview.OpenVersionFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <TextBlock VerticalAlignment="Center" Text="{Binding Name}" ToolTip="{Binding Name}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
                                 </GridView>
                             </ListView.View>
                         </ListView>

@@ -43,6 +43,33 @@ public static class VersionName
         return true;
     }
 
+    /// <summary>
+    /// The full path of the folder <paramref name="versionName"/> directly inside <paramref name="target"/>; null unless
+    /// the target is an absolute path and the name is one plain folder name (no separators, no "." or "..", no
+    /// characters a file name cannot hold, no leading or trailing blanks or dots). Does not touch the disk.
+    /// </summary>
+    public static string? FolderIn(string? target, string? versionName)
+    {
+        if (string.IsNullOrWhiteSpace(target) || !Path.IsPathFullyQualified(target))
+            return null;
+        if (string.IsNullOrWhiteSpace(versionName) || versionName is "." or ".." ||
+            versionName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            versionName.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, Path.VolumeSeparatorChar]) >= 0 ||
+            versionName != versionName.Trim() || versionName.EndsWith('.'))
+            return null;
+
+        var folder = Path.GetFullPath(Path.Combine(target, versionName));
+        var parent = Path.GetDirectoryName(folder);
+        return parent is not null && string.Equals(Path.TrimEndingDirectorySeparator(parent),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(target)), StringComparison.OrdinalIgnoreCase)
+            ? folder
+            : null;
+    }
+
+    /// <summary><see cref="FolderIn"/> when that folder exists right now; otherwise null.</summary>
+    public static string? ExistingFolderIn(string? target, string? versionName) =>
+        FolderIn(target, versionName) is { } folder && Directory.Exists(folder) ? folder : null;
+
     /// <summary>True for folders that are being written (".partial") or removed (".deleting"); they are never versions.</summary>
     public static bool IsTransient(string folderName) =>
         folderName.EndsWith(PartialSuffix, StringComparison.OrdinalIgnoreCase) ||

@@ -129,7 +129,7 @@ public partial class App : Application
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue, scheduler,
-                action => Dispatcher.InvokeAsync(action), themeToggle);
+                action => Dispatcher.InvokeAsync(action), themeToggle, new ExplorerFolderOpener());
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);

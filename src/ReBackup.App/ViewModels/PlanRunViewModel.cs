@@ -119,12 +119,15 @@ public sealed partial class PlanRunViewModel : ObservableObject
         EtaText = "";
     }
 
-    /// <summary>Entries oldest first, as read from the log; shown newest first.</summary>
-    public void LoadHistory(IReadOnlyList<RunLogEntry> entries)
+    /// <summary>
+    /// Entries oldest first, as read from the log; shown newest first. Whether the version of each run still exists in
+    /// <paramref name="target"/> is checked here, once per load.
+    /// </summary>
+    public void LoadHistory(IReadOnlyList<RunLogEntry> entries, string? target = null)
     {
         History.Clear();
         for (var i = entries.Count - 1; i >= 0; i--)
-            History.Add(new RunHistoryRow(entries[i]));
+            History.Add(new RunHistoryRow(entries[i], target));
 
         LastRun = History.Count == 0 ? null : History[0];
         LastRunText = LastRun is null
