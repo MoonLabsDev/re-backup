@@ -80,7 +80,30 @@
                                                           ItemsSource="{x:Static vm:RetentionRuleViewModel.Periods}"
                                                           SelectedItem="{Binding Period}" />
 
-                                                <Grid Width="116" Margin="8,0,0,0">
+                                                <!-- Label of the anchor field: "on" a weekday or date, "on day" of the month. -->
+                                                <TextBlock Margin="10,0,0,0">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Label}">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Period}" Value="Weekly">
+                                                                    <Setter Property="Text" Value="on" />
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Period}" Value="Monthly">
+                                                                    <Setter Property="Text" Value="on day" />
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Period}" Value="Yearly">
+                                                                    <Setter Property="Text" Value="on" />
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+
+                                                <Grid Width="100" Margin="8,0,0,0">
                                                     <ComboBox AutomationProperties.Name="Weekday"
                                                               ItemsSource="{x:Static vm:RetentionRuleViewModel.Weekdays}"
                                                               SelectedItem="{Binding Weekday}">
@@ -195,7 +218,18 @@
                                 ToolTip="Read the target again" AutomationProperties.Name="Refresh"
                                 Command="{Binding RetentionPreview.RefreshCommand}" />
                         <ProgressBar DockPanel.Dock="Right" Width="80" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
-                                     IsIndeterminate="{Binding RetentionPreview.IsLoading}" />
+                                     IsIndeterminate="{Binding RetentionPreview.IsLoading}">
+                            <ProgressBar.Style>
+                                <Style TargetType="ProgressBar" BasedOn="{StaticResource {x:Type ProgressBar}}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RetentionPreview.IsLoading}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ProgressBar.Style>
+                        </ProgressBar>
                         <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center"
                                    Text="VERSIONS IN THE TARGET NOW" />
                     </DockPanel>
@@ -212,8 +246,19 @@
                         </TextBlock.Style>
                     </TextBlock>
 
+                    <!-- Hidden while the empty state over the table says the same. -->
                     <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"
-                               Text="{Binding RetentionPreview.NowSummary}" />
+                               Text="{Binding RetentionPreview.NowSummary}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RetentionPreview.ShowEmpty}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
                     <Grid>
                         <ListView Style="{StaticResource ListView.Table}" ItemsSource="{Binding RetentionPreview.NowRows}"
@@ -244,7 +289,7 @@
 
                         <!-- Empty state -->
                         <TextBlock HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18"
-                                   IsHitTestVisible="False" Text="No versions yet">
+                                   IsHitTestVisible="False" Text="{Binding RetentionPreview.EmptyText}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
                                     <Setter Property="Visibility" Value="Collapsed" />

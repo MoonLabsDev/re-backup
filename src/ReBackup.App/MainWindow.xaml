@@ -11,6 +11,18 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
+        <!-- Footer text: trimmed, with the full text as tool tip (none while empty). -->
+        <Style x:Key="TextBlock.Footer" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="ToolTip" Value="{x:Null}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Small glyph button with a frame (New plan, Cancel in a plan card). -->
         <Style x:Key="Button.IconFramed" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Width" Value="28" />
@@ -235,12 +247,12 @@
             <Border DockPanel.Dock="Bottom" Height="34" Background="{StaticResource Brush.Rail}"
                     BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0" Padding="24,0">
                 <DockPanel TextElement.FontSize="12" TextElement.Foreground="{StaticResource Brush.TextMuted}">
-                    <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0"
-                               Text="{Binding QueueStatus}" />
-                    <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0"
-                               Foreground="{StaticResource Brush.Warning}" Text="{Binding SchedulerStatus}" />
-                    <TextBlock VerticalAlignment="Center" Text="{Binding StatusMessage}" ToolTip="{Binding StatusMessage}"
-                               TextTrimming="CharacterEllipsis" />
+                    <!-- Queue and scheduler texts are capped so the status message keeps room. -->
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource TextBlock.Footer}" Margin="16,0,0,0"
+                               MaxWidth="360" Text="{Binding QueueStatus}" />
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource TextBlock.Footer}" Margin="16,0,0,0"
+                               MaxWidth="240" Foreground="{StaticResource Brush.Warning}" Text="{Binding SchedulerStatus}" />
+                    <TextBlock Style="{StaticResource TextBlock.Footer}" Text="{Binding StatusMessage}" />
                 </DockPanel>
             </Border>
 
@@ -389,9 +401,9 @@
                         <views:PlanView Visibility="{Binding IsChecked, ElementName=PlanTab, Converter={StaticResource BoolToVisibility}}" />
                         <views:IgnorePreviewView
                                                  Visibility="{Binding IsChecked, ElementName=IgnoreTab, Converter={StaticResource BoolToVisibility}}" />
-                        <views:RetentionView Margin="12,8"
+                        <views:RetentionView
                                              Visibility="{Binding IsChecked, ElementName=RetentionTab, Converter={StaticResource BoolToVisibility}}" />
-                        <views:HistoryView Margin="12,8"
+                        <views:HistoryView
                                            Visibility="{Binding IsChecked, ElementName=HistoryTab, Converter={StaticResource BoolToVisibility}}" />
                     </Grid>
                 </DockPanel>

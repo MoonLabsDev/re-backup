@@ -18,7 +18,7 @@
                         <DataGridTextColumn Header="Start" Width="140" Binding="{Binding StartText}" />
                         <DataGridTextColumn Header="Duration" Width="110" Binding="{Binding DurationText}" />
                         <DataGridTextColumn Header="Trigger" Width="80" Binding="{Binding TriggerText}" />
-                        <DataGridTemplateColumn Header="Result" Width="190">
+                        <DataGridTemplateColumn Header="Result" Width="190" SortMemberPath="StatusText">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">

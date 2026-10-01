@@ -42,11 +42,16 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     {
         _plan = plan;
         _fallbackVersionBytes = fallbackVersionBytes;
-        NowRows.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ShowEmpty));
     }
 
-    /// <summary>True when the target was read successfully and holds no versions.</summary>
-    public bool ShowEmpty => _versions is not null && NowRows.Count == 0 && !IsLoading && Error is null;
+    /// <summary>
+    /// True when the target was read successfully and holds no versions. Depends on the versions read, not on the
+    /// rows: invalid rules (briefly while typing) clear the rows of a target that does hold versions.
+    /// </summary>
+    public bool ShowEmpty => _versions is { Count: 0 } && !IsLoading && Error is null;
+
+    /// <summary>The empty-state text shown over the table while <see cref="ShowEmpty"/> is true.</summary>
+    public string EmptyText => _targetMissing ? "The target folder does not exist (yet)." : "No versions yet";
 
     partial void OnIsLoadingChanged(bool value) => OnPropertyChanged(nameof(ShowEmpty));
 
@@ -138,8 +143,9 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (!ReferenceEquals(_loadCts, cts))
                 return;
             _versions = versions;
-            OnPropertyChanged(nameof(ShowEmpty));
             _targetMissing = targetMissing;
+            OnPropertyChanged(nameof(ShowEmpty));
+            OnPropertyChanged(nameof(EmptyText));
             Evaluate();
         }
         catch (OperationCanceledException)
@@ -224,7 +230,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
                 {
                     ClearSimulation();
-                    FullSummary = "Correct the plan's triggers on the Schedule tab to see the full extension.";
+                    FullSummary = "Correct the plan's triggers on the Plan tab to see the full extension.";
                     return;
                 }
                 runs = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local);

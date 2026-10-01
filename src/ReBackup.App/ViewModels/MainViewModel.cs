@@ -278,7 +278,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Updates the "next run" texts, the next runs shown on the Schedule tab and the scheduler state. Called whenever
+    /// Updates the "next run" texts, the next runs shown on the Plan tab and the scheduler state. Called whenever
     /// the scheduler reports a change, so at least once a minute.
     /// </summary>
     public void RefreshSchedule()
