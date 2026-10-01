@@ -9,22 +9,20 @@ using ReBackup.Core.IO;
 namespace ReBackup.App.Controls;
 
 /// <summary>
-/// Draws an evaluated source tree as a squarified treemap. Each top-level entry gets a colour family of the theme's
-/// chart palette (lighter near the top, darker deeper down); ignored entries are grey.
+/// Draws an evaluated source tree as a squarified treemap. Files are coloured by their extension (the same extension
+/// always gets the same colour), folders show a neutral colour where their children are too small; ignored entries are grey.
 /// </summary>
 public sealed class TreemapControl : FrameworkElement
 {
     private const double MinTile = 3;    // smaller rectangles are not drawn
     private const double MinSplit = 8;   // folders smaller than this are drawn as one tile
-    private const int ShadeSteps = 4;    // depth 1 = lightest shade, depth ShadeSteps + 1 and deeper = darkest
 
-    /// <summary>Theme keys of the light and the dark shade of each colour family, rotated per top-level entry.</summary>
-    private static readonly (string Light, string Dark, Color LightFallback, Color DarkFallback)[] Families =
+    /// <summary>Colours of the files, picked by a stable hash of their extension. Readable on dark and light grounds.</summary>
+    private static readonly Color[] ExtensionPalette =
     [
-        ("Color.Chart.TealLight", "Color.Chart.TealDark", Color.FromRgb(0x5F, 0xD3, 0xC4), Color.FromRgb(0x1F, 0x8A, 0x7E)),
-        ("Color.Chart.BlueLight", "Color.Chart.BlueDark", Color.FromRgb(0x7F, 0xB2, 0xFF), Color.FromRgb(0x4F, 0x84, 0xD6)),
-        ("Color.Chart.VioletLight", "Color.Chart.VioletDark", Color.FromRgb(0xC9, 0xA2, 0xFF), Color.FromRgb(0x9B, 0x6F, 0xE0)),
-        ("Color.Chart.AmberLight", "Color.Chart.AmberDark", Color.FromRgb(0xF2, 0xB8, 0x4B), Color.FromRgb(0xD9, 0x93, 0x2B)),
+        Color.FromRgb(0x4E, 0x79, 0xA7), Color.FromRgb(0xF2, 0x8E, 0x2B), Color.FromRgb(0x59, 0xA1, 0x4F),
+        Color.FromRgb(0xE1, 0x57, 0x59), Color.FromRgb(0x76, 0xB7, 0xB2), Color.FromRgb(0xED, 0xC9, 0x48),
+        Color.FromRgb(0xB0, 0x7A, 0xA1), Color.FromRgb(0x9C, 0x75, 0x5F),
     ];
 
     public static readonly DependencyProperty RootProperty = DependencyProperty.Register(
@@ -48,8 +46,8 @@ public sealed class TreemapControl : FrameworkElement
         public required Brush Background { get; init; }
         public required Brush Ignored { get; init; }
         public required Brush RootFolder { get; init; }
-        public required Brush[][] Shades { get; init; }        // [family][depth step]
-        public required Brush[] FolderShades { get; init; }    // [family]: shows through where children are too small
+        public required Brush[] Extensions { get; init; }      // file colours, see ExtensionPalette
+        public required Brush Folder { get; init; }            // shows through where children are too small
         public required Pen TilePen { get; init; }
         public required Pen SelectionPen { get; init; }
     }
@@ -61,7 +59,6 @@ public sealed class TreemapControl : FrameworkElement
     private bool _layoutHidesIgnored;
     private EvaluatedNode? _hovered;
     private Paint? _paint;
-    private int _nextFamily;
 
     public TreemapControl()
     {
@@ -106,9 +103,8 @@ public sealed class TreemapControl : FrameworkElement
         {
             _tiles.Clear();
             _layoutHidesIgnored = hideIgnored;
-            _nextFamily = 0;
             if (root is not null && WeightOf(root) > 0)
-                Layout(paint, root, bounds, 0, 0);
+                Layout(paint, root, bounds, 0);
             _layoutRoot = root;
             _layoutSize = size;
             _hasLayout = true;
@@ -160,8 +156,7 @@ public sealed class TreemapControl : FrameworkElement
     }
 
     /// <param name="depth">0 for the root, 1 for its children, and so on.</param>
-    /// <param name="family">Colour family: chosen per top-level entry (depth 1) and kept below it.</param>
-    private void Layout(Paint paint, EvaluatedNode node, Rect rect, int depth, int family)
+    private void Layout(Paint paint, EvaluatedNode node, Rect rect, int depth)
     {
         if (!(rect.Width >= MinTile) || !(rect.Height >= MinTile))
             return;
@@ -171,14 +166,14 @@ public sealed class TreemapControl : FrameworkElement
                     && rect.Width >= MinSplit && rect.Height >= MinSplit;
         if (!split)
         {
-            _tiles.Add(new Tile(node, rect, BrushFor(paint, node, depth, family), true));
+            _tiles.Add(new Tile(node, rect, BrushFor(paint, node), true));
             return;
         }
 
         // Folder background shows through where children are too small to draw.
         var folderFill = node.Status == IncludeStatus.Ignored ? paint.Ignored
             : depth == 0 ? paint.RootFolder
-            : paint.FolderShades[family];
+            : paint.Folder;
         _tiles.Add(new Tile(node, rect, folderFill, false));
 
         // Only children that could fill at least MinTile x MinTile are laid out.
@@ -191,10 +186,9 @@ public sealed class TreemapControl : FrameworkElement
             new TreemapRect(rect.X, rect.Y, rect.Width, rect.Height));
         foreach (var tile in tiles)
         {
-            var childFamily = depth == 0 ? _nextFamily++ % Families.Length : family;
             Layout(paint, tile.Item,
                 new Rect(tile.Rect.X, tile.Rect.Y, Math.Max(0, tile.Rect.Width), Math.Max(0, tile.Rect.Height)),
-                depth + 1, childFamily);
+                depth + 1);
         }
     }
 
@@ -211,11 +205,17 @@ public sealed class TreemapControl : FrameworkElement
         return null;
     }
 
-    private static Brush BrushFor(Paint paint, EvaluatedNode node, int depth, int family)
+    private static Brush BrushFor(Paint paint, EvaluatedNode node)
     {
         if (node.Status == IncludeStatus.Ignored)
             return paint.Ignored;
-        return paint.Shades[family][Math.Clamp(depth - 1, 0, ShadeSteps)];
+        if (node.Node.IsDirectory)
+            return paint.Folder;
+
+        var name = node.Node.Name;
+        var dot = name.LastIndexOf('.');
+        var extension = dot < 0 ? "" : name[dot..].ToLowerInvariant();
+        return paint.Extensions[(int)(StableHash(extension) % (uint)paint.Extensions.Length)];
     }
 
     /// <summary>The tiles hold brushes of the old palette: drop paint and layout and draw again.</summary>
@@ -226,6 +226,15 @@ public sealed class TreemapControl : FrameworkElement
         InvalidateVisual();
     }
 
+    /// <summary>FNV-1a: stable across runs, unlike string.GetHashCode.</summary>
+    private static uint StableHash(string text)
+    {
+        var hash = 2166136261u;
+        foreach (var c in text)
+            hash = (hash ^ c) * 16777619u;
+        return hash;
+    }
+
     private Paint LoadPaint()
     {
         var bg = ThemeResources.Color(this, "Color.Bg", Color.FromRgb(0x0F, 0x12, 0x16));
@@ -233,25 +242,15 @@ public sealed class TreemapControl : FrameworkElement
         var text = ThemeResources.Color(this, "Color.Text", Color.FromRgb(0xE6, 0xEA, 0xF0));
         var ignored = ThemeResources.Color(this, "Color.Chart.Ignored", Color.FromRgb(0x2E, 0x37, 0x43));
 
-        var shades = new Brush[Families.Length][];
-        var folderShades = new Brush[Families.Length];
-        for (var family = 0; family < Families.Length; family++)
-        {
-            var light = ThemeResources.Color(this, Families[family].Light, Families[family].LightFallback);
-            var dark = ThemeResources.Color(this, Families[family].Dark, Families[family].DarkFallback);
-            shades[family] = new Brush[ShadeSteps + 1];
-            for (var step = 0; step <= ShadeSteps; step++)
-                shades[family][step] = ThemeResources.Brush(ThemeResources.Blend(light, dark, (double)step / ShadeSteps));
-            folderShades[family] = ThemeResources.Brush(ThemeResources.Blend(dark, bg, 0.45));
-        }
 
+        var muted = ThemeResources.Color(this, "Color.TextMuted", Color.FromRgb(0x9A, 0xA4, 0xB2));
         return new Paint
         {
+            Extensions = ExtensionPalette.Select(color => ThemeResources.Brush(color)).ToArray(),
+            Folder = ThemeResources.Brush(ThemeResources.Blend(muted, bg, 0.55)),
             Background = ThemeResources.Brush(bg),
             Ignored = ThemeResources.Brush(ignored),
             RootFolder = ThemeResources.Brush(card),
-            Shades = shades,
-            FolderShades = folderShades,
             TilePen = ThemeResources.Pen(bg, 1),
             SelectionPen = ThemeResources.Pen(text, 2),
         };
