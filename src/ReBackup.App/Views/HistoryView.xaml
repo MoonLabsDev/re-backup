@@ -31,7 +31,7 @@
                                                     <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Warning}">
-                                                            <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                                                            <Setter Property="Fill" Value="{DynamicResource Brush.WarningMark}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Failed}">
                                                             <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />

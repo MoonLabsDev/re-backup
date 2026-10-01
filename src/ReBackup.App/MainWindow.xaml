@@ -99,7 +99,7 @@
                     <Setter Property="TrackDashArray" Value="1 1" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Warning}">
-                    <Setter Property="Stroke" Value="{DynamicResource Brush.Warning}" />
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.WarningMark}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Failed}">
                     <Setter Property="Stroke" Value="{DynamicResource Brush.Danger}" />
@@ -116,7 +116,7 @@
                     <Setter Property="TrackDashArray" Value="1.5 1.5" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceling}">
-                    <Setter Property="Stroke" Value="{DynamicResource Brush.Warning}" />
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.WarningMark}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>

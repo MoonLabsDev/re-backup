@@ -337,7 +337,7 @@
                                                         <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsPartial}" Value="True">
-                                                                <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                                                                <Setter Property="Fill" Value="{DynamicResource Brush.WarningMark}" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsIgnored}" Value="True">
                                                                 <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />

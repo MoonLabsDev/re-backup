@@ -31,7 +31,9 @@
     <Color x:Key="Color.AccentLight">#136F65</Color>
     <Color x:Key="Color.Selection">#D7EFEB</Color>
     <Color x:Key="Color.Danger">#C52D33</Color>
-    <Color x:Key="Color.Warning">#896100</Color>
+    <Color x:Key="Color.Warning">#B45309</Color>
+    <!-- Warning as a graphic (status dots, rings, strokes): a clear amber, no text-contrast rule. -->
+    <Color x:Key="Color.WarningMark">#F59E0B</Color>
     <Color x:Key="Color.PartialRow">#FFF6D8</Color>
     <Color x:Key="Color.IgnoredRow">#FBE3E1</Color>
 
@@ -53,6 +55,7 @@
     <SolidColorBrush x:Key="Brush.Selection" Color="{StaticResource Color.Selection}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Danger" Color="{StaticResource Color.Danger}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.WarningMark" Color="{StaticResource Color.WarningMark}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.PartialRow" Color="{StaticResource Color.PartialRow}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.IgnoredRow" Color="{StaticResource Color.IgnoredRow}" po:Freeze="True" />
 
