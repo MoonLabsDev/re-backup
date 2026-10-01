@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64" role="img" aria-label="ReBackup">
+  <title>ReBackup</title>
+  <!-- Master of the app icon ("Cycle"): a refresh arrow around a drive labeled RE. 64x64 design grid.
+       rebackup.ico and the PNGs next to this file are rendered from the same geometry (sizes <= 24 px drop the label). -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#14181D" stroke="#2A313B" stroke-width="1.5"/>
+  <g fill="none" stroke="#2BB3A3" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M51 33 A19 19 0 1 1 45.5 19.6"/>
+    <path d="M46.5 9.5 V20.5 H35.5"/>
+  </g>
+  <rect x="20" y="25" width="24" height="16" rx="3.5" fill="#E6EAF0"/>
+  <circle cx="38.5" cy="33" r="2.1" fill="#2BB3A3"/>
+  <text x="22.4" y="36.4" font-family="Segoe UI, Arial, sans-serif" font-weight="900" font-size="8.2" fill="#0F1216">RE</text>
+</svg>
