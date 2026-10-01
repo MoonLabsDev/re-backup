@@ -16,6 +16,7 @@ using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
+using ReBackup.Core.Versions;
 using ThemeMode = ReBackup.Core.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
 namespace ReBackup.App;
@@ -120,16 +121,22 @@ public partial class App : Application
         var planStore = new PlanStore(paths.PlansDirectory);
         try
         {
-            // Versions are deleted by the rules as saved at that moment, not as they were when the run was queued.
-            var runner = new BackupRunner(currentRules: planId => planStore.TryLoad(planId)?.Retention);
-            var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
             MainViewModel? created = null;
+            // One SQLite index per plan in %LOCALAPPDATA%\ReBackup\index. A finished run queues its version there and
+            // never waits for it (a sync of a network target can hold the index for minutes); a failure is shown in
+            // the footer and the next sync imports the version from its folder.
+            var versionIndex = new VersionIndexWorker(new VersionIndexSet(VersionIndexSet.DefaultDirectory),
+                (planId, ex) => Dispatcher.InvokeAsync(() => created?.ReportIndexError(planId, ex.Message)));
+            // Versions are deleted by the rules as saved at that moment, not as they were when the run was queued.
+            var runner = new BackupRunner(currentRules: planId => planStore.TryLoad(planId)?.Retention,
+                indexSink: versionIndex);
+            var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
             // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
             var scheduler = new Scheduler((planId, trigger) =>
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue, scheduler,
-                action => Dispatcher.InvokeAsync(action), themeToggle, new ExplorerFolderOpener());
+                action => Dispatcher.InvokeAsync(action), themeToggle, new ExplorerFolderOpener(), versionIndex);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);

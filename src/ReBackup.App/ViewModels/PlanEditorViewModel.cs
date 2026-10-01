@@ -38,13 +38,14 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _schedulerPaused;
 
     public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
-        Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders)
+        Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders, VersionsContext versions)
     {
         _saved = plan.Clone();
         _allPlans = allPlans;
         _folders = folders;
         Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders);
+        Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions);
         Preview.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(IgnorePreviewViewModel.SelectedNode))
@@ -68,6 +69,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     /// <summary>What the retention rules do with the versions in the target.</summary>
     public RetentionPreviewViewModel RetentionPreview { get; }
+
+    /// <summary>The versions in the saved target, their index, comparison and restore.</summary>
+    public VersionsViewModel Versions { get; }
 
     /// <summary>The retention rules as edited.</summary>
     public ObservableCollection<RetentionRuleViewModel> RetentionRuleRows { get; } = [];

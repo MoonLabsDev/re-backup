@@ -27,6 +27,7 @@
     <sys:String x:Key="Icon.ThemeLight">&#xE706;</sys:String>
     <sys:String x:Key="Icon.Pause">&#xE769;</sys:String>
     <sys:String x:Key="Icon.Power">&#xE7E8;</sys:String>
+    <sys:String x:Key="Icon.Versions">&#xE81E;</sys:String>
 
     <!-- Used by the control templates. -->
     <sys:String x:Key="Icon.ChevronUp">&#xE70E;</sys:String>

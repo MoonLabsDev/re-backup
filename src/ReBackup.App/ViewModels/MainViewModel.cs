@@ -8,6 +8,7 @@ using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
+using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
 
@@ -18,6 +19,7 @@ public enum MainTab
     Ignore,
     Retention,
     History,
+    Versions,
 }
 
 public sealed partial class MainViewModel : ObservableObject
@@ -31,6 +33,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly BackupQueue _queue;
     private readonly Scheduler _scheduler;
     private readonly Action<Action> _runOnUi;
+    private readonly VersionsContext _versions;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedPlan))]
@@ -45,9 +48,10 @@ public sealed partial class MainViewModel : ObservableObject
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
-        IFolderOpener folders)
+        IFolderOpener folders, VersionIndexWorker versionIndex)
     {
         _folders = folders;
+        _versions = new VersionsContext(versionIndex, dialogs, text => StatusMessage = text);
         Theme = theme;
         _store = store;
         _paths = paths;
@@ -61,7 +65,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var result = _store.LoadAll();
         foreach (var plan in result.Plans)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
@@ -129,7 +133,10 @@ public sealed partial class MainViewModel : ObservableObject
                     var targetBefore = editor.SavedPlan().Target;
                     editor.ReplaceSaved(plan);
                     if (!string.Equals(targetBefore, plan.Target, StringComparison.OrdinalIgnoreCase))
+                    {
                         LoadHistory(editor);
+                        editor.Versions.OnSavedTargetChanged();
+                    }
                 }
             }
             else if (unreadable.Contains(editor.Id))
@@ -146,7 +153,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         foreach (var plan in loaded.Values)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions));
 
         RevalidateAll();
 
@@ -161,7 +168,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void NewPlan()
     {
         var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans, GlobalIgnoreDefaults,
-            _folders);
+            _folders, _versions);
         AddEditor(editor);
         RevalidateAll();
         SelectedPlan = editor;
@@ -242,7 +249,10 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 PublishPlans();
                 if (!string.Equals(targetBefore, editor.SavedPlan().Target, StringComparison.OrdinalIgnoreCase))
+                {
                     LoadHistory(editor);   // the folder buttons look in the new target
+                    editor.Versions.OnSavedTargetChanged();
+                }
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -442,6 +452,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             LoadHistory(editor);
             editor.RetentionPreview.ReloadIfLoaded();
+            editor.Versions.ReloadIfLoaded();
         }
         StatusMessage = result.Status switch
         {
@@ -452,6 +463,16 @@ public sealed partial class MainViewModel : ObservableObject
             _ => $"Backup of \"{update.PlanName}\" was aborted: {result.Reason}",
         };
         RunFinished?.Invoke(update.PlanName, result);
+    }
+
+    /// <summary>
+    /// A finished run's version could not be added to the plan's version index; the next sync of the Versions tab
+    /// imports it from its folder.
+    /// </summary>
+    public void ReportIndexError(string planId, string message)
+    {
+        var name = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase))?.Name ?? planId;
+        StatusMessage = $"The version index of \"{name}\" could not be updated: {message}";
     }
 
     /// <summary>The queue line of the footer and the tray; <paramref name="eta"/> is the running plan's remaining time.</summary>
