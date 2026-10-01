@@ -7,6 +7,7 @@ using ReBackup.Core.IO;
 using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
+using ReBackup.Core.Versions;
 
 namespace ReBackup.Core.Backup;
 
@@ -54,6 +55,7 @@ public sealed class BackupRunner : IBackupRunner
     private readonly ITargetVolume _volume;
     private readonly TimeProvider _time;
     private readonly Func<string, IReadOnlyList<RetentionRule>?>? _currentRules;
+    private readonly IVersionIndexSink? _indexSink;
 
     /// <param name="volume">The target's file system; the real one when null.</param>
     /// <param name="timeProvider">The clock; the system clock when null.</param>
@@ -62,12 +64,18 @@ public sealed class BackupRunner : IBackupRunner
     /// exists. A run can take hours and the rules can be changed meanwhile, so versions are deleted by these rules
     /// and not by those of the request. Without it, the rules of the request are used.
     /// </param>
+    /// <param name="indexSink">
+    /// Gets the manifest of every version a run finishes, for the plan's version index. Its failures become warnings.
+    /// It is called on the run's path, so it must return quickly (the app hands the work to a
+    /// <see cref="VersionIndexWorker"/>).
+    /// </param>
     public BackupRunner(ITargetVolume? volume = null, TimeProvider? timeProvider = null,
-        Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null)
+        Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null, IVersionIndexSink? indexSink = null)
     {
         _volume = volume ?? new PhysicalTargetVolume();
         _time = timeProvider ?? TimeProvider.System;
         _currentRules = currentRules;
+        _indexSink = indexSink;
     }
 
     public async Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
@@ -83,6 +91,8 @@ public sealed class BackupRunner : IBackupRunner
         };
 
         string? partialPath = null;
+        string? finalPath = null;
+        BackupManifest? manifest = null;
         var completed = false;
         try
         {
@@ -91,10 +101,10 @@ public sealed class BackupRunner : IBackupRunner
                 entry.AddSkipped(skipped);
 
             var versionName = await ReserveVersionNameAsync(plan, cancellationToken);
-            var finalPath = Path.Combine(plan.Target, versionName);
+            var final = finalPath = Path.Combine(plan.Target, versionName);
             partialPath = finalPath + VersionName.PartialSuffix;
             var partial = partialPath;
-            await Task.Run(() => CopyAndFinish(work, plan, partial, finalPath, entry, progress, cancellationToken),
+            manifest = await Task.Run(() => CopyAndFinish(work, plan, partial, final, entry, progress, cancellationToken),
                 cancellationToken);
 
             entry.Version = versionName;
@@ -126,6 +136,9 @@ public sealed class BackupRunner : IBackupRunner
             progress?.Report(new BackupProgress(BackupPhase.CleaningUp, 0, 0, 0, 0, ""));
             TryDeleteDirectory(partialPath);
         }
+
+        if (completed && _indexSink is not null && manifest is not null && finalPath is not null)
+            await Task.Run(() => AddToIndex(plan, entry, finalPath, manifest));
 
         if (completed)
         {
@@ -352,6 +365,23 @@ public sealed class BackupRunner : IBackupRunner
             _ => false,
         };
 
+    /// <summary>Hands the finished version to the version index. Whatever goes wrong there is a warning only.</summary>
+    private void AddToIndex(BackupPlan plan, RunLogEntry entry, string finalPath, BackupManifest manifest)
+    {
+        try
+        {
+            var name = Path.GetFileName(finalPath);
+            VersionName.TryParseAny(name, out var localTime, out _);
+            var version = new VersionInfo(name, finalPath, localTime, VersionOwnership.Owned,
+                manifest.FileCount, manifest.TotalBytes);
+            _indexSink!.Add(plan.Id, version, manifest);
+        }
+        catch (Exception ex)
+        {
+            entry.Warnings.Add($"The version index could not be updated: {ex.Message}");
+        }
+    }
+
     /// <summary>Deletes the versions the plan's rules no longer keep. Problems become warnings; the run stays successful.</summary>
     private void ApplyRetention(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
@@ -453,7 +483,7 @@ public sealed class BackupRunner : IBackupRunner
         }
     }
 
-    private void CopyAndFinish(BackupWork work, BackupPlan plan, string partialPath, string finalPath,
+    private BackupManifest CopyAndFinish(BackupWork work, BackupPlan plan, string partialPath, string finalPath,
         RunLogEntry entry, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         // Creating many folders on a network share takes a while, so it reports progress of its own.
@@ -544,6 +574,7 @@ public sealed class BackupRunner : IBackupRunner
 
         cancellationToken.ThrowIfCancellationRequested();
         MoveWithRetry(partialPath, finalPath);
+        return manifest;
     }
 
     /// <summary>Antivirus, indexers or Explorer can briefly hold a handle inside the folder; retry before giving up.</summary>
