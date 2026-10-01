@@ -12,6 +12,15 @@ using ReBackup.Core.Settings;
 
 namespace ReBackup.App.ViewModels;
 
+/// <summary>The tabs of a plan; the header tabs and the icon rail show and change the same one.</summary>
+public enum MainTab
+{
+    Plan,
+    Ignore,
+    Retention,
+    History,
+}
+
 public sealed partial class MainViewModel : ObservableObject
 {
     private readonly PlanStore _store;
@@ -24,7 +33,13 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Scheduler _scheduler;
     private readonly Action<Action> _runOnUi;
 
-    [ObservableProperty] private PlanEditorViewModel? _selectedPlan;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelectedPlan))]
+    private PlanEditorViewModel? _selectedPlan;
+
+    /// <summary>The tab shown for the selected plan; it stays when another plan is selected.</summary>
+    [ObservableProperty] private MainTab _selectedTab = MainTab.Plan;
+
     [ObservableProperty] private string? _statusMessage;
     [ObservableProperty] private string _queueStatus = "No backup running";
     [ObservableProperty] private string _schedulerStatus = "";
@@ -59,6 +74,9 @@ public sealed partial class MainViewModel : ObservableObject
     public event Action<string, RunLogEntry>? RunFinished;
 
     public ObservableCollection<PlanEditorViewModel> Plans { get; } = [];
+
+    /// <summary>The tab buttons of the rail work only while a plan is shown.</summary>
+    public bool HasSelectedPlan => SelectedPlan is not null;
 
     /// <summary>The theme button of the icon rail.</summary>
     public ThemeToggleViewModel Theme { get; }
