@@ -180,6 +180,113 @@ public class RestorerTests : IDisposable
 
         plan.Files.Should().NotContain(f => f.Source.Contains("secret"));
         linkItself.Should().Throw<ArgumentException>();
+        var throughLink = () => Restorer.Plan(_version, ["docs/link/secret.txt"], _dest, RestoreMode.Original);
+        throughLink.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void A_failed_copy_leaves_no_temp_file()
+    {
+        var source = Path.Combine(_version, "a.txt");
+        var plan = Restorer.Plan(_version, ["a.txt", "docs/b.txt"], _dest, RestoreMode.Original);
+
+        RestoreResult result;
+        using (var holder = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            holder.Lock(0, holder.Length);   // opens fine, reading fails after the temp file exists
+            result = Restorer.Run(plan, ConflictPolicy.Overwrite);
+        }
+
+        result.Failures.Select(f => f.Path).Should().Equal(Dest("a.txt"));
+        result.Copied.Should().Be(1);
+        Directory.GetFiles(_dest, "*" + Restorer.TempSuffix, SearchOption.AllDirectories).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_existing_file_with_a_temp_like_name_is_never_touched()
+    {
+        var other = _tmp.WriteFile(@"dest\a.txt" + Restorer.TempSuffix, "not ours");
+
+        var result = Restorer.Run(Restorer.Plan(_version, ["a.txt"], _dest, RestoreMode.Original), ConflictPolicy.Overwrite);
+
+        result.Copied.Should().Be(1);
+        System.IO.File.ReadAllText(other).Should().Be("not ours");
+        System.IO.File.ReadAllText(Dest("a.txt")).Should().Be("alpha");
+    }
+
+    [Fact]
+    public void Does_not_write_through_a_link_at_the_destination()
+    {
+        var outside = _tmp.CreateDir("outside");
+        Junction.Create(Dest("docs"), outside);
+
+        var result = Restorer.Run(Restorer.Plan(_version, ["a.txt", "docs"], _dest, RestoreMode.Original), ConflictPolicy.Overwrite);
+
+        Directory.GetFileSystemEntries(outside).Should().BeEmpty();
+        result.Copied.Should().Be(1);
+        result.Failures.Select(f => f.Path).Should().Contain([Dest(@"docs\b.txt"), Dest(@"docs\sub\c.txt")]);
+        result.Failures.Should().OnlyContain(f => f.Reason.Contains("link"));
+    }
+
+    [Fact]
+    public void Refuses_a_destination_that_is_a_link()
+    {
+        var outside = _tmp.CreateDir("outside");
+        var linkRoot = Dest("linkroot");
+        Junction.Create(linkRoot, outside);
+
+        var result = Restorer.Run(Restorer.Plan(_version, ["a.txt"], linkRoot, RestoreMode.Original), ConflictPolicy.Overwrite);
+
+        Directory.GetFileSystemEntries(outside).Should().BeEmpty();
+        result.Failures.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Rejects_two_items_with_the_same_name_in_a_folder_restore()
+    {
+        System.IO.File.WriteAllText(Path.Combine(_version, "docs", "sub", "B.TXT"), "other bravo");
+        var plan = () => Restorer.Plan(_version, ["docs/b.txt", "docs/sub/B.TXT"], _dest, RestoreMode.ToFolder);
+
+        plan.Should().Throw<ArgumentException>().WithMessage("*B.TXT*");
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void An_unreadable_subfolder_becomes_a_failure_of_the_plan()
+    {
+        var locked = Path.Combine(_version, "docs", "sub");
+        var info = new DirectoryInfo(locked);
+        var security = info.GetAccessControl();
+        var deny = new System.Security.AccessControl.FileSystemAccessRule(
+            System.Security.Principal.WindowsIdentity.GetCurrent().User!,
+            System.Security.AccessControl.FileSystemRights.ListDirectory,
+            System.Security.AccessControl.AccessControlType.Deny);
+        security.AddAccessRule(deny);
+        info.SetAccessControl(security);
+        try
+        {
+            var plan = Restorer.Plan(_version, ["docs"], _dest, RestoreMode.Original);
+            var result = Restorer.Run(plan, ConflictPolicy.Overwrite);
+
+            result.Failures.Select(f => f.Path).Should().Contain(locked);
+            result.Copied.Should().Be(1);   // docs\b.txt
+        }
+        finally
+        {
+            security.RemoveAccessRule(deny);
+            info.SetAccessControl(security);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("docs")]
+    public void Refuses_a_destination_inside_the_version(string below)
+    {
+        var plan = () => Restorer.Plan(_version, ["a.txt"], Path.Combine(_version, below), RestoreMode.ToFolder);
+
+        plan.Should().Throw<ArgumentException>();
     }
 
     [Fact]

@@ -30,6 +30,9 @@ public sealed class RestorePlan
     /// <summary>Files whose destination exists already.</summary>
     public required IReadOnlyList<RestoreFile> Conflicts { get; init; }
 
+    /// <summary>Parts of the version that could not be listed (unreadable folders); <see cref="Restorer.Run"/> reports them as failures.</summary>
+    public IReadOnlyList<RestoreFailure> PlanFailures { get; init; } = [];
+
     public long TotalBytes => Files.Sum(f => f.Size);
 }
 
@@ -74,10 +77,14 @@ public static class Restorer
         destinationRoot = PathUtil.Normalize(destinationRoot);
         if (!Directory.Exists(versionFolder))
             throw new DirectoryNotFoundException($"The version folder \"{versionFolder}\" does not exist.");
+        if (PathUtil.IsSameOrInside(destinationRoot, versionFolder))
+            throw new ArgumentException("The destination must not be the version folder or inside it.", nameof(destinationRoot));
 
         var directories = new List<string>();
         var files = new List<RestoreFile>();
+        var planFailures = new List<RestoreFailure>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var relativePath in relativePaths)
         {
@@ -85,7 +92,15 @@ public static class Restorer
             var source = relative.Length == 0 ? versionFolder : Path.GetFullPath(Path.Combine(versionFolder, relative));
             if (!PathUtil.IsSameOrInside(source, versionFolder))
                 throw new ArgumentException($"\"{relativePath}\" is outside the version.", nameof(relativePaths));
+            if (FindLink(source, versionFolder, includeRoot: false) is { } linkInside)
+                throw new ArgumentException($"\"{relativePath}\" goes through the link \"{linkInside}\".", nameof(relativePaths));
             var name = relative.Length == 0 ? Path.GetFileName(versionFolder) : Path.GetFileName(relative);
+            if (mode == RestoreMode.ToFolder)
+            {
+                if (names.TryGetValue(name, out var earlier) && !string.Equals(earlier, relative, StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException($"Two selected items are called \"{name}\"; they would end up in the same place.", nameof(relativePaths));
+                names[name] = relative;
+            }
             var destination = mode == RestoreMode.Original
                 ? (relative.Length == 0 ? destinationRoot : Path.Combine(destinationRoot, relative))
                 : Path.Combine(destinationRoot, name);
@@ -102,7 +117,7 @@ public static class Restorer
             {
                 if (IsLink(source))
                     throw new ArgumentException($"\"{relativePath}\" is a link.", nameof(relativePaths));
-                AddFolder(directories, files, seen, source, destination, versionFolder, destinationRoot);
+                AddFolder(directories, files, planFailures, seen, source, destination, versionFolder, destinationRoot);
             }
             else
             {
@@ -118,6 +133,7 @@ public static class Restorer
             Directories = directories,
             Files = files,
             Conflicts = files.Where(f => File.Exists(f.Destination) || Directory.Exists(f.Destination)).ToList(),
+            PlanFailures = planFailures,
         };
     }
 
@@ -129,7 +145,7 @@ public static class Restorer
     public static RestoreResult Run(RestorePlan plan, ConflictPolicy policy, IProgress<RestoreProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var failures = new List<RestoreFailure>();
+        var failures = new List<RestoreFailure>(plan.PlanFailures);
         int copied = 0, skipped = 0, keptBoth = 0, filesDone = 0;
         long bytesDone = 0;
         var bytesTotal = plan.TotalBytes;
@@ -140,6 +156,7 @@ public static class Restorer
         {
             try
             {
+                ThrowIfLink(directory, plan.DestinationRoot);
                 Directory.CreateDirectory(directory);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -179,16 +196,16 @@ public static class Restorer
                     }
                 }
 
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                var temp = target + TempSuffix;
-                if (!CopyToTemp(file.Source, temp, buffer, count =>
-                    {
-                        bytesDone += count;
-                        progress?.Report(new RestoreProgress(filesDone, plan.Files.Count, bytesDone, bytesTotal, file.Destination));
-                    }, cancellationToken))
+                var parent = Path.GetDirectoryName(target)!;
+                ThrowIfLink(parent, plan.DestinationRoot);
+                Directory.CreateDirectory(parent);
+                var temp = CopyToTemp(file.Source, target, buffer, count =>
                 {
+                    bytesDone += count;
+                    progress?.Report(new RestoreProgress(filesDone, plan.Files.Count, bytesDone, bytesTotal, file.Destination));
+                }, cancellationToken);
+                if (temp is null)
                     return Result(canceled: true);
-                }
 
                 try
                 {
@@ -236,33 +253,90 @@ public static class Restorer
         return candidate;
     }
 
-    /// <summary>False when canceled (the temp file is removed then).</summary>
-    private static bool CopyToTemp(string source, string temp, byte[] buffer, Action<int> onBytes,
+    /// <summary>
+    /// Copies into a new, uniquely named temp file next to <paramref name="target"/> (created with CreateNew, so an
+    /// existing file is never touched) and returns its path; null when canceled. On any failure the temp file is removed.
+    /// </summary>
+    private static string? CopyToTemp(string source, string target, byte[] buffer, Action<int> onBytes,
         CancellationToken cancellationToken)
     {
-        using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
-                   BufferSize, FileOptions.SequentialScan))
-        using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize))
+        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+            BufferSize, FileOptions.SequentialScan);
+        var (output, temp) = CreateTemp(target);
+        try
         {
-            int read;
-            while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+            using (output)
             {
-                if (cancellationToken.IsCancellationRequested)
+                int read;
+                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    output.Dispose();
-                    TryDelete(temp);
-                    return false;
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        output.Dispose();
+                        TryDelete(temp);
+                        return null;
+                    }
+                    output.Write(buffer, 0, read);
+                    onBytes(read);
                 }
-                output.Write(buffer, 0, read);
-                onBytes(read);
             }
-        }
 
-        File.SetLastWriteTimeUtc(temp, File.GetLastWriteTimeUtc(source));
-        return true;
+            File.SetLastWriteTimeUtc(temp, File.GetLastWriteTimeUtc(source));
+            return temp;
+        }
+        catch
+        {
+            TryDelete(temp);
+            throw;
+        }
     }
 
-    private static void AddFolder(List<string> directories, List<RestoreFile> files, HashSet<string> seen,
+    private static (FileStream Stream, string Path) CreateTemp(string target)
+    {
+        while (true)
+        {
+            var temp = $"{target}.{Random.Shared.Next():x8}{TempSuffix}";
+            try
+            {
+                return (new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize), temp);
+            }
+            catch (IOException) when (File.Exists(temp) || Directory.Exists(temp))
+            {
+                // taken by someone else: try another name
+            }
+        }
+    }
+
+    /// <summary>The first existing component from <paramref name="root"/> down to <paramref name="path"/> that is a link.</summary>
+    private static string? FindLink(string path, string root, bool includeRoot)
+    {
+        if (includeRoot && IsLinkIfExists(root))
+            return root;
+        var relative = Path.GetRelativePath(root, path);
+        if (relative == ".")
+            return null;
+        var current = root;
+        foreach (var part in relative.Split(Path.DirectorySeparatorChar))
+        {
+            current = Path.Combine(current, part);
+            if (!File.Exists(current) && !Directory.Exists(current))
+                return null;
+            if (IsLink(current))
+                return current;
+        }
+        return null;
+    }
+
+    private static bool IsLinkIfExists(string path) => (File.Exists(path) || Directory.Exists(path)) && IsLink(path);
+
+    private static void ThrowIfLink(string folder, string destinationRoot)
+    {
+        if (FindLink(folder, destinationRoot, includeRoot: true) is not null)
+            throw new IOException("the destination folder is a link");
+    }
+
+    private static void AddFolder(List<string> directories, List<RestoreFile> files, List<RestoreFailure> planFailures,
+        HashSet<string> seen,
         string sourceFolder, string destinationFolder, string versionFolder, string destinationRoot)
     {
         var pending = new Stack<(string Source, string Destination)>();
@@ -272,7 +346,18 @@ public static class Restorer
             var (source, destination) = pending.Pop();
             CheckInside(destination, destinationRoot);
             directories.Add(destination);
-            foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos())
+            List<FileSystemInfo> entries;
+            try
+            {
+                entries = new DirectoryInfo(source).EnumerateFileSystemInfos().ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                planFailures.Add(new RestoreFailure(source, Reason(ex)));
+                continue;
+            }
+
+            foreach (var entry in entries)
             {
                 if ((entry.Attributes & FileAttributes.ReparsePoint) != 0)
                     continue;   // links are not followed
