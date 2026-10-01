@@ -1,8 +1,23 @@
 <UserControl x:Class="ReBackup.App.Views.VersionsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:ReBackup.Core.Versions;assembly=ReBackup.Core">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!-- Right-aligned number cell. -->
+        <Style x:Key="TextBlock.Number" TargetType="TextBlock">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+        </Style>
+
+        <Style x:Key="Header.Number" TargetType="GridViewColumnHeader" BasedOn="{StaticResource {x:Type GridViewColumnHeader}}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="Padding" Value="6,0,12,0" />
+        </Style>
 
         <!-- A status line that takes no room while it is empty. -->
         <Style x:Key="TextBlock.Line" TargetType="TextBlock">
@@ -13,6 +28,47 @@
                 <Trigger Property="Text" Value="">
                     <Setter Property="Visibility" Value="Collapsed" />
                 </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Status dot of a compared entry: Added DiffAdded, Changed Warning, Deleted Danger, Unchanged TextFaint. -->
+        <Style x:Key="Ellipse.Diff" TargetType="Ellipse">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static core:DiffStatus.Added}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.DiffAdded}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static core:DiffStatus.Changed}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static core:DiffStatus.Deleted}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Status dot of a history row: New DiffAdded, Changed Warning, Deleted Danger, the rest TextFaint. -->
+        <Style x:Key="Ellipse.History" TargetType="Ellipse">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static core:HistoryStatus.New}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.DiffAdded}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static core:HistoryStatus.Changed}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="{x:Static core:HistoryStatus.Deleted}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
             </Style.Triggers>
         </Style>
     </UserControl.Resources>
@@ -99,10 +155,241 @@
             </DockPanel>
         </Border>
 
-        <!-- The tree, the comparison and the history of a file come here (next task). -->
-        <Border x:Name="MainArea" Grid.Column="2" Style="{StaticResource Border.Card}">
-            <TextBlock Style="{StaticResource TextBlock.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Text="{Binding Versions.SelectedVersion.Name}" />
-        </Border>
+        <!-- ======================================================== Tree, history -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" MinHeight="200" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{StaticResource Border.Card}" Padding="12">
+                <DockPanel>
+                    <!-- Toolbar: search, compare, swap, changed only | actions -->
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Grid Width="220" Margin="0,0,12,6">
+                            <TextBox x:Name="SearchBox" Padding="18,0,8,0" VerticalContentAlignment="Center" Height="32"
+                                     AutomationProperties.Name="Search names (substring, or * and ?)"
+                                     ToolTip="A part of a name, or a pattern with * and ?"
+                                     Text="{Binding Versions.SearchText, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Style="{StaticResource TextBlock.Icon}" Margin="10,0,0,0" FontSize="12" IsHitTestVisible="False"
+                                       HorizontalAlignment="Left" Foreground="{DynamicResource Brush.TextFaint}" Text="{StaticResource Icon.Search}" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,12,6">
+                            <TextBlock Style="{StaticResource TextBlock.Muted}" VerticalAlignment="Center" Margin="0,0,8,0" Text="Compare with" />
+                            <ComboBox Width="190" ItemsSource="{Binding Versions.CompareChoices}" DisplayMemberPath="Label"
+                                      SelectedItem="{Binding Versions.SelectedCompare}" AutomationProperties.Name="Compare with" />
+                            <Button Style="{StaticResource Button.Icon}" Margin="4,0,0,0" Content="{StaticResource Icon.Swap}"
+                                    ToolTip="Swap: show the other version's tree" AutomationProperties.Name="Swap versions"
+                                    Command="{Binding Versions.SwapCommand}" />
+                        </StackPanel>
+                        <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,0,16,6" VerticalAlignment="Center"
+                                  Content="Changed only" IsChecked="{Binding Versions.ChangedOnly}"
+                                  IsEnabled="{Binding Versions.IsComparing}" />
+                    </WrapPanel>
+
+                    <TextBlock DockPanel.Dock="Top" Style="{StaticResource TextBlock.Muted}" Margin="2,0,0,6" FontSize="12"
+                               Text="{Binding Versions.SearchSummary}"
+                               Visibility="{Binding Versions.IsSearchActive, Converter={StaticResource BoolToVisibility}}" />
+
+                    <Grid>
+                        <!-- The tree of version A (with B's entries while comparing). -->
+                        <ListView x:Name="TreeList" SelectionMode="Single"
+                                  AutomationProperties.Name="Version tree"
+                                  ItemsSource="{Binding Versions.Tree.Rows}"
+                                  SelectedItem="{Binding Versions.Tree.SelectedNode}"
+                                  SelectionChanged="OnTreeSelectionChanged"
+                                  SizeChanged="OnTreeSizeChanged"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling">
+                            <ListView.Style>
+                                <Style TargetType="ListView" BasedOn="{StaticResource ListView.Table}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Versions.IsSearchActive}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListView.Style>
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnRowRightButtonDown" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMessage}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
+                                            <Setter Property="FontStyle" Value="Italic" />
+                                        </DataTrigger>
+                                        <!-- Only in version B: shown with B's values, in italics. -->
+                                        <DataTrigger Binding="{Binding OnlyInOther}" Value="True">
+                                            <Setter Property="FontStyle" Value="Italic" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn x:Name="NameColumn" Header="Name" Width="260">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="{Binding Indent}">
+                                                    <ToggleButton Style="{StaticResource ToggleButton.Expander}"
+                                                                  AutomationProperties.Name="Expand" IsChecked="{Binding IsExpanded}" />
+                                                    <TextBlock Margin="0,0,6,0" FontSize="12">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
+                                                                <Setter Property="Text" Value="{StaticResource Icon.Document}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                                        <Setter Property="Text" Value="{StaticResource Icon.Folder}" />
+                                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsMessage}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Size" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Modified" Width="130">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextMuted}"
+                                                           Text="{Binding ModifiedText}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Status" Width="110">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Style="{StaticResource Ellipse.Diff}" />
+                                                    <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+
+                        <!-- Search hits replace the tree; selecting one reveals it in the tree. -->
+                        <ListView Style="{StaticResource ListView.Table}" SelectionMode="Single" AutomationProperties.Name="Search results"
+                                  ItemsSource="{Binding Versions.SearchResults}" SelectedItem="{Binding Versions.SelectedSearchHit}"
+                                  Visibility="{Binding Versions.IsSearchActive, Converter={StaticResource BoolToVisibility}}"
+                                  VirtualizingPanel.IsVirtualizing="True">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Path" Width="460">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Margin="0,0,6,0" FontSize="12">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
+                                                                <Setter Property="Text" Value="{StaticResource Icon.Document}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                                        <Setter Property="Text" Value="{StaticResource Icon.Folder}" />
+                                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Path}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Size" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <!-- ==================================================== HISTORY OF <file> -->
+            <Border Grid.Row="1" Style="{StaticResource Border.Card}" Margin="0,12,0,0" Padding="0,14,0,6" Height="240"
+                    Visibility="{Binding Versions.ShowHistory, Converter={StaticResource BoolToVisibility}}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Style="{StaticResource TextBlock.CardTitle}" Margin="18,0,18,8"
+                               TextTrimming="CharacterEllipsis" Text="{Binding Versions.HistoryTitle}"
+                               ToolTip="{Binding Versions.HistoryTitle}" />
+                    <ListView Style="{StaticResource ListView.Table}" ItemsSource="{Binding Versions.HistoryRows}"
+                              SelectionMode="Single" AutomationProperties.Name="File history" Margin="8,0">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Version" Width="140">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Typography.NumeralAlignment="Tabular" Text="{Binding DateText}" ToolTip="{Binding VersionName}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Status" Width="120">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Style="{StaticResource Ellipse.History}" />
+                                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Size" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Modified" Width="140">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextMuted}"
+                                                       Text="{Binding ModifiedText}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="48">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource Button.Icon}" Width="28" Height="26"
+                                                    ToolTip="Show this copy in Explorer" AutomationProperties.Name="Show this copy in Explorer"
+                                                    Visibility="{Binding CanOpen, Converter={StaticResource BoolToVisibility}}"
+                                                    Command="{Binding DataContext.Versions.OpenHistoryCopyCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <Image Style="{StaticResource Image.FolderColored}" />
+                                            </Button>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

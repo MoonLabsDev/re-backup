@@ -28,6 +28,10 @@
     <sys:String x:Key="Icon.Pause">&#xE769;</sys:String>
     <sys:String x:Key="Icon.Power">&#xE7E8;</sys:String>
     <sys:String x:Key="Icon.Versions">&#xE81E;</sys:String>
+    <sys:String x:Key="Icon.Search">&#xE721;</sys:String>
+    <sys:String x:Key="Icon.Swap">&#xE8AB;</sys:String>
+    <sys:String x:Key="Icon.Document">&#xE8A5;</sys:String>
+    <sys:String x:Key="Icon.Folder">&#xE8B7;</sys:String>
 
     <!-- Used by the control templates. -->
     <sys:String x:Key="Icon.ChevronUp">&#xE70E;</sys:String>

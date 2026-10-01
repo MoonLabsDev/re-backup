@@ -45,41 +45,6 @@
             <Setter Property="Margin" Value="0,0,8,0" />
         </Style>
 
-        <!-- Expand/collapse chevron of a tree row. -->
-        <Style x:Key="ToggleButton.Expander" TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
-            <Setter Property="Width" Value="18" />
-            <Setter Property="Height" Value="18" />
-            <Setter Property="Margin" Value="0,0,4,0" />
-            <Setter Property="Focusable" Value="False" />
-            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
-            <Setter Property="Content" Value="{StaticResource Icon.ChevronRight}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4">
-                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="9" HorizontalAlignment="Center"
-                                       Foreground="{TemplateBinding Foreground}" Text="{TemplateBinding Content}" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Raised}" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsChecked" Value="True">
-                    <Setter Property="Content" Value="{StaticResource Icon.ChevronDown}" />
-                </Trigger>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
-                </Trigger>
-                <DataTrigger Binding="{Binding IsExpandable}" Value="False">
-                    <Setter Property="Visibility" Value="Hidden" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
     </UserControl.Resources>
 
     <Grid>

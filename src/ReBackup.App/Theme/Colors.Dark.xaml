@@ -92,4 +92,7 @@
     <SolidColorBrush x:Key="Brush.Badge.YearlyFill" Color="#3D2F14" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Badge.YearlyText" Color="#F2B84B" po:Freeze="True" />
 
+    <!-- Versions tab: an entry that is new in the later version of a comparison (Changed uses Warning, Deleted Danger). -->
+    <SolidColorBrush x:Key="Brush.DiffAdded" Color="#4FD08B" po:Freeze="True" />
+
 </ResourceDictionary>
