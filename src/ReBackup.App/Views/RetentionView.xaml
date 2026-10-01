@@ -3,198 +3,262 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
              xmlns:controls="clr-namespace:ReBackup.App.Controls">
-    <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <UserControl.Resources>
+        <Style x:Key="TextBlock.Error" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Danger}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
 
-        <StackPanel Grid.Row="0">
-            <DockPanel Margin="0,0,0,6">
-                <Button DockPanel.Dock="Right" Content="Add rule" Padding="10,2"
-                        Command="{Binding AddRetentionRuleCommand}" />
-                <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
-                           Text="Retention rules — a version is kept if at least one rule keeps it; the newest version is always kept" />
-            </DockPanel>
+        <!-- An error line that disappears while its text is null. -->
+        <Style x:Key="TextBlock.ErrorOrNone" TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Error}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Error}" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
-            <TextBlock Foreground="{StaticResource Brush.Warning}" TextWrapping="Wrap"
-                       Text="No rules: every version is kept and the target fills up over time.">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding HasNoRetentionRules}" Value="False">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+        <Style x:Key="TextBlock.Label" TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
 
-            <ScrollViewer MaxHeight="170" VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding RetentionRuleRows}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Margin="0,0,0,4">
-                                <StackPanel Orientation="Horizontal">
-                                    <ComboBox Width="90" ItemsSource="{x:Static vm:RetentionRuleViewModel.Periods}"
-                                              SelectedItem="{Binding Period}" />
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,20">
 
-                                    <Grid Width="130" Margin="8,0,0,0">
-                                        <ComboBox ItemsSource="{x:Static vm:RetentionRuleViewModel.Weekdays}"
-                                                  SelectedItem="{Binding Weekday}">
-                                            <ComboBox.Style>
-                                                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Period}" Value="Weekly">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </ComboBox.Style>
-                                        </ComboBox>
-                                        <TextBox Text="{Binding AnchorText, UpdateSourceTrigger=PropertyChanged}">
-                                            <TextBox.Style>
-                                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Period}" Value="Monthly">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Period}" Value="Yearly">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBox.Style>
-                                        </TextBox>
-                                    </Grid>
-
-                                    <TextBlock Text="keep" Margin="8,0,6,0" VerticalAlignment="Center" />
-                                    <TextBox Width="50" Text="{Binding KeepText, UpdateSourceTrigger=PropertyChanged}" />
-                                    <Button Content="Remove" Padding="8,1" Margin="8,0,0,0"
-                                            Command="{Binding DataContext.RemoveRetentionRuleCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}" />
-                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource Brush.TextMuted}"
-                                               Text="{Binding AnchorHint}" />
-                                </StackPanel>
-                                <TextBlock Foreground="{StaticResource Brush.Danger}" Text="{Binding Error}">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Error}" Value="{x:Null}">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+            <!-- ======================================================== Rules + forecast -->
+            <Border Style="{StaticResource Border.Card}">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right" VerticalAlignment="Center" Command="{Binding AddRetentionRuleCommand}"
+                                AutomationProperties.Name="Add rule">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Add}" />
+                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Add rule" />
                             </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
-        </StackPanel>
+                        </Button>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="RULES" />
+                            <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
+                                       Text="A version stays if any rule keeps it; the newest one always stays." />
+                        </StackPanel>
+                    </DockPanel>
 
-        <DockPanel Grid.Row="1" Margin="0,12,0,0">
-            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-                <Button DockPanel.Dock="Right" Content="Refresh" Padding="10,2"
-                        Command="{Binding RetentionPreview.RefreshCommand}" />
-                <ProgressBar DockPanel.Dock="Right" Width="80" Height="12" Margin="0,0,8,0"
-                             IsIndeterminate="{Binding RetentionPreview.IsLoading}" />
-                <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="Versions in the target now" />
-            </DockPanel>
+                    <TextBlock Foreground="{StaticResource Brush.Warning}" TextWrapping="Wrap" Margin="0,0,0,10"
+                               Text="No rules: every version is kept and the target fills up over time.">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasNoRetentionRules}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
-            <TextBlock DockPanel.Dock="Top" Foreground="{StaticResource Brush.Danger}" TextWrapping="Wrap"
-                       Text="{Binding RetentionPreview.Error}">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding RetentionPreview.Error}" Value="{x:Null}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+                    <ItemsControl ItemsSource="{Binding RetentionRuleRows}" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="330" Margin="0,0,10,10" Padding="12" Background="{StaticResource Brush.Bg}"
+                                        BorderBrush="{StaticResource Brush.BorderStrong}" BorderThickness="1" CornerRadius="8">
+                                    <StackPanel>
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Style="{StaticResource Button.Danger}"
+                                                    Content="{StaticResource Icon.Delete}" VerticalAlignment="Top"
+                                                    ToolTip="Remove this rule" AutomationProperties.Name="Remove this rule"
+                                                    Command="{Binding DataContext.RemoveRetentionRuleCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <ComboBox Width="116" AutomationProperties.Name="Period"
+                                                          ItemsSource="{x:Static vm:RetentionRuleViewModel.Periods}"
+                                                          SelectedItem="{Binding Period}" />
 
-            <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" FontWeight="SemiBold" TextWrapping="Wrap"
-                       Text="{Binding RetentionPreview.NowSummary}" />
+                                                <Grid Width="116" Margin="8,0,0,0">
+                                                    <ComboBox AutomationProperties.Name="Weekday"
+                                                              ItemsSource="{x:Static vm:RetentionRuleViewModel.Weekdays}"
+                                                              SelectedItem="{Binding Weekday}">
+                                                        <ComboBox.Style>
+                                                            <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Period}" Value="Weekly">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ComboBox.Style>
+                                                    </ComboBox>
+                                                    <TextBox MinHeight="30" AutomationProperties.Name="Anchor"
+                                                             Text="{Binding AnchorText, UpdateSourceTrigger=PropertyChanged}">
+                                                        <TextBox.Style>
+                                                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Period}" Value="Monthly">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Period}" Value="Yearly">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBox.Style>
+                                                    </TextBox>
+                                                </Grid>
+                                            </StackPanel>
+                                        </DockPanel>
 
-            <ListView ItemsSource="{Binding RetentionPreview.NowRows}" MinHeight="80" SelectionMode="Single">
-                <ListView.ItemContainerStyle>
-                    <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsDelete}" Value="True">
-                                <Setter Property="Foreground" Value="{StaticResource Brush.Danger}" />
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding IsManaged}" Value="False">
-                                <Setter Property="Foreground" Value="{StaticResource Brush.TextFaint}" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </ListView.ItemContainerStyle>
-                <ListView.View>
-                    <GridView>
-                        <GridViewColumn Header="Date" Width="120" DisplayMemberBinding="{Binding DateText}" />
-                        <GridViewColumn Header="Decision" Width="90" DisplayMemberBinding="{Binding DecisionText}" />
-                        <GridViewColumn Header="Kept by" Width="240" DisplayMemberBinding="{Binding ReasonText}" />
-                        <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
-                        <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
-                        <GridViewColumn Header="Folder" Width="240" DisplayMemberBinding="{Binding Name}" />
-                    </GridView>
-                </ListView.View>
-            </ListView>
-        </DockPanel>
-        <StackPanel Grid.Row="2" Margin="0,12,0,0">
-            <DockPanel Margin="0,0,0,4">
-                <ComboBox DockPanel.Dock="Right" Width="190" DisplayMemberPath="Label"
-                          ItemsSource="{x:Static vm:RetentionPreviewViewModel.Schedules}"
-                          SelectedItem="{Binding RetentionPreview.SelectedSchedule}">
-                    <ComboBox.Style>
-                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                            <TextBlock Style="{StaticResource TextBlock.Label}" Text="keep" Margin="0,0,8,0" />
+                                            <TextBox Width="56" MinHeight="30" HorizontalContentAlignment="Center"
+                                                     AutomationProperties.Name="Keep"
+                                                     Text="{Binding KeepText, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+
+                                        <TextBlock Style="{StaticResource TextBlock.Label}" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Foreground="{StaticResource Brush.TextFaint}" Text="{Binding AnchorHint}" />
+
+                                        <TextBlock Style="{StaticResource TextBlock.ErrorOrNone}" Margin="0,6,0,0"
+                                                   Text="{Binding Error}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Forecast -->
+                    <Border Height="1" Margin="0,6,0,14" Background="{StaticResource Brush.Border}" />
+
+                    <DockPanel Margin="0,0,0,8">
+                        <ComboBox DockPanel.Dock="Right" Width="190" DisplayMemberPath="Label" AutomationProperties.Name="Assumed schedule"
+                                  ItemsSource="{x:Static vm:RetentionPreviewViewModel.Schedules}"
+                                  SelectedItem="{Binding RetentionPreview.SelectedSchedule}">
+                            <ComboBox.Style>
+                                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ComboBox.Style>
+                        </ComboBox>
+                        <TextBlock DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" Text="Assume">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="12"
+                                   Text="using the plan's triggers">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
                                     <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ComboBox.Style>
-                </ComboBox>
-                <TextBlock DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" Text="Assume">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center"
+                                   Text="FULL EXTENSION — TWO YEARS FROM NOW" />
+                    </DockPanel>
+
+                    <TextBlock TextWrapping="Wrap" Text="{Binding RetentionPreview.FullSummary}" />
+                    <ScrollViewer MaxHeight="180" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+                        <controls:RetentionTimelineControl Lanes="{Binding RetentionPreview.TimelineLanes}"
+                                                           From="{Binding RetentionPreview.TimelineFrom}"
+                                                           To="{Binding RetentionPreview.TimelineTo}" />
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+
+            <!-- ======================================================== Versions now -->
+            <Border Style="{StaticResource Border.Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Refresh}"
+                                ToolTip="Read the target again" AutomationProperties.Name="Refresh"
+                                Command="{Binding RetentionPreview.RefreshCommand}" />
+                        <ProgressBar DockPanel.Dock="Right" Width="80" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
+                                     IsIndeterminate="{Binding RetentionPreview.IsLoading}" />
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center"
+                                   Text="VERSIONS IN THE TARGET NOW" />
+                    </DockPanel>
+
+                    <TextBlock Margin="0,0,0,8" Text="{Binding RetentionPreview.Error}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Error}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RetentionPreview.Error}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"
+                               Text="{Binding RetentionPreview.NowSummary}" />
+
+                    <Grid>
+                        <ListView Style="{StaticResource ListView.Table}" ItemsSource="{Binding RetentionPreview.NowRows}"
+                                  MinHeight="80" MaxHeight="360" SelectionMode="Single">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDelete}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource Brush.Danger}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsManaged}" Value="False">
+                                            <Setter Property="Foreground" Value="{StaticResource Brush.TextFaint}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Date" Width="120" DisplayMemberBinding="{Binding DateText}" />
+                                    <GridViewColumn Header="Decision" Width="90" DisplayMemberBinding="{Binding DecisionText}" />
+                                    <GridViewColumn Header="Kept by" Width="240" DisplayMemberBinding="{Binding ReasonText}" />
+                                    <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
+                                    <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
+                                    <GridViewColumn Header="Folder" Width="240" DisplayMemberBinding="{Binding Name}" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+
+                        <!-- Empty state -->
+                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18"
+                                   IsHitTestVisible="False" Text="No versions yet">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
                                     <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="{StaticResource Brush.TextMuted}"
-                           Text="using the plan's triggers">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-                <TextBlock FontWeight="SemiBold" VerticalAlignment="Center"
-                           Text="Full extension — two years from now" />
-            </DockPanel>
-            <TextBlock TextWrapping="Wrap" Text="{Binding RetentionPreview.FullSummary}" />
-            <ScrollViewer MaxHeight="180" Margin="0,6,0,0" VerticalScrollBarVisibility="Auto">
-                <controls:RetentionTimelineControl Lanes="{Binding RetentionPreview.TimelineLanes}"
-                                                   From="{Binding RetentionPreview.TimelineFrom}"
-                                                   To="{Binding RetentionPreview.TimelineTo}" />
-            </ScrollViewer>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RetentionPreview.NowRows.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </StackPanel>
+            </Border>
         </StackPanel>
-    </Grid>
+    </ScrollViewer>
 </UserControl>
