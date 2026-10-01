@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -317,7 +316,7 @@ public sealed partial class MainViewModel : ObservableObject
             foreach (var editor in Plans)
             {
                 editor.SchedulerPaused = paused;
-                editor.Run.NextRunText = NextRunText(editor, paused);
+                ShowSchedule(editor, paused);
             }
             SelectedPlan?.RefreshNextRuns();
         }
@@ -327,22 +326,43 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private string NextRunText(PlanEditorViewModel editor, bool paused)
+    /// <summary>The saved plan's schedule on its card: disabled, paused, or the next run.</summary>
+    private void ShowSchedule(PlanEditorViewModel editor, bool paused)
     {
         if (editor.IsNew)
-            return "";
+        {
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "not saved yet");
+            return;
+        }
         var plan = editor.SavedPlan();
         if (!plan.Enabled)
-            return "Disabled: runs only by hand";
-        if (plan.Triggers.Count == 0)
-            return "No schedule";
-        if (plan.Triggers.Any(trigger => ScheduleTriggers.Validate(trigger) is not null))
-            return "Schedule has errors: does not run";
-        if (paused)
-            return "Scheduler paused";
-        return _scheduler.NextRunUtc(editor.Id) is { } next
-            ? "Next run " + next.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture)
-            : "No schedule";
+            editor.Run.SetSchedule(enabled: false, schedulerPaused: false, "");
+        else if (plan.Triggers.Count == 0)
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "no schedule");
+        else if (plan.Triggers.Any(trigger => ScheduleTriggers.Validate(trigger) is not null))
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "schedule has errors");
+        else if (paused)
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: true, "");
+        else
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, _scheduler.NextRunUtc(editor.Id) is { } next
+                ? "next " + PlanRunViewModel.ShortWhen(next.ToLocalTime(), DateTime.Now)
+                : "no schedule");
+    }
+
+    /// <summary>The queue position and the plan ahead on the card of every queued plan.</summary>
+    private void RefreshQueuePositions()
+    {
+        foreach (var editor in Plans)
+        {
+            if (editor.Run.State != JobState.Queued || _queue.PositionOf(editor.Id) is not { } position)
+                continue;   // not queued, or already started: its Running update follows
+            var ahead = position.AheadPlanId is { } aheadId
+                ? Plans.FirstOrDefault(p => p.Id.Equals(aheadId, StringComparison.OrdinalIgnoreCase)) is { Name.Length: > 0 } aheadEditor
+                    ? aheadEditor.Name
+                    : position.AheadPlanName
+                : null;
+            editor.Run.SetQueuePosition(position.Position, ahead);
+        }
     }
 
     /// <summary>Hands the saved state of all saved plans to the scheduler.</summary>
@@ -393,6 +413,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
         editor?.Run.Apply(update);
+        if (update.Progress is null)
+            RefreshQueuePositions();   // the queue changed: a job was added, started, removed or finished
         UpdateQueueStatus(update, editor?.Run.EtaText ?? "");
 
         if (update.State == JobState.Removed)
@@ -462,6 +484,7 @@ public sealed partial class MainViewModel : ObservableObject
                 RevalidateAll();
         };
         LoadHistory(editor);
+        ShowSchedule(editor, _scheduler.IsPaused);
         Plans.Add(editor);
     }
 

@@ -4,6 +4,7 @@
         xmlns:views="clr-namespace:ReBackup.App.Views"
         xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
         xmlns:theme="clr-namespace:ReBackup.App.Theme"
+        xmlns:controls="clr-namespace:ReBackup.App.Controls"
         Title="ReBackup" Width="1280" Height="800" MinWidth="960" MinHeight="560"
         Style="{StaticResource {x:Type Window}}">
     <Window.InputBindings>
@@ -65,7 +66,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Small glyph button with a frame (New plan, Cancel in a plan card). -->
+        <!-- Small glyph button with a frame (New plan; Cancel and Remove from the queue in a plan card). -->
         <Style x:Key="Button.IconFramed" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Width" Value="28" />
             <Setter Property="Height" Value="28" />
@@ -85,37 +86,157 @@
             <Setter Property="FontWeight" Value="Normal" />
         </Style>
 
-        <!-- Status dot of a plan: Accent while queued/running, Danger after a failed or canceled run,
-             Warning after a run with warnings, otherwise faint. -->
-        <Style x:Key="Ellipse.PlanDot" TargetType="Ellipse">
-            <Setter Property="Width" Value="8" />
-            <Setter Property="Height" Value="8" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+        <!-- ================= Plan card (progress ring). The colours follow Run.CardState; the texts come from Run. -->
+
+        <!-- The ring: its stroke, track and dashes per state. -->
+        <Style x:Key="ProgressRing.PlanCard" TargetType="controls:ProgressRing" BasedOn="{StaticResource {x:Type controls:ProgressRing}}">
+            <Setter Property="Width" Value="52" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Value" Value="{Binding Run.RingValue}" />
+            <Setter Property="IsIndeterminate" Value="{Binding Run.RingIndeterminate}" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding Run.Dot}" Value="Active">
-                    <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.NeverRun}">
+                    <Setter Property="TrackDashArray" Value="1 1" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Run.Dot}" Value="Failed">
-                    <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Warning}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Warning}" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Run.Dot}" Value="Warning">
-                    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Failed}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceled}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Paused}">
+                    <Setter Property="Track" Value="{DynamicResource Brush.Accent}" />
+                    <Setter Property="TrackOpacity" Value="0.35" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Queued}">
+                    <Setter Property="Track" Value="{DynamicResource Brush.Queued}" />
+                    <Setter Property="TrackDashArray" Value="1.5 1.5" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceling}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Warning}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
 
-        <!-- Shown only while the plan of the DataContext is queued or running. -->
-        <Style x:Key="Panel.WhileActive" TargetType="FrameworkElement">
-            <Setter Property="Visibility" Value="Collapsed" />
+        <!-- The centre of the ring: a percentage, "#2", "scan", or a glyph for the result states. -->
+        <Style x:Key="TextBlock.RingCenter" TargetType="TextBlock">
+            <Setter Property="Text" Value="{Binding Run.RingText}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding Run.IsActive}" Value="True">
-                    <Setter Property="Visibility" Value="Visible" />
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.NeverRun}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Completed}">
+                    <Setter Property="Text" Value="{StaticResource Icon.CheckMark}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="17" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Warning}">
+                    <Setter Property="FontSize" Value="15" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Failed}">
+                    <Setter Property="Text" Value="{StaticResource Icon.Cancel}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="14" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceled}">
+                    <Setter Property="Text" Value="■" />
+                    <Setter Property="FontSize" Value="13" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Disabled}">
+                    <Setter Property="Text" Value="{StaticResource Icon.Power}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="16" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Paused}">
+                    <Setter Property="Text" Value="{StaticResource Icon.Pause}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="15" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Queued}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Queued}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Indexing}">
+                    <Setter Property="FontSize" Value="10" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.AccentLight}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceling}">
+                    <Setter Property="Text" Value="■" />
+                    <Setter Property="FontSize" Value="13" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
 
-        <!-- A plan in the list: a card; the selected one gets an accent border. -->
+        <!-- The phase line. The remaining copy time is never trimmed (it wraps); the rest trims. -->
+        <Style x:Key="TextBlock.CardPhase" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,3,0,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Text" Value="{Binding Run.PhaseText}" />
+            <Setter Property="ToolTip" Value="{Binding Run.PhaseToolTip}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.AccentLight}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.NeverRun}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Disabled}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Warning}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Paused}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceling}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Failed}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceled}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Queued}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Queued}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Copying}">
+                    <Setter Property="FontSize" Value="12.5" />
+                    <Setter Property="TextTrimming" Value="None" />
+                    <Setter Property="TextWrapping" Value="Wrap" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Shown for the given Run.CardAction only (ConverterParameter of the Visibility binding). -->
+        <Style x:Key="Button.CardStop" TargetType="Button" BasedOn="{StaticResource Button.IconFramed}">
+            <Setter Property="Content" Value="{StaticResource Icon.Stop}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="ToolTip" Value="Cancel the backup" />
+            <Setter Property="AutomationProperties.Name" Value="Cancel the backup" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Run.CardAction}" Value="{x:Static vm:PlanCardAction.Canceling}">
+                    <Setter Property="IsEnabled" Value="False" />
+                    <Setter Property="ToolTip" Value="Canceling…" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A plan in the list: a card on Raised; the selected one gets an accent border. -->
         <Style x:Key="ListBoxItem.PlanCard" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Margin" Value="8,0,8,6" />
@@ -123,19 +244,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="1"
-                                CornerRadius="8" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                        <Border x:Name="Bd" Background="{DynamicResource Brush.Raised}" BorderBrush="{DynamicResource Brush.BorderStrong}"
+                                BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                             <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                               SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Card}" />
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.BorderHover}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Raised}" />
                                 <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -233,89 +352,57 @@
                          AutomationProperties.Name="Plans">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel>
-                                <!-- Dot, name, Run now / Cancel -->
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Ellipse Style="{StaticResource Ellipse.PlanDot}" />
-                                    <TextBlock Grid.Column="1" Margin="8,0,8,0" VerticalAlignment="Center"
-                                               Text="{Binding DisplayName}" FontWeight="SemiBold"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <Grid Grid.Column="2">
-                                        <Button Content="{StaticResource Icon.Play}"
-                                                ToolTip="Run now" AutomationProperties.Name="Run now"
-                                                Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}">
-                                            <Button.Style>
-                                                <Style TargetType="Button" BasedOn="{StaticResource Button.AccentIcon}">
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Run.IsActive}" Value="True">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
-                                        <Button Content="{StaticResource Icon.Stop}"
-                                                ToolTip="Cancel the backup" AutomationProperties.Name="Cancel the backup"
-                                                Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                CommandParameter="{Binding}">
-                                            <Button.Style>
-                                                <Style TargetType="Button" BasedOn="{StaticResource Button.IconFramed}">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Run.IsActive}" Value="True">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
-                                    </Grid>
-                                </Grid>
+                            <!-- Ring | name, phase, detail | action -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
-                                <!-- Progress while queued or running. The remaining time has its own line and is never trimmed. -->
-                                <StackPanel Margin="0,8,0,0" Style="{StaticResource Panel.WhileActive}">
-                                    <ProgressBar Maximum="100" Value="{Binding Run.ProgressPercent, Mode=OneWay}"
-                                                 IsIndeterminate="{Binding Run.IsIndeterminate}" />
-                                    <TextBlock Margin="0,5,0,0" FontSize="12" Text="{Binding Run.ProgressText}"
-                                               ToolTip="{Binding Run.ProgressText}" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Margin="0,2,0,0" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource Brush.AccentLight}" Text="{Binding Run.EtaText}">
+                                <controls:ProgressRing Style="{StaticResource ProgressRing.PlanCard}" VerticalAlignment="Center"
+                                                       AutomationProperties.Name="{Binding Run.PhaseText}">
+                                    <TextBlock Style="{StaticResource TextBlock.RingCenter}" />
+                                </controls:ProgressRing>
+
+                                <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}" FontSize="14"
+                                               FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Run.EtaText}" Value="">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Disabled}">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
+                                    <TextBlock Style="{StaticResource TextBlock.CardPhase}" />
+                                    <!-- Up to two lines, then trimmed; the full text is the tool tip. -->
+                                    <TextBlock Margin="0,3,0,0" MaxHeight="32" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
+                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                               Text="{Binding Run.DetailText}" ToolTip="{Binding Run.DetailText}" />
                                 </StackPanel>
 
-                                <TextBlock Margin="0,8,0,0" Style="{StaticResource TextBlock.Mono}"
-                                           Foreground="{DynamicResource Brush.TextMuted}"
-                                           Text="{Binding Source}" ToolTip="{Binding Source}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
-                                           Text="{Binding Run.LastRunText}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
-                                           Text="{Binding Run.NextRunText}" TextTrimming="CharacterEllipsis">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Run.NextRunText}" Value="">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </StackPanel>
+                                <!-- Run now while idle, cancel while running, remove from the queue while queued. -->
+                                <Grid Grid.Column="2" VerticalAlignment="Top">
+                                    <Button Style="{StaticResource Button.AccentIcon}" Content="{StaticResource Icon.Play}"
+                                            ToolTip="{Binding Run.RunToolTip}" AutomationProperties.Name="{Binding Run.RunToolTip}"
+                                            Visibility="{Binding Run.CardAction, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:PlanCardAction.Run}}"
+                                            Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource Button.CardStop}"
+                                            Visibility="{Binding Run.IsRunning, Converter={StaticResource BoolToVisibility}}"
+                                            Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource Button.IconFramed}" Content="{StaticResource Icon.Cancel}" FontSize="11"
+                                            ToolTip="Remove from the queue" AutomationProperties.Name="Remove from the queue"
+                                            Visibility="{Binding Run.CardAction, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:PlanCardAction.RemoveFromQueue}}"
+                                            Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>

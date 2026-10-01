@@ -145,6 +145,65 @@ public class BackupQueueTests : IDisposable
     }
 
     [Fact]
+    public async Task PositionOf_counts_the_waiting_jobs_and_names_the_one_ahead()
+    {
+        _queue.Enqueue(Request("a"));
+        _queue.Enqueue(Request("b"));
+        _queue.Enqueue(Request("c"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _queue.PositionOf("b").Should().Be(new QueuePosition(1, "a", "Plan a"), "the running job is ahead of the first one");
+        _queue.PositionOf("c").Should().Be(new QueuePosition(2, "b", "Plan b"));
+        _queue.PositionOf("a").Should().BeNull("it is running, not waiting");
+        _queue.PositionOf("unknown").Should().BeNull();
+
+        _queue.CancelAll();
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task PositionOf_moves_up_when_a_job_ahead_is_removed_or_starts()
+    {
+        _queue.Enqueue(Request("a"));
+        _queue.Enqueue(Request("b"));
+        _queue.Enqueue(Request("c"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _queue.Cancel("b").Should().BeTrue();
+        _queue.PositionOf("c").Should().Be(new QueuePosition(1, "a", "Plan a"));
+
+        _queue.Enqueue(Request("d"));
+        _queue.PositionOf("d").Should().Be(new QueuePosition(2, "c", "Plan c"));
+
+        _runner.Complete("a", RunStatus.Completed);
+        await _runner.Started("c").WaitAsync(Timeout);
+        _queue.PositionOf("c").Should().BeNull();
+        _queue.PositionOf("d").Should().Be(new QueuePosition(1, "c", "Plan c"));
+
+        _queue.CancelAll();
+        _runner.Complete("c", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task QueuedPlanIds_lists_the_waiting_plans_in_order()
+    {
+        _queue.QueuedPlanIds.Should().BeEmpty();
+        _queue.Enqueue(Request("a"));
+        _queue.Enqueue(Request("b"));
+        _queue.Enqueue(Request("c"));
+        await _runner.Started("a").WaitAsync(Timeout);
+
+        _queue.QueuedPlanIds.Should().Equal("b", "c");
+
+        _queue.CancelAll();
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+        _queue.QueuedPlanIds.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task WhenIdleAsync_completes_immediately_when_nothing_is_queued()
     {
         await _queue.WhenIdleAsync().WaitAsync(Timeout);

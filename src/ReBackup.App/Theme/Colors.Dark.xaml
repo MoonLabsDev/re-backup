@@ -76,6 +76,9 @@
     <!-- Fill of the "% of parent" bars in the ignore preview; the bar's text (Brush.Text) sits on it. -->
     <SolidColorBrush x:Key="Brush.PercentFill" Color="{StaticResource Color.Chart.TealDark}" po:Freeze="True" />
 
+    <!-- A queued backup (plan card ring and text); AA on Card, Raised and Surface. -->
+    <SolidColorBrush x:Key="Brush.Queued" Color="#7FB2FF" po:Freeze="True" />
+
     <!-- Retention period badges (pill on the rule tiles): a soft tint as fill, the strong shade as text (AA on the fill). -->
     <SolidColorBrush x:Key="Brush.Badge.DailyFill" Color="#163B37" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Badge.DailyText" Color="#5FD3C4" po:Freeze="True" />

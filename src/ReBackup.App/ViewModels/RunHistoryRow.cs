@@ -31,6 +31,9 @@ public sealed partial class RunHistoryRow : ObservableObject
         _canOpenVersion = HasVersion && Core.Backup.VersionName.ExistingFolderIn(target, entry.Version) is not null;
     }
 
+    /// <summary>The log entry of the run.</summary>
+    public RunLogEntry Entry => _entry;
+
     /// <summary>The target the version was looked up in.</summary>
     public string? Target { get; }
 
