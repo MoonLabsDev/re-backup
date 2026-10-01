@@ -31,7 +31,7 @@
         <!-- Words of a rule sentence between its fields. -->
         <Style x:Key="TextBlock.Sentence" TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Margin" Value="0,0,8,6" />
+            <Setter Property="Margin" Value="0,0,6,6" />
         </Style>
 
         <!-- Big number of the forecast. -->
@@ -218,7 +218,7 @@
                                                     </Style>
                                                 </TextBlock.Style>
                                             </TextBlock>
-                                            <ComboBox Style="{StaticResource ComboBox.Cell}" Width="116" AutomationProperties.Name="{l:Loc retention.rules.weekday}"
+                                            <ComboBox Style="{StaticResource ComboBox.Cell}" Width="98" AutomationProperties.Name="{l:Loc retention.rules.weekday}"
                                                       ToolTip="{Binding AnchorHint}"
                                                       ItemsSource="{x:Static vm:RetentionRuleViewModel.Weekdays}"
                                                       SelectedItem="{Binding Weekday}"
@@ -433,7 +433,7 @@
                             <ListView.View>
                                 <GridView>
                                     <GridViewColumn Header="{l:Loc common.date}" Width="120" DisplayMemberBinding="{Binding DateText}" />
-                                    <GridViewColumn Header="{l:Loc retention.column.decision}" Width="110">
+                                    <GridViewColumn Header="{l:Loc retention.column.decision}" Width="140">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
@@ -452,12 +452,18 @@
                                                             </Style>
                                                         </Ellipse.Style>
                                                     </Ellipse>
-                                                    <TextBlock VerticalAlignment="Center" Text="{Binding DecisionText}" />
+                                                    <TextBlock VerticalAlignment="Center" Text="{Binding DecisionText}" ToolTip="{Binding DecisionText}" TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="{l:Loc retention.column.keptBy}" Width="210" DisplayMemberBinding="{Binding ReasonText}" />
+                                    <GridViewColumn Header="{l:Loc retention.column.keptBy}" Width="260">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding ReasonText}" ToolTip="{Binding ReasonText}" TextTrimming="CharacterEllipsis" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
                                     <GridViewColumn Header="{l:Loc common.size}" Width="80" DisplayMemberBinding="{Binding SizeText}" />
                                     <GridViewColumn Header="{l:Loc common.files}" Width="70" DisplayMemberBinding="{Binding FilesText}" />
                                     <GridViewColumn Header="{l:Loc retention.column.folder}" Width="260">

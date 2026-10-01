@@ -22,7 +22,7 @@
                         <DataGridTextColumn Header="{l:Loc history.column.start}" Width="140" Binding="{Binding StartText}" />
                         <DataGridTextColumn Header="{l:Loc history.column.duration}" Width="110" Binding="{Binding DurationText}" />
                         <DataGridTextColumn Header="{l:Loc history.column.trigger}" Width="100" Binding="{Binding TriggerText}" />
-                        <DataGridTemplateColumn Header="{l:Loc history.column.result}" Width="215" SortMemberPath="StatusText">
+                        <DataGridTemplateColumn Header="{l:Loc history.column.result}" Width="250" SortMemberPath="StatusText">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
@@ -41,14 +41,21 @@
                                                 </Style>
                                             </Ellipse.Style>
                                         </Ellipse>
-                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}" />
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}" ToolTip="{Binding StatusText}" TextTrimming="CharacterEllipsis" MaxWidth="200" />
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="{l:Loc common.files}" Width="70" Binding="{Binding FilesText}" />
                         <DataGridTextColumn Header="{l:Loc common.size}" Width="80" Binding="{Binding SizeText}" />
-                        <DataGridTextColumn Header="{l:Loc history.column.reason}" Width="*" Binding="{Binding Reason}" />
+                        <DataGridTextColumn Header="{l:Loc history.column.reason}" Width="*" Binding="{Binding Reason}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding Reason}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <!-- Opens the version the run produced; disabled when that folder no longer exists (checked
                              when the history loads). -->
                         <DataGridTemplateColumn Width="48" CanUserResize="False" CanUserSort="False">

@@ -544,7 +544,7 @@
     "column": { "start": "Start", "duration": "Dauer", "trigger": "Auslöser", "result": "Ergebnis", "reason": "Grund" },
     "openVersion": {
       "name": "Versionsordner öffnen",
-      "checking": "Prüfe, ob die Version noch existiert …",
+      "checking": "Es wird geprüft, ob die Version noch existiert …",
       "open": "{version} im Explorer öffnen",
       "missing": "Die Version existiert nicht mehr"
     },

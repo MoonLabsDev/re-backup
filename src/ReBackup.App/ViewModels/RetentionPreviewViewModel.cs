@@ -62,8 +62,16 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     public void RefreshTexts()
     {
         OnPropertyChanged(string.Empty);
-        if (_versions is not null)
+        if (_versions is null)
+            return;
+        try
+        {
             Evaluate();
+        }
+        catch (Exception ex)
+        {
+            ErrorText = LocText.Known(ex.Message);
+        }
     }
 
     /// <summary>Versions the target holds at most once the rules are in full effect; null while there is no forecast.</summary>
