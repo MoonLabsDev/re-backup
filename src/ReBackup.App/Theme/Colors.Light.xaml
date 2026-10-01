@@ -1,5 +1,7 @@
 <!--
-    Dark Pro design tokens, the light palette. One Color and one frozen SolidColorBrush per token.
+    Dark Pro design tokens, the light palette. Every colour used as text reaches WCAG AA (4.5:1) on every background
+    it is used on (Bg, Rail, Card, Raised, Selection, AccentSoft, PartialRow, IgnoredRow); white on Accent is 5.2:1.
+    One Color and one frozen SolidColorBrush per token.
     Views use only the Brush.<Token> keys; the derived brushes at the end are for the control templates
     in Controls.xaml, the chart palette for the drawing controls (treemap, retention timeline).
     Colors.Dark.xaml has exactly the same keys: ThemeManager swaps the two as a whole, so every use outside the
@@ -20,16 +22,16 @@
     <Color x:Key="Color.Border">#E2E5EA</Color>
     <Color x:Key="Color.BorderStrong">#CDD2D9</Color>
     <Color x:Key="Color.Text">#1B1F24</Color>
-    <Color x:Key="Color.TextMuted">#5B6573</Color>
-    <Color x:Key="Color.TextFaint">#8B95A3</Color>
-    <Color x:Key="Color.Accent">#1F8A7E</Color>
-    <Color x:Key="Color.AccentHover">#187468</Color>
+    <Color x:Key="Color.TextMuted">#4A5260</Color>
+    <Color x:Key="Color.TextFaint">#5F6978</Color>
+    <Color x:Key="Color.Accent">#1B796F</Color>
+    <Color x:Key="Color.AccentHover">#16675F</Color>
     <Color x:Key="Color.AccentText">#FFFFFF</Color>
     <Color x:Key="Color.AccentSoft">#DDF3EF</Color>
     <Color x:Key="Color.AccentLight">#136F65</Color>
     <Color x:Key="Color.Selection">#D7EFEB</Color>
-    <Color x:Key="Color.Danger">#D1343B</Color>
-    <Color x:Key="Color.Warning">#B07D00</Color>
+    <Color x:Key="Color.Danger">#C52D33</Color>
+    <Color x:Key="Color.Warning">#896100</Color>
     <Color x:Key="Color.PartialRow">#FFF6D8</Color>
     <Color x:Key="Color.IgnoredRow">#FBE3E1</Color>
 
@@ -58,7 +60,7 @@
     <SolidColorBrush x:Key="Brush.RaisedHover" Color="#E6E9EE" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.RaisedPressed" Color="#DCE0E6" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.BorderHover" Color="#AEB6C1" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.AccentPressed" Color="#135F56" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentPressed" Color="#115850" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.DangerSoft" Color="#FCE9E8" po:Freeze="True" />
 
     <!-- Chart palette (treemap, retention timeline): families of a light and a dark shade, plus the ignored tile.
@@ -76,6 +78,6 @@
 
     <!-- Fill of the "% of parent" bars in the ignore preview; the bar's text (Brush.Text) sits on it, so here a light
          teal instead of the dark chart shade. -->
-    <SolidColorBrush x:Key="Brush.PercentFill" Color="#B5E4DC" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.PercentFill" Color="#BBD7D4" po:Freeze="True" />
 
 </ResourceDictionary>
