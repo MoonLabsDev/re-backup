@@ -314,6 +314,14 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());
 
+    /// <summary>The language changed: the texts this editor builds in code are built again.</summary>
+    public void RefreshTexts()
+    {
+        OnPropertyChanged(nameof(DisplayName));
+        Validate();
+        RefreshNextRuns();
+    }
+
     public bool TrySave(PlanStore store)
     {
         Validate();

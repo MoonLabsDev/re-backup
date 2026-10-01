@@ -5,6 +5,7 @@
         xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
         xmlns:theme="clr-namespace:ReBackup.App.Theme"
         xmlns:controls="clr-namespace:ReBackup.App.Controls"
+        xmlns:l="clr-namespace:ReBackup.App.Localization"
         Title="ReBackup" Width="1280" Height="800" MinWidth="960" MinHeight="560"
         Style="{StaticResource {x:Type Window}}">
     <Window.InputBindings>
@@ -324,6 +325,52 @@
                             </Style.Triggers>
                         </Style>
                     </Button.Style>
+                </Button>
+                <!-- Language: the current flag, above the theme button; its menu offers both languages. -->
+                <Button x:Name="LanguageButton" DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                        Width="40" Height="40" Style="{StaticResource Button.Icon}"
+                        ToolTip="{Binding Language.ToolTip}" AutomationProperties.Name="{Binding Language.ToolTip}"
+                        Click="OnLanguageButtonClick">
+                    <Border Style="{StaticResource Border.Flag}">
+                        <Image>
+                            <Image.Style>
+                                <Style TargetType="Image" BasedOn="{StaticResource Image.Flag}">
+                                    <Setter Property="Source" Value="{StaticResource Flag.GB}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Language.IsGerman}" Value="True">
+                                            <Setter Property="Source" Value="{StaticResource Flag.DE}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
+                    </Border>
+                    <Button.ContextMenu>
+                        <ContextMenu Placement="Right">
+                            <MenuItem IsChecked="{Binding Language.IsGerman, Mode=OneWay}" Command="{Binding Language.ChooseCommand}"
+                                      CommandParameter="de-DE" AutomationProperties.Name="{l:Loc language.de-DE}">
+                                <MenuItem.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Style="{StaticResource Border.Flag}">
+                                            <Image Style="{StaticResource Image.Flag}" Width="18" Height="12" Source="{StaticResource Flag.DE}" />
+                                        </Border>
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc language.de-DE}" />
+                                    </StackPanel>
+                                </MenuItem.Header>
+                            </MenuItem>
+                            <MenuItem IsChecked="{Binding Language.IsEnglish, Mode=OneWay}" Command="{Binding Language.ChooseCommand}"
+                                      CommandParameter="en-US" AutomationProperties.Name="{l:Loc language.en-US}">
+                                <MenuItem.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Style="{StaticResource Border.Flag}">
+                                            <Image Style="{StaticResource Image.Flag}" Width="18" Height="12" Source="{StaticResource Flag.GB}" />
+                                        </Border>
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc language.en-US}" />
+                                    </StackPanel>
+                                </MenuItem.Header>
+                            </MenuItem>
+                        </ContextMenu>
+                    </Button.ContextMenu>
                 </Button>
             </DockPanel>
         </Border>

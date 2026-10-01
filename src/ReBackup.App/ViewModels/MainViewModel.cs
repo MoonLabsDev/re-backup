@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
@@ -48,11 +49,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
-        IFolderOpener folders, VersionIndexWorker versionIndex)
+        LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex)
     {
         _folders = folders;
         _versions = new VersionsContext(versionIndex, dialogs, text => StatusMessage = text);
         Theme = theme;
+        Language = language;
+        Loc.LanguageChanged += (_, _) => OnLanguageChanged();
         _store = store;
         _paths = paths;
         _settings = settings;
@@ -83,6 +86,21 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>The theme button of the icon rail.</summary>
     public ThemeToggleViewModel Theme { get; }
+
+    /// <summary>The language button of the icon rail.</summary>
+    public LanguageToggleViewModel Language { get; }
+
+    /// <summary>
+    /// The language changed: everything built in code is built again. Bound labels follow by themselves; this is the
+    /// one subscription, and it reaches every plan editor.
+    /// </summary>
+    private void OnLanguageChanged()
+    {
+        Language.Refresh();
+        Theme.Refresh();
+        foreach (var editor in Plans)
+            editor.RefreshTexts();
+    }
 
     /// <summary>Re-applies the patterns in every open preview, e.g. after the global defaults changed.</summary>
     public void ReevaluatePreviews()

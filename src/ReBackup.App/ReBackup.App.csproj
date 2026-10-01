@@ -23,4 +23,9 @@
     <Resource Include="..\..\assets\branding\rebackup-256.png" Link="Assets\rebackup-256.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The label files; Loc reads them as ReBackup.App.Locales.<language>.json. -->
+    <EmbeddedResource Include="Locales\*.json" LogicalName="ReBackup.App.Locales.%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

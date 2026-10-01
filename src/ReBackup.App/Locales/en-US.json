@@ -1,0 +1,64 @@
+{
+  "raw": "{text}",
+  "language": {
+    "de-DE": "Deutsch",
+    "en-US": "English",
+    "toolTip": "Language: {language} — click to change",
+    "notSaved": "The language could not be saved:\n\n{error}"
+  },
+  "format": {
+    "date": "yyyy-MM-dd",
+    "dateTime": "yyyy-MM-dd HH:mm",
+    "dateTimeSeconds": "yyyy-MM-dd HH:mm:ss",
+    "time": "HH:mm",
+    "weekdayTime": "ddd HH:mm",
+    "nextRun": "ddd yyyy-MM-dd HH:mm"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "ok": "OK",
+    "save": "Save",
+    "revert": "Revert",
+    "refresh": "Refresh",
+    "open": "Open",
+    "expand": "Expand",
+    "name": "Name",
+    "size": "Size",
+    "files": "Files",
+    "status": "Status",
+    "modified": "Modified",
+    "date": "Date",
+    "path": "Path",
+    "version": "Version",
+    "unnamed": "(unnamed)",
+    "fileCount": "{count:N0} files",
+    "duration": {
+      "hms": "{hours} h {minutes:00} min {seconds:00} s",
+      "ms": "{minutes} min {seconds:00} s",
+      "s": "{seconds} s",
+      "underSecond": "under 1 s"
+    }
+  },
+  "enum": {
+    "triggerType": { "Daily": "Daily", "Weekly": "Weekly", "Monthly": "Monthly", "Interval": "Interval" },
+    "period": { "Daily": "Daily", "Weekly": "Weekly", "Monthly": "Monthly", "Yearly": "Yearly" },
+    "weekday": {
+      "Monday": "Monday", "Tuesday": "Tuesday", "Wednesday": "Wednesday", "Thursday": "Thursday",
+      "Friday": "Friday", "Saturday": "Saturday", "Sunday": "Sunday"
+    },
+    "weekdayShort": { "Mon": "Mon", "Tue": "Tue", "Wed": "Wed", "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun" },
+    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up" },
+    "includeStatus": { "Included": "Included", "Ignored": "Ignored", "Partial": "Partial" },
+    "diffStatus": { "Unchanged": "Unchanged", "Added": "Added", "Changed": "Changed", "Deleted": "Deleted" },
+    "historyStatus": { "New": "New", "Changed": "Changed", "Unchanged": "Unchanged", "Deleted": "Deleted", "Absent": "—" },
+    "theme": { "Dark": "Dark", "Light": "Light" }
+  },
+  "settings": {
+    "title": "Settings",
+    "language": {
+      "title": "LANGUAGE",
+      "note": "Applies at once."
+    }
+  }
+}

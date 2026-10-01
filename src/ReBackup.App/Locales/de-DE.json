@@ -1,0 +1,64 @@
+{
+  "raw": "{text}",
+  "language": {
+    "de-DE": "Deutsch",
+    "en-US": "English",
+    "toolTip": "Sprache: {language} – zum Ändern klicken",
+    "notSaved": "Die Sprache konnte nicht gespeichert werden:\n\n{error}"
+  },
+  "format": {
+    "date": "dd.MM.yyyy",
+    "dateTime": "dd.MM.yyyy HH:mm",
+    "dateTimeSeconds": "dd.MM.yyyy HH:mm:ss",
+    "time": "HH:mm",
+    "weekdayTime": "ddd HH:mm",
+    "nextRun": "ddd dd.MM.yyyy HH:mm"
+  },
+  "common": {
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "ok": "OK",
+    "save": "Speichern",
+    "revert": "Verwerfen",
+    "refresh": "Aktualisieren",
+    "open": "Öffnen",
+    "expand": "Aufklappen",
+    "name": "Name",
+    "size": "Größe",
+    "files": "Dateien",
+    "status": "Status",
+    "modified": "Geändert",
+    "date": "Datum",
+    "path": "Pfad",
+    "version": "Version",
+    "unnamed": "(unbenannt)",
+    "fileCount": "{count:N0} Dateien",
+    "duration": {
+      "hms": "{hours} h {minutes:00} min {seconds:00} s",
+      "ms": "{minutes} min {seconds:00} s",
+      "s": "{seconds} s",
+      "underSecond": "unter 1 s"
+    }
+  },
+  "enum": {
+    "triggerType": { "Daily": "Täglich", "Weekly": "Wöchentlich", "Monthly": "Monatlich", "Interval": "Intervall" },
+    "period": { "Daily": "Täglich", "Weekly": "Wöchentlich", "Monthly": "Monatlich", "Yearly": "Jährlich" },
+    "weekday": {
+      "Monday": "Montag", "Tuesday": "Dienstag", "Wednesday": "Mittwoch", "Thursday": "Donnerstag",
+      "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag"
+    },
+    "weekdayShort": { "Mon": "Mo", "Tue": "Di", "Wed": "Mi", "Thu": "Do", "Fri": "Fr", "Sat": "Sa", "Sun": "So" },
+    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt" },
+    "includeStatus": { "Included": "Enthalten", "Ignored": "Ignoriert", "Partial": "Teilweise" },
+    "diffStatus": { "Unchanged": "Unverändert", "Added": "Hinzugefügt", "Changed": "Geändert", "Deleted": "Gelöscht" },
+    "historyStatus": { "New": "Neu", "Changed": "Geändert", "Unchanged": "Unverändert", "Deleted": "Gelöscht", "Absent": "—" },
+    "theme": { "Dark": "Dunkel", "Light": "Hell" }
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language": {
+      "title": "SPRACHE",
+      "note": "Gilt sofort."
+    }
+  }
+}

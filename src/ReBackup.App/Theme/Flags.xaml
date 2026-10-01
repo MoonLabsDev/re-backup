@@ -1,0 +1,62 @@
+<!--
+    Language flags as vector images (WPF cannot draw colour emoji). National colours, the same in both palettes; show
+    them inside Border.Flag, whose hairline (Brush.FlagOutline, in both palettes) keeps the black band of the German
+    flag visible on the dark rail:
+    <Border Style="{StaticResource Border.Flag}"><Image Style="{StaticResource Image.Flag}" Source="{StaticResource Flag.DE}" /></Border>
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DrawingImage x:Key="Flag.DE">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#000000" Geometry="M0,0 H5 V1 H0 Z" />
+                <GeometryDrawing Brush="#DD0000" Geometry="M0,1 H5 V2 H0 Z" />
+                <GeometryDrawing Brush="#FFCE00" Geometry="M0,2 H5 V3 H0 Z" />
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <!-- Union Jack, 60 × 30: blue field, white and red saltires, white and red crosses. -->
+    <DrawingImage x:Key="Flag.GB">
+        <DrawingImage.Drawing>
+            <DrawingGroup ClipGeometry="M0,0 H60 V30 H0 Z">
+                <GeometryDrawing Brush="#012169" Geometry="M0,0 H60 V30 H0 Z" />
+                <GeometryDrawing Geometry="M0,0 L60,30 M60,0 L0,30">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFFFFF" Thickness="6" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M0,0 L60,30 M60,0 L0,30">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C8102E" Thickness="2" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M30,0 V30 M0,15 H60">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#FFFFFF" Thickness="10" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M30,0 V30 M0,15 H60">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#C8102E" Thickness="6" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <Style x:Key="Border.Flag" TargetType="Border">
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.FlagOutline}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="Image.Flag" TargetType="Image">
+        <Setter Property="Width" Value="21" />
+        <Setter Property="Height" Value="14" />
+        <Setter Property="Stretch" Value="Fill" />
+        <Setter Property="RenderOptions.BitmapScalingMode" Value="HighQuality" />
+    </Style>
+</ResourceDictionary>

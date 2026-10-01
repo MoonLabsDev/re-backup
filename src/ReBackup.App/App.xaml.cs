@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Security;
 using System.Windows;
@@ -10,6 +11,7 @@ using System.Windows.Media.Imaging;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Win32;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
@@ -44,6 +46,8 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // Read before ReBackup sets its own culture: without a saved choice the language follows Windows.
+        var windowsLanguage = CultureInfo.CurrentUICulture;
 
         var restarted = e.Args.Contains("--restarted", StringComparer.OrdinalIgnoreCase);
         _singleInstance = SingleInstance.TryAcquire(restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
@@ -54,6 +58,8 @@ public partial class App : Application
             return;
         }
 
+        // The bootstrap dialogs come before settings.json is read: they use Windows' language.
+        Loc.Instance.Apply(AppLanguages.DefaultFor(windowsLanguage));
         _appDataRoot = ConfigLocation.DefaultAppDataRoot;
         if (!BootstrapConfiguration())
         {
@@ -61,6 +67,8 @@ public partial class App : Application
             Shutdown();
             return;
         }
+
+        Loc.Instance.Apply(AppLanguages.Resolve(_settings.Language, windowsLanguage));
 
         // Before the first window exists, so a light theme never flashes dark.
         ThemeManager.ThemeChanged += OnThemeChanged;
@@ -136,8 +144,9 @@ public partial class App : Application
             var scheduler = new Scheduler((planId, trigger) =>
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
+            var languageToggle = new LanguageToggleViewModel(() => Loc.Instance.Language, ChooseLanguage);
             var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue, scheduler,
-                action => Dispatcher.InvokeAsync(action), themeToggle, new ExplorerFolderOpener(), versionIndex);
+                action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(), versionIndex);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
@@ -307,7 +316,7 @@ public partial class App : Application
     {
         var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs,
             () => ConfirmDiscardUnsaved() && ConfirmStopRestores("restart ReBackup"),
-            () => _queue.IsBusy, ThemeManager.Apply);
+            () => _queue.IsBusy, ThemeManager.Apply, Loc.Instance.Language, Loc.Instance.Apply);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
             window.Owner = _window;
@@ -335,6 +344,25 @@ public partial class App : Application
         {
             // Kept for this session; the error says it is not saved.
             _dialogs.ShowError("Settings", $"The theme could not be saved:\n\n{ex.Message}");
+        }
+    }
+
+    /// <summary>The rail's language menu: applies the language at once and saves it right away.</summary>
+    private void ChooseLanguage(string language)
+    {
+        Loc.Instance.Apply(language);
+        if (_settings.Language == language)
+            return;
+
+        _settings.Language = language;
+        try
+        {
+            _settingsStore.Save(_settings);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            // Kept for this session; the error says it is not saved.
+            _dialogs.ShowError(Loc.T("settings.title"), Loc.F("language.notSaved", ("error", ex.Message)));
         }
     }
 

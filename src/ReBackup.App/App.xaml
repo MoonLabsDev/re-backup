@@ -9,6 +9,7 @@
                 <ResourceDictionary Source="Theme/Colors.Dark.xaml" />
                 <ResourceDictionary Source="Theme/Fonts.xaml" />
                 <ResourceDictionary Source="Theme/Icons.xaml" />
+                <ResourceDictionary Source="Theme/Flags.xaml" />
                 <ResourceDictionary Source="Theme/Controls.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

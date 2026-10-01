@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using ReBackup.App.Services;
 
 namespace ReBackup.App;
@@ -19,6 +20,17 @@ public partial class MainWindow : Window
     }
 
     private void OnHeaderSizeChanged(object sender, SizeChangedEventArgs e) => LayoutHeader();
+
+    /// <summary>The rail's language button opens its menu beside it on a left click (a right click opens it anyway).</summary>
+    private void OnLanguageButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (LanguageButton.ContextMenu is not { } menu)
+            return;
+        menu.DataContext = DataContext;
+        menu.PlacementTarget = LanguageButton;
+        menu.Placement = PlacementMode.Right;
+        menu.IsOpen = true;
+    }
 
     /// <summary>
     /// Name, tabs and actions share one row when the name keeps at least <see cref="MinNameRoom"/>; on narrow windows
