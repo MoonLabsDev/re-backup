@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
              xmlns:controls="clr-namespace:ReBackup.App.Controls"
-             xmlns:theme="clr-namespace:ReBackup.App.Theme">
+             xmlns:theme="clr-namespace:ReBackup.App.Theme"
+             xmlns:l="clr-namespace:ReBackup.App.Localization">
     <UserControl.Resources>
         <Style x:Key="TextBlock.Error" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
@@ -141,19 +142,19 @@
                 <StackPanel>
                     <DockPanel Margin="0,0,0,14">
                         <Button DockPanel.Dock="Right" VerticalAlignment="Center" Command="{Binding AddRetentionRuleCommand}"
-                                AutomationProperties.Name="Add rule">
+                                AutomationProperties.Name="{l:Loc retention.rules.add}">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Add}" />
-                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Add rule" />
+                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc retention.rules.add}" />
                             </StackPanel>
                         </Button>
                         <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center" TextWrapping="Wrap"
-                                   Text="RULES — A VERSION STAYS IF ANY RULE KEEPS IT"
-                                   ToolTip="The newest version always stays as well." />
+                                   Text="{l:Loc retention.rules.title}"
+                                   ToolTip="{l:Loc retention.rules.titleToolTip}" />
                     </DockPanel>
 
                     <TextBlock Foreground="{DynamicResource Brush.Warning}" TextWrapping="Wrap" Margin="0,0,0,12"
-                               Text="No rules: every version is kept and the target fills up over time.">
+                               Text="{l:Loc retention.rules.none}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Style.Triggers>
@@ -181,42 +182,54 @@
                                         <DockPanel>
                                             <Button DockPanel.Dock="Right" Style="{StaticResource Button.Danger}" Width="28" Height="28"
                                                     Content="{StaticResource Icon.Delete}" VerticalAlignment="Center"
-                                                    ToolTip="Remove this rule" AutomationProperties.Name="Remove this rule"
+                                                    ToolTip="{l:Loc retention.rules.remove}" AutomationProperties.Name="{l:Loc retention.rules.remove}"
                                                     Command="{Binding DataContext.RemoveRetentionRuleCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     CommandParameter="{Binding}" />
                                             <ComboBox Style="{StaticResource ComboBox.Badge}" HorizontalAlignment="Left"
-                                                      AutomationProperties.Name="Period" ToolTip="Change the period"
+                                                      AutomationProperties.Name="{l:Loc retention.rules.period}" ToolTip="{l:Loc retention.rules.periodToolTip}"
                                                       ItemsSource="{x:Static vm:RetentionRuleViewModel.Periods}"
-                                                      SelectedItem="{Binding Period}" />
+                                                      SelectedItem="{Binding Period}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{l:LocBind Prefix=enum.period.}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
                                         </DockPanel>
 
                                         <!-- The rule as a sentence:
                                              Daily "keep the last [7] days", Weekly "on [Sunday] keep [4]",
                                              Monthly "on day [1] keep [12]", Yearly "on [01-01] keep [3]". -->
                                         <WrapPanel Margin="0,12,0,0">
-                                            <TextBlock Style="{StaticResource TextBlock.Sentence}" Text="keep the last"
+                                            <TextBlock Style="{StaticResource TextBlock.Sentence}" Text="{l:Loc retention.rules.keepTheLast}"
                                                        Visibility="{Binding Period, Converter={StaticResource Converter.EnumMatch}, ConverterParameter=Daily}" />
                                             <TextBlock>
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Sentence}">
-                                                        <Setter Property="Text" Value="on" />
+                                                        <Setter Property="Text" Value="{l:Loc retention.rules.on}" />
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding Period}" Value="Daily">
                                                                 <Setter Property="Visibility" Value="Collapsed" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding Period}" Value="Monthly">
-                                                                <Setter Property="Text" Value="on day" />
+                                                                <Setter Property="Text" Value="{l:Loc retention.rules.onDay}" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </TextBlock.Style>
                                             </TextBlock>
-                                            <ComboBox Style="{StaticResource ComboBox.Cell}" Width="116" AutomationProperties.Name="Weekday"
+                                            <ComboBox Style="{StaticResource ComboBox.Cell}" Width="116" AutomationProperties.Name="{l:Loc retention.rules.weekday}"
                                                       ToolTip="{Binding AnchorHint}"
                                                       ItemsSource="{x:Static vm:RetentionRuleViewModel.Weekdays}"
                                                       SelectedItem="{Binding Weekday}"
-                                                      Visibility="{Binding Period, Converter={StaticResource Converter.EnumMatch}, ConverterParameter=Weekly}" />
-                                            <TextBox AutomationProperties.Name="Anchor" ToolTip="{Binding AnchorHint}"
+                                                      Visibility="{Binding Period, Converter={StaticResource Converter.EnumMatch}, ConverterParameter=Weekly}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{l:LocBind Prefix=enum.weekday.}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <TextBox AutomationProperties.Name="{l:Loc retention.rules.anchor}" ToolTip="{Binding AnchorHint}"
                                                      Text="{Binding AnchorText, UpdateSourceTrigger=PropertyChanged}">
                                                 <TextBox.Style>
                                                     <Style TargetType="TextBox" BasedOn="{StaticResource TextBox.Cell}">
@@ -233,7 +246,7 @@
                                                     </Style>
                                                 </TextBox.Style>
                                             </TextBox>
-                                            <TextBlock Text="keep">
+                                            <TextBlock Text="{l:Loc retention.rules.keep}">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Sentence}">
                                                         <Style.Triggers>
@@ -244,11 +257,11 @@
                                                     </Style>
                                                 </TextBlock.Style>
                                             </TextBlock>
-                                            <TextBox AutomationProperties.Name="Keep"
+                                            <TextBox AutomationProperties.Name="{l:Loc retention.rules.keepName}"
                                                      Text="{Binding KeepText, UpdateSourceTrigger=PropertyChanged}">
                                                 <TextBox.Style>
                                                     <Style TargetType="TextBox" BasedOn="{StaticResource TextBox.Cell}">
-                                                        <Setter Property="ToolTip" Value="How many versions this rule keeps" />
+                                                        <Setter Property="ToolTip" Value="{l:Loc retention.rules.keepToolTip}" />
                                                         <Style.Triggers>
                                                             <!-- A daily rule has no anchor field: its hint goes here. -->
                                                             <DataTrigger Binding="{Binding Period}" Value="Daily">
@@ -258,7 +271,7 @@
                                                     </Style>
                                                 </TextBox.Style>
                                             </TextBox>
-                                            <TextBlock Style="{StaticResource TextBlock.Sentence}" Text="days"
+                                            <TextBlock Style="{StaticResource TextBlock.Sentence}" Text="{l:Loc retention.rules.days}"
                                                        Visibility="{Binding Period, Converter={StaticResource Converter.EnumMatch}, ConverterParameter=Daily}" />
                                         </WrapPanel>
 
@@ -275,12 +288,17 @@
 
                     <WrapPanel Margin="0,0,0,14">
                         <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center"
-                                   Text="FORECAST — TWO YEARS OF" />
-                        <ComboBox Margin="8,0,0,0" Width="170" Height="28" DisplayMemberPath="RunsLabel"
-                                  AutomationProperties.Name="Assumed schedule"
-                                  ToolTip="The plan has no triggers: the forecast assumes this schedule."
+                                   Text="{l:Loc retention.forecast.title}" />
+                        <ComboBox Margin="8,0,0,0" Width="170" Height="28"
+                                  AutomationProperties.Name="{l:Loc retention.forecast.assumed}"
+                                  ToolTip="{l:Loc retention.forecast.assumedToolTip}"
                                   ItemsSource="{x:Static vm:RetentionPreviewViewModel.Schedules}"
                                   SelectedItem="{Binding RetentionPreview.SelectedSchedule}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{l:LocBind Key, Prefix=retention.scheduleRuns.}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
                             <ComboBox.Style>
                                 <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
                                     <Style.Triggers>
@@ -291,7 +309,7 @@
                                 </Style>
                             </ComboBox.Style>
                         </ComboBox>
-                        <TextBlock Margin="5,0,0,0" VerticalAlignment="Center" Text="THE PLAN'S SCHEDULE">
+                        <TextBlock Margin="5,0,0,0" VerticalAlignment="Center" Text="{l:Loc retention.forecast.planSchedule}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.CardTitle}">
                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -315,12 +333,12 @@
                         <StackPanel Margin="0,0,28,0" MinWidth="130" Background="Transparent"
                                     ToolTip="{Binding RetentionPreview.FullSummary}"
                                     Visibility="{Binding RetentionPreview.HasForecast, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Style="{StaticResource TextBlock.Label}" Text="Versions kept" />
+                            <TextBlock Style="{StaticResource TextBlock.Label}" Text="{l:Loc retention.forecast.versionsKept}" />
                             <TextBlock Style="{StaticResource TextBlock.Kpi}" Text="{Binding RetentionPreview.ForecastVersionsText}"
-                                       AutomationProperties.Name="Versions kept" />
-                            <TextBlock Style="{StaticResource TextBlock.Label}" Margin="0,12,0,0" Text="Space" />
+                                       AutomationProperties.Name="{l:Loc retention.forecast.versionsKept}" />
+                            <TextBlock Style="{StaticResource TextBlock.Label}" Margin="0,12,0,0" Text="{l:Loc retention.forecast.space}" />
                             <TextBlock Style="{StaticResource TextBlock.Kpi}" Text="{Binding RetentionPreview.ForecastSpaceText}"
-                                       AutomationProperties.Name="Space" />
+                                       AutomationProperties.Name="{l:Loc retention.forecast.space}" />
                         </StackPanel>
 
                         <!-- Without numbers (calculating, invalid triggers, an error) the sentence says why. -->
@@ -352,7 +370,7 @@
                 <StackPanel>
                     <DockPanel Margin="0,0,0,10">
                         <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Refresh}"
-                                ToolTip="Read the target again" AutomationProperties.Name="Refresh"
+                                ToolTip="{l:Loc retention.now.refreshToolTip}" AutomationProperties.Name="{l:Loc common.refresh}"
                                 Command="{Binding RetentionPreview.RefreshCommand}" />
                         <ProgressBar DockPanel.Dock="Right" Width="80" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
                                      IsIndeterminate="{Binding RetentionPreview.IsLoading}">
@@ -368,7 +386,7 @@
                             </ProgressBar.Style>
                         </ProgressBar>
                         <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center"
-                                   Text="VERSIONS IN THE TARGET NOW" />
+                                   Text="{l:Loc retention.now.title}" />
                     </DockPanel>
 
                     <TextBlock Margin="0,0,0,8" Text="{Binding RetentionPreview.Error}">
@@ -414,8 +432,8 @@
                             </ListView.ItemContainerStyle>
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn Header="Date" Width="120" DisplayMemberBinding="{Binding DateText}" />
-                                    <GridViewColumn Header="Decision" Width="110">
+                                    <GridViewColumn Header="{l:Loc common.date}" Width="120" DisplayMemberBinding="{Binding DateText}" />
+                                    <GridViewColumn Header="{l:Loc retention.column.decision}" Width="110">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
@@ -439,16 +457,16 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Kept by" Width="210" DisplayMemberBinding="{Binding ReasonText}" />
-                                    <GridViewColumn Header="Size" Width="80" DisplayMemberBinding="{Binding SizeText}" />
-                                    <GridViewColumn Header="Files" Width="70" DisplayMemberBinding="{Binding FilesText}" />
-                                    <GridViewColumn Header="Folder" Width="260">
+                                    <GridViewColumn Header="{l:Loc retention.column.keptBy}" Width="210" DisplayMemberBinding="{Binding ReasonText}" />
+                                    <GridViewColumn Header="{l:Loc common.size}" Width="80" DisplayMemberBinding="{Binding SizeText}" />
+                                    <GridViewColumn Header="{l:Loc common.files}" Width="70" DisplayMemberBinding="{Binding FilesText}" />
+                                    <GridViewColumn Header="{l:Loc retention.column.folder}" Width="260">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <DockPanel>
                                                     <Button DockPanel.Dock="Left" Style="{StaticResource Button.Icon}" Width="26" Height="26"
                                                             Margin="0,0,6,0"
-                                                            ToolTip="Open in Explorer" AutomationProperties.Name="Open the version folder"
+                                                            ToolTip="{l:Loc retention.now.openInExplorer}" AutomationProperties.Name="{l:Loc retention.now.openFolder}"
                                                             Command="{Binding DataContext.RetentionPreview.OpenVersionFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}">
 <Image Style="{StaticResource Image.FolderColored}" />

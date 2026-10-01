@@ -1,6 +1,5 @@
-using System.Globalization;
+using ReBackup.App.Localization;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
 using ReBackup.Core.Retention;
 
 namespace ReBackup.App.ViewModels;
@@ -8,24 +7,26 @@ namespace ReBackup.App.ViewModels;
 /// <summary>One version folder in the "now" list of the Retention tab.</summary>
 public sealed class RetentionNowRow
 {
-    public RetentionNowRow(VersionDecision decision)
+    public RetentionNowRow(VersionDecision decision, IReadOnlyList<RetentionRule> rules)
     {
         var version = decision.Version;
         Name = version.Name;
-        DateText = version.LocalTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-        SizeText = version.TotalBytes is { } bytes ? ByteSize.Format(bytes) : "";
-        FilesText = version.FileCount is { } files ? files.ToString("N0", CultureInfo.CurrentCulture) : "";
+        DateText = Formats.DateAndTime(version.LocalTime);
+        SizeText = version.TotalBytes is { } bytes ? Formats.Bytes(bytes) : "";
+        FilesText = version.FileCount is { } files ? Formats.Count(files) : "";
         IsManaged = decision.Decision is not null;
         IsDelete = decision.Delete;
-        DecisionText = !IsManaged ? "Not managed" : IsDelete ? "Delete" : "Keep";
+        DecisionText = !IsManaged ? Loc.T("retention.decision.notManaged")
+            : IsDelete ? Loc.T("retention.decision.delete")
+            : Loc.T("retention.decision.keep");
         ReasonText = decision.Decision is { } made
-            ? string.Join(", ", made.Reasons.Select(r => r.Label))
+            ? string.Join(", ", made.Reasons.Select(reason => RetentionTexts.Reason(reason, rules)))
             : version.Ownership switch
             {
-                VersionOwnership.NoManifest => "no manifest in the folder",
-                VersionOwnership.Foreign => "the manifest belongs to another plan",
-                VersionOwnership.Renamed => "renamed or copied by hand",
-                _ => "the manifest cannot be read",
+                VersionOwnership.NoManifest => Loc.T("retention.owner.noManifest"),
+                VersionOwnership.Foreign => Loc.T("retention.owner.foreign"),
+                VersionOwnership.Renamed => Loc.T("retention.owner.renamed"),
+                _ => Loc.T("retention.owner.unreadable"),
             };
     }
 

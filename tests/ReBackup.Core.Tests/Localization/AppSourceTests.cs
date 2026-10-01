@@ -16,8 +16,6 @@ public class AppSourceTests
         "ConflictDialog.xaml",
         "FailuresDialog.xaml",
         "SettingsWindow.xaml",
-        "Views/HistoryView.xaml",
-        "Views/RetentionView.xaml",
         "Views/VersionsView.xaml",
     ];
 

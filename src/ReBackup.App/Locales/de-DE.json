@@ -455,5 +455,105 @@
       "globalDefaults": "Globale Standardmuster",
       "plan": "Plan"
     }
+  },
+  "retention": {
+    "rules": {
+      "add": "Regel hinzufügen",
+      "title": "REGELN – EINE VERSION BLEIBT, WENN EINE REGEL SIE BEHÄLT",
+      "titleToolTip": "Die neueste Version bleibt außerdem immer erhalten.",
+      "none": "Keine Regeln: Jede Version bleibt erhalten, und das Ziel füllt sich mit der Zeit.",
+      "remove": "Diese Regel entfernen",
+      "period": "Zeitraum",
+      "periodToolTip": "Zeitraum ändern",
+      "keepTheLast": "die letzten",
+      "on": "am",
+      "onDay": "am Tag",
+      "weekday": "Wochentag",
+      "anchor": "Anker",
+      "keep": "Anzahl",
+      "keepName": "Anzahl",
+      "keepToolTip": "Wie viele Versionen diese Regel behält",
+      "days": "Tage"
+    },
+    "hint": {
+      "daily": "das letzte Backup jedes Tages",
+      "weekly": "das Backup dieses Wochentags, sonst das erste danach",
+      "monthly": "Tag des Monats: 1 bis 31, 0 = letzter Tag, -1 = der Tag vor dem letzten, …",
+      "yearly": "Datum als MM-TT, zum Beispiel 01-01"
+    },
+    "forecast": {
+      "title": "PROGNOSE – ZWEI JAHRE MIT",
+      "assumed": "Angenommener Zeitplan",
+      "assumedToolTip": "Der Plan hat keine Auslöser: Die Prognose nimmt diesen Zeitplan an.",
+      "planSchedule": "DEM ZEITPLAN DES PLANS",
+      "planFrequency": "dem Zeitplan des Plans",
+      "versionsKept": "Behaltene Versionen",
+      "space": "Speicherplatz",
+      "unknown": "unbekannt",
+      "calculating": "Wird berechnet …",
+      "fixRules": "Die Regeln oben korrigieren, um die Prognose zu sehen.",
+      "fixTriggers": "Die Auslöser des Plans im Tab „Plan“ korrigieren, um die volle Ausdehnung zu sehen.",
+      "failed": "Die volle Ausdehnung konnte nicht berechnet werden: {error}",
+      "noRules": "Keine Regeln, daher wird nie etwas gelöscht: Mit {frequency} gibt es nach zwei Jahren {count:N0} Versionen{size}.{cut}",
+      "withRules": "Mit {frequency} enthält das Ziel bis zu {count:N0} Versionen{size}.{cut}",
+      "size": ", etwa {size}",
+      "cut": " Die Simulation endete nach {runs:N0} Läufen."
+    },
+    "scheduleLabel": {
+      "weekly": "einem Backup pro Woche",
+      "daily": "einem Backup pro Tag",
+      "twiceDaily": "zwei Backups pro Tag",
+      "every4Hours": "einem Backup alle 4 Stunden",
+      "hourly": "einem Backup pro Stunde"
+    },
+    "scheduleRuns": {
+      "weekly": "wöchentlichen Läufen",
+      "daily": "täglichen Läufen",
+      "twiceDaily": "zwei Läufen pro Tag",
+      "every4Hours": "Läufen alle 4 Stunden",
+      "hourly": "stündlichen Läufen"
+    },
+    "now": {
+      "title": "VERSIONEN IM ZIEL – JETZT",
+      "refreshToolTip": "Ziel erneut lesen",
+      "notLoaded": "Die Versionen im Ziel wurden noch nicht gelesen.",
+      "targetMissing": "Der Zielordner existiert (noch) nicht.",
+      "noVersions": "Im Ziel gibt es noch keine Versionen.",
+      "empty": "Noch keine Versionen",
+      "fixRules": "Die Regeln oben korrigieren, um zu sehen, was sie behalten.",
+      "summary": "{count:N0} Versionen, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)",
+      "unmanaged": "  ·  {count:N0} nicht verwaltet",
+      "openInExplorer": "Im Explorer öffnen",
+      "openFolder": "Versionsordner öffnen"
+    },
+    "column": { "decision": "Entscheidung", "keptBy": "Behalten durch", "folder": "Ordner" },
+    "decision": { "keep": "Behalten", "delete": "Löschen", "notManaged": "Nicht verwaltet" },
+    "owner": {
+      "noManifest": "kein Manifest im Ordner",
+      "foreign": "das Manifest gehört zu einem anderen Plan",
+      "renamed": "von Hand umbenannt oder kopiert",
+      "unreadable": "das Manifest kann nicht gelesen werden"
+    },
+    "reason": { "newest": "Neueste", "noRules": "Keine Regeln" },
+    "describe": { "weekly": "Wöchentlich({day})", "monthly": "Monatlich({day})", "yearly": "Jährlich({date})" },
+    "timeline": { "lane": "{rule}, {keep:N0} behalten", "all": "Alle Versionen", "newest": "Neueste" },
+    "targetUnreadable": "Der Zielordner konnte nicht gelesen werden: {error}"
+  },
+  "history": {
+    "title": "LAUFVERLAUF",
+    "column": { "start": "Start", "duration": "Dauer", "trigger": "Auslöser", "result": "Ergebnis", "reason": "Grund" },
+    "openVersion": {
+      "name": "Versionsordner öffnen",
+      "checking": "Prüfe, ob die Version noch existiert …",
+      "open": "{version} im Explorer öffnen",
+      "missing": "Die Version existiert nicht mehr"
+    },
+    "details": {
+      "version": "Version: {version}",
+      "skipped": "Übersprungen ({count:N0}):",
+      "more": "… und {count:N0} weitere",
+      "deleted": "Durch die Aufbewahrung gelöscht:",
+      "warnings": "Warnungen:"
+    }
   }
 }

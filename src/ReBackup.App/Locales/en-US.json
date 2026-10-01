@@ -455,5 +455,105 @@
       "globalDefaults": "Global defaults",
       "plan": "Plan"
     }
+  },
+  "retention": {
+    "rules": {
+      "add": "Add rule",
+      "title": "RULES — A VERSION STAYS IF ANY RULE KEEPS IT",
+      "titleToolTip": "The newest version always stays as well.",
+      "none": "No rules: every version is kept and the target fills up over time.",
+      "remove": "Remove this rule",
+      "period": "Period",
+      "periodToolTip": "Change the period",
+      "keepTheLast": "keep the last",
+      "on": "on",
+      "onDay": "on day",
+      "weekday": "Weekday",
+      "anchor": "Anchor",
+      "keep": "keep",
+      "keepName": "Keep",
+      "keepToolTip": "How many versions this rule keeps",
+      "days": "days"
+    },
+    "hint": {
+      "daily": "the last backup of each day",
+      "weekly": "the backup of that weekday, otherwise the first one after it",
+      "monthly": "day of the month: 1 to 31, 0 = last day, -1 = the day before the last day, …",
+      "yearly": "date as MM-DD, for example 01-01"
+    },
+    "forecast": {
+      "title": "FORECAST — TWO YEARS OF",
+      "assumed": "Assumed schedule",
+      "assumedToolTip": "The plan has no triggers: the forecast assumes this schedule.",
+      "planSchedule": "THE PLAN'S SCHEDULE",
+      "planFrequency": "the plan's schedule",
+      "versionsKept": "Versions kept",
+      "space": "Space",
+      "unknown": "unknown",
+      "calculating": "Calculating…",
+      "fixRules": "Correct the rules above to see the forecast.",
+      "fixTriggers": "Correct the plan's triggers on the Plan tab to see the full extension.",
+      "failed": "The full extension could not be calculated: {error}",
+      "noRules": "No rules, so nothing is ever deleted: with {frequency} there are {count:N0} versions after two years{size}.{cut}",
+      "withRules": "With {frequency} the target holds up to {count:N0} versions{size}.{cut}",
+      "size": ", about {size}",
+      "cut": " The simulation stopped after {runs:N0} runs."
+    },
+    "scheduleLabel": {
+      "weekly": "one backup a week",
+      "daily": "one backup a day",
+      "twiceDaily": "two backups a day",
+      "every4Hours": "a backup every 4 hours",
+      "hourly": "a backup every hour"
+    },
+    "scheduleRuns": {
+      "weekly": "weekly runs",
+      "daily": "daily runs",
+      "twiceDaily": "two runs a day",
+      "every4Hours": "runs every 4 hours",
+      "hourly": "hourly runs"
+    },
+    "now": {
+      "title": "VERSIONS IN THE TARGET NOW",
+      "refreshToolTip": "Read the target again",
+      "notLoaded": "The versions in the target have not been read yet.",
+      "targetMissing": "The target folder does not exist (yet).",
+      "noVersions": "There are no versions in the target yet.",
+      "empty": "No versions yet",
+      "fixRules": "Correct the rules above to see what they keep.",
+      "summary": "{count:N0} versions, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})",
+      "unmanaged": "  ·  {count:N0} not managed",
+      "openInExplorer": "Open in Explorer",
+      "openFolder": "Open the version folder"
+    },
+    "column": { "decision": "Decision", "keptBy": "Kept by", "folder": "Folder" },
+    "decision": { "keep": "Keep", "delete": "Delete", "notManaged": "Not managed" },
+    "owner": {
+      "noManifest": "no manifest in the folder",
+      "foreign": "the manifest belongs to another plan",
+      "renamed": "renamed or copied by hand",
+      "unreadable": "the manifest cannot be read"
+    },
+    "reason": { "newest": "Newest", "noRules": "No rules" },
+    "describe": { "weekly": "Weekly({day})", "monthly": "Monthly({day})", "yearly": "Yearly({date})" },
+    "timeline": { "lane": "{rule}, keep {keep:N0}", "all": "All versions", "newest": "Newest" },
+    "targetUnreadable": "The target folder could not be read: {error}"
+  },
+  "history": {
+    "title": "RUN HISTORY",
+    "column": { "start": "Start", "duration": "Duration", "trigger": "Trigger", "result": "Result", "reason": "Reason" },
+    "openVersion": {
+      "name": "Open the version folder",
+      "checking": "Checking whether the version still exists…",
+      "open": "Open {version} in Explorer",
+      "missing": "Version no longer exists"
+    },
+    "details": {
+      "version": "Version: {version}",
+      "skipped": "Skipped ({count:N0}):",
+      "more": "… and {count:N0} more",
+      "deleted": "Deleted by retention:",
+      "warnings": "Warnings:"
+    }
   }
 }
