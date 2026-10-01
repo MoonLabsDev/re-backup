@@ -32,12 +32,13 @@ public class VersionIndexWorkerTests : IDisposable
         var busy = worker.RunAsync("p1", _ => release.Wait());
         var (version, manifest) = Finished("2026_09_30-16_05");
 
-        worker.Add("p1", version, manifest);
+        // An add that blocked would fail here instead of hanging the suite.
+        await Task.Run(() => worker.Add("p1", version, manifest)).WaitAsync(TimeSpan.FromSeconds(10));
 
         busy.IsCompleted.Should().BeFalse();
         worker.Indexes.For("p1").Versions().Should().BeEmpty("the add waits behind the work queued before it");
         release.Set();
-        await worker.WhenIdle("p1");
+        await worker.WhenIdle("p1").WaitAsync(TimeSpan.FromSeconds(10));
         worker.Indexes.For("p1").Versions().Should().ContainSingle().Which.Name.Should().Be(version.Name);
     }
 
@@ -75,7 +76,7 @@ public class VersionIndexWorkerTests : IDisposable
         using var release = new ManualResetEventSlim();
         var busy = worker.RunAsync("p1", _ => release.Wait());
 
-        var other = await worker.RunAsync("p2", index => index.Versions().Count);
+        var other = await worker.RunAsync("p2", index => index.Versions().Count).WaitAsync(TimeSpan.FromSeconds(10));
 
         other.Should().Be(0);
         busy.IsCompleted.Should().BeFalse();

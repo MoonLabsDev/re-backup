@@ -146,9 +146,15 @@ public sealed partial class MainViewModel : ObservableObject
             else if (!editor.IsNew)
             {
                 if (editor.IsDirty)
+                {
                     editor.MarkAsNew();
+                    editor.Versions.Invalidate();   // no saved plan, so no versions
+                }
                 else
+                {
+                    editor.Versions.Invalidate();   // stops its sync
                     Plans.Remove(editor);
+                }
             }
         }
 
@@ -223,6 +229,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         // Modal dialogs pump the dispatcher, so a reload may already have removed the editor.
         var index = Plans.IndexOf(editor);
+        editor.Versions.Invalidate();   // stops its sync
         if (index >= 0)
             Plans.RemoveAt(index);
         RevalidateAll();

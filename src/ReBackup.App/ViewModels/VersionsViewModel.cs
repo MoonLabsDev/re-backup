@@ -133,23 +133,32 @@ public sealed partial class VersionsViewModel : ObservableObject
         try
         {
             // Listing the target and reading the index never wait for a sync (the index allows reads beside writes).
-            var (index, available, folders, indexed) = await Task.Run(() =>
+            var (index, state, folders, indexed) = await Task.Run(() =>
             {
                 var planIndex = _context.Indexes.For(plan.Id);
-                var exists = Directory.Exists(plan.Target);
-                var list = exists ? VersionCatalog.List(plan.Target, plan.Id, plan.Name, cts.Token) : [];
-                return (planIndex, exists, list, planIndex.Versions());
+                var targetState = TargetStateOf(plan.Target);
+                var list = targetState == TargetState.Present
+                    ? VersionCatalog.List(plan.Target, plan.Id, plan.Name, cts.Token)
+                    : [];
+                return (planIndex, targetState, list, planIndex.Versions());
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
                 return;
 
             _index = index;
-            if (!available)
+            if (state == TargetState.Unreachable)
             {
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.
                 ShowFolders([], []);
                 SyncText = "";
-                Error = $"The target folder \"{plan.Target}\" is not available.";
+                Error = TargetUnavailableText(plan.Target);
+                return;
+            }
+            if (state == TargetState.NotCreatedYet)
+            {
+                // The plan has not run yet (the first run creates the folder): nothing to list or index.
+                ShowFolders([], []);
+                SyncText = "";
                 return;
             }
 
@@ -162,11 +171,23 @@ public sealed partial class VersionsViewModel : ObservableObject
             });
             // Queued behind other work on this plan's index (another sync, a finished run's version); the ids are
             // read in the same step, after the sync, because a re-import gives a version a new id.
-            var (result, versions) = await _context.Worker.RunAsync(plan.Id,
-                planIndex => (planIndex.Sync(folders, progress, cts.Token, targetFolder: plan.Target), planIndex.Versions()),
-                cts.Token);
+            var (result, versions, targetGone) = await _context.Worker.RunAsync(plan.Id, planIndex =>
+            {
+                var synced = planIndex.Sync(folders, progress, cts.Token, targetFolder: plan.Target);
+                // Errors because the whole target went away (e.g. the NAS went offline mid-sync) are one message.
+                var gone = synced.Errors.Count > 0 && !Directory.Exists(plan.Target);
+                return (synced, planIndex.Versions(), gone);
+            }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
                 return;
+
+            if (targetGone)
+            {
+                ApplyIndexed(versions, []);
+                SyncText = "";
+                Error = TargetUnavailableText(plan.Target);
+                return;
+            }
 
             ApplyIndexed(versions, result.Errors);
             SyncText = result.Errors.Count == 0
@@ -196,6 +217,32 @@ public sealed partial class VersionsViewModel : ObservableObject
             }
         }
     }
+
+    private enum TargetState { Present, NotCreatedYet, Unreachable }
+
+    /// <summary>
+    /// Present: the target folder exists. NotCreatedYet: it does not, but its drive or share does (a plan that has not
+    /// run yet). Unreachable: the drive or share itself is missing, e.g. an offline NAS. Touches the disk: call it off
+    /// the UI thread.
+    /// </summary>
+    private static TargetState TargetStateOf(string target)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+            return TargetState.Unreachable;
+        if (Directory.Exists(target))
+            return TargetState.Present;
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(target));
+            return !string.IsNullOrEmpty(root) && Directory.Exists(root) ? TargetState.NotCreatedYet : TargetState.Unreachable;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return TargetState.Unreachable;
+        }
+    }
+
+    private static string TargetUnavailableText(string target) => $"The target folder \"{target}\" is not available.";
 
     /// <summary>Runs after every successful sync; the tree reloads here (Versions tab, tree part).</summary>
     partial void OnIndexReady();

@@ -76,13 +76,14 @@ public class BackupRunnerIndexTests : IDisposable
         using var release = new ManualResetEventSlim();
         var busy = worker.RunAsync("p1", _ => release.Wait());   // e.g. a long sync over the network
 
-        var entry = await Run(worker);
+        // A sink that blocked the run would fail here instead of hanging the suite.
+        var entry = await Run(worker).WaitAsync(TimeSpan.FromSeconds(10));
 
         entry.Status.Should().Be(RunStatus.Completed);
         entry.Warnings.Should().BeEmpty();
         busy.IsCompleted.Should().BeFalse("the run did not wait for the index");
         release.Set();
-        await worker.WhenIdle("p1");
+        await worker.WhenIdle("p1").WaitAsync(TimeSpan.FromSeconds(10));
         worker.Indexes.For("p1").Versions().Should().ContainSingle().Which.Name.Should().Be("2026_09_30-16_05 Projects");
     }
 
