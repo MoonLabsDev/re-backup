@@ -5,6 +5,22 @@ using ReBackup.Core.IO;
 
 namespace ReBackup.App.ViewModels;
 
+/// <summary>What the status dot of a plan shows.</summary>
+public enum PlanDot
+{
+    /// <summary>Not active; never run or the last run completed.</summary>
+    Idle,
+
+    /// <summary>Queued or running.</summary>
+    Active,
+
+    /// <summary>The last run completed with warnings.</summary>
+    Warning,
+
+    /// <summary>The last run failed, was canceled or found the target full.</summary>
+    Failed,
+}
+
 /// <summary>Queue state, progress and history of one plan.</summary>
 public sealed partial class PlanRunViewModel : ObservableObject
 {
@@ -21,12 +37,21 @@ public sealed partial class PlanRunViewModel : ObservableObject
     public PlanRunViewModel(TimeProvider? timeProvider = null) => _time = timeProvider ?? TimeProvider.System;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsActive), nameof(IsRunning))]
+    [NotifyPropertyChangedFor(nameof(IsActive), nameof(IsRunning), nameof(Dot))]
     private JobState? _state;
 
     [ObservableProperty] private bool _isIndeterminate;
     [ObservableProperty] private double _progressPercent;
     [ObservableProperty] private string _progressText = "";
+
+    /// <summary>The remaining copy time alone, e.g. "about 12 min left"; "" while it is not known.</summary>
+    [ObservableProperty] private string _etaText = "";
+
+    /// <summary>The newest run, or null when the plan has never run.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRun), nameof(Dot))]
+    private RunHistoryRow? _lastRun;
+
     [ObservableProperty] private string _lastRunText = NeverRunText;
     [ObservableProperty] private string _nextRunText = "";
 
@@ -36,6 +61,18 @@ public sealed partial class PlanRunViewModel : ObservableObject
     public bool IsActive => State is JobState.Queued or JobState.Running;
 
     public bool IsRunning => State is JobState.Running;
+
+    public bool HasRun => LastRun is not null;
+
+    /// <summary>The plan's state for its status dot: active first, otherwise the outcome of the last run.</summary>
+    public PlanDot Dot => IsActive
+        ? PlanDot.Active
+        : LastRun?.Outcome switch
+        {
+            RunOutcome.Failed => PlanDot.Failed,
+            RunOutcome.Warning => PlanDot.Warning,
+            _ => PlanDot.Idle,
+        };
 
     public void Apply(BackupJobUpdate update)
     {
@@ -48,6 +85,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 IsIndeterminate = true;
                 ProgressPercent = 0;
                 ProgressText = "Queued";
+                EtaText = "";
                 break;
 
             case JobState.Running:
@@ -65,6 +103,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 IsIndeterminate = false;
                 ProgressPercent = 0;
                 ProgressText = "";
+                EtaText = "";
                 break;
         }
     }
@@ -77,6 +116,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
         _canceling = true;
         IsIndeterminate = true;
         ProgressText = "Canceling…";
+        EtaText = "";
     }
 
     /// <summary>Entries oldest first, as read from the log; shown newest first.</summary>
@@ -86,9 +126,10 @@ public sealed partial class PlanRunViewModel : ObservableObject
         for (var i = entries.Count - 1; i >= 0; i--)
             History.Add(new RunHistoryRow(entries[i]));
 
-        LastRunText = History.Count == 0
+        LastRun = History.Count == 0 ? null : History[0];
+        LastRunText = LastRun is null
             ? NeverRunText
-            : $"Last run {History[0].StartText}: {History[0].StatusText}";
+            : $"Last run {LastRun.StartText}: {LastRun.StatusText}";
     }
 
     private void ShowProgress(BackupProgress progress)
@@ -100,13 +141,14 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
         IsIndeterminate = progress.Phase is BackupPhase.Indexing or BackupPhase.CleaningUp;
         ProgressPercent = progress.Fraction * 100;
+        EtaText = progress.Phase == BackupPhase.Copying ? Remaining(progress) : "";
         ProgressText = progress.Phase switch
         {
             BackupPhase.Indexing => $"Indexing… {progress.FilesDone:N0} files",
             BackupPhase.CreatingFolders => $"Creating folders… {progress.FilesDone:N0} / {progress.FilesTotal:N0}",
             BackupPhase.Copying =>
                 $"{progress.FilesDone:N0} / {progress.FilesTotal:N0} files · " +
-                $"{ByteSize.Format(progress.BytesDone)} / {ByteSize.Format(progress.BytesTotal)}" + EtaText(progress),
+                $"{ByteSize.Format(progress.BytesDone)} / {ByteSize.Format(progress.BytesTotal)}",
             BackupPhase.CleaningUp => "Stopped — removing the incomplete copy…",
             BackupPhase.Retention => "Removing old versions…",
             _ => "Finishing…",
@@ -114,7 +156,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     }
 
     /// <summary>Remaining copy time from the average rate since the copying began; "" while it is not known yet.</summary>
-    private string EtaText(BackupProgress progress)
+    private string Remaining(BackupProgress progress)
     {
         var now = _time.GetTimestamp();
         if (_copyStarted is not { } started)
@@ -130,7 +172,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
             return "";
         var remaining = TimeSpan.FromSeconds(
             Math.Max(0, progress.BytesTotal - progress.BytesDone) * elapsed.TotalSeconds / copied);
-        return " · " + FormatRemaining(remaining);
+        return FormatRemaining(remaining);
     }
 
     public static string FormatRemaining(TimeSpan remaining) => remaining.TotalSeconds switch

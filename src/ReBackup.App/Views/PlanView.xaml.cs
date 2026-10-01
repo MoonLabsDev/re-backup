@@ -3,9 +3,10 @@ using ReBackup.App.ViewModels;
 
 namespace ReBackup.App.Views;
 
-public partial class ScheduleView : UserControl
+/// <summary>The Plan tab: source and target, the last run and the schedule.</summary>
+public partial class PlanView : UserControl
 {
-    public ScheduleView()
+    public PlanView()
     {
         InitializeComponent();
         IsVisibleChanged += (_, _) => RefreshNextRuns();

@@ -4,6 +4,14 @@ using ReBackup.Core.IO;
 
 namespace ReBackup.App.ViewModels;
 
+/// <summary>How a run ended, for status dots.</summary>
+public enum RunOutcome
+{
+    Ok,
+    Warning,
+    Failed,
+}
+
 /// <summary>One run of a plan, formatted for the History tab.</summary>
 public sealed class RunHistoryRow
 {
@@ -25,9 +33,17 @@ public sealed class RunHistoryRow
         _ => "Completed",
     };
 
+    public RunOutcome Outcome => _entry.Status switch
+    {
+        RunStatus.CompletedWithWarnings => RunOutcome.Warning,
+        RunStatus.Completed => _entry.Warnings.Count > 0 ? RunOutcome.Warning : RunOutcome.Ok,
+        _ => RunOutcome.Failed,
+    };
+
     public string Reason => _entry.Reason ?? "";
     public string FilesText => _entry.FilesCopied.ToString("N0", CultureInfo.CurrentCulture);
     public string SizeText => ByteSize.Format(_entry.BytesCopied);
+    public string SkippedText => _entry.SkippedCount.ToString("N0", CultureInfo.CurrentCulture);
     public bool HasDetails => Details.Length > 0;
 
     public string Details

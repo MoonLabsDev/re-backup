@@ -367,7 +367,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
         editor?.Run.Apply(update);
-        UpdateQueueStatus(update);
+        UpdateQueueStatus(update, editor?.Run.EtaText ?? "");
 
         if (update.State == JobState.Removed)
         {
@@ -394,14 +394,16 @@ public sealed partial class MainViewModel : ObservableObject
         RunFinished?.Invoke(update.PlanName, result);
     }
 
-    private void UpdateQueueStatus(BackupJobUpdate update)
+    /// <summary>The queue line of the footer and the tray; <paramref name="eta"/> is the running plan's remaining time.</summary>
+    private void UpdateQueueStatus(BackupJobUpdate update, string eta)
     {
         var queued = _queue.QueuedCount;
         var waiting = queued > 0 ? $" · {queued} queued" : "";
         if (update.State == JobState.Running)
         {
             var percent = update.Progress is { } progress ? $" — {progress.Fraction * 100:0} %" : "";
-            QueueStatus = $"Backing up \"{update.PlanName}\"{percent}{waiting}";
+            var remaining = eta.Length > 0 ? " · " + eta : "";
+            QueueStatus = $"Backing up \"{update.PlanName}\"{percent}{remaining}{waiting}";
         }
         else if (!_queue.IsBusy)
         {
