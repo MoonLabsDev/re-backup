@@ -45,6 +45,8 @@ public sealed class PreviewRowViewModel : ObservableObject
 
     public bool IsPlaceholder => Entry is LoadingPlaceholder;
 
+    public bool IsDirectory => Entry.IsDirectory;
+
     /// <summary>A folder of a running scan that is not finished yet; its values still grow.</summary>
     public bool IsLoading => Entry.IsDirectory && Entry.State != ScanState.Done;
 
