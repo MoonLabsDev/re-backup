@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -12,25 +11,44 @@ using ReBackup.Core.Settings;
 
 namespace ReBackup.App.ViewModels;
 
+/// <summary>The tabs of a plan; the header tabs and the icon rail show and change the same one.</summary>
+public enum MainTab
+{
+    Plan,
+    Ignore,
+    Retention,
+    History,
+}
+
 public sealed partial class MainViewModel : ObservableObject
 {
     private readonly PlanStore _store;
     private readonly ConfigPaths _paths;
     private readonly AppSettings _settings;
     private readonly IDialogService _dialogs;
+    private readonly IFolderOpener _folders;
     private readonly Action _openSettings;
     private readonly BackupQueue _queue;
     private readonly Scheduler _scheduler;
     private readonly Action<Action> _runOnUi;
 
-    [ObservableProperty] private PlanEditorViewModel? _selectedPlan;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelectedPlan))]
+    private PlanEditorViewModel? _selectedPlan;
+
+    /// <summary>The tab shown for the selected plan; it stays when another plan is selected.</summary>
+    [ObservableProperty] private MainTab _selectedTab = MainTab.Plan;
+
     [ObservableProperty] private string? _statusMessage;
     [ObservableProperty] private string _queueStatus = "No backup running";
     [ObservableProperty] private string _schedulerStatus = "";
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
-        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi)
+        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
+        IFolderOpener folders)
     {
+        _folders = folders;
+        Theme = theme;
         _store = store;
         _paths = paths;
         _settings = settings;
@@ -43,7 +61,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var result = _store.LoadAll();
         foreach (var plan in result.Plans)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
@@ -55,6 +73,12 @@ public sealed partial class MainViewModel : ObservableObject
     public event Action<string, RunLogEntry>? RunFinished;
 
     public ObservableCollection<PlanEditorViewModel> Plans { get; } = [];
+
+    /// <summary>The tab buttons of the rail work only while a plan is shown.</summary>
+    public bool HasSelectedPlan => SelectedPlan is not null;
+
+    /// <summary>The theme button of the icon rail.</summary>
+    public ThemeToggleViewModel Theme { get; }
 
     /// <summary>Re-applies the patterns in every open preview, e.g. after the global defaults changed.</summary>
     public void ReevaluatePreviews()
@@ -97,9 +121,16 @@ public sealed partial class MainViewModel : ObservableObject
             if (loaded.Remove(editor.Id, out var plan))
             {
                 if (editor.IsDirty)
+                {
                     editor.MarkAsExisting();
+                }
                 else
+                {
+                    var targetBefore = editor.SavedPlan().Target;
                     editor.ReplaceSaved(plan);
+                    if (!string.Equals(targetBefore, plan.Target, StringComparison.OrdinalIgnoreCase))
+                        LoadHistory(editor);
+                }
             }
             else if (unreadable.Contains(editor.Id))
             {
@@ -115,7 +146,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         foreach (var plan in loaded.Values)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders));
 
         RevalidateAll();
 
@@ -129,7 +160,8 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void NewPlan()
     {
-        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans, GlobalIgnoreDefaults);
+        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans, GlobalIgnoreDefaults,
+            _folders);
         AddEditor(editor);
         RevalidateAll();
         SelectedPlan = editor;
@@ -200,13 +232,18 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
+            var targetBefore = editor.IsNew ? null : editor.SavedPlan().Target;
             var saved = editor.TrySave(_store);
             StatusMessage = saved
                 ? $"Saved \"{editor.Name}\"."
                 : "Not saved: fix the errors shown in the plan.";
             RevalidateAll();
             if (saved)
+            {
                 PublishPlans();
+                if (!string.Equals(targetBefore, editor.SavedPlan().Target, StringComparison.OrdinalIgnoreCase))
+                    LoadHistory(editor);   // the folder buttons look in the new target
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -278,7 +315,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Updates the "next run" texts, the next runs shown on the Schedule tab and the scheduler state. Called whenever
+    /// Updates the "next run" texts, the next runs shown on the Plan tab and the scheduler state. Called whenever
     /// the scheduler reports a change, so at least once a minute.
     /// </summary>
     public void RefreshSchedule()
@@ -291,7 +328,7 @@ public sealed partial class MainViewModel : ObservableObject
             foreach (var editor in Plans)
             {
                 editor.SchedulerPaused = paused;
-                editor.Run.NextRunText = NextRunText(editor, paused);
+                ShowSchedule(editor, paused);
             }
             SelectedPlan?.RefreshNextRuns();
         }
@@ -301,22 +338,43 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private string NextRunText(PlanEditorViewModel editor, bool paused)
+    /// <summary>The saved plan's schedule on its card: disabled, paused, or the next run.</summary>
+    private void ShowSchedule(PlanEditorViewModel editor, bool paused)
     {
         if (editor.IsNew)
-            return "";
+        {
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "not saved yet");
+            return;
+        }
         var plan = editor.SavedPlan();
         if (!plan.Enabled)
-            return "Disabled: runs only by hand";
-        if (plan.Triggers.Count == 0)
-            return "No schedule";
-        if (plan.Triggers.Any(trigger => ScheduleTriggers.Validate(trigger) is not null))
-            return "Schedule has errors: does not run";
-        if (paused)
-            return "Scheduler paused";
-        return _scheduler.NextRunUtc(editor.Id) is { } next
-            ? "Next run " + next.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture)
-            : "No schedule";
+            editor.Run.SetSchedule(enabled: false, schedulerPaused: false, "");
+        else if (plan.Triggers.Count == 0)
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "no schedule");
+        else if (plan.Triggers.Any(trigger => ScheduleTriggers.Validate(trigger) is not null))
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "schedule has errors");
+        else if (paused)
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: true, "");
+        else
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, _scheduler.NextRunUtc(editor.Id) is { } next
+                ? "next " + PlanRunViewModel.ShortWhen(next.ToLocalTime(), DateTime.Now)
+                : "no schedule");
+    }
+
+    /// <summary>The queue position and the plan ahead on the card of every queued plan.</summary>
+    private void RefreshQueuePositions()
+    {
+        foreach (var editor in Plans)
+        {
+            if (editor.Run.State != JobState.Queued || _queue.PositionOf(editor.Id) is not { } position)
+                continue;   // not queued, or already started: its Running update follows
+            var ahead = position.AheadPlanId is { } aheadId
+                ? Plans.FirstOrDefault(p => p.Id.Equals(aheadId, StringComparison.OrdinalIgnoreCase)) is { Name.Length: > 0 } aheadEditor
+                    ? aheadEditor.Name
+                    : position.AheadPlanName
+                : null;
+            editor.Run.SetQueuePosition(position.Position, ahead);
+        }
     }
 
     /// <summary>Hands the saved state of all saved plans to the scheduler.</summary>
@@ -367,7 +425,9 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
         editor?.Run.Apply(update);
-        UpdateQueueStatus(update);
+        if (update.Progress is null)
+            RefreshQueuePositions();   // the queue changed: a job was added, started, removed or finished
+        UpdateQueueStatus(update, editor?.Run.EtaText ?? "");
 
         if (update.State == JobState.Removed)
         {
@@ -394,14 +454,16 @@ public sealed partial class MainViewModel : ObservableObject
         RunFinished?.Invoke(update.PlanName, result);
     }
 
-    private void UpdateQueueStatus(BackupJobUpdate update)
+    /// <summary>The queue line of the footer and the tray; <paramref name="eta"/> is the running plan's remaining time.</summary>
+    private void UpdateQueueStatus(BackupJobUpdate update, string eta)
     {
         var queued = _queue.QueuedCount;
         var waiting = queued > 0 ? $" · {queued} queued" : "";
         if (update.State == JobState.Running)
         {
             var percent = update.Progress is { } progress ? $" — {progress.Fraction * 100:0} %" : "";
-            QueueStatus = $"Backing up \"{update.PlanName}\"{percent}{waiting}";
+            var remaining = eta.Length > 0 ? " · " + eta : "";
+            QueueStatus = $"Backing up \"{update.PlanName}\"{percent}{remaining}{waiting}";
         }
         else if (!_queue.IsBusy)
         {
@@ -417,7 +479,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll());
+            editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll(),
+                editor.IsNew ? null : editor.SavedPlan().Target);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -433,6 +496,7 @@ public sealed partial class MainViewModel : ObservableObject
                 RevalidateAll();
         };
         LoadHistory(editor);
+        ShowSchedule(editor, _scheduler.IsPaused);
         Plans.Add(editor);
     }
 

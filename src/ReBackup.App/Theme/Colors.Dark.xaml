@@ -1,0 +1,92 @@
+<!--
+    Dark Pro design tokens (spec §3), the dark palette. One Color and one frozen SolidColorBrush per token.
+    Views use only the Brush.<Token> keys; the derived brushes at the end are for the control templates
+    in Controls.xaml, the chart palette for the drawing controls (treemap, retention timeline).
+    Colors.Light.xaml has exactly the same keys: ThemeManager swaps the two as a whole, so every use outside the
+    palettes must be a DynamicResource (code that draws itself re-reads the colours on ThemeManager.ThemeChanged).
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
+                    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                    mc:Ignorable="po">
+
+    <!-- Tokens -->
+    <Color x:Key="Color.Bg">#0F1216</Color>
+    <Color x:Key="Color.Rail">#0B0D10</Color>
+    <Color x:Key="Color.Surface">#14181D</Color>
+    <Color x:Key="Color.Card">#171B21</Color>
+    <Color x:Key="Color.Raised">#1D232B</Color>
+    <Color x:Key="Color.Border">#232A33</Color>
+    <Color x:Key="Color.BorderStrong">#2A313B</Color>
+    <Color x:Key="Color.Text">#E6EAF0</Color>
+    <Color x:Key="Color.TextMuted">#9AA4B2</Color>
+    <Color x:Key="Color.TextFaint">#6B7584</Color>
+    <Color x:Key="Color.Accent">#2BB3A3</Color>
+    <Color x:Key="Color.AccentHover">#35C6B5</Color>
+    <Color x:Key="Color.AccentText">#06201D</Color>
+    <Color x:Key="Color.AccentSoft">#163B37</Color>
+    <Color x:Key="Color.AccentLight">#5FD3C4</Color>
+    <Color x:Key="Color.Selection">#16302D</Color>
+    <Color x:Key="Color.Danger">#F2545B</Color>
+    <Color x:Key="Color.Warning">#E0A800</Color>
+    <Color x:Key="Color.PartialRow">#1E1B12</Color>
+    <Color x:Key="Color.IgnoredRow">#1F1518</Color>
+
+    <SolidColorBrush x:Key="Brush.Bg" Color="{StaticResource Color.Bg}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Rail" Color="{StaticResource Color.Rail}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Card" Color="{StaticResource Color.Card}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Raised" Color="{StaticResource Color.Raised}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BorderStrong" Color="{StaticResource Color.BorderStrong}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Text" Color="{StaticResource Color.Text}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.TextMuted" Color="{StaticResource Color.TextMuted}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.TextFaint" Color="{StaticResource Color.TextFaint}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentHover" Color="{StaticResource Color.AccentHover}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentText" Color="{StaticResource Color.AccentText}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentSoft" Color="{StaticResource Color.AccentSoft}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentLight" Color="{StaticResource Color.AccentLight}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Selection" Color="{StaticResource Color.Selection}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Danger" Color="{StaticResource Color.Danger}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.PartialRow" Color="{StaticResource Color.PartialRow}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.IgnoredRow" Color="{StaticResource Color.IgnoredRow}" po:Freeze="True" />
+
+    <!-- Derived shades, used only inside the control templates (hover/pressed states). -->
+    <SolidColorBrush x:Key="Brush.RaisedHover" Color="#252C36" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.RaisedPressed" Color="#161B21" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BorderHover" Color="#3A434F" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentPressed" Color="#239688" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DangerSoft" Color="#3A1D22" po:Freeze="True" />
+
+    <!-- Chart palette (treemap, retention timeline): families of a light and a dark shade, plus the ignored tile. -->
+    <Color x:Key="Color.Chart.TealLight">#5FD3C4</Color>
+    <Color x:Key="Color.Chart.Teal">#2BB3A3</Color>
+    <Color x:Key="Color.Chart.TealDark">#1F8A7E</Color>
+    <Color x:Key="Color.Chart.BlueLight">#7FB2FF</Color>
+    <Color x:Key="Color.Chart.BlueDark">#4F84D6</Color>
+    <Color x:Key="Color.Chart.VioletLight">#C9A2FF</Color>
+    <Color x:Key="Color.Chart.VioletDark">#9B6FE0</Color>
+    <Color x:Key="Color.Chart.AmberLight">#F2B84B</Color>
+    <Color x:Key="Color.Chart.AmberDark">#D9932B</Color>
+    <Color x:Key="Color.Chart.Ignored">#2E3743</Color>
+
+    <!-- Fill of the "% of parent" bars in the ignore preview; the bar's text (Brush.Text) sits on it. -->
+    <SolidColorBrush x:Key="Brush.PercentFill" Color="{StaticResource Color.Chart.TealDark}" po:Freeze="True" />
+
+    <!-- A queued backup (plan card ring and text); AA on Card, Raised and Surface. -->
+    <SolidColorBrush x:Key="Brush.Queued" Color="#7FB2FF" po:Freeze="True" />
+
+    <!-- Retention period badges (pill on the rule tiles): a soft tint as fill, the strong shade as text (AA on the fill). -->
+    <SolidColorBrush x:Key="Brush.Badge.DailyFill" Color="#163B37" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.DailyText" Color="#5FD3C4" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.WeeklyFill" Color="#1E2F4A" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.WeeklyText" Color="#7FB2FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.MonthlyFill" Color="#3A2A4A" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.MonthlyText" Color="#C9A2FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.YearlyFill" Color="#3D2F14" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.YearlyText" Color="#F2B84B" po:Freeze="True" />
+
+</ResourceDictionary>

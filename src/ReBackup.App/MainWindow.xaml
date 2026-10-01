@@ -2,85 +2,537 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:ReBackup.App.Views"
-        Title="ReBackup" Width="1100" Height="700" MinWidth="800" MinHeight="500">
+        xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
+        xmlns:theme="clr-namespace:ReBackup.App.Theme"
+        xmlns:controls="clr-namespace:ReBackup.App.Controls"
+        Title="ReBackup" Width="1280" Height="800" MinWidth="960" MinHeight="560"
+        Style="{StaticResource {x:Type Window}}">
     <Window.InputBindings>
         <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
     </Window.InputBindings>
 
-    <DockPanel>
-        <StatusBar DockPanel.Dock="Bottom">
-            <StatusBarItem DockPanel.Dock="Right">
-                <TextBlock Text="{Binding QueueStatus}" />
-            </StatusBarItem>
-            <StatusBarItem DockPanel.Dock="Right">
-                <TextBlock Text="{Binding SchedulerStatus}" Foreground="DarkOrange" />
-            </StatusBarItem>
-            <StatusBarItem>
-                <TextBlock Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
-            </StatusBarItem>
-        </StatusBar>
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <theme:EnumMatchConverter x:Key="Converter.EnumMatch" />
 
-        <Grid Margin="8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="320" />
-                <ColumnDefinition Width="8" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+        <!-- A tab button of the icon rail: glyph only; the chosen tab gets the Selection fill and an accent bar at the
+             rail's left edge. Bound to MainViewModel.SelectedTab like the header tabs. -->
+        <Style x:Key="RadioButton.Rail" TargetType="RadioButton" BasedOn="{StaticResource {x:Type RadioButton}}">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+            <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Grid Background="Transparent" SnapsToDevicePixels="True">
+                            <Border x:Name="Bd" CornerRadius="8" Background="Transparent" />
+                            <Border x:Name="Bar" Width="3" Height="18" Margin="-10,0,0,0" HorizontalAlignment="Left"
+                                    CornerRadius="1.5" Background="{DynamicResource Brush.Accent}" Visibility="Collapsed" />
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Focusable="False" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Raised}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Selection}" />
+                                <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.AccentLight}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-            <DockPanel Grid.Column="0">
-                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button Content="New plan" Padding="10,4" Command="{Binding NewPlanCommand}" />
-                    <Button Content="Delete" Padding="10,4" Margin="8,0,0,0" Command="{Binding DeletePlanCommand}" />
-                    <Button Content="Settings…" Padding="10,4" Margin="8,0,0,0" Command="{Binding OpenSettingsCommand}" />
+        <!-- Footer text: trimmed, with the full text as tool tip (none while empty). -->
+        <Style x:Key="TextBlock.Footer" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="ToolTip" Value="{x:Null}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Small glyph button with a frame (New plan; Cancel and Remove from the queue in a plan card). -->
+        <Style x:Key="Button.IconFramed" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Normal" />
+        </Style>
+
+        <!-- Small accent glyph button (Run now in a plan card). -->
+        <Style x:Key="Button.AccentIcon" TargetType="Button" BasedOn="{StaticResource Button.Accent}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Normal" />
+        </Style>
+
+        <!-- ================= Plan card (progress ring). The colours follow Run.CardState; the texts come from Run. -->
+
+        <!-- The ring: its stroke, track and dashes per state. -->
+        <Style x:Key="ProgressRing.PlanCard" TargetType="controls:ProgressRing" BasedOn="{StaticResource {x:Type controls:ProgressRing}}">
+            <Setter Property="Width" Value="52" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Value" Value="{Binding Run.RingValue}" />
+            <Setter Property="IsIndeterminate" Value="{Binding Run.RingIndeterminate}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.NeverRun}">
+                    <Setter Property="TrackDashArray" Value="1 1" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Warning}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Failed}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceled}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Paused}">
+                    <Setter Property="Track" Value="{DynamicResource Brush.Accent}" />
+                    <Setter Property="TrackOpacity" Value="0.35" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Queued}">
+                    <Setter Property="Track" Value="{DynamicResource Brush.Queued}" />
+                    <Setter Property="TrackDashArray" Value="1.5 1.5" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceling}">
+                    <Setter Property="Stroke" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- The centre of the ring: a percentage, "#2", "scan", or a glyph for the result states. -->
+        <Style x:Key="TextBlock.RingCenter" TargetType="TextBlock">
+            <Setter Property="Text" Value="{Binding Run.RingText}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.NeverRun}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Completed}">
+                    <Setter Property="Text" Value="{StaticResource Icon.CheckMark}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="17" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Warning}">
+                    <Setter Property="FontSize" Value="15" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Failed}">
+                    <Setter Property="Text" Value="{StaticResource Icon.Cancel}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="14" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceled}">
+                    <Setter Property="Text" Value="■" />
+                    <Setter Property="FontSize" Value="13" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Disabled}">
+                    <Setter Property="Text" Value="{StaticResource Icon.Power}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="16" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Paused}">
+                    <Setter Property="Text" Value="{StaticResource Icon.Pause}" />
+                    <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+                    <Setter Property="FontSize" Value="15" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Queued}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Queued}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Indexing}">
+                    <Setter Property="FontSize" Value="10" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.AccentLight}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceling}">
+                    <Setter Property="Text" Value="■" />
+                    <Setter Property="FontSize" Value="13" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- The phase line. The remaining copy time is never trimmed (it wraps); the rest trims. -->
+        <Style x:Key="TextBlock.CardPhase" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,3,0,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Text" Value="{Binding Run.PhaseText}" />
+            <Setter Property="ToolTip" Value="{Binding Run.PhaseToolTip}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.AccentLight}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.NeverRun}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Disabled}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Warning}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Paused}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceling}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Failed}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Canceled}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Queued}">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Queued}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Copying}">
+                    <Setter Property="FontSize" Value="12.5" />
+                    <Setter Property="TextTrimming" Value="None" />
+                    <Setter Property="TextWrapping" Value="Wrap" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Shown for the given Run.CardAction only (ConverterParameter of the Visibility binding). -->
+        <Style x:Key="Button.CardStop" TargetType="Button" BasedOn="{StaticResource Button.IconFramed}">
+            <Setter Property="Content" Value="{StaticResource Icon.Stop}" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="ToolTip" Value="Cancel the backup" />
+            <Setter Property="AutomationProperties.Name" Value="Cancel the backup" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Run.CardAction}" Value="{x:Static vm:PlanCardAction.Canceling}">
+                    <Setter Property="IsEnabled" Value="False" />
+                    <Setter Property="ToolTip" Value="Canceling…" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A plan in the list: a card on Raised; the selected one gets an accent border. -->
+        <Style x:Key="ListBoxItem.PlanCard" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Margin" Value="8,0,8,6" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="{DynamicResource Brush.Raised}" BorderBrush="{DynamicResource Brush.BorderStrong}"
+                                BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.BorderHover}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="60" />
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ============================================================ Icon rail -->
+        <Border Grid.Column="0" Background="{DynamicResource Brush.Rail}" BorderBrush="{DynamicResource Brush.Border}"
+                BorderThickness="0,0,1,0">
+            <DockPanel Margin="0,14">
+                <Border DockPanel.Dock="Top" Width="34" Height="34" CornerRadius="9" HorizontalAlignment="Center"
+                        Background="{DynamicResource Brush.Accent}">
+                    <TextBlock Text="Re:" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.AccentText}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <!-- The plan's tabs, mirroring the header tabs (same SelectedTab). -->
+                <StackPanel DockPanel.Dock="Top" Margin="0,22,0,0" IsEnabled="{Binding HasSelectedPlan}"
+                            KeyboardNavigation.DirectionalNavigation="Cycle">
+                    <RadioButton x:Name="RailPlanTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
+                                 Content="{StaticResource Icon.Plan}" ToolTip="Plan" AutomationProperties.Name="Plan"
+                                 AutomationProperties.AutomationId="RailPlanTab"
+                                 IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Plan}}" />
+                    <RadioButton x:Name="RailIgnoreTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
+                                 Content="{StaticResource Icon.Hide}" ToolTip="Ignore" AutomationProperties.Name="Ignore"
+                                 AutomationProperties.AutomationId="RailIgnoreTab"
+                                 IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Ignore}}" />
+                    <RadioButton x:Name="RailRetentionTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
+                                 Content="{StaticResource Icon.Shield}" ToolTip="Retention" AutomationProperties.Name="Retention"
+                                 AutomationProperties.AutomationId="RailRetentionTab"
+                                 IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Retention}}" />
+                    <RadioButton x:Name="RailHistoryTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
+                                 Content="{StaticResource Icon.History}" ToolTip="History" AutomationProperties.Name="History"
+                                 AutomationProperties.AutomationId="RailHistoryTab"
+                                 IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}" />
                 </StackPanel>
-                <ListBox ItemsSource="{Binding Plans}" SelectedItem="{Binding SelectedPlan}"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Button DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Style="{StaticResource Button.Icon}"
+                        Width="40" Height="40" FontSize="18" Content="{StaticResource Icon.Settings}"
+                        ToolTip="Settings" AutomationProperties.Name="Settings"
+                        Command="{Binding OpenSettingsCommand}" />
+                <!-- Theme: toggles Dark ↔ Light; the glyph shows the current mode. -->
+                <Button x:Name="ThemeButton" DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                        Width="40" Height="40" FontSize="17"
+                        ToolTip="{Binding Theme.ToolTip}" AutomationProperties.Name="{Binding Theme.AutomationName}"
+                        Command="{Binding Theme.CycleCommand}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource Button.Icon}">
+                            <Setter Property="Content" Value="{StaticResource Icon.ThemeDark}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Theme.Mode}" Value="Dark">
+                                    <Setter Property="Content" Value="{StaticResource Icon.ThemeDark}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Theme.Mode}" Value="Light">
+                                    <Setter Property="Content" Value="{StaticResource Icon.ThemeLight}" />
+                                </DataTrigger>
+                            </Style.Triggers>
                         </Style>
-                    </ListBox.ItemContainerStyle>
+                    </Button.Style>
+                </Button>
+            </DockPanel>
+        </Border>
+
+        <!-- ============================================================ Plan list -->
+        <Border Grid.Column="1" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
+                BorderThickness="0,0,1,0">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="14,16,14,10">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.IconFramed}" Content="{StaticResource Icon.Add}"
+                            ToolTip="New plan" AutomationProperties.Name="New plan" Command="{Binding NewPlanCommand}" />
+                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" FontSize="11" VerticalAlignment="Center"
+                               Text="PLANS" />
+                </DockPanel>
+
+                <Button DockPanel.Dock="Bottom" HorizontalAlignment="Stretch" Margin="8,6,8,10"
+                        AutomationProperties.Name="Delete plan" Command="{Binding DeletePlanCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Foreground="{DynamicResource Brush.Danger}"
+                                   Text="{StaticResource Icon.Delete}" />
+                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Delete plan" />
+                    </StackPanel>
+                </Button>
+
+                <ListBox ItemsSource="{Binding Plans}" SelectedItem="{Binding SelectedPlan}"
+                         ItemContainerStyle="{StaticResource ListBoxItem.PlanCard}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         AutomationProperties.Name="Plans">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="2,4">
+                            <!-- Ring | name, phase, detail | action -->
+                            <Grid>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Source}" Foreground="Gray" FontSize="11"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Run.LastRunText}" Foreground="Gray" FontSize="11"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Run.NextRunText}" Foreground="Gray" FontSize="11"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <StackPanel>
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
+                                <controls:ProgressRing Style="{StaticResource ProgressRing.PlanCard}" VerticalAlignment="Center"
+                                                       AutomationProperties.Name="{Binding Run.PhaseText}">
+                                    <TextBlock Style="{StaticResource TextBlock.RingCenter}" />
+                                </controls:ProgressRing>
+
+                                <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}" FontSize="14"
+                                               FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Run.IsActive}" Value="False">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    <DataTrigger Binding="{Binding Run.CardState}" Value="{x:Static vm:PlanCardState.Disabled}">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </StackPanel.Style>
-                                        <ProgressBar Height="6" Margin="0,3,0,1" Maximum="100"
-                                                     Value="{Binding Run.ProgressPercent, Mode=OneWay}"
-                                                     IsIndeterminate="{Binding Run.IsIndeterminate}" />
-                                        <TextBlock Text="{Binding Run.ProgressText}" FontSize="11"
-                                                   TextTrimming="CharacterEllipsis" />
-                                    </StackPanel>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Style="{StaticResource TextBlock.CardPhase}" />
+                                    <!-- Up to two lines, then trimmed; the full text is the tool tip. -->
+                                    <TextBlock Margin="0,3,0,0" MaxHeight="32" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
+                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                               Text="{Binding Run.DetailText}" ToolTip="{Binding Run.DetailText}" />
                                 </StackPanel>
 
-                                <Grid Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0">
-                                    <Button Content="Run now" Padding="8,2"
+                                <!-- Run now while idle, cancel while running, remove from the queue while queued. -->
+                                <Grid Grid.Column="2" VerticalAlignment="Top">
+                                    <Button Style="{StaticResource Button.AccentIcon}" Content="{StaticResource Icon.Play}"
+                                            ToolTip="{Binding Run.RunToolTip}" AutomationProperties.Name="{Binding Run.RunToolTip}"
+                                            Visibility="{Binding Run.CardAction, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:PlanCardAction.Run}}"
+                                            Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource Button.CardStop}"
+                                            Visibility="{Binding Run.IsRunning, Converter={StaticResource BoolToVisibility}}"
+                                            Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource Button.IconFramed}" Content="{StaticResource Icon.Cancel}" FontSize="11"
+                                            ToolTip="Remove from the queue" AutomationProperties.Name="Remove from the queue"
+                                            Visibility="{Binding Run.CardAction, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:PlanCardAction.RemoveFromQueue}}"
+                                            Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- ============================================================ Main area -->
+        <DockPanel Grid.Column="2">
+            <!-- Footer -->
+            <Border DockPanel.Dock="Bottom" Height="34" Background="{DynamicResource Brush.Rail}"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="24,0">
+                <DockPanel TextElement.FontSize="12" TextElement.Foreground="{DynamicResource Brush.TextMuted}">
+                    <!-- Queue and scheduler texts are capped so the status message keeps room. -->
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource TextBlock.Footer}" Margin="16,0,0,0"
+                               MaxWidth="360" Text="{Binding QueueStatus}" />
+                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource TextBlock.Footer}" Margin="16,0,0,0"
+                               MaxWidth="240" Foreground="{DynamicResource Brush.Warning}" Text="{Binding SchedulerStatus}" />
+                    <TextBlock Style="{StaticResource TextBlock.Footer}" Text="{Binding StatusMessage}" />
+                </DockPanel>
+            </Border>
+
+            <!-- No plan selected -->
+            <Grid>
+                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextWrapping="Wrap" Text="No plan selected. Create one with the + button next to PLANS.">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedPlan}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <DockPanel DataContext="{Binding SelectedPlan}">
+                    <DockPanel.Style>
+                        <Style TargetType="DockPanel">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DockPanel.Style>
+
+                    <!-- Header: name, tabs, Revert / Save / Run now -->
+                    <Border x:Name="HeaderBar" DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1"
+                            Padding="24,16" SizeChanged="OnHeaderSizeChanged">
+                        <!-- One row when it fits; otherwise the tabs move below the name (MainWindow.LayoutHeader). -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock x:Name="HeaderName" Grid.Column="0" VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold"
+                                       Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}"
+                                       TextTrimming="CharacterEllipsis" />
+
+                            <Border x:Name="MainTabsBar" Grid.Column="1" Margin="24,0,16,0" HorizontalAlignment="Left" Padding="3"
+                                    Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
+                                    BorderThickness="1" CornerRadius="8">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton x:Name="PlanTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
+                                                 AutomationProperties.Name="Plan"
+                                                 IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Plan}}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Plan}" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Plan" />
+                                        </StackPanel>
+                                    </RadioButton>
+                                    <RadioButton x:Name="IgnoreTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="Ignore"
+                                                 IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Ignore}}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Hide}" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Ignore" />
+                                        </StackPanel>
+                                    </RadioButton>
+                                    <RadioButton x:Name="RetentionTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="Retention"
+                                                 IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Retention}}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Shield}" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Retention" />
+                                        </StackPanel>
+                                    </RadioButton>
+                                    <RadioButton x:Name="HistoryTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="History"
+                                                 IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.History}" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="History" />
+                                        </StackPanel>
+                                    </RadioButton>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel x:Name="HeaderActions" Grid.Column="3" Orientation="Horizontal"
+                                        SizeChanged="OnHeaderSizeChanged">
+                                <Button Command="{Binding DataContext.RevertCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        IsEnabled="{Binding IsDirty, FallbackValue=False}" AutomationProperties.Name="Revert">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Undo}" />
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Revert" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Margin="8,0,0,0" ToolTip="Save (Ctrl+S)" AutomationProperties.Name="Save"
+                                        Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        IsEnabled="{Binding IsDirty, FallbackValue=False}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Save}" />
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Save" />
+                                    </StackPanel>
+                                </Button>
+                                <Grid Margin="8,0,0,0">
+                                    <Button AutomationProperties.Name="Run now"
                                             Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}">
                                         <Button.Style>
-                                            <Style TargetType="Button">
+                                            <Style TargetType="Button" BasedOn="{StaticResource Button.Accent}">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Run.IsActive}" Value="True">
                                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -88,111 +540,47 @@
                                                 </Style.Triggers>
                                             </Style>
                                         </Button.Style>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Play}" />
+                                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Run now" />
+                                        </StackPanel>
                                     </Button>
-                                    <Button Content="Cancel" Padding="8,2"
+                                    <Button AutomationProperties.Name="Cancel the backup"
                                             Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}">
                                         <Button.Style>
-                                            <Style TargetType="Button">
+                                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Run.IsActive}" Value="False">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    <DataTrigger Binding="{Binding Run.IsActive}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </Button.Style>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Stop}" />
+                                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Cancel" />
+                                        </StackPanel>
                                     </Button>
                                 </Grid>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
 
-            <DockPanel Grid.Column="2">
-                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-                    <Button Content="Revert" Padding="14,4" Command="{Binding RevertCommand}"
-                            IsEnabled="{Binding SelectedPlan.IsDirty, FallbackValue=False}" />
-                    <Button Content="Save" Padding="14,4" Margin="8,0,0,0" Command="{Binding SaveCommand}"
-                            IsEnabled="{Binding SelectedPlan.IsDirty, FallbackValue=False}" />
-                </StackPanel>
-                <TabControl DataContext="{Binding SelectedPlan}">
-                    <TabControl.Style>
-                        <Style TargetType="TabControl">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding}" Value="{x:Null}">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TabControl.Style>
-
-                    <TabItem Header="General">
-                            <Grid Margin="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Grid.Row="0" Text="Name" VerticalAlignment="Center" Margin="0,0,12,8" />
-                                <TextBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8"
-                                         Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
-
-                                <TextBlock Grid.Row="1" Text="Source" VerticalAlignment="Center" Margin="0,0,12,8" />
-                                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,8,8"
-                                         Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" />
-                                <Button Grid.Row="1" Grid.Column="2" Content="Browse…" Padding="10,2" Margin="0,0,0,8"
-                                        Command="{Binding DataContext.BrowseSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
-
-                                <TextBlock Grid.Row="2" Text="Target" VerticalAlignment="Center" Margin="0,0,12,8" />
-                                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,8,8"
-                                         Text="{Binding Target, UpdateSourceTrigger=PropertyChanged}" />
-                                <Button Grid.Row="2" Grid.Column="2" Content="Browse…" Padding="10,2" Margin="0,0,0,8"
-                                        Command="{Binding DataContext.BrowseTargetCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
-
-                                <CheckBox Grid.Row="3" Grid.Column="1" Margin="0,4,0,8"
-                                          Content="Enabled (scheduled runs)" IsChecked="{Binding Enabled}" />
-                                <CheckBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,8"
-                                          Content="When the target is full, first delete versions that retention would delete anyway"
-                                          IsChecked="{Binding FreeSpaceByRetention}" />
-
-                                <ItemsControl Grid.Row="5" Grid.ColumnSpan="3" Margin="0,8,0,0" ItemsSource="{Binding Errors}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}" Foreground="Firebrick" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </Grid>
-                        </TabItem>
-
-                    <TabItem Header="Schedule">
-                        <views:ScheduleView />
-                    </TabItem>
-
-                    <TabItem Header="Ignore &amp; Preview">
-                        <views:IgnorePreviewView />
-                    </TabItem>
-
-                    <TabItem Header="Retention">
-                        <views:RetentionView />
-                    </TabItem>
-
-                    <TabItem Header="History">
-                        <views:HistoryView />
-                    </TabItem>
-                </TabControl>
-            </DockPanel>
-        </Grid>
-    </DockPanel>
+                    <!-- Tab content: every view stays alive; only the chosen one (MainViewModel.SelectedTab) is visible. -->
+                    <Grid>
+                        <views:PlanView
+                            Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Plan}}" />
+                        <views:IgnorePreviewView
+                            Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Ignore}}" />
+                        <views:RetentionView
+                            Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Retention}}" />
+                        <views:HistoryView
+                            Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}" />
+                    </Grid>
+                </DockPanel>
+            </Grid>
+        </DockPanel>
+    </Grid>
 </Window>

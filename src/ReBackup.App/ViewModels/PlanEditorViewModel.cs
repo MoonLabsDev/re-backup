@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Services;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
@@ -15,6 +16,7 @@ namespace ReBackup.App.ViewModels;
 public sealed partial class PlanEditorViewModel : ObservableObject
 {
     private readonly Func<IEnumerable<BackupPlan>> _allPlans;
+    private readonly IFolderOpener _folders;
     private BackupPlan _saved;
     private bool _loading;
 
@@ -36,12 +38,13 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _schedulerPaused;
 
     public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
-        Func<IReadOnlyList<string>> globalIgnoreDefaults)
+        Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders)
     {
         _saved = plan.Clone();
         _allPlans = allPlans;
+        _folders = folders;
         Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
-        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize);
+        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders);
         Preview.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(IgnorePreviewViewModel.SelectedNode))
@@ -78,6 +81,20 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     public BackupPlan SavedPlan() => _saved.Clone();
 
     public string Id => _saved.Id;
+
+    /// <summary>
+    /// Shows the version a run produced in Explorer; marks the row when that folder no longer exists. The folder is
+    /// checked and opened on a worker thread, so a slow share never blocks the UI.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenRunVersionAsync(RunHistoryRow? row)
+    {
+        if (row is not { CanOpenVersion: true })
+            return;
+        var (target, name) = (row.Target, row.VersionName);
+        if (!await Task.Run(() => _folders.OpenVersionFolder(target, name)))
+            row.MarkVersionMissing();
+    }
 
     public string DisplayName =>
         (IsDirty ? "• " : "") + (string.IsNullOrWhiteSpace(Name) ? "(unnamed)" : Name);

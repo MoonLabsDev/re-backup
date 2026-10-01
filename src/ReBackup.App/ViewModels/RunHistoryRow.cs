@@ -1,15 +1,69 @@
 using System.Globalization;
+using CommunityToolkit.Mvvm.ComponentModel;
 using ReBackup.Core.Backup;
 using ReBackup.Core.IO;
 
 namespace ReBackup.App.ViewModels;
 
+/// <summary>How a run ended, for status dots.</summary>
+public enum RunOutcome
+{
+    Ok,
+    Warning,
+    Failed,
+}
+
 /// <summary>One run of a plan, formatted for the History tab.</summary>
-public sealed class RunHistoryRow
+public sealed partial class RunHistoryRow : ObservableObject
 {
     private readonly RunLogEntry _entry;
 
-    public RunHistoryRow(RunLogEntry entry) => _entry = entry;
+    /// <summary>
+    /// Whether the run's version folder was found in the target. False until the check of the history load
+    /// (<see cref="PlanRunViewModel.LoadHistory"/>, off the UI thread) has answered.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpenVersionToolTip))]
+    private bool _canOpenVersion;
+
+    /// <summary>True while the target is still being looked at for this row's version.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpenVersionToolTip))]
+    private bool _isCheckingVersion;
+
+    /// <param name="target">The plan's target, where the version folder is looked up.</param>
+    public RunHistoryRow(RunLogEntry entry, string? target = null)
+    {
+        _entry = entry;
+        Target = target;
+        _isCheckingVersion = HasVersion;
+    }
+
+    /// <summary>The log entry of the run.</summary>
+    public RunLogEntry Entry => _entry;
+
+    /// <summary>The target the version was looked up in.</summary>
+    public string? Target { get; }
+
+    /// <summary>The version folder the run produced; null when it produced none.</summary>
+    public string? VersionName => _entry.Version;
+
+    public bool HasVersion => !string.IsNullOrEmpty(_entry.Version);
+
+    public string OpenVersionToolTip =>
+        IsCheckingVersion ? "Checking whether the version still exists…"
+        : CanOpenVersion ? $"Open {_entry.Version} in Explorer"
+        : "Version no longer exists";
+
+    /// <summary>The answer of the existence check.</summary>
+    public void ApplyVersionCheck(bool exists)
+    {
+        CanOpenVersion = HasVersion && exists;
+        IsCheckingVersion = false;
+    }
+
+    /// <summary>The folder was found missing when it was to be opened.</summary>
+    public void MarkVersionMissing() => CanOpenVersion = false;
 
     public string StartText => _entry.StartUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
     public string DurationText => FormatDuration(_entry.DurationMs);
@@ -25,9 +79,17 @@ public sealed class RunHistoryRow
         _ => "Completed",
     };
 
+    public RunOutcome Outcome => _entry.Status switch
+    {
+        RunStatus.CompletedWithWarnings => RunOutcome.Warning,
+        RunStatus.Completed => _entry.Warnings.Count > 0 ? RunOutcome.Warning : RunOutcome.Ok,
+        _ => RunOutcome.Failed,
+    };
+
     public string Reason => _entry.Reason ?? "";
     public string FilesText => _entry.FilesCopied.ToString("N0", CultureInfo.CurrentCulture);
     public string SizeText => ByteSize.Format(_entry.BytesCopied);
+    public string SkippedText => _entry.SkippedCount.ToString("N0", CultureInfo.CurrentCulture);
     public bool HasDetails => Details.Length > 0;
 
     public string Details

@@ -15,6 +15,21 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
 
     [ObservableProperty] private PreviewRowViewModel? _selectedRow;
 
+    /// <summary>
+    /// True: the rows show what goes into the backup (included files and size, ignored rows "—"); false: the total.
+    /// Per session, not saved.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowTotal))]
+    private bool _showInBackup = true;
+
+    /// <summary>The inverse of <see cref="ShowInBackup"/>, for the second button of the toggle.</summary>
+    public bool ShowTotal
+    {
+        get => !ShowInBackup;
+        set => ShowInBackup = !value;
+    }
+
     public RangeObservableCollection<PreviewRowViewModel> Rows { get; } = new();
 
     /// <summary>Raised when a folder is expanded that is not finished yet.</summary>
@@ -28,6 +43,13 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         _root = root;
         _placeholders.Clear();
         Rebuild(reuseRows: false);
+    }
+
+    partial void OnShowInBackupChanged(bool value)
+    {
+        // Rows are reused by reference; let them re-read their shown values.
+        foreach (var row in Rows)
+            row.Refresh();
     }
 
     /// <summary>Re-reads a running scan: the values of the visible rows, new entries and a changed order.</summary>

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Tests.TestSupport;
 
 namespace ReBackup.Core.Tests.Backup;
 
@@ -67,5 +68,83 @@ public class VersionNameTests
     public void IsTransient_recognises_folders_that_are_being_written_or_removed(string folder, bool expected)
     {
         VersionName.IsTransient(folder).Should().Be(expected);
+    }
+
+    [Fact]
+    public void FolderIn_combines_the_target_and_a_plain_folder_name()
+    {
+        VersionName.FolderIn(@"D:\Backups", "2026_09_30-14_05 Projects")
+            .Should().Be(@"D:\Backups\2026_09_30-14_05 Projects");
+        VersionName.FolderIn(@"D:\Backups\", "2026_09_30-14_05 Projects")
+            .Should().Be(@"D:\Backups\2026_09_30-14_05 Projects");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData(@"..\elsewhere")]
+    [InlineData(@"sub\2026_09_30-14_05 Projects")]
+    [InlineData("sub/2026_09_30-14_05 Projects")]
+    [InlineData(@"C:\Windows")]
+    [InlineData(@"\\server\share")]
+    [InlineData("name:stream")]
+    [InlineData("a*b")]
+    [InlineData("trailing.")]
+    [InlineData("trailing ")]
+    [InlineData(" leading")]
+    public void FolderIn_rejects_anything_but_one_plain_folder_name(string? name)
+    {
+        VersionName.FolderIn(@"D:\Backups", name).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData(@"relative\target")]
+    public void FolderIn_needs_an_absolute_target(string? target)
+    {
+        VersionName.FolderIn(target, "2026_09_30-14_05 Projects").Should().BeNull();
+    }
+
+    [Fact]
+    public void FolderNamesIn_lists_the_folders_of_the_target_once_ignoring_case()
+    {
+        using var tmp = new TempDir();
+        tmp.CreateDir("2026_09_30-14_05 Projects");
+        tmp.CreateDir(@"2026_09_30-15_05 Projects\nested");
+        File.WriteAllText(tmp.PathOf("2026_09_30-16_05 Projects"), "a file, not a folder");
+
+        var names = VersionName.FolderNamesIn(tmp.Root);
+
+        names.Should().BeEquivalentTo("2026_09_30-14_05 Projects", "2026_09_30-15_05 Projects");
+        names.Contains("2026_09_30-14_05 PROJECTS").Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(@"relative\target")]
+    [InlineData(@"Z:\does\not\exist\anywhere")]
+    public void FolderNamesIn_is_empty_for_a_missing_or_unusable_target(string? target)
+    {
+        VersionName.FolderNamesIn(target).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ExistingFolderIn_returns_the_folder_only_while_it_exists()
+    {
+        using var tmp = new TempDir();
+        tmp.CreateDir("2026_09_30-14_05 Projects");
+        File.WriteAllText(tmp.PathOf("2026_09_30-15_05 Projects"), "a file, not a folder");
+
+        VersionName.ExistingFolderIn(tmp.Root, "2026_09_30-14_05 Projects")
+            .Should().Be(tmp.PathOf("2026_09_30-14_05 Projects"));
+        VersionName.ExistingFolderIn(tmp.Root, "2026_09_30-15_05 Projects").Should().BeNull("it is a file");
+        VersionName.ExistingFolderIn(tmp.Root, "2026_09_30-16_05 Projects").Should().BeNull("it does not exist");
+        VersionName.ExistingFolderIn(tmp.Root, "..").Should().BeNull("it is not a folder name");
     }
 }

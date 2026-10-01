@@ -1,6 +1,7 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.IO;
 using ReBackup.Core.Plans;
@@ -9,8 +10,11 @@ using ReBackup.Core.Schedule;
 
 namespace ReBackup.App.ViewModels;
 
-/// <summary>A backup frequency assumed for the full-extension preview of a plan without triggers.</summary>
-public sealed record AssumedSchedule(string Label, TimeSpan Interval);
+/// <summary>
+/// A backup frequency assumed for the full-extension preview of a plan without triggers. <paramref name="Label"/> goes
+/// into sentences ("one backup a day"), <paramref name="RunsLabel"/> after "two years of" in the forecast title.
+/// </summary>
+public sealed record AssumedSchedule(string Label, TimeSpan Interval, string RunsLabel);
 
 /// <summary>Shows what a plan's retention rules do with the versions in its target.</summary>
 public sealed partial class RetentionPreviewViewModel : ObservableObject
@@ -20,7 +24,9 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
 
     private readonly Func<BackupPlan> _plan;
     private readonly Func<long?> _fallbackVersionBytes;
+    private readonly IFolderOpener _folders;
     private IReadOnlyList<VersionInfo>? _versions;
+    private string? _versionsTarget;   // belongs to _versions: the target they were read from
     private bool _targetMissing;   // belongs to _versions: the target folder did not exist when they were read
     private CancellationTokenSource? _loadCts;
     private CancellationTokenSource? _evaluateCts;
@@ -32,25 +38,60 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     [ObservableProperty] private AssumedSchedule _selectedSchedule = Schedules[1];
     [ObservableProperty] private bool _usesPlanSchedule;
     [ObservableProperty] private string _fullSummary = "";
+
+    /// <summary>Versions the target holds at most once the rules are in full effect; null while there is no forecast.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasForecast), nameof(ForecastVersionsText))]
+    private int? _forecastVersions;
+
+    /// <summary>Space those versions take; null while unknown (no version size known yet) or without a forecast.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ForecastSpaceText))]
+    private long? _forecastBytes;
+
     [ObservableProperty] private IReadOnlyList<TimelineLane> _timelineLanes = [];
     [ObservableProperty] private DateTime _timelineFrom;
     [ObservableProperty] private DateTime _timelineTo;
 
     /// <param name="plan">Gives the plan as currently edited.</param>
     /// <param name="fallbackVersionBytes">Size of one version when the target has none yet; null when unknown.</param>
-    public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes)
+    /// <param name="folders">Opens a version folder in Explorer.</param>
+    public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes, IFolderOpener folders)
     {
         _plan = plan;
         _fallbackVersionBytes = fallbackVersionBytes;
+        _folders = folders;
     }
+
+    /// <summary>
+    /// True when the target was read successfully and holds no versions. Depends on the versions read, not on the
+    /// rows: invalid rules (briefly while typing) clear the rows of a target that does hold versions.
+    /// </summary>
+    public bool ShowEmpty => _versions is { Count: 0 } && !IsLoading && Error is null;
+
+    /// <summary>The empty-state text shown over the table while <see cref="ShowEmpty"/> is true.</summary>
+    public string EmptyText => _targetMissing ? "The target folder does not exist (yet)." : "No versions yet";
+
+    /// <summary>True while the forecast numbers are shown; otherwise <see cref="FullSummary"/> says why there are none.</summary>
+    public bool HasForecast => ForecastVersions is not null;
+
+    /// <summary>The "Versions kept" number of the forecast, e.g. "≈ 21".</summary>
+    public string ForecastVersionsText => ForecastVersions is { } count ? $"≈ {count:N0}" : "";
+
+    /// <summary>The "Space" number of the forecast, e.g. "≈ 286.0 GB"; "unknown" while no version size is known.</summary>
+    public string ForecastSpaceText => ForecastBytes is { } bytes ? $"≈ {ByteSize.Format(bytes)}" : "unknown";
+
+    partial void OnIsLoadingChanged(bool value) => OnPropertyChanged(nameof(ShowEmpty));
+
+    partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(ShowEmpty));
 
     public static IReadOnlyList<AssumedSchedule> Schedules { get; } =
     [
-        new("one backup a week", TimeSpan.FromDays(7)),
-        new("one backup a day", TimeSpan.FromDays(1)),
-        new("two backups a day", TimeSpan.FromHours(12)),
-        new("a backup every 4 hours", TimeSpan.FromHours(4)),
-        new("a backup every hour", TimeSpan.FromHours(1)),
+        new("one backup a week", TimeSpan.FromDays(7), "weekly runs"),
+        new("one backup a day", TimeSpan.FromDays(1), "daily runs"),
+        new("two backups a day", TimeSpan.FromHours(12), "two runs a day"),
+        new("a backup every 4 hours", TimeSpan.FromHours(4), "runs every 4 hours"),
+        new("a backup every hour", TimeSpan.FromHours(1), "hourly runs"),
     ];
 
     partial void OnSelectedScheduleChanged(AssumedSchedule value) => RequestEvaluate();
@@ -79,6 +120,8 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _loadCts = null;   // the aborted load must not touch the state below any more
         _evaluateCts?.Cancel();
         _versions = null;
+        _versionsTarget = null;
+        OnPropertyChanged(nameof(ShowEmpty));
         _targetMissing = false;
         IsLoading = false;
         Error = null;
@@ -112,6 +155,20 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     [RelayCommand]
     private Task RefreshAsync() => LoadAsync();
 
+    /// <summary>
+    /// Shows the row's version folder in Explorer (checked and opened on a worker thread); reads the target again
+    /// when the folder is gone.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenVersionFolderAsync(RetentionNowRow? row)
+    {
+        if (row is null || _versionsTarget is not { } target)
+            return;
+        var name = row.Name;
+        if (!await Task.Run(() => _folders.OpenVersionFolder(target, name)) && ReferenceEquals(target, _versionsTarget))
+            _ = LoadAsync();
+    }
+
     private async Task LoadAsync()
     {
         _loadCts?.Cancel();
@@ -129,7 +186,10 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (!ReferenceEquals(_loadCts, cts))
                 return;
             _versions = versions;
+            _versionsTarget = plan.Target;
             _targetMissing = targetMissing;
+            OnPropertyChanged(nameof(ShowEmpty));
+            OnPropertyChanged(nameof(EmptyText));
             Evaluate();
         }
         catch (OperationCanceledException)
@@ -140,6 +200,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (ReferenceEquals(_loadCts, cts))
             {
                 _versions = null;
+                _versionsTarget = null;
                 _targetMissing = false;
                 NowRows.ReplaceAll([]);
                 NowSummary = "";
@@ -172,6 +233,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             NowRows.ReplaceAll([]);
             NowSummary = "Correct the rules above to see what they keep.";
             ClearSimulation();
+            FullSummary = "Correct the rules above to see the forecast.";
             return;
         }
 
@@ -194,6 +256,8 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _simulateCts?.Cancel();
         _simulateCts = null;
         FullSummary = "";
+        ForecastVersions = null;
+        ForecastBytes = null;
         TimelineLanes = [];
     }
 
@@ -203,6 +267,8 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _simulateCts?.Cancel();
         var cts = _simulateCts = new CancellationTokenSource();
         FullSummary = "Calculating…";
+        ForecastVersions = null;
+        ForecastBytes = null;
 
         try
         {
@@ -214,7 +280,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
                 {
                     ClearSimulation();
-                    FullSummary = "Correct the plan's triggers on the Schedule tab to see the full extension.";
+                    FullSummary = "Correct the plan's triggers on the Plan tab to see the full extension.";
                     return;
                 }
                 runs = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local);
@@ -259,13 +325,16 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         FullSummary = rules.Count == 0
             ? $"No rules, so nothing is ever deleted: with {frequency} there are {result.SteadyStateCount:N0} versions after two years{size}.{cut}"
             : $"With {frequency} the target holds up to {result.SteadyStateCount:N0} versions{size}.{cut}";
+        ForecastVersions = result.SteadyStateCount;
+        ForecastBytes = result.EstimatedBytes;
 
         var lanes = new List<TimelineLane>();
         for (var i = 0; i < rules.Count; i++)
         {
             var ruleIndex = i;
             lanes.Add(new TimelineLane($"{RetentionRules.Describe(rules[i])}, keep {rules[i].Keep:N0}",
-                result.Survivors.Where(s => s.Reasons.Any(r => r.RuleIndex == ruleIndex)).Select(s => s.LocalTime).ToList()));
+                result.Survivors.Where(s => s.Reasons.Any(r => r.RuleIndex == ruleIndex)).Select(s => s.LocalTime).ToList(),
+                rules[i].Period));
         }
 
         var others = result.Survivors.Where(s => s.Reasons.Count > 0 && s.Reasons.All(r => r.RuleIndex < 0)).Select(s => s.LocalTime).ToList();

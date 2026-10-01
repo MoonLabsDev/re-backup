@@ -16,6 +16,7 @@ using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
+using ThemeMode = ReBackup.Core.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
 namespace ReBackup.App;
 
@@ -36,6 +37,7 @@ public partial class App : Application
     private TaskbarIcon? _tray;
     private readonly ContextMenu _trayMenu = new();
     private SingleInstance? _singleInstance;
+    private ThemeToggleViewModel _themeToggle = null!;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -57,6 +59,10 @@ public partial class App : Application
             Shutdown();
             return;
         }
+
+        // Before the first window exists, so a light theme never flashes dark.
+        ThemeManager.ThemeChanged += OnThemeChanged;
+        ThemeManager.Apply(_settings.Theme);
 
         _window = new MainWindow { DataContext = _mainViewModel };
         _window.Closing += OnMainWindowClosing;
@@ -121,8 +127,9 @@ public partial class App : Application
             // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
             var scheduler = new Scheduler((planId, trigger) =>
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
+            var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue, scheduler,
-                action => Dispatcher.InvokeAsync(action));
+                action => Dispatcher.InvokeAsync(action), themeToggle, new ExplorerFolderOpener());
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
@@ -133,6 +140,7 @@ public partial class App : Application
             _settings = settings;
             _planStore = planStore;
             _mainViewModel = mainViewModel;
+            _themeToggle = themeToggle;
             _queue = queue;
             _scheduler = scheduler;
         }
@@ -156,6 +164,7 @@ public partial class App : Application
         _trayMenu.Opened += (_, _) => pauseItem.Header = _scheduler.IsPaused ? "Resume scheduler" : "Pause scheduler";
         _trayMenu.Items.Add(new Separator());
         _trayMenu.Items.Add(CreateTrayMenuItem("Exit", ExitApp));
+        ThemeManager.Follow(_trayMenu);   // the menu is in no window, so it needs the palette in its own resources
         _trayMenu.Opened += (_, _) => FillRunMenu(runMenu);
         FillRunMenu(runMenu);
 
@@ -295,7 +304,7 @@ public partial class App : Application
     private void ShowSettings()
     {
         var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs, ConfirmDiscardUnsaved,
-            () => _queue.IsBusy);
+            () => _queue.IsBusy, ThemeManager.Apply);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
             window.Owner = _window;
@@ -306,6 +315,27 @@ public partial class App : Application
         else
             _mainViewModel.ReevaluatePreviews();
     }
+
+    /// <summary>The rail's theme button: applies the mode at once and saves it right away.</summary>
+    private void ChooseTheme(ThemeMode mode)
+    {
+        ThemeManager.Apply(mode);
+        if (_settings.Theme == mode)
+            return;
+
+        _settings.Theme = mode;
+        try
+        {
+            _settingsStore.Save(_settings);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            // Kept for this session; the error says it is not saved.
+            _dialogs.ShowError("Settings", $"The theme could not be saved:\n\n{ex.Message}");
+        }
+    }
+
+    private void OnThemeChanged(object? sender, EventArgs e) => _themeToggle.Refresh();
 
     private void Restart()
     {

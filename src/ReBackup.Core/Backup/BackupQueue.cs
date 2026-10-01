@@ -12,6 +12,12 @@ public enum JobState
 public sealed record BackupJobUpdate(string PlanId, string PlanName, JobState State, BackupProgress? Progress,
     RunLogEntry? Result);
 
+/// <summary>
+/// Where a waiting job stands: <paramref name="Position"/> 1 starts next. The job ahead is the one before it in the
+/// queue, or the running job for position 1 (null when nothing runs yet). The name is the plan's name when it was queued.
+/// </summary>
+public sealed record QueuePosition(int Position, string? AheadPlanId, string? AheadPlanName);
+
 /// <summary>Runs backups one at a time. A plan can be queued or running only once.</summary>
 public sealed class BackupQueue
 {
@@ -53,6 +59,25 @@ public sealed class BackupQueue
     public string? RunningPlanId
     {
         get { lock (_gate) return _running?.PlanId; }
+    }
+
+    /// <summary>A snapshot of the waiting plans, the next one to run first; the running plan is not part of it.</summary>
+    public IReadOnlyList<string> QueuedPlanIds
+    {
+        get { lock (_gate) return _queued.Select(q => q.PlanId).ToList(); }
+    }
+
+    /// <summary>Where the waiting job of that plan stands; null when the plan is not waiting (running or not queued).</summary>
+    public QueuePosition? PositionOf(string planId)
+    {
+        lock (_gate)
+        {
+            var index = _queued.FindIndex(q => q.PlanId == planId);
+            if (index < 0)
+                return null;
+            var ahead = index > 0 ? _queued[index - 1] : _running;
+            return new QueuePosition(index + 1, ahead?.PlanId, ahead?.Request.Plan.Name);
+        }
     }
 
     /// <summary>True after <see cref="Close"/>: no new jobs are accepted.</summary>
