@@ -42,7 +42,15 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     {
         _plan = plan;
         _fallbackVersionBytes = fallbackVersionBytes;
+        NowRows.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ShowEmpty));
     }
+
+    /// <summary>True when the target was read successfully and holds no versions.</summary>
+    public bool ShowEmpty => _versions is not null && NowRows.Count == 0 && !IsLoading && Error is null;
+
+    partial void OnIsLoadingChanged(bool value) => OnPropertyChanged(nameof(ShowEmpty));
+
+    partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(ShowEmpty));
 
     public static IReadOnlyList<AssumedSchedule> Schedules { get; } =
     [
@@ -79,6 +87,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _loadCts = null;   // the aborted load must not touch the state below any more
         _evaluateCts?.Cancel();
         _versions = null;
+        OnPropertyChanged(nameof(ShowEmpty));
         _targetMissing = false;
         IsLoading = false;
         Error = null;
@@ -129,6 +138,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (!ReferenceEquals(_loadCts, cts))
                 return;
             _versions = versions;
+            OnPropertyChanged(nameof(ShowEmpty));
             _targetMissing = targetMissing;
             Evaluate();
         }

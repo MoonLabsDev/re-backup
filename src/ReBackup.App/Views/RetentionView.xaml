@@ -249,7 +249,7 @@
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding RetentionPreview.NowRows.Count}" Value="0">
+                                        <DataTrigger Binding="{Binding RetentionPreview.ShowEmpty}" Value="True">
                                             <Setter Property="Visibility" Value="Visible" />
                                         </DataTrigger>
                                     </Style.Triggers>
