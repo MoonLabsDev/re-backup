@@ -10,7 +10,11 @@ using ReBackup.Core.Retention;
 
 namespace ReBackup.Core.Backup;
 
-public enum BackupPhase { Indexing, Copying, Finishing, Retention }
+/// <summary>
+/// CreatingFolders counts folders in FilesDone/FilesTotal. CleaningUp: the run did not finish and the incomplete copy
+/// is being removed.
+/// </summary>
+public enum BackupPhase { Indexing, CreatingFolders, Copying, Finishing, CleaningUp, Retention }
 
 public readonly record struct BackupProgress(
     BackupPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal, string CurrentFile)
@@ -118,7 +122,10 @@ public sealed class BackupRunner : IBackupRunner
         }
 
         if (!completed && partialPath is not null)
+        {
+            progress?.Report(new BackupProgress(BackupPhase.CleaningUp, 0, 0, 0, 0, ""));
             TryDeleteDirectory(partialPath);
+        }
 
         if (completed)
         {
@@ -449,11 +456,23 @@ public sealed class BackupRunner : IBackupRunner
     private void CopyAndFinish(BackupWork work, BackupPlan plan, string partialPath, string finalPath,
         RunLogEntry entry, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
+        // Creating many folders on a network share takes a while, so it reports progress of its own.
+        var foldersTotal = work.Directories.Count;
+        var foldersDone = 0;
+        var sinceFolderReport = Stopwatch.StartNew();
+        progress?.Report(new BackupProgress(BackupPhase.CreatingFolders, 0, foldersTotal, 0, 0, ""));
         Directory.CreateDirectory(partialPath);
         foreach (var directory in work.Directories)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(Path.Combine(partialPath, ToLocalPath(directory.RelativePath)));
+            foldersDone++;
+            if (progress is not null && (sinceFolderReport.Elapsed >= ProgressInterval || foldersDone == foldersTotal))
+            {
+                sinceFolderReport.Restart();
+                progress.Report(new BackupProgress(BackupPhase.CreatingFolders, foldersDone, foldersTotal, 0, 0,
+                    directory.RelativePath));
+            }
         }
 
         var manifest = new BackupManifest
