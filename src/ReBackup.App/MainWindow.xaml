@@ -387,6 +387,11 @@
                                     <TextBlock Margin="0,3,0,0" MaxHeight="32" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
                                                TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                                Text="{Binding Run.DetailText}" ToolTip="{Binding Run.DetailText}" />
+                                    <!-- A restore from the Versions tab runs beside the backups. -->
+                                    <TextBlock Margin="0,3,0,0" FontSize="12" Foreground="{DynamicResource Brush.AccentLight}"
+                                               TextTrimming="CharacterEllipsis" Text="{Binding Versions.RestoreText}"
+                                               ToolTip="{Binding Versions.RestoreText}"
+                                               Visibility="{Binding Versions.IsRestoring, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
 
                                 <!-- Run now while idle, cancel while running, remove from the queue while queued. -->

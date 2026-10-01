@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using Microsoft.Win32;
+using ReBackup.Core.Versions;
 
 namespace ReBackup.App.Services;
 
@@ -36,6 +37,30 @@ public sealed class WpfDialogService : IDialogService
 
     public void ShowInfo(string title, string message) =>
         Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+
+    public ConflictPolicy? AskConflictPolicy(string title, string message, IReadOnlyList<string>? details = null)
+    {
+        var dialog = new ConflictDialog(title, message, details ?? []);
+        if (Owner is { } owner)
+            dialog.Owner = owner;
+        return dialog.ShowDialog() == true ? dialog.Choice : null;
+    }
+
+    public void ShowFailures(string title, string message, IReadOnlyList<string> lines)
+    {
+        var dialog = new FailuresDialog(title, message, lines, confirmText: null);
+        if (Owner is { } owner)
+            dialog.Owner = owner;
+        dialog.ShowDialog();
+    }
+
+    public bool ConfirmFailures(string title, string message, IReadOnlyList<string> lines, string confirmText)
+    {
+        var dialog = new FailuresDialog(title, message, lines, confirmText);
+        if (Owner is { } owner)
+            dialog.Owner = owner;
+        return dialog.ShowDialog() == true;
+    }
 
     private static MessageBoxResult Show(string text, string caption, MessageBoxButton buttons, MessageBoxImage image)
     {

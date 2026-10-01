@@ -27,6 +27,15 @@ public sealed partial class VersionTreeViewModel : ObservableObject
 
     public RangeObservableCollection<VersionTreeNode> Rows { get; } = new();
 
+    /// <summary>
+    /// The index id of the version whose entries the rows show; null while a message is shown or the tree is suspended
+    /// (its ids may be stale). Actions compare it with the row's current id before using a selected entry.
+    /// </summary>
+    public long? ShownVersionId => _index is null ? null : _versionId;
+
+    /// <summary>The id of version B the rows were compared with (entries only in B); null like <see cref="ShownVersionId"/>.</summary>
+    public long? ShownOtherId => _index is null ? null : _otherId;
+
     /// <summary>Shows a message instead of a tree (no version, not indexed yet, an error).</summary>
     public void ShowMessage(string message)
     {

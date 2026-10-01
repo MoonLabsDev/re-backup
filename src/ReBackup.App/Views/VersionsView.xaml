@@ -71,6 +71,15 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <!-- The actions on the selected entry: toolbar buttons and the tree's context menu use the same commands. -->
+        <ContextMenu x:Key="Menu.Entry">
+            <MenuItem Header="Open" Command="{Binding Versions.OpenSelectedCommand}" />
+            <MenuItem Header="Show in Explorer" Command="{Binding Versions.ShowSelectedInExplorerCommand}" />
+            <Separator />
+            <MenuItem Header="Restore to original location…" Command="{Binding Versions.RestoreToOriginalCommand}" />
+            <MenuItem Header="Restore to…" Command="{Binding Versions.RestoreToCommand}" />
+        </ContextMenu>
     </UserControl.Resources>
 
     <Grid Margin="24,20">
@@ -185,7 +194,42 @@
                         <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,0,16,6" VerticalAlignment="Center"
                                   Content="Changed only" IsChecked="{Binding Versions.ChangedOnly}"
                                   IsEnabled="{Binding Versions.IsComparing}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Button Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.OpenFile}"
+                                    ToolTip="Open the file (the copy in the version)" AutomationProperties.Name="Open"
+                                    Command="{Binding Versions.OpenSelectedCommand}" />
+                            <Button Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Explorer}"
+                                    ToolTip="Show in Explorer" AutomationProperties.Name="Show in Explorer"
+                                    Command="{Binding Versions.ShowSelectedInExplorerCommand}" />
+                            <Button Margin="6,0,0,0" AutomationProperties.Name="Restore to original location"
+                                    ToolTip="Copy the selection back to where it came from"
+                                    Command="{Binding Versions.RestoreToOriginalCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Restore}" />
+                                    <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Restore" />
+                                </StackPanel>
+                            </Button>
+                            <Button Margin="6,0,0,0" Content="Restore to…" AutomationProperties.Name="Restore to a folder"
+                                    ToolTip="Copy the selection into a folder you choose"
+                                    Command="{Binding Versions.RestoreToCommand}" />
+                        </StackPanel>
                     </WrapPanel>
+
+                    <!-- A running restore: progress and cancel. -->
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8"
+                               Visibility="{Binding Versions.IsRestoring, Converter={StaticResource BoolToVisibility}}">
+                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Command="{Binding Versions.CancelRestoreCommand}"
+                                AutomationProperties.Name="Cancel the restore" ToolTip="Stop after the current file">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Stop}" />
+                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Cancel" />
+                            </StackPanel>
+                        </Button>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock FontSize="12" Foreground="{DynamicResource Brush.AccentLight}" Text="{Binding Versions.RestoreText}" />
+                            <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.RestoreFraction, Mode=OneWay}" />
+                        </StackPanel>
+                    </DockPanel>
 
                     <TextBlock DockPanel.Dock="Top" Style="{StaticResource TextBlock.Muted}" Margin="2,0,0,6" FontSize="12"
                                Text="{Binding Versions.SearchSummary}"
@@ -199,6 +243,7 @@
                                   SelectedItem="{Binding Versions.Tree.SelectedNode}"
                                   SelectionChanged="OnTreeSelectionChanged"
                                   SizeChanged="OnTreeSizeChanged"
+                                  ContextMenu="{StaticResource Menu.Entry}"
                                   VirtualizingPanel.IsVirtualizing="True"
                                   VirtualizingPanel.VirtualizationMode="Recycling">
                             <ListView.Style>
