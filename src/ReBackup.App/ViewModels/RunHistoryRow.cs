@@ -1,7 +1,6 @@
-using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
 
 namespace ReBackup.App.ViewModels;
 
@@ -65,18 +64,18 @@ public sealed partial class RunHistoryRow : ObservableObject
     /// <summary>The folder was found missing when it was to be opened.</summary>
     public void MarkVersionMissing() => CanOpenVersion = false;
 
-    public string StartText => _entry.StartUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+    public string StartText => Formats.DateAndTimeSeconds(_entry.StartUtc.ToLocalTime());
     public string DurationText => FormatDuration(_entry.DurationMs);
-    public string TriggerText => _entry.Trigger == RunTrigger.CatchUp ? "Catch-up" : _entry.Trigger.ToString();
+    public string TriggerText => Loc.T("enum.runTrigger." + _entry.Trigger);
 
     public string StatusText => _entry.Status switch
     {
-        RunStatus.CompletedWithWarnings => "Completed with warnings",
-        RunStatus.Full => "Aborted: target full",
-        RunStatus.Error => "Aborted: error",
-        RunStatus.Canceled => "Canceled",
-        RunStatus.Completed when _entry.Warnings.Count > 0 => "Completed (retention warnings)",
-        _ => "Completed",
+        RunStatus.CompletedWithWarnings => Loc.T("run.status.completedWithWarnings"),
+        RunStatus.Full => Loc.T("run.status.full"),
+        RunStatus.Error => Loc.T("run.status.error"),
+        RunStatus.Canceled => Loc.T("run.status.canceled"),
+        RunStatus.Completed when _entry.Warnings.Count > 0 => Loc.T("run.status.completedRetentionWarnings"),
+        _ => Loc.T("run.status.completed"),
     };
 
     public RunOutcome Outcome => _entry.Status switch
@@ -86,10 +85,11 @@ public sealed partial class RunHistoryRow : ObservableObject
         _ => RunOutcome.Failed,
     };
 
-    public string Reason => _entry.Reason ?? "";
-    public string FilesText => _entry.FilesCopied.ToString("N0", CultureInfo.CurrentCulture);
-    public string SizeText => ByteSize.Format(_entry.BytesCopied);
-    public string SkippedText => _entry.SkippedCount.ToString("N0", CultureInfo.CurrentCulture);
+    /// <summary>Why the run failed, in the applied language when Core wrote it (stored in English).</summary>
+    public string Reason => Loc.Known(_entry.Reason);
+    public string FilesText => Formats.Count(_entry.FilesCopied);
+    public string SizeText => Formats.Bytes(_entry.BytesCopied);
+    public string SkippedText => Formats.Count(_entry.SkippedCount);
     public bool HasDetails => Details.Length > 0;
 
     public string Details
@@ -101,10 +101,10 @@ public sealed partial class RunHistoryRow : ObservableObject
                 lines.Add($"Version: {_entry.Version}");
             if (_entry.SkippedCount > 0)
             {
-                lines.Add($"Skipped ({_entry.SkippedCount:N0}):");
+                lines.Add($"Skipped ({Formats.Count(_entry.SkippedCount)}):");
                 lines.AddRange(_entry.Skipped.Select(s => $"  {s.Path} — {s.Reason}"));
                 if (_entry.SkippedCount > _entry.Skipped.Count)
-                    lines.Add($"  … and {_entry.SkippedCount - _entry.Skipped.Count:N0} more");
+                    lines.Add($"  … and {Formats.Count(_entry.SkippedCount - _entry.Skipped.Count)} more");
             }
             if (_entry.RetentionDeleted.Count > 0)
             {
@@ -124,9 +124,17 @@ public sealed partial class RunHistoryRow : ObservableObject
     {
         var duration = TimeSpan.FromMilliseconds(milliseconds);
         if (duration.TotalHours >= 1)
-            return $"{(int)duration.TotalHours} h {duration.Minutes:00} min {duration.Seconds:00} s";
+        {
+            return Loc.F("common.duration.hms", ("hours", (int)duration.TotalHours), ("minutes", duration.Minutes),
+                ("seconds", duration.Seconds));
+        }
         if (duration.TotalMinutes >= 1)
-            return $"{duration.Minutes} min {duration.Seconds:00} s";
-        return duration.TotalSeconds >= 1 ? $"{duration.Seconds} s" : "under 1 s";
+            return Loc.F("common.duration.ms", ("minutes", duration.Minutes), ("seconds", duration.Seconds));
+        return duration.TotalSeconds >= 1
+            ? Loc.F("common.duration.s", ("seconds", duration.Seconds))
+            : Loc.T("common.duration.underSecond");
     }
+
+    /// <summary>The language changed: every text of the row is read again.</summary>
+    public void Refresh() => OnPropertyChanged(string.Empty);
 }

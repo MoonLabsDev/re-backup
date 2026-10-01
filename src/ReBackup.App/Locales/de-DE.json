@@ -123,7 +123,7 @@
       "freeSpacePlanGone": "Alte Versionen wurden nicht gelöscht, um Platz zu schaffen: Den Plan gibt es nicht mehr.",
       "freeSpaceExamineFailed": "Alte Versionen konnten nicht geprüft werden, um Platz zu schaffen: {error}",
       "freeSpaceDeleteFailed": "„{version}“ konnte nicht gelöscht werden, um Platz zu schaffen: {error}",
-      "remainsFailed": "Reste einer früheren Löschung konnten nicht entfernt werden („{name}“): {error}",
+      "remainsFailed": "Reste einer früheren Löschung konnten nicht gelöscht werden („{name}“): {error}",
       "removedRemainsLeft": "„{version}“ wurde aus den Versionen entfernt, seine Reste konnten aber noch nicht gelöscht werden: {error}",
       "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
     },
@@ -177,6 +177,163 @@
     },
     "config": {
       "containsConfiguration": "Der gewählte Ordner enthält bereits eine ReBackup-Konfiguration."
+    }
+  },
+  "shell": {
+    "tab": { "plan": "Plan", "ignore": "Ignorieren", "retention": "Aufbewahrung", "history": "Verlauf", "versions": "Versionen" },
+    "rail": {
+      "settings": "Einstellungen",
+      "themeToolTip": "Design: {theme} – zum Ändern klicken",
+      "themeName": "Design: {theme}"
+    },
+    "plans": {
+      "title": "PLÄNE",
+      "new": "Neuer Plan",
+      "newName": "Neuer Plan",
+      "delete": "Plan löschen",
+      "list": "Pläne",
+      "deleteConfirm": "Plan „{plan}“ löschen?\n\nBereits im Ziel gespeicherte Backups bleiben unberührt.",
+      "deleteHistory": "Auch den Laufverlauf dieses Plans löschen?",
+      "historyNotDeleted": "Der Plan wurde gelöscht, sein Laufverlauf aber nicht: {error}"
+    },
+    "noPlan": "Kein Plan ausgewählt. Mit der Schaltfläche + neben PLÄNE einen anlegen.",
+    "actions": {
+      "saveToolTip": "Speichern (Strg+S)",
+      "runNow": "Jetzt ausführen",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "chooseSource": "Quellordner wählen",
+      "chooseTarget": "Zielordner wählen"
+    },
+    "card": {
+      "removeFromQueue": "Aus der Warteschlange entfernen",
+      "cancelBackup": "Backup abbrechen",
+      "canceling": "Wird abgebrochen …"
+    },
+    "status": {
+      "configuration": "Konfiguration: {path}",
+      "reloadFailed": "Die Pläne konnten nicht neu geladen werden: {error}",
+      "reloaded": "Pläne nach einer Änderung auf dem Datenträger neu geladen.",
+      "loadErrors": "{count} Plandatei(en) konnten nicht gelesen werden: {details}",
+      "deleteCancelBackup": "Vor dem Löschen des Plans das Backup von „{plan}“ abbrechen.",
+      "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
+      "saved": "„{plan}“ gespeichert.",
+      "notSaved": "Nicht gespeichert: Die im Plan angezeigten Fehler beheben.",
+      "scheduledFailed": "Ein geplantes Backup konnte nicht eingereiht werden: {error}",
+      "scheduleFailed": "Der Zeitplan konnte nicht aktualisiert werden: {error}",
+      "canceling": "Backup von „{plan}“ wird abgebrochen …",
+      "saveFirst": "„{plan}“ vor dem Ausführen fehlerfrei speichern.",
+      "alreadyQueued": "„{plan}“ ist bereits eingereiht oder läuft.",
+      "removed": "Das eingereihte Backup von „{plan}“ wurde entfernt.",
+      "completed": "Backup von „{plan}“ in {duration} abgeschlossen.",
+      "completedSkipped": "Backup von „{plan}“ abgeschlossen, {count:N0} Einträge übersprungen.",
+      "canceled": "Backup von „{plan}“ wurde abgebrochen.",
+      "aborted": "Backup von „{plan}“ ist fehlgeschlagen: {reason}",
+      "indexError": "Der Versionsindex von „{plan}“ konnte nicht aktualisiert werden: {error}",
+      "historyUnreadable": "Der Laufverlauf von „{plan}“ konnte nicht gelesen werden: {error}"
+    },
+    "queue": {
+      "idle": "Kein Backup aktiv",
+      "running": "Backup von „{plan}“ läuft",
+      "percent": " – {percent:0} %",
+      "waiting": " · {count} wartend",
+      "queued": "{count} Backup(s) eingereiht"
+    },
+    "scheduler": { "paused": "Zeitplaner pausiert" }
+  },
+  "card": {
+    "neverRun": "Noch nie gelaufen",
+    "lastRun": "Letzter Lauf {when}: {status}",
+    "runNow": "Jetzt ausführen",
+    "retryNow": "Jetzt erneut versuchen",
+    "queued": "Eingereiht",
+    "after": "nach „{plan}“",
+    "startsNext": "startet als Nächstes",
+    "canceling": "Wird abgebrochen",
+    "stopping": "Wird beendet",
+    "removingCopy": "unvollständige Kopie wird entfernt …",
+    "stoppingBackup": "Backup wird beendet …",
+    "starting": "Startet …",
+    "scan": "Scan",
+    "indexing": "Indizieren …",
+    "creatingFolders": "Ordner anlegen",
+    "copying": "Kopieren …",
+    "copyDetail": "{bytes} · {count:N0} Dateien",
+    "finishing": "Abschließen",
+    "removingOld": "alte Versionen werden entfernt …",
+    "completingVersion": "Version wird abgeschlossen …",
+    "manualOnly": "Nur manuell",
+    "schedulerPaused": "Zeitplaner pausiert",
+    "canceledAt": "Abgebrochen · {when}",
+    "targetFull": "Ziel voll",
+    "targetFullToolTip": "Das Ziel ist voll.",
+    "failed": "Fehlgeschlagen",
+    "failedReason": "Fehlgeschlagen: {reason}",
+    "skipped": "{count:N0} übersprungen",
+    "retentionWarnings": "Warnungen der Aufbewahrung",
+    "backedUpAt": "Gesichert · {when}",
+    "lastShort": "zuletzt {when} · {result}",
+    "neverRunShort": "noch nie gelaufen",
+    "result": { "ok": "OK", "warnings": "Warnungen", "canceled": "abgebrochen", "failed": "fehlgeschlagen" },
+    "remaining": {
+      "underMinute": "weniger als eine Minute übrig",
+      "minutes": "noch {minutes} min",
+      "hours": "noch {hours} h {minutes:00} min"
+    },
+    "schedule": {
+      "notSaved": "noch nicht gespeichert",
+      "none": "kein Zeitplan",
+      "errors": "Zeitplan fehlerhaft",
+      "next": "nächster Lauf {when}"
+    }
+  },
+  "run": {
+    "status": {
+      "completed": "Abgeschlossen",
+      "completedWithWarnings": "Mit Warnungen abgeschlossen",
+      "completedRetentionWarnings": "Abgeschlossen (Warnungen der Aufbewahrung)",
+      "full": "Abgebrochen: Ziel voll",
+      "error": "Abgebrochen: Fehler",
+      "canceled": "Abgebrochen"
+    }
+  },
+  "tray": {
+    "open": "Öffnen",
+    "runPlan": "Plan ausführen",
+    "pause": "Zeitplaner pausieren",
+    "resume": "Zeitplaner fortsetzen",
+    "exit": "Beenden",
+    "notification": {
+      "title": "Backup „{plan}“",
+      "completed": "In {duration} abgeschlossen.",
+      "completedSkipped": "In {duration} abgeschlossen, {count:N0} Einträge wurden übersprungen.",
+      "canceled": "Nach {duration} abgebrochen.",
+      "full": "Nach {duration} abgebrochen, das Ziel ist voll. {reason}",
+      "error": "Nach {duration} mit einem Fehler abgebrochen. {reason}"
+    }
+  },
+  "app": {
+    "config": {
+      "title": "Konfigurationsordner",
+      "unreachable": "Der Konfigurationsordner {path} ist nicht erreichbar:\n\n{error}\n\nJa = Erneut versuchen, Nein = Für diese Sitzung den Standardort verwenden, Abbrechen = Beenden",
+      "defaultUnusable": "Auch der Standardort {path} ist nicht nutzbar:\n\n{error}"
+    },
+    "settingsUnreadable": "settings.json konnte nicht gelesen werden, es gelten die Standardwerte.\n\n{error}",
+    "themeNotSaved": "Das Design konnte nicht gespeichert werden:\n\n{error}",
+    "restartStuck": "Ein laufendes Backup konnte nicht rechtzeitig beendet werden. Bitte ReBackup von Hand neu starten.",
+    "restartFailed": "ReBackup konnte sich nicht selbst neu starten. Bitte von Hand neu starten.",
+    "unsaved": {
+      "title": "Ungespeicherte Änderungen",
+      "message": "Diese Pläne haben ungespeicherte Änderungen:\n\n{plans}\n\nÄnderungen verwerfen?"
+    },
+    "restoreRunning": {
+      "title": "Wiederherstellung läuft",
+      "restart": "Eine Wiederherstellung läuft. Bereits wiederhergestellte Dateien bleiben, der Rest wird nicht wiederhergestellt.\n\nAbbrechen und ReBackup neu starten?",
+      "exit": "Eine Wiederherstellung läuft. Bereits wiederhergestellte Dateien bleiben, der Rest wird nicht wiederhergestellt.\n\nAbbrechen und ReBackup beenden?"
+    },
+    "restoreStuck": "Eine Wiederherstellung wurde nicht innerhalb von 10 Sekunden beendet. Eine gerade geschriebene Datei ist möglicherweise unvollständig (daneben liegt eine Datei „*.rebackup-tmp“).",
+    "backupRunning": {
+      "title": "Backup läuft",
+      "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"
     }
   }
 }

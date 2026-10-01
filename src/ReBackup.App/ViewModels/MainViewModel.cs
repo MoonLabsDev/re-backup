@@ -43,16 +43,16 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The tab shown for the selected plan; it stays when another plan is selected.</summary>
     [ObservableProperty] private MainTab _selectedTab = MainTab.Plan;
 
-    [ObservableProperty] private string? _statusMessage;
-    [ObservableProperty] private string _queueStatus = "No backup running";
-    [ObservableProperty] private string _schedulerStatus = "";
+    private LocText? _status;
+    private LocText _queueText = LocText.Of("shell.queue.idle");
+    private bool _schedulerPaused;
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex)
     {
         _folders = folders;
-        _versions = new VersionsContext(versionIndex, dialogs, text => StatusMessage = text);
+        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(LocText.Raw(text)));
         Theme = theme;
         Language = language;
         Loc.LanguageChanged += (_, _) => OnLanguageChanged();
@@ -71,7 +71,7 @@ public sealed partial class MainViewModel : ObservableObject
             AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
-        StatusMessage = LoadErrorText(result) ?? $"Configuration: {_paths.Root}";
+        SetStatus(LoadErrorText(result) ?? LocText.Of("shell.status.configuration", ("path", _paths.Root)));
         PublishPlans();
         RefreshSchedule();
     }
@@ -90,6 +90,28 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The language button of the icon rail.</summary>
     public LanguageToggleViewModel Language { get; }
 
+    /// <summary>The footer's status line, in the applied language.</summary>
+    public string? StatusMessage => _status?.ToString();
+
+    /// <summary>The queue line of the footer and the tray.</summary>
+    public string QueueStatus => _queueText.ToString();
+
+    /// <summary>"Scheduler paused" while it is; empty otherwise.</summary>
+    public string SchedulerStatus => _schedulerPaused ? Loc.T("shell.scheduler.paused") : "";
+
+    /// <summary>Shows <paramref name="text"/> in the footer; it follows language switches.</summary>
+    public void SetStatus(LocText? text)
+    {
+        _status = text;
+        OnPropertyChanged(nameof(StatusMessage));
+    }
+
+    private void SetQueueStatus(LocText text)
+    {
+        _queueText = text;
+        OnPropertyChanged(nameof(QueueStatus));
+    }
+
     /// <summary>
     /// The language changed: everything built in code is built again. Bound labels follow by themselves; this is the
     /// one subscription, and it reaches every plan editor.
@@ -100,6 +122,9 @@ public sealed partial class MainViewModel : ObservableObject
         Theme.Refresh();
         foreach (var editor in Plans)
             editor.RefreshTexts();
+        RefreshSchedule();   // the cards' "next …" texts and the scheduler line
+        OnPropertyChanged(nameof(StatusMessage));
+        OnPropertyChanged(nameof(QueueStatus));
     }
 
     /// <summary>Re-applies the patterns in every open preview, e.g. after the global defaults changed.</summary>
@@ -139,7 +164,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public IEnumerable<string> UnsavedPlanNames =>
-        Plans.Where(p => p.IsDirty).Select(p => string.IsNullOrWhiteSpace(p.Name) ? "(unnamed)" : p.Name);
+        Plans.Where(p => p.IsDirty).Select(p => string.IsNullOrWhiteSpace(p.Name) ? Loc.T("common.unnamed") : p.Name);
 
     public void ReloadFromDisk()
     {
@@ -150,7 +175,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            StatusMessage = $"Plans could not be reloaded: {ex.Message}";
+            SetStatus(LocText.Of("shell.status.reloadFailed", ("error", ex.Message)));
             return;
         }
 
@@ -205,14 +230,14 @@ public sealed partial class MainViewModel : ObservableObject
         if (SelectedPlan is null || !Plans.Contains(SelectedPlan))
             SelectedPlan = Plans.FirstOrDefault();
 
-        StatusMessage = LoadErrorText(result) ?? "Plans reloaded after a change on disk.";
+        SetStatus(LoadErrorText(result) ?? LocText.Of("shell.status.reloaded"));
         PublishPlans();
     }
 
     [RelayCommand]
     private void NewPlan()
     {
-        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName("New plan") }, isNew: true, AllPlans, GlobalIgnoreDefaults,
+        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName(Loc.T("shell.plans.newName")) }, isNew: true, AllPlans, GlobalIgnoreDefaults,
             _folders, _versions);
         AddEditor(editor);
         RevalidateAll();
@@ -228,21 +253,20 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (editor.Run.IsActive)
         {
-            StatusMessage = $"Cancel the backup of \"{editor.Name}\" before deleting the plan.";
+            SetStatus(LocText.Of("shell.status.deleteCancelBackup", ("plan", editor.Name)));
             return;
         }
         if (editor.Versions.IsRestoring)
         {
-            StatusMessage = $"Wait for the restore from \"{editor.Name}\" to finish, or cancel it, before deleting the plan.";
+            SetStatus(LocText.Of("shell.status.deleteWaitRestore", ("plan", editor.Name)));
             return;
         }
 
         if (!editor.IsNew)
         {
-            if (!_dialogs.Confirm("Delete plan",
-                    $"Delete plan \"{editor.Name}\"?\n\nBackups already stored in the target are not touched."))
+            if (!_dialogs.Confirm(Loc.T("shell.plans.delete"), Loc.F("shell.plans.deleteConfirm", ("plan", editor.Name))))
                 return;
-            var deleteLog = _dialogs.AskYesNoCancel("Delete plan", "Also delete this plan's run history?");
+            var deleteLog = _dialogs.AskYesNoCancel(Loc.T("shell.plans.delete"), Loc.T("shell.plans.deleteHistory"));
             if (deleteLog is null)
                 return;
 
@@ -252,7 +276,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                _dialogs.ShowError("Delete plan", ex.Message);
+                _dialogs.ShowError(Loc.T("shell.plans.delete"), Loc.Known(ex.Message));
                 return;
             }
 
@@ -266,7 +290,7 @@ public sealed partial class MainViewModel : ObservableObject
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    _dialogs.ShowError("Delete plan", $"The plan was deleted, but its run history could not be: {ex.Message}");
+                    _dialogs.ShowError(Loc.T("shell.plans.delete"), Loc.F("shell.plans.historyNotDeleted", ("error", ex.Message)));
                 }
             }
         }
@@ -292,9 +316,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var targetBefore = editor.IsNew ? null : editor.SavedPlan().Target;
             var saved = editor.TrySave(_store);
-            StatusMessage = saved
-                ? $"Saved \"{editor.Name}\"."
-                : "Not saved: fix the errors shown in the plan.";
+            SetStatus(saved ? LocText.Of("shell.status.saved", ("plan", editor.Name)) : LocText.Of("shell.status.notSaved"));
             RevalidateAll();
             if (saved)
             {
@@ -308,7 +330,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _dialogs.ShowError("Save failed", ex.Message);
+            _dialogs.ShowError(Loc.T("shell.actions.saveFailed"), ex.Message);
         }
     }
 
@@ -334,14 +356,14 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void BrowseSource()
     {
-        if (SelectedPlan is { } editor && _dialogs.PickFolder("Choose source folder", editor.Source) is { } folder)
+        if (SelectedPlan is { } editor && _dialogs.PickFolder(Loc.T("shell.actions.chooseSource"), editor.Source) is { } folder)
             editor.Source = folder;
     }
 
     [RelayCommand]
     private void BrowseTarget()
     {
-        if (SelectedPlan is { } editor && _dialogs.PickFolder("Choose target folder", editor.Target) is { } folder)
+        if (SelectedPlan is { } editor && _dialogs.PickFolder(Loc.T("shell.actions.chooseTarget"), editor.Target) is { } folder)
             editor.Target = folder;
     }
 
@@ -371,7 +393,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"A scheduled backup could not be queued: {ex.Message}";
+            SetStatus(LocText.Of("shell.status.scheduledFailed", ("error", ex.Message)));
         }
     }
 
@@ -385,7 +407,8 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             var paused = _scheduler.IsPaused;
-            SchedulerStatus = paused ? "Scheduler paused" : "";
+            _schedulerPaused = paused;
+            OnPropertyChanged(nameof(SchedulerStatus));
             foreach (var editor in Plans)
             {
                 editor.SchedulerPaused = paused;
@@ -395,7 +418,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusMessage = $"The schedule could not be updated: {ex.Message}";
+            SetStatus(LocText.Of("shell.status.scheduleFailed", ("error", ex.Message)));
         }
     }
 
@@ -404,22 +427,36 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (editor.IsNew)
         {
-            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "not saved yet");
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, LocText.Of("card.schedule.notSaved"));
             return;
         }
         var plan = editor.SavedPlan();
         if (!plan.Enabled)
-            editor.Run.SetSchedule(enabled: false, schedulerPaused: false, "");
+        {
+            editor.Run.SetSchedule(enabled: false, schedulerPaused: false, LocText.Empty);
+        }
         else if (plan.Triggers.Count == 0)
-            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "no schedule");
+        {
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, LocText.Of("card.schedule.none"));
+        }
         else if (plan.Triggers.Any(trigger => ScheduleTriggers.Validate(trigger) is not null))
-            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, "schedule has errors");
+        {
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, LocText.Of("card.schedule.errors"));
+        }
         else if (paused)
-            editor.Run.SetSchedule(enabled: true, schedulerPaused: true, "");
+        {
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: true, LocText.Empty);
+        }
+        else if (_scheduler.NextRunUtc(editor.Id) is { } next)
+        {
+            var local = next.ToLocalTime();
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false,
+                new LocText(() => Loc.F("card.schedule.next", ("when", PlanRunViewModel.ShortWhen(local, DateTime.Now)))));
+        }
         else
-            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, _scheduler.NextRunUtc(editor.Id) is { } next
-                ? "next " + PlanRunViewModel.ShortWhen(next.ToLocalTime(), DateTime.Now)
-                : "no schedule");
+        {
+            editor.Run.SetSchedule(enabled: true, schedulerPaused: false, LocText.Of("card.schedule.none"));
+        }
     }
 
     /// <summary>The queue position and the plan ahead on the card of every queued plan.</summary>
@@ -461,7 +498,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (editor is not null && _queue.Cancel(editor.Id))
         {
             editor.Run.MarkCanceling();
-            StatusMessage = $"Canceling the backup of \"{editor.Name}\"…";
+            SetStatus(LocText.Of("shell.status.canceling", ("plan", editor.Name)));
         }
     }
 
@@ -469,14 +506,14 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (editor.IsNew || editor.IsDirty || editor.Errors.Count > 0)
         {
-            StatusMessage = $"Save \"{editor.Name}\" without errors before running it.";
+            SetStatus(LocText.Of("shell.status.saveFirst", ("plan", editor.Name)));
             return false;
         }
 
         var request = new BackupRequest(editor.SavedPlan(), _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Manual);
         if (!_queue.Enqueue(request))
         {
-            StatusMessage = $"\"{editor.Name}\" is already queued or running.";
+            SetStatus(LocText.Of("shell.status.alreadyQueued", ("plan", editor.Name)));
             return false;
         }
         return true;
@@ -488,11 +525,11 @@ public sealed partial class MainViewModel : ObservableObject
         editor?.Run.Apply(update);
         if (update.Progress is null)
             RefreshQueuePositions();   // the queue changed: a job was added, started, removed or finished
-        UpdateQueueStatus(update, editor?.Run.EtaText ?? "");
+        UpdateQueueStatus(update, editor?.Run);
 
         if (update.State == JobState.Removed)
         {
-            StatusMessage = $"The queued backup of \"{update.PlanName}\" was removed.";
+            SetStatus(LocText.Of("shell.status.removed", ("plan", update.PlanName)));
             return;
         }
 
@@ -505,14 +542,17 @@ public sealed partial class MainViewModel : ObservableObject
             editor.RetentionPreview.ReloadIfLoaded();
             editor.Versions.ReloadIfLoaded();
         }
-        StatusMessage = result.Status switch
+        var planName = update.PlanName;
+        var reason = result.Reason;
+        SetStatus(result.Status switch
         {
-            RunStatus.Completed => $"Backup of \"{update.PlanName}\" completed in {RunHistoryRow.FormatDuration(result.DurationMs)}.",
+            RunStatus.Completed => new LocText(() => Loc.F("shell.status.completed", ("plan", planName),
+                ("duration", RunHistoryRow.FormatDuration(result.DurationMs)))),
             RunStatus.CompletedWithWarnings =>
-                $"Backup of \"{update.PlanName}\" completed with {result.SkippedCount:N0} skipped entries.",
-            RunStatus.Canceled => $"Backup of \"{update.PlanName}\" was canceled.",
-            _ => $"Backup of \"{update.PlanName}\" was aborted: {result.Reason}",
-        };
+                LocText.Of("shell.status.completedSkipped", ("plan", planName), ("count", result.SkippedCount)),
+            RunStatus.Canceled => LocText.Of("shell.status.canceled", ("plan", planName)),
+            _ => new LocText(() => Loc.F("shell.status.aborted", ("plan", planName), ("reason", Loc.Known(reason)))),
+        });
         RunFinished?.Invoke(update.PlanName, result);
     }
 
@@ -523,27 +563,31 @@ public sealed partial class MainViewModel : ObservableObject
     public void ReportIndexError(string planId, string message)
     {
         var name = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase))?.Name ?? planId;
-        StatusMessage = $"The version index of \"{name}\" could not be updated: {message}";
+        SetStatus(new LocText(() => Loc.F("shell.status.indexError", ("plan", name), ("error", Loc.Known(message)))));
     }
 
-    /// <summary>The queue line of the footer and the tray; <paramref name="eta"/> is the running plan's remaining time.</summary>
-    private void UpdateQueueStatus(BackupJobUpdate update, string eta)
+    /// <summary>The queue line of the footer and the tray; <paramref name="run"/> is the updated plan's card (its remaining time).</summary>
+    private void UpdateQueueStatus(BackupJobUpdate update, PlanRunViewModel? run)
     {
         var queued = _queue.QueuedCount;
-        var waiting = queued > 0 ? $" · {queued} queued" : "";
         if (update.State == JobState.Running)
         {
-            var percent = update.Progress is { } progress ? $" — {progress.Fraction * 100:0} %" : "";
-            var remaining = eta.Length > 0 ? " · " + eta : "";
-            QueueStatus = $"Backing up \"{update.PlanName}\"{percent}{remaining}{waiting}";
+            var planName = update.PlanName;
+            var fraction = update.Progress?.Fraction;
+            var remaining = run?.RemainingTime;
+            SetQueueStatus(new LocText(() =>
+                Loc.F("shell.queue.running", ("plan", planName)) +
+                (fraction is { } done ? Loc.F("shell.queue.percent", ("percent", done * 100)) : "") +
+                (remaining is { } left ? " · " + PlanRunViewModel.FormatRemaining(left) : "") +
+                (queued > 0 ? Loc.F("shell.queue.waiting", ("count", queued)) : "")));
         }
         else if (!_queue.IsBusy)
         {
-            QueueStatus = "No backup running";
+            SetQueueStatus(LocText.Of("shell.queue.idle"));
         }
         else if (queued > 0)
         {
-            QueueStatus = $"{queued} backup(s) queued";
+            SetQueueStatus(LocText.Of("shell.queue.queued", ("count", queued)));
         }
     }
 
@@ -556,7 +600,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            StatusMessage = $"The run history of \"{editor.Name}\" could not be read: {ex.Message}";
+            SetStatus(LocText.Of("shell.status.historyUnreadable", ("plan", editor.Name), ("error", ex.Message)));
         }
     }
 
@@ -596,9 +640,12 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private static string? LoadErrorText(PlanLoadResult result) =>
-        result.Errors.Count == 0
-            ? null
-            : $"{result.Errors.Count} plan file(s) could not be read: " +
-              string.Join("; ", result.Errors.Select(e => $"{Path.GetFileName(e.FilePath)}: {e.Message}"));
+    private static LocText? LoadErrorText(PlanLoadResult result)
+    {
+        if (result.Errors.Count == 0)
+            return null;
+        var errors = result.Errors.Select(e => (File: Path.GetFileName(e.FilePath), Error: e.Message)).ToList();
+        return new LocText(() => Loc.F("shell.status.loadErrors", ("count", errors.Count),
+            ("details", string.Join("; ", errors.Select(e => $"{e.File}: {Loc.Known(e.Error)}")))));
+    }
 }

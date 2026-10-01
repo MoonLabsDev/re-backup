@@ -226,13 +226,13 @@
         <Style x:Key="Button.CardStop" TargetType="Button" BasedOn="{StaticResource Button.IconFramed}">
             <Setter Property="Content" Value="{StaticResource Icon.Stop}" />
             <Setter Property="FontSize" Value="10" />
-            <Setter Property="ToolTip" Value="Cancel the backup" />
-            <Setter Property="AutomationProperties.Name" Value="Cancel the backup" />
+            <Setter Property="ToolTip" Value="{l:Loc shell.card.cancelBackup}" />
+            <Setter Property="AutomationProperties.Name" Value="{l:Loc shell.card.cancelBackup}" />
             <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Run.CardAction}" Value="{x:Static vm:PlanCardAction.Canceling}">
                     <Setter Property="IsEnabled" Value="False" />
-                    <Setter Property="ToolTip" Value="Canceling…" />
+                    <Setter Property="ToolTip" Value="{l:Loc shell.card.canceling}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -283,29 +283,29 @@
                 <StackPanel DockPanel.Dock="Top" Margin="0,22,0,0" IsEnabled="{Binding HasSelectedPlan}"
                             KeyboardNavigation.DirectionalNavigation="Cycle">
                     <RadioButton x:Name="RailPlanTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
-                                 Content="{StaticResource Icon.Plan}" ToolTip="Plan" AutomationProperties.Name="Plan"
+                                 Content="{StaticResource Icon.Plan}" ToolTip="{l:Loc shell.tab.plan}" AutomationProperties.Name="{l:Loc shell.tab.plan}"
                                  AutomationProperties.AutomationId="RailPlanTab"
                                  IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Plan}}" />
                     <RadioButton x:Name="RailIgnoreTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
-                                 Content="{StaticResource Icon.Hide}" ToolTip="Ignore" AutomationProperties.Name="Ignore"
+                                 Content="{StaticResource Icon.Hide}" ToolTip="{l:Loc shell.tab.ignore}" AutomationProperties.Name="{l:Loc shell.tab.ignore}"
                                  AutomationProperties.AutomationId="RailIgnoreTab"
                                  IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Ignore}}" />
                     <RadioButton x:Name="RailRetentionTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
-                                 Content="{StaticResource Icon.Shield}" ToolTip="Retention" AutomationProperties.Name="Retention"
+                                 Content="{StaticResource Icon.Shield}" ToolTip="{l:Loc shell.tab.retention}" AutomationProperties.Name="{l:Loc shell.tab.retention}"
                                  AutomationProperties.AutomationId="RailRetentionTab"
                                  IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Retention}}" />
                     <RadioButton x:Name="RailHistoryTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
-                                 Content="{StaticResource Icon.History}" ToolTip="History" AutomationProperties.Name="History"
+                                 Content="{StaticResource Icon.History}" ToolTip="{l:Loc shell.tab.history}" AutomationProperties.Name="{l:Loc shell.tab.history}"
                                  AutomationProperties.AutomationId="RailHistoryTab"
                                  IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}" />
                     <RadioButton x:Name="RailVersionsTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
-                                 Content="{StaticResource Icon.Versions}" ToolTip="Versions" AutomationProperties.Name="Versions"
+                                 Content="{StaticResource Icon.Versions}" ToolTip="{l:Loc shell.tab.versions}" AutomationProperties.Name="{l:Loc shell.tab.versions}"
                                  AutomationProperties.AutomationId="RailVersionsTab"
                                  IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Versions}}" />
                 </StackPanel>
                 <Button DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Style="{StaticResource Button.Icon}"
                         Width="40" Height="40" FontSize="18" Content="{StaticResource Icon.Settings}"
-                        ToolTip="Settings" AutomationProperties.Name="Settings"
+                        ToolTip="{l:Loc shell.rail.settings}" AutomationProperties.Name="{l:Loc shell.rail.settings}"
                         Command="{Binding OpenSettingsCommand}" />
                 <!-- Theme: toggles Dark ↔ Light; the glyph shows the current mode. -->
                 <Button x:Name="ThemeButton" DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="0,0,0,4"
@@ -381,24 +381,24 @@
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="14,16,14,10">
                     <Button DockPanel.Dock="Right" Style="{StaticResource Button.IconFramed}" Content="{StaticResource Icon.Add}"
-                            ToolTip="New plan" AutomationProperties.Name="New plan" Command="{Binding NewPlanCommand}" />
+                            ToolTip="{l:Loc shell.plans.new}" AutomationProperties.Name="{l:Loc shell.plans.new}" Command="{Binding NewPlanCommand}" />
                     <TextBlock Style="{StaticResource TextBlock.CardTitle}" FontSize="11" VerticalAlignment="Center"
-                               Text="PLANS" />
+                               Text="{l:Loc shell.plans.title}" />
                 </DockPanel>
 
                 <Button DockPanel.Dock="Bottom" HorizontalAlignment="Stretch" Margin="8,6,8,10"
-                        AutomationProperties.Name="Delete plan" Command="{Binding DeletePlanCommand}">
+                        AutomationProperties.Name="{l:Loc shell.plans.delete}" Command="{Binding DeletePlanCommand}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Foreground="{DynamicResource Brush.Danger}"
                                    Text="{StaticResource Icon.Delete}" />
-                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Delete plan" />
+                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc shell.plans.delete}" />
                     </StackPanel>
                 </Button>
 
                 <ListBox ItemsSource="{Binding Plans}" SelectedItem="{Binding SelectedPlan}"
                          ItemContainerStyle="{StaticResource ListBoxItem.PlanCard}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         AutomationProperties.Name="Plans">
+                         AutomationProperties.Name="{l:Loc shell.plans.list}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <!-- Ring | name, phase, detail | action -->
@@ -451,7 +451,7 @@
                                             Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}" />
                                     <Button Style="{StaticResource Button.IconFramed}" Content="{StaticResource Icon.Cancel}" FontSize="11"
-                                            ToolTip="Remove from the queue" AutomationProperties.Name="Remove from the queue"
+                                            ToolTip="{l:Loc shell.card.removeFromQueue}" AutomationProperties.Name="{l:Loc shell.card.removeFromQueue}"
                                             Visibility="{Binding Run.CardAction, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:PlanCardAction.RemoveFromQueue}}"
                                             Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}" />
@@ -481,7 +481,7 @@
             <!-- No plan selected -->
             <Grid>
                 <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
-                           TextWrapping="Wrap" Text="No plan selected. Create one with the + button next to PLANS.">
+                           TextWrapping="Wrap" Text="{l:Loc shell.noPlan}">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
                             <Setter Property="Visibility" Value="Collapsed" />
@@ -530,43 +530,43 @@
                                     BorderThickness="1" CornerRadius="8">
                                 <StackPanel Orientation="Horizontal">
                                     <RadioButton x:Name="PlanTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
-                                                 AutomationProperties.Name="Plan"
+                                                 AutomationProperties.Name="{l:Loc shell.tab.plan}"
                                                  IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Plan}}">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Plan}" />
-                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Plan" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="{l:Loc shell.tab.plan}" />
                                         </StackPanel>
                                     </RadioButton>
                                     <RadioButton x:Name="IgnoreTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
-                                                 Margin="2,0,0,0" AutomationProperties.Name="Ignore"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="{l:Loc shell.tab.ignore}"
                                                  IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Ignore}}">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Hide}" />
-                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Ignore" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="{l:Loc shell.tab.ignore}" />
                                         </StackPanel>
                                     </RadioButton>
                                     <RadioButton x:Name="RetentionTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
-                                                 Margin="2,0,0,0" AutomationProperties.Name="Retention"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="{l:Loc shell.tab.retention}"
                                                  IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Retention}}">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Shield}" />
-                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Retention" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="{l:Loc shell.tab.retention}" />
                                         </StackPanel>
                                     </RadioButton>
                                     <RadioButton x:Name="HistoryTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
-                                                 Margin="2,0,0,0" AutomationProperties.Name="History"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="{l:Loc shell.tab.history}"
                                                  IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.History}" />
-                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="History" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="{l:Loc shell.tab.history}" />
                                         </StackPanel>
                                     </RadioButton>
                                     <RadioButton x:Name="VersionsTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
-                                                 Margin="2,0,0,0" AutomationProperties.Name="Versions"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="{l:Loc shell.tab.versions}"
                                                  IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Versions}}">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Versions}" />
-                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Versions" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="{l:Loc shell.tab.versions}" />
                                         </StackPanel>
                                     </RadioButton>
                                 </StackPanel>
@@ -575,22 +575,22 @@
                             <StackPanel x:Name="HeaderActions" Grid.Column="3" Orientation="Horizontal"
                                         SizeChanged="OnHeaderSizeChanged">
                                 <Button Command="{Binding DataContext.RevertCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        IsEnabled="{Binding IsDirty, FallbackValue=False}" AutomationProperties.Name="Revert">
+                                        IsEnabled="{Binding IsDirty, FallbackValue=False}" AutomationProperties.Name="{l:Loc common.revert}">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Undo}" />
-                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Revert" />
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc common.revert}" />
                                     </StackPanel>
                                 </Button>
-                                <Button Margin="8,0,0,0" ToolTip="Save (Ctrl+S)" AutomationProperties.Name="Save"
+                                <Button Margin="8,0,0,0" ToolTip="{l:Loc shell.actions.saveToolTip}" AutomationProperties.Name="{l:Loc common.save}"
                                         Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         IsEnabled="{Binding IsDirty, FallbackValue=False}">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Save}" />
-                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Save" />
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc common.save}" />
                                     </StackPanel>
                                 </Button>
                                 <Grid Margin="8,0,0,0">
-                                    <Button AutomationProperties.Name="Run now"
+                                    <Button AutomationProperties.Name="{l:Loc shell.actions.runNow}"
                                             Command="{Binding DataContext.RunNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}">
                                         <Button.Style>
@@ -604,10 +604,10 @@
                                         </Button.Style>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Play}" />
-                                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Run now" />
+                                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc shell.actions.runNow}" />
                                         </StackPanel>
                                     </Button>
-                                    <Button AutomationProperties.Name="Cancel the backup"
+                                    <Button AutomationProperties.Name="{l:Loc shell.card.cancelBackup}"
                                             Command="{Binding DataContext.CancelRunCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}">
                                         <Button.Style>
@@ -622,7 +622,7 @@
                                         </Button.Style>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Stop}" />
-                                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Cancel" />
+                                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc common.cancel}" />
                                         </StackPanel>
                                     </Button>
                                 </Grid>

@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -102,7 +101,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
 
     public string DisplayName =>
-        (IsDirty ? "• " : "") + (string.IsNullOrWhiteSpace(Name) ? "(unnamed)" : Name);
+        (IsDirty ? "• " : "") + (string.IsNullOrWhiteSpace(Name) ? Loc.T("common.unnamed") : Name);
 
     partial void OnNameChanged(string value)
     {
@@ -302,7 +301,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         {
             NextRuns = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local)
                 .Take(5)
-                .Select(time => time.ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture))
+                .Select(Formats.NextRun)
                 .ToList();
             note = Enabled
                 ? "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed)."
@@ -326,6 +325,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             row.RefreshTexts();
         foreach (var row in RetentionRuleRows)
             row.RefreshTexts();
+        Run.RefreshTexts();
     }
 
     public bool TrySave(PlanStore store)

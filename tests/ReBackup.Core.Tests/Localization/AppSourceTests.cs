@@ -15,7 +15,6 @@ public class AppSourceTests
     [
         "ConflictDialog.xaml",
         "FailuresDialog.xaml",
-        "MainWindow.xaml",
         "SettingsWindow.xaml",
         "Views/HistoryView.xaml",
         "Views/IgnorePreviewView.xaml",

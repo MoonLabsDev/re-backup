@@ -178,5 +178,162 @@
     "config": {
       "containsConfiguration": "The chosen folder already contains a ReBackup configuration."
     }
+  },
+  "shell": {
+    "tab": { "plan": "Plan", "ignore": "Ignore", "retention": "Retention", "history": "History", "versions": "Versions" },
+    "rail": {
+      "settings": "Settings",
+      "themeToolTip": "Theme: {theme} — click to change",
+      "themeName": "Theme: {theme}"
+    },
+    "plans": {
+      "title": "PLANS",
+      "new": "New plan",
+      "newName": "New plan",
+      "delete": "Delete plan",
+      "list": "Plans",
+      "deleteConfirm": "Delete plan \"{plan}\"?\n\nBackups already stored in the target are not touched.",
+      "deleteHistory": "Also delete this plan's run history?",
+      "historyNotDeleted": "The plan was deleted, but its run history could not be: {error}"
+    },
+    "noPlan": "No plan selected. Create one with the + button next to PLANS.",
+    "actions": {
+      "saveToolTip": "Save (Ctrl+S)",
+      "runNow": "Run now",
+      "saveFailed": "Save failed",
+      "chooseSource": "Choose source folder",
+      "chooseTarget": "Choose target folder"
+    },
+    "card": {
+      "removeFromQueue": "Remove from the queue",
+      "cancelBackup": "Cancel the backup",
+      "canceling": "Canceling…"
+    },
+    "status": {
+      "configuration": "Configuration: {path}",
+      "reloadFailed": "Plans could not be reloaded: {error}",
+      "reloaded": "Plans reloaded after a change on disk.",
+      "loadErrors": "{count} plan file(s) could not be read: {details}",
+      "deleteCancelBackup": "Cancel the backup of \"{plan}\" before deleting the plan.",
+      "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "saved": "Saved \"{plan}\".",
+      "notSaved": "Not saved: fix the errors shown in the plan.",
+      "scheduledFailed": "A scheduled backup could not be queued: {error}",
+      "scheduleFailed": "The schedule could not be updated: {error}",
+      "canceling": "Canceling the backup of \"{plan}\"…",
+      "saveFirst": "Save \"{plan}\" without errors before running it.",
+      "alreadyQueued": "\"{plan}\" is already queued or running.",
+      "removed": "The queued backup of \"{plan}\" was removed.",
+      "completed": "Backup of \"{plan}\" completed in {duration}.",
+      "completedSkipped": "Backup of \"{plan}\" completed with {count:N0} skipped entries.",
+      "canceled": "Backup of \"{plan}\" was canceled.",
+      "aborted": "Backup of \"{plan}\" was aborted: {reason}",
+      "indexError": "The version index of \"{plan}\" could not be updated: {error}",
+      "historyUnreadable": "The run history of \"{plan}\" could not be read: {error}"
+    },
+    "queue": {
+      "idle": "No backup running",
+      "running": "Backing up \"{plan}\"",
+      "percent": " — {percent:0} %",
+      "waiting": " · {count} queued",
+      "queued": "{count} backup(s) queued"
+    },
+    "scheduler": { "paused": "Scheduler paused" }
+  },
+  "card": {
+    "neverRun": "Never run",
+    "lastRun": "Last run {when}: {status}",
+    "runNow": "Run now",
+    "retryNow": "Retry now",
+    "queued": "Queued",
+    "after": "after “{plan}”",
+    "startsNext": "starts next",
+    "canceling": "Canceling",
+    "stopping": "Stopping",
+    "removingCopy": "removing the incomplete copy…",
+    "stoppingBackup": "stopping the backup…",
+    "starting": "Starting…",
+    "scan": "scan",
+    "indexing": "Indexing…",
+    "creatingFolders": "Creating folders",
+    "copying": "Copying…",
+    "copyDetail": "{bytes} · {count:N0} files",
+    "finishing": "Finishing",
+    "removingOld": "removing old versions…",
+    "completingVersion": "completing the version…",
+    "manualOnly": "Manual only",
+    "schedulerPaused": "Scheduler paused",
+    "canceledAt": "Canceled · {when}",
+    "targetFull": "Target full",
+    "targetFullToolTip": "The target is full.",
+    "failed": "Failed",
+    "failedReason": "Failed: {reason}",
+    "skipped": "{count:N0} skipped",
+    "retentionWarnings": "Retention warnings",
+    "backedUpAt": "Backed up · {when}",
+    "lastShort": "last {when} · {result}",
+    "neverRunShort": "never run",
+    "result": { "ok": "OK", "warnings": "warnings", "canceled": "canceled", "failed": "failed" },
+    "remaining": {
+      "underMinute": "less than a minute left",
+      "minutes": "{minutes} min left",
+      "hours": "{hours} h {minutes:00} min left"
+    },
+    "schedule": {
+      "notSaved": "not saved yet",
+      "none": "no schedule",
+      "errors": "schedule has errors",
+      "next": "next {when}"
+    }
+  },
+  "run": {
+    "status": {
+      "completed": "Completed",
+      "completedWithWarnings": "Completed with warnings",
+      "completedRetentionWarnings": "Completed (retention warnings)",
+      "full": "Aborted: target full",
+      "error": "Aborted: error",
+      "canceled": "Canceled"
+    }
+  },
+  "tray": {
+    "open": "Open",
+    "runPlan": "Run plan",
+    "pause": "Pause scheduler",
+    "resume": "Resume scheduler",
+    "exit": "Exit",
+    "notification": {
+      "title": "Backup \"{plan}\"",
+      "completed": "Completed in {duration}.",
+      "completedSkipped": "Completed in {duration}, {count:N0} entries were skipped.",
+      "canceled": "Canceled after {duration}.",
+      "full": "Aborted after {duration}, the target is full. {reason}",
+      "error": "Aborted after {duration} with an error. {reason}"
+    }
+  },
+  "app": {
+    "config": {
+      "title": "Configuration folder",
+      "unreachable": "The configuration folder {path} is not reachable:\n\n{error}\n\nYes = Retry, No = Use the default location for this session, Cancel = Exit",
+      "defaultUnusable": "The default location {path} is not usable either:\n\n{error}"
+    },
+    "settingsUnreadable": "settings.json could not be read, defaults are used.\n\n{error}",
+    "themeNotSaved": "The theme could not be saved:\n\n{error}",
+    "restartStuck": "A running backup could not be stopped in time. Please start ReBackup again manually.",
+    "restartFailed": "ReBackup could not restart itself. Please start it again manually.",
+    "unsaved": {
+      "title": "Unsaved changes",
+      "message": "These plans have unsaved changes:\n\n{plans}\n\nDiscard the changes?"
+    },
+    "restoreRunning": {
+      "title": "Restore in progress",
+      "restart": "A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and restart ReBackup?",
+      "exit": "A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and exit ReBackup?"
+    },
+    "restoreStuck": "A restore did not stop within 10 seconds. A file it was writing may be incomplete (a \"*.rebackup-tmp\" file next to it).",
+    "backupRunning": {
+      "title": "Backup in progress",
+      "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
+    }
   }
 }

@@ -1,8 +1,7 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
 
 namespace ReBackup.App.ViewModels;
 
@@ -45,8 +44,6 @@ public enum PlanCardAction
 /// <summary>Queue state, progress and history of one plan, and the plan card built from them.</summary>
 public sealed partial class PlanRunViewModel : ObservableObject
 {
-    private const string NeverRunText = "Never run";
-
     /// <summary>No estimate before this much copying time: the first seconds are too noisy.</summary>
     private static readonly TimeSpan EtaWarmUp = TimeSpan.FromSeconds(5);
 
@@ -59,7 +56,8 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private string? _queueAhead;
     private bool _enabled = true;
     private bool _schedulerPaused;
-    private string _nextRunText = "";
+    private LocText _nextRun = LocText.Empty;
+    private TimeSpan? _remaining;
     private int _historyLoads;   // tells a version check whether its rows are still the shown ones
 
     public PlanRunViewModel(TimeProvider? timeProvider = null)
@@ -77,10 +75,13 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
     /// <summary>The newest run, or null when the plan has never run.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasRun))]
+    [NotifyPropertyChangedFor(nameof(HasRun), nameof(LastRunText))]
     private RunHistoryRow? _lastRun;
 
-    [ObservableProperty] private string _lastRunText = NeverRunText;
+    /// <summary>"Last run …: …" above the History tab's table; "Never run" before the first run.</summary>
+    public string LastRunText => LastRun is null
+        ? Loc.T("card.neverRun")
+        : Loc.F("card.lastRun", ("when", LastRun.StartText), ("status", LastRun.StatusText));
 
     // ------------------------------------------------------------------ the plan card
     [ObservableProperty] private PlanCardState _cardState;
@@ -103,7 +104,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     [ObservableProperty] private string _detailText = "";
 
     /// <summary>Tool tip of the run button: "Retry now" after a failed run.</summary>
-    [ObservableProperty] private string _runToolTip = "Run now";
+    [ObservableProperty] private string _runToolTip = "";
 
     public ObservableCollection<RunHistoryRow> History { get; } = [];
 
@@ -125,7 +126,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 _queuePosition = null;
                 _queueAhead = null;
                 State = JobState.Queued;
-                EtaText = "";
+                SetRemaining(null);
                 break;
 
             case JobState.Running:
@@ -133,7 +134,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 if (update.Progress is { } progress)
                 {
                     _progress = progress;
-                    EtaText = progress.Phase == BackupPhase.Copying && !_canceling ? Remaining(progress) : "";
+                    SetRemaining(progress.Phase == BackupPhase.Copying && !_canceling ? Remaining(progress) : null);
                 }
                 break;
 
@@ -144,9 +145,28 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 _queuePosition = null;
                 _queueAhead = null;
                 State = null;
-                EtaText = "";
+                SetRemaining(null);
                 break;
         }
+        UpdateCard();
+    }
+
+    /// <summary>The remaining copy time; null while it is not known. <see cref="EtaText"/> is its text.</summary>
+    public TimeSpan? RemainingTime => _remaining;
+
+    private void SetRemaining(TimeSpan? remaining)
+    {
+        _remaining = remaining;
+        EtaText = remaining is { } time ? FormatRemaining(time) : "";
+    }
+
+    /// <summary>The language changed: the card, the remaining time and the history rows are built again.</summary>
+    public void RefreshTexts()
+    {
+        SetRemaining(_remaining);
+        OnPropertyChanged(nameof(LastRunText));
+        foreach (var row in History)
+            row.Refresh();
         UpdateCard();
     }
 
@@ -156,7 +176,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
         if (State != JobState.Running)
             return;
         _canceling = true;
-        EtaText = "";
+        SetRemaining(null);
         UpdateCard();
     }
 
@@ -170,13 +190,13 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
     /// <summary>
     /// The plan's schedule as saved: <paramref name="enabled"/> false = runs only by hand; <paramref name="schedulerPaused"/>
-    /// only for a valid schedule; <paramref name="nextRunText"/> e.g. "next Fri 03:00" or "no schedule".
+    /// only for a valid schedule; <paramref name="nextRun"/> e.g. "next Fri 03:00" or "no schedule".
     /// </summary>
-    public void SetSchedule(bool enabled, bool schedulerPaused, string nextRunText)
+    public void SetSchedule(bool enabled, bool schedulerPaused, LocText nextRun)
     {
         _enabled = enabled;
         _schedulerPaused = schedulerPaused;
-        _nextRunText = nextRunText;
+        _nextRun = nextRun;
         UpdateCard();
     }
 
@@ -193,9 +213,6 @@ public sealed partial class PlanRunViewModel : ObservableObject
         VersionCheck = CheckVersionsAsync(++_historyLoads, target, History.Where(row => row.HasVersion).ToList());
 
         LastRun = History.Count == 0 ? null : History[0];
-        LastRunText = LastRun is null
-            ? NeverRunText
-            : $"Last run {LastRun.StartText}: {LastRun.StatusText}";
         UpdateCard();
     }
 
@@ -230,10 +247,10 @@ public sealed partial class PlanRunViewModel : ObservableObject
     public static string ShortWhen(DateTime local, DateTime now)
     {
         if (local.Date == now.Date)
-            return local.ToString("HH:mm", CultureInfo.CurrentCulture);
+            return Formats.Time(local);
         if (Math.Abs((local.Date - now.Date).TotalDays) < 7)
-            return local.ToString("ddd HH:mm", CultureInfo.CurrentCulture);
-        return local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            return Formats.WeekdayAndTime(local);
+        return Formats.Date(local);
     }
 
     private void UpdateCard()
@@ -264,8 +281,8 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private void ShowQueued() =>
         Show(PlanCardState.Queued, PlanCardAction.RemoveFromQueue, 0, false,
             _queuePosition is { } position ? $"#{position}" : "#",
-            "Queued",
-            _queueAhead is { } ahead ? $"after “{ahead}”" : "starts next");
+            Loc.T("card.queued"),
+            _queueAhead is { } ahead ? Loc.F("card.after", ("plan", ahead)) : Loc.T("card.startsNext"));
 
     private void ShowRunning()
     {
@@ -273,14 +290,14 @@ public sealed partial class PlanRunViewModel : ObservableObject
         if (_canceling || progress?.Phase == BackupPhase.CleaningUp)
         {
             Show(PlanCardState.Canceling, PlanCardAction.Canceling, 0, true, "",
-                _canceling ? "Canceling" : "Stopping",
-                progress?.Phase == BackupPhase.CleaningUp ? "removing the incomplete copy…" : "stopping the backup…");
+                _canceling ? Loc.T("card.canceling") : Loc.T("card.stopping"),
+                progress?.Phase == BackupPhase.CleaningUp ? Loc.T("card.removingCopy") : Loc.T("card.stoppingBackup"));
             return;
         }
 
         if (progress is not { } p)
         {
-            Show(PlanCardState.Indexing, PlanCardAction.Cancel, 0, true, "", "Starting…", "");
+            Show(PlanCardState.Indexing, PlanCardAction.Cancel, 0, true, "", Loc.T("card.starting"), "");
             return;
         }
 
@@ -289,25 +306,25 @@ public sealed partial class PlanRunViewModel : ObservableObject
         switch (p.Phase)
         {
             case BackupPhase.Indexing:
-                Show(PlanCardState.Indexing, PlanCardAction.Cancel, 0, true, "scan", "Indexing…",
-                    $"{p.FilesDone:N0} files");
+                Show(PlanCardState.Indexing, PlanCardAction.Cancel, 0, true, Loc.T("card.scan"), Loc.T("card.indexing"),
+                    Loc.F("common.fileCount", ("count", p.FilesDone)));
                 break;
             case BackupPhase.CreatingFolders:
-                Show(PlanCardState.CreatingFolders, PlanCardAction.Cancel, p.Fraction, false, percent, "Creating folders",
-                    $"{p.FilesDone:N0} / {p.FilesTotal:N0}");
+                Show(PlanCardState.CreatingFolders, PlanCardAction.Cancel, p.Fraction, false, percent,
+                    Loc.T("card.creatingFolders"), string.Create(Loc.Culture, $"{p.FilesDone:N0} / {p.FilesTotal:N0}"));
                 break;
             case BackupPhase.Copying:
                 Show(PlanCardState.Copying, PlanCardAction.Cancel, p.Fraction, false, percent,
-                    EtaText.Length > 0 ? EtaText : "Copying…",
-                    $"{BytesOf(p.BytesDone, p.BytesTotal)} · {p.FilesDone:N0} files");
+                    EtaText.Length > 0 ? EtaText : Loc.T("card.copying"),
+                    Loc.F("card.copyDetail", ("bytes", BytesOf(p.BytesDone, p.BytesTotal)), ("count", p.FilesDone)));
                 break;
             case BackupPhase.Retention:
-                Show(PlanCardState.Finishing, PlanCardAction.Cancel, 1, false, percent, "Finishing",
-                    "removing old versions…");
+                Show(PlanCardState.Finishing, PlanCardAction.Cancel, 1, false, percent, Loc.T("card.finishing"),
+                    Loc.T("card.removingOld"));
                 break;
             default:
-                Show(PlanCardState.Finishing, PlanCardAction.Cancel, 1, false, percent, "Finishing",
-                    "completing the version…");
+                Show(PlanCardState.Finishing, PlanCardAction.Cancel, 1, false, percent, Loc.T("card.finishing"),
+                    Loc.T("card.completingVersion"));
                 break;
         }
     }
@@ -315,21 +332,22 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private void ShowIdle()
     {
         var last = LastRun?.Entry;
-        RunToolTip = last?.Status is RunStatus.Error or RunStatus.Full ? "Retry now" : "Run now";
+        RunToolTip = last?.Status is RunStatus.Error or RunStatus.Full ? Loc.T("card.retryNow") : Loc.T("card.runNow");
+        var nextRun = _nextRun.ToString();
 
         if (!_enabled)
         {
-            Show(PlanCardState.Disabled, PlanCardAction.Run, 0, false, "", "Manual only", LastRunShort());
+            Show(PlanCardState.Disabled, PlanCardAction.Run, 0, false, "", Loc.T("card.manualOnly"), LastRunShort());
             return;
         }
         if (_schedulerPaused)
         {
-            Show(PlanCardState.Paused, PlanCardAction.Run, 0, false, "", "Scheduler paused", LastRunShort());
+            Show(PlanCardState.Paused, PlanCardAction.Run, 0, false, "", Loc.T("card.schedulerPaused"), LastRunShort());
             return;
         }
         if (last is null)
         {
-            Show(PlanCardState.NeverRun, PlanCardAction.Run, 0, false, "—", NeverRunText, _nextRunText);
+            Show(PlanCardState.NeverRun, PlanCardAction.Run, 0, false, "—", Loc.T("card.neverRun"), nextRun);
             return;
         }
 
@@ -337,26 +355,29 @@ public sealed partial class PlanRunViewModel : ObservableObject
         switch (last.Status)
         {
             case RunStatus.Canceled:
-                Show(PlanCardState.Canceled, PlanCardAction.Run, 0.29, false, "", $"Canceled · {when}", _nextRunText);
+                Show(PlanCardState.Canceled, PlanCardAction.Run, 0.29, false, "", Loc.F("card.canceledAt", ("when", when)), nextRun);
                 break;
             case RunStatus.Full:
-                Show(PlanCardState.Failed, PlanCardAction.Run, 1, false, "", "Target full", _nextRunText,
-                    last.Reason is { Length: > 0 } fullReason ? fullReason : "The target is full.");
+                Show(PlanCardState.Failed, PlanCardAction.Run, 1, false, "", Loc.T("card.targetFull"), nextRun,
+                    last.Reason is { Length: > 0 } fullReason ? Loc.Known(fullReason) : Loc.T("card.targetFullToolTip"));
                 break;
             case RunStatus.Error:
                 Show(PlanCardState.Failed, PlanCardAction.Run, 1, false, "",
-                    last.Reason is { Length: > 0 } reason ? $"Failed: {reason}" : "Failed", _nextRunText);
+                    last.Reason is { Length: > 0 } reason
+                        ? Loc.F("card.failedReason", ("reason", Loc.Known(reason)))
+                        : Loc.T("card.failed"),
+                    nextRun);
                 break;
             default:
                 if (LastRun!.Outcome == RunOutcome.Warning)
                 {
                     Show(PlanCardState.Warning, PlanCardAction.Run, 1, false, "!",
-                        last.SkippedCount > 0 ? $"{last.SkippedCount:N0} skipped" : "Retention warnings", _nextRunText,
-                        LastRun.StatusText);
+                        last.SkippedCount > 0 ? Loc.F("card.skipped", ("count", last.SkippedCount)) : Loc.T("card.retentionWarnings"),
+                        nextRun, LastRun.StatusText);
                 }
                 else
                 {
-                    Show(PlanCardState.Completed, PlanCardAction.Run, 1, false, "", $"Backed up · {when}", _nextRunText);
+                    Show(PlanCardState.Completed, PlanCardAction.Run, 1, false, "", Loc.F("card.backedUpAt", ("when", when)), nextRun);
                 }
                 break;
         }
@@ -366,50 +387,49 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private string LastRunShort()
     {
         if (LastRun is not { } row)
-            return "never run";
+            return Loc.T("card.neverRunShort");
         var result = row.Outcome switch
         {
-            RunOutcome.Ok => "OK",
-            RunOutcome.Warning => "warnings",
-            _ => row.Entry.Status == RunStatus.Canceled ? "canceled" : "failed",
+            RunOutcome.Ok => Loc.T("card.result.ok"),
+            RunOutcome.Warning => Loc.T("card.result.warnings"),
+            _ => row.Entry.Status == RunStatus.Canceled ? Loc.T("card.result.canceled") : Loc.T("card.result.failed"),
         };
-        return $"last {ShortWhen(row.Entry.EndUtc.ToLocalTime(), _time.GetLocalNow().DateTime)} · {result}";
+        return Loc.F("card.lastShort",
+            ("when", ShortWhen(row.Entry.EndUtc.ToLocalTime(), _time.GetLocalNow().DateTime)), ("result", result));
     }
 
-    /// <summary>"2.2 / 13.6 GB" when both share a unit, else "512.0 MB / 13.6 GB".</summary>
+    /// <summary>"2.2 / 13.6 GB" when both share a unit, else "512.0 MB / 13.6 GB" (decimal separator of the language).</summary>
     private static string BytesOf(long done, long total)
     {
-        var doneText = ByteSize.Format(done);
-        var totalText = ByteSize.Format(total);
+        var doneText = Formats.Bytes(done);
+        var totalText = Formats.Bytes(total);
         var doneUnit = doneText[(doneText.LastIndexOf(' ') + 1)..];
         var totalUnit = totalText[(totalText.LastIndexOf(' ') + 1)..];
         return doneUnit == totalUnit ? $"{doneText[..doneText.LastIndexOf(' ')]} / {totalText}" : $"{doneText} / {totalText}";
     }
 
-    /// <summary>Remaining copy time from the average rate since the copying began; "" while it is not known yet.</summary>
-    private string Remaining(BackupProgress progress)
+    /// <summary>Remaining copy time from the average rate since the copying began; null while it is not known yet.</summary>
+    private TimeSpan? Remaining(BackupProgress progress)
     {
         var now = _time.GetTimestamp();
         if (_copyStarted is not { } started)
         {
             _copyStarted = now;
             _copyStartBytes = progress.BytesDone;
-            return "";
+            return null;
         }
 
         var elapsed = _time.GetElapsedTime(started, now);
         var copied = progress.BytesDone - _copyStartBytes;
         if (elapsed < EtaWarmUp || copied <= 0)
-            return "";
-        var remaining = TimeSpan.FromSeconds(
-            Math.Max(0, progress.BytesTotal - progress.BytesDone) * elapsed.TotalSeconds / copied);
-        return FormatRemaining(remaining);
+            return null;
+        return TimeSpan.FromSeconds(Math.Max(0, progress.BytesTotal - progress.BytesDone) * elapsed.TotalSeconds / copied);
     }
 
     public static string FormatRemaining(TimeSpan remaining) => remaining.TotalSeconds switch
     {
-        < 60 => "less than a minute left",
-        < 3600 => $"{Math.Ceiling(remaining.TotalMinutes):0} min left",
-        _ => $"{(int)remaining.TotalHours} h {remaining.Minutes:00} min left",
+        < 60 => Loc.T("card.remaining.underMinute"),
+        < 3600 => Loc.F("card.remaining.minutes", ("minutes", (int)Math.Ceiling(remaining.TotalMinutes))),
+        _ => Loc.F("card.remaining.hours", ("hours", (int)remaining.TotalHours), ("minutes", remaining.Minutes)),
     };
 }

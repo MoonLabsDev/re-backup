@@ -97,9 +97,8 @@ public partial class App : Application
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
             {
-                var choice = _dialogs.AskYesNoCancel("Configuration folder",
-                    $"The configuration folder {paths.Root} is not reachable:\n\n{ex.Message}\n\n" +
-                    "Yes = Retry, No = Use the default location for this session, Cancel = Exit");
+                var choice = _dialogs.AskYesNoCancel(Loc.T("app.config.title"),
+                    Loc.F("app.config.unreachable", ("path", paths.Root), ("error", ex.Message)));
                 if (choice is null)
                     return false;
                 if (choice == true)
@@ -112,8 +111,8 @@ public partial class App : Application
                 }
                 catch (Exception fallbackEx) when (fallbackEx is IOException or UnauthorizedAccessException or SecurityException)
                 {
-                    _dialogs.ShowError("Configuration folder",
-                        $"The default location {_appDataRoot} is not usable either:\n\n{fallbackEx.Message}");
+                    _dialogs.ShowError(Loc.T("app.config.title"),
+                        Loc.F("app.config.defaultUnusable", ("path", _appDataRoot), ("error", fallbackEx.Message)));
                     return false;
                 }
             }
@@ -168,19 +167,21 @@ public partial class App : Application
         }
 
         if (_settingsStore.LastLoadError is { } error)
-            _dialogs.ShowError("Settings", $"settings.json could not be read, defaults are used.\n\n{error}");
+            _dialogs.ShowError(Loc.T("settings.title"), Loc.F("app.settingsUnreadable", ("error", error)));
     }
 
     private void CreateTrayIcon()
     {
-        var runMenu = new MenuItem { Header = "Run plan" };
-        _trayMenu.Items.Add(CreateTrayMenuItem("Open", ShowMainWindow));
+        var runMenu = new MenuItem();
+        Loc.Bind(runMenu, HeaderedItemsControl.HeaderProperty, "tray.runPlan");
+        _trayMenu.Items.Add(CreateLabeledTrayMenuItem("tray.open", ShowMainWindow));
         _trayMenu.Items.Add(runMenu);
-        var pauseItem = CreateTrayMenuItem("Pause scheduler", () => _scheduler.IsPaused = !_scheduler.IsPaused);
+        var pauseItem = CreateTrayMenuItem(Loc.T("tray.pause"), () => _scheduler.IsPaused = !_scheduler.IsPaused);
         _trayMenu.Items.Add(pauseItem);
-        _trayMenu.Opened += (_, _) => pauseItem.Header = _scheduler.IsPaused ? "Resume scheduler" : "Pause scheduler";
+        _trayMenu.Opened += (_, _) =>
+            pauseItem.Header = _scheduler.IsPaused ? Loc.T("tray.resume") : Loc.T("tray.pause");
         _trayMenu.Items.Add(new Separator());
-        _trayMenu.Items.Add(CreateTrayMenuItem("Exit", ExitApp));
+        _trayMenu.Items.Add(CreateLabeledTrayMenuItem("tray.exit", ExitApp));
         ThemeManager.Follow(_trayMenu);   // the menu is in no window, so it needs the palette in its own resources
         _trayMenu.Opened += (_, _) => FillRunMenu(runMenu);
         FillRunMenu(runMenu);
@@ -221,18 +222,20 @@ public partial class App : Application
             return;
 
         var duration = RunHistoryRow.FormatDuration(result.DurationMs);
+        var reason = Loc.Known(result.Reason);
         var (icon, message) = result.Status switch
         {
-            RunStatus.Completed => (NotificationIcon.Info, $"Completed in {duration}."),
-            RunStatus.CompletedWithWarnings =>
-                (NotificationIcon.Warning, $"Completed in {duration}, {result.SkippedCount:N0} entries were skipped."),
-            RunStatus.Canceled => (NotificationIcon.Info, $"Canceled after {duration}."),
-            RunStatus.Full => (NotificationIcon.Error, $"Aborted after {duration}, the target is full. {result.Reason}"),
-            _ => (NotificationIcon.Error, $"Aborted after {duration} with an error. {result.Reason}"),
+            RunStatus.Completed => (NotificationIcon.Info, Loc.F("tray.notification.completed", ("duration", duration))),
+            RunStatus.CompletedWithWarnings => (NotificationIcon.Warning,
+                Loc.F("tray.notification.completedSkipped", ("duration", duration), ("count", result.SkippedCount))),
+            RunStatus.Canceled => (NotificationIcon.Info, Loc.F("tray.notification.canceled", ("duration", duration))),
+            RunStatus.Full => (NotificationIcon.Error,
+                Loc.F("tray.notification.full", ("duration", duration), ("reason", reason)).TrimEnd()),
+            _ => (NotificationIcon.Error, Loc.F("tray.notification.error", ("duration", duration), ("reason", reason)).TrimEnd()),
         };
         try
         {
-            _tray.ShowNotification($"Backup \"{planName}\"", message, icon);
+            _tray.ShowNotification(Loc.F("tray.notification.title", ("plan", planName)), message, icon);
         }
         catch (Exception)
         {
@@ -304,6 +307,15 @@ public partial class App : Application
         return item;
     }
 
+    /// <summary>A tray menu item whose header is the label <paramref name="key"/> (it follows language switches).</summary>
+    private static MenuItem CreateLabeledTrayMenuItem(string key, Action action)
+    {
+        var item = new MenuItem();
+        Loc.Bind(item, HeaderedItemsControl.HeaderProperty, key);
+        item.Click += (_, _) => action();
+        return item;
+    }
+
     private void ShowMainWindow()
     {
         _window.Show();
@@ -315,7 +327,7 @@ public partial class App : Application
     private void ShowSettings()
     {
         var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs,
-            () => ConfirmDiscardUnsaved() && ConfirmStopRestores("restart ReBackup"),
+            () => ConfirmDiscardUnsaved() && ConfirmStopRestores(exit: false),
             () => _queue.IsBusy, ThemeManager.Apply, Loc.Instance.Language, Loc.Instance.Apply);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
@@ -343,7 +355,7 @@ public partial class App : Application
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
         {
             // Kept for this session; the error says it is not saved.
-            _dialogs.ShowError("Settings", $"The theme could not be saved:\n\n{ex.Message}");
+            _dialogs.ShowError(Loc.T("settings.title"), Loc.F("app.themeNotSaved", ("error", ex.Message)));
         }
     }
 
@@ -377,7 +389,7 @@ public partial class App : Application
             // Keep the lock: a second copy must not run next to a backup that is still stopping.
             DisposeTray();
             _planStore.Dispose();
-            _dialogs.ShowInfo("ReBackup", "A running backup could not be stopped in time. Please start ReBackup again manually.");
+            _dialogs.ShowInfo("ReBackup", Loc.T("app.restartStuck"));
             Shutdown();
             return;
         }
@@ -391,7 +403,7 @@ public partial class App : Application
         }
         catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
-            _dialogs.ShowInfo("ReBackup", "ReBackup could not restart itself. Please start it again manually.");
+            _dialogs.ShowInfo("ReBackup", Loc.T("app.restartFailed"));
         }
         Shutdown();
     }
@@ -429,20 +441,19 @@ public partial class App : Application
     {
         if (!_mainViewModel.HasUnsavedChanges)
             return true;
-        return _dialogs.Confirm("Unsaved changes",
-            "These plans have unsaved changes:\n\n" + string.Join("\n", _mainViewModel.UnsavedPlanNames) +
-            "\n\nDiscard the changes?");
+        return _dialogs.Confirm(Loc.T("app.unsaved.title"),
+            Loc.F("app.unsaved.message", ("plans", string.Join("\n", _mainViewModel.UnsavedPlanNames))));
     }
 
-    /// <summary>True when no restore runs, or the user agrees to cancel the running ones to <paramref name="action"/>.</summary>
-    private bool ConfirmStopRestores(string action)
+    /// <summary>True when no restore runs, or the user agrees to cancel the running ones to exit (or restart) ReBackup.</summary>
+    private bool ConfirmStopRestores(bool exit)
     {
         if (!_mainViewModel.IsAnyRestoring)
             return true;
         if (!_window.IsVisible)
             ShowMainWindow();
-        return _dialogs.ConfirmDefaultNo("Restore in progress",
-            $"A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and {action}?");
+        return _dialogs.ConfirmDefaultNo(Loc.T("app.restoreRunning.title"),
+            exit ? Loc.T("app.restoreRunning.exit") : Loc.T("app.restoreRunning.restart"));
     }
 
     /// <summary>
@@ -452,8 +463,7 @@ public partial class App : Application
     private void StopRestores()
     {
         if (!_mainViewModel.StopRestores(TimeSpan.FromSeconds(10)))
-            _dialogs.ShowInfo("ReBackup",
-                "A restore did not stop within 10 seconds. A file it was writing may be incomplete (a \"*.rebackup-tmp\" file next to it).");
+            _dialogs.ShowInfo("ReBackup", Loc.T("app.restoreStuck"));
     }
 
     private void ExitApp()
@@ -470,14 +480,13 @@ public partial class App : Application
             return;
         }
 
-        if (!ConfirmStopRestores("exit ReBackup"))
+        if (!ConfirmStopRestores(exit: true))
         {
             _exiting = false;
             return;
         }
         var backupBusy = _queue.IsBusy;
-        if (backupBusy && !_dialogs.Confirm("Backup in progress",
-                "A backup is running or queued.\n\nCancel it and exit ReBackup?"))
+        if (backupBusy && !_dialogs.Confirm(Loc.T("app.backupRunning.title"), Loc.T("app.backupRunning.message")))
         {
             _exiting = false;
             return;
