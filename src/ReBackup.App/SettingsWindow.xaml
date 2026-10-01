@@ -1,13 +1,14 @@
 <Window x:Class="ReBackup.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ReBackup settings" Width="600" Height="620" MinWidth="480" MinHeight="520"
+        Title="ReBackup settings" Width="600" Height="700" MinWidth="480" MinHeight="600"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Style="{StaticResource {x:Type Window}}">
     <Grid Margin="20,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -48,7 +49,29 @@
             </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <Border Grid.Row="3" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+            <DockPanel>
+                <Border DockPanel.Dock="Right" VerticalAlignment="Center" Padding="3" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
+                        AutomationProperties.Name="Theme">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Theme" Content="System"
+                                     ToolTip="Follow the Windows app mode" IsChecked="{Binding IsSystemTheme}" />
+                        <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Theme" Content="Dark"
+                                     Margin="2,0,0,0" IsChecked="{Binding IsDarkTheme}" />
+                        <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Theme" Content="Light"
+                                     Margin="2,0,0,0" IsChecked="{Binding IsLightTheme}" />
+                    </StackPanel>
+                </Border>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="THEME" />
+                    <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
+                               Text="Applies at once." />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="Cancel" MinWidth="84" IsCancel="True" Command="{Binding CancelCommand}" />
             <Button Style="{StaticResource Button.Accent}" Content="OK" MinWidth="84" Margin="8,0,0,0" IsDefault="True"
                     Command="{Binding SaveCommand}" />

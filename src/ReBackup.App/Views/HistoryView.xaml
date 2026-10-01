@@ -25,13 +25,13 @@
                                         <Ellipse Width="8" Height="8" VerticalAlignment="Center">
                                             <Ellipse.Style>
                                                 <Style TargetType="Ellipse">
-                                                    <Setter Property="Fill" Value="{StaticResource Brush.Accent}" />
+                                                    <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Warning}">
-                                                            <Setter Property="Fill" Value="{StaticResource Brush.Warning}" />
+                                                            <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Failed}">
-                                                            <Setter Property="Fill" Value="{StaticResource Brush.Danger}" />
+                                                            <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>

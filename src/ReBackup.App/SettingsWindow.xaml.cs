@@ -12,5 +12,6 @@ public partial class SettingsWindow : Window
         DarkTitleBar.Apply(this);
         DataContext = viewModel;
         viewModel.CloseRequested += (_, result) => DialogResult = result;
+        Closed += (_, _) => viewModel.OnClosed();
     }
 }

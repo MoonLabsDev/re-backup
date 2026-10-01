@@ -3,7 +3,7 @@ using System.Windows.Media;
 
 namespace ReBackup.App.Theme;
 
-/// <summary>Reads theme colours (Theme/Colors.xaml) for code that draws itself, with a fallback outside the app.</summary>
+/// <summary>Reads theme colours (Theme/Colors.*.xaml) for code that draws itself, with a fallback outside the app.</summary>
 internal static class ThemeResources
 {
     public static Color Color(FrameworkElement element, string key, Color fallback) =>

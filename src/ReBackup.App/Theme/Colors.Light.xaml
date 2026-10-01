@@ -1,7 +1,9 @@
 <!--
-    Dark Pro design tokens (spec §3). One Color and one frozen SolidColorBrush per token.
+    Dark Pro design tokens, the light palette. One Color and one frozen SolidColorBrush per token.
     Views use only the Brush.<Token> keys; the derived brushes at the end are for the control templates
     in Controls.xaml, the chart palette for the drawing controls (treemap, retention timeline).
+    Colors.Dark.xaml has exactly the same keys: ThemeManager swaps the two as a whole, so every use outside the
+    palettes must be a DynamicResource (code that draws itself re-reads the colours on ThemeManager.ThemeChanged).
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -10,26 +12,26 @@
                     mc:Ignorable="po">
 
     <!-- Tokens -->
-    <Color x:Key="Color.Bg">#0F1216</Color>
-    <Color x:Key="Color.Rail">#0B0D10</Color>
-    <Color x:Key="Color.Surface">#14181D</Color>
-    <Color x:Key="Color.Card">#171B21</Color>
-    <Color x:Key="Color.Raised">#1D232B</Color>
-    <Color x:Key="Color.Border">#232A33</Color>
-    <Color x:Key="Color.BorderStrong">#2A313B</Color>
-    <Color x:Key="Color.Text">#E6EAF0</Color>
-    <Color x:Key="Color.TextMuted">#9AA4B2</Color>
-    <Color x:Key="Color.TextFaint">#6B7584</Color>
-    <Color x:Key="Color.Accent">#2BB3A3</Color>
-    <Color x:Key="Color.AccentHover">#35C6B5</Color>
-    <Color x:Key="Color.AccentText">#06201D</Color>
-    <Color x:Key="Color.AccentSoft">#163B37</Color>
-    <Color x:Key="Color.AccentLight">#5FD3C4</Color>
-    <Color x:Key="Color.Selection">#16302D</Color>
-    <Color x:Key="Color.Danger">#F2545B</Color>
-    <Color x:Key="Color.Warning">#E0A800</Color>
-    <Color x:Key="Color.PartialRow">#1E1B12</Color>
-    <Color x:Key="Color.IgnoredRow">#1F1518</Color>
+    <Color x:Key="Color.Bg">#F5F6F8</Color>
+    <Color x:Key="Color.Rail">#ECEEF2</Color>
+    <Color x:Key="Color.Surface">#FFFFFF</Color>
+    <Color x:Key="Color.Card">#FFFFFF</Color>
+    <Color x:Key="Color.Raised">#F0F2F5</Color>
+    <Color x:Key="Color.Border">#E2E5EA</Color>
+    <Color x:Key="Color.BorderStrong">#CDD2D9</Color>
+    <Color x:Key="Color.Text">#1B1F24</Color>
+    <Color x:Key="Color.TextMuted">#5B6573</Color>
+    <Color x:Key="Color.TextFaint">#8B95A3</Color>
+    <Color x:Key="Color.Accent">#1F8A7E</Color>
+    <Color x:Key="Color.AccentHover">#187468</Color>
+    <Color x:Key="Color.AccentText">#FFFFFF</Color>
+    <Color x:Key="Color.AccentSoft">#DDF3EF</Color>
+    <Color x:Key="Color.AccentLight">#136F65</Color>
+    <Color x:Key="Color.Selection">#D7EFEB</Color>
+    <Color x:Key="Color.Danger">#D1343B</Color>
+    <Color x:Key="Color.Warning">#B07D00</Color>
+    <Color x:Key="Color.PartialRow">#FFF6D8</Color>
+    <Color x:Key="Color.IgnoredRow">#FBE3E1</Color>
 
     <SolidColorBrush x:Key="Brush.Bg" Color="{StaticResource Color.Bg}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Rail" Color="{StaticResource Color.Rail}" po:Freeze="True" />
@@ -53,26 +55,27 @@
     <SolidColorBrush x:Key="Brush.IgnoredRow" Color="{StaticResource Color.IgnoredRow}" po:Freeze="True" />
 
     <!-- Derived shades, used only inside the control templates (hover/pressed states). -->
-    <SolidColorBrush x:Key="Brush.RaisedHover" Color="#252C36" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.RaisedPressed" Color="#161B21" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.BorderHover" Color="#3A434F" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.AccentPressed" Color="#239688" po:Freeze="True" />
-    <SolidColorBrush x:Key="Brush.DangerSoft" Color="#3A1D22" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.RaisedHover" Color="#E6E9EE" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.RaisedPressed" Color="#DCE0E6" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BorderHover" Color="#AEB6C1" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentPressed" Color="#135F56" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DangerSoft" Color="#FCE9E8" po:Freeze="True" />
 
-    <!-- Chart palette (treemap, retention timeline): families of a light and a dark shade, plus the ignored tile. -->
-    <Color x:Key="Color.Chart.TealLight">#5FD3C4</Color>
-    <Color x:Key="Color.Chart.Teal">#2BB3A3</Color>
-    <Color x:Key="Color.Chart.TealDark">#1F8A7E</Color>
-    <Color x:Key="Color.Chart.BlueLight">#7FB2FF</Color>
-    <Color x:Key="Color.Chart.BlueDark">#4F84D6</Color>
-    <Color x:Key="Color.Chart.VioletLight">#C9A2FF</Color>
-    <Color x:Key="Color.Chart.VioletDark">#9B6FE0</Color>
-    <Color x:Key="Color.Chart.AmberLight">#F2B84B</Color>
-    <Color x:Key="Color.Chart.AmberDark">#D9932B</Color>
-    <Color x:Key="Color.Chart.Ignored">#2E3743</Color>
+    <!-- Chart palette (treemap, retention timeline): families of a light and a dark shade, plus the ignored tile.
+         Darker and more saturated than the dark theme's, so the tiles and markers read on white. -->
+    <Color x:Key="Color.Chart.TealLight">#2BA595</Color>
+    <Color x:Key="Color.Chart.Teal">#1F8A7E</Color>
+    <Color x:Key="Color.Chart.TealDark">#136F65</Color>
+    <Color x:Key="Color.Chart.BlueLight">#4A8BE6</Color>
+    <Color x:Key="Color.Chart.BlueDark">#2A62B8</Color>
+    <Color x:Key="Color.Chart.VioletLight">#9B6FE6</Color>
+    <Color x:Key="Color.Chart.VioletDark">#6F44C0</Color>
+    <Color x:Key="Color.Chart.AmberLight">#E39B1E</Color>
+    <Color x:Key="Color.Chart.AmberDark">#B5710C</Color>
+    <Color x:Key="Color.Chart.Ignored">#D5DAE1</Color>
 
-    <!-- Fonts -->
-    <FontFamily x:Key="Font.Ui">Segoe UI Variable Text, Segoe UI</FontFamily>
-    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas</FontFamily>
-    <FontFamily x:Key="Font.Icon">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+    <!-- Fill of the "% of parent" bars in the ignore preview; the bar's text (Brush.Text) sits on it, so here a light
+         teal instead of the dark chart shade. -->
+    <SolidColorBrush x:Key="Brush.PercentFill" Color="#B5E4DC" po:Freeze="True" />
+
 </ResourceDictionary>

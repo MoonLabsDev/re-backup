@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using ReBackup.App.Services;
 using ReBackup.App.Theme;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.IO;
@@ -41,7 +42,7 @@ public sealed class TreemapControl : FrameworkElement
 
     private readonly record struct Tile(EvaluatedNode Node, Rect Rect, Brush Fill, bool IsLeaf);
 
-    /// <summary>Brushes and pens resolved from the theme once per control.</summary>
+    /// <summary>Brushes and pens resolved from the theme; resolved again after a theme switch.</summary>
     private sealed class Paint
     {
         public required Brush Background { get; init; }
@@ -61,6 +62,17 @@ public sealed class TreemapControl : FrameworkElement
     private EvaluatedNode? _hovered;
     private Paint? _paint;
     private int _nextFamily;
+
+    public TreemapControl()
+    {
+        Loaded += (_, _) =>
+        {
+            ThemeManager.ThemeChanged -= OnThemeChanged;
+            ThemeManager.ThemeChanged += OnThemeChanged;
+            OnThemeChanged(null, EventArgs.Empty);   // the theme may have changed while unloaded
+        };
+        Unloaded += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+    }
 
     public EvaluatedNode? Root
     {
@@ -204,6 +216,14 @@ public sealed class TreemapControl : FrameworkElement
         if (node.Status == IncludeStatus.Ignored)
             return paint.Ignored;
         return paint.Shades[family][Math.Clamp(depth - 1, 0, ShadeSteps)];
+    }
+
+    /// <summary>The tiles hold brushes of the old palette: drop paint and layout and draw again.</summary>
+    private void OnThemeChanged(object? sender, EventArgs e)
+    {
+        _paint = null;
+        _hasLayout = false;
+        InvalidateVisual();
     }
 
     private Paint LoadPaint()

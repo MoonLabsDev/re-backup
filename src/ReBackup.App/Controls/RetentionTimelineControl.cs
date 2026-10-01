@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
+using ReBackup.App.Services;
 using ReBackup.App.Theme;
 using ReBackup.App.ViewModels;
 
@@ -24,7 +25,7 @@ public sealed class RetentionTimelineControl : FrameworkElement
     ];
     private static readonly Typeface TextFace = new("Segoe UI");
 
-    /// <summary>Brushes and pens resolved from the theme once per control.</summary>
+    /// <summary>Brushes and pens resolved from the theme; resolved again after a theme switch.</summary>
     private sealed class Paint
     {
         public required Brush[] Lanes { get; init; }
@@ -47,6 +48,17 @@ public sealed class RetentionTimelineControl : FrameworkElement
     public static readonly DependencyProperty ToProperty = DependencyProperty.Register(
         nameof(To), typeof(DateTime), typeof(RetentionTimelineControl),
         new FrameworkPropertyMetadata(default(DateTime), FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public RetentionTimelineControl()
+    {
+        Loaded += (_, _) =>
+        {
+            ThemeManager.ThemeChanged -= OnThemeChanged;
+            ThemeManager.ThemeChanged += OnThemeChanged;
+            OnThemeChanged(null, EventArgs.Empty);   // the theme may have changed while unloaded
+        };
+        Unloaded += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+    }
 
     public IReadOnlyList<TimelineLane>? Lanes
     {
@@ -129,6 +141,12 @@ public sealed class RetentionTimelineControl : FrameworkElement
 
     private static FormattedText Text(string text, double size, Brush brush, double pixelsPerDip) =>
         new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, TextFace, size, brush, pixelsPerDip);
+
+    private void OnThemeChanged(object? sender, EventArgs e)
+    {
+        _paint = null;
+        InvalidateVisual();
+    }
 
     private Paint LoadPaint()
     {

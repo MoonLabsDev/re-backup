@@ -5,7 +5,7 @@
              xmlns:controls="clr-namespace:ReBackup.App.Controls">
     <UserControl.Resources>
         <Style x:Key="TextBlock.Error" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Brush.Danger}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
 
@@ -45,7 +45,7 @@
                         </StackPanel>
                     </DockPanel>
 
-                    <TextBlock Foreground="{StaticResource Brush.Warning}" TextWrapping="Wrap" Margin="0,0,0,10"
+                    <TextBlock Foreground="{DynamicResource Brush.Warning}" TextWrapping="Wrap" Margin="0,0,0,10"
                                Text="No rules: every version is kept and the target fills up over time.">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
@@ -66,8 +66,8 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Width="330" Margin="0,0,10,10" Padding="12" Background="{StaticResource Brush.Bg}"
-                                        BorderBrush="{StaticResource Brush.BorderStrong}" BorderThickness="1" CornerRadius="8">
+                                <Border Width="330" Margin="0,0,10,10" Padding="12" Background="{DynamicResource Brush.Bg}"
+                                        BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" CornerRadius="8">
                                     <StackPanel>
                                         <DockPanel>
                                             <Button DockPanel.Dock="Right" Style="{StaticResource Button.Danger}"
@@ -146,7 +146,7 @@
                                         </StackPanel>
 
                                         <TextBlock Style="{StaticResource TextBlock.Label}" Margin="0,8,0,0" TextWrapping="Wrap"
-                                                   Foreground="{StaticResource Brush.TextFaint}" Text="{Binding AnchorHint}" />
+                                                   Foreground="{DynamicResource Brush.TextFaint}" Text="{Binding AnchorHint}" />
 
                                         <TextBlock Style="{StaticResource TextBlock.ErrorOrNone}" Margin="0,6,0,0"
                                                    Text="{Binding Error}" />
@@ -157,7 +157,7 @@
                     </ItemsControl>
 
                     <!-- Forecast -->
-                    <Border Height="1" Margin="0,6,0,14" Background="{StaticResource Brush.Border}" />
+                    <Border Height="1" Margin="0,6,0,14" Background="{DynamicResource Brush.Border}" />
 
                     <DockPanel Margin="0,0,0,8">
                         <ComboBox DockPanel.Dock="Right" Width="190" DisplayMemberPath="Label" AutomationProperties.Name="Assumed schedule"
@@ -267,10 +267,10 @@
                                 <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsDelete}" Value="True">
-                                            <Setter Property="Foreground" Value="{StaticResource Brush.Danger}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsManaged}" Value="False">
-                                            <Setter Property="Foreground" Value="{StaticResource Brush.TextFaint}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>

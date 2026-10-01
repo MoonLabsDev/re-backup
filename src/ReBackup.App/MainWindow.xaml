@@ -49,16 +49,16 @@
             <Setter Property="Width" Value="8" />
             <Setter Property="Height" Value="8" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Fill" Value="{StaticResource Brush.TextFaint}" />
+            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Run.Dot}" Value="Active">
-                    <Setter Property="Fill" Value="{StaticResource Brush.Accent}" />
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Run.Dot}" Value="Failed">
-                    <Setter Property="Fill" Value="{StaticResource Brush.Danger}" />
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Run.Dot}" Value="Warning">
-                    <Setter Property="Fill" Value="{StaticResource Brush.Warning}" />
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -89,12 +89,12 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Brush.Card}" />
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Card}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Brush.Raised}" />
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Brush.Accent}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Raised}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -111,23 +111,42 @@
         </Grid.ColumnDefinitions>
 
         <!-- ============================================================ Icon rail -->
-        <Border Grid.Column="0" Background="{StaticResource Brush.Rail}" BorderBrush="{StaticResource Brush.Border}"
+        <Border Grid.Column="0" Background="{DynamicResource Brush.Rail}" BorderBrush="{DynamicResource Brush.Border}"
                 BorderThickness="0,0,1,0">
             <DockPanel Margin="0,14">
                 <Border DockPanel.Dock="Top" Width="34" Height="34" CornerRadius="9" HorizontalAlignment="Center"
-                        Background="{StaticResource Brush.Accent}">
-                    <TextBlock Text="Re:" FontSize="12" FontWeight="Bold" Foreground="{StaticResource Brush.AccentText}"
+                        Background="{DynamicResource Brush.Accent}">
+                    <TextBlock Text="Re:" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.AccentText}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <Button DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Style="{StaticResource Button.Icon}"
                         Width="40" Height="40" FontSize="18" Content="{StaticResource Icon.Settings}"
                         ToolTip="Settings" AutomationProperties.Name="Settings"
                         Command="{Binding OpenSettingsCommand}" />
+                <!-- Theme: cycles System → Dark → Light; the glyph shows the current mode. -->
+                <Button x:Name="ThemeButton" DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                        Width="40" Height="40" FontSize="17"
+                        ToolTip="{Binding Theme.ToolTip}" AutomationProperties.Name="{Binding Theme.AutomationName}"
+                        Command="{Binding Theme.CycleCommand}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource Button.Icon}">
+                            <Setter Property="Content" Value="{StaticResource Icon.ThemeSystem}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Theme.Mode}" Value="Dark">
+                                    <Setter Property="Content" Value="{StaticResource Icon.ThemeDark}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Theme.Mode}" Value="Light">
+                                    <Setter Property="Content" Value="{StaticResource Icon.ThemeLight}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
             </DockPanel>
         </Border>
 
         <!-- ============================================================ Plan list -->
-        <Border Grid.Column="1" Background="{StaticResource Brush.Surface}" BorderBrush="{StaticResource Brush.Border}"
+        <Border Grid.Column="1" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
                 BorderThickness="0,0,1,0">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="14,16,14,10">
@@ -140,7 +159,7 @@
                 <Button DockPanel.Dock="Bottom" HorizontalAlignment="Stretch" Margin="8,6,8,10"
                         AutomationProperties.Name="Delete plan" Command="{Binding DeletePlanCommand}">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Foreground="{StaticResource Brush.Danger}"
+                        <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Foreground="{DynamicResource Brush.Danger}"
                                    Text="{StaticResource Icon.Delete}" />
                         <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Delete plan" />
                     </StackPanel>
@@ -204,7 +223,7 @@
                                     <TextBlock Margin="0,5,0,0" FontSize="12" Text="{Binding Run.ProgressText}"
                                                ToolTip="{Binding Run.ProgressText}" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Margin="0,2,0,0" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
-                                               Foreground="{StaticResource Brush.AccentLight}" Text="{Binding Run.EtaText}">
+                                               Foreground="{DynamicResource Brush.AccentLight}" Text="{Binding Run.EtaText}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Style.Triggers>
@@ -218,11 +237,11 @@
                                 </StackPanel>
 
                                 <TextBlock Margin="0,8,0,0" Style="{StaticResource TextBlock.Mono}"
-                                           Foreground="{StaticResource Brush.TextMuted}"
+                                           Foreground="{DynamicResource Brush.TextMuted}"
                                            Text="{Binding Source}" ToolTip="{Binding Source}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource Brush.TextMuted}"
+                                <TextBlock Margin="0,4,0,0" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
                                            Text="{Binding Run.LastRunText}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock FontSize="12" Foreground="{StaticResource Brush.TextMuted}"
+                                <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
                                            Text="{Binding Run.NextRunText}" TextTrimming="CharacterEllipsis">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -244,14 +263,14 @@
         <!-- ============================================================ Main area -->
         <DockPanel Grid.Column="2">
             <!-- Footer -->
-            <Border DockPanel.Dock="Bottom" Height="34" Background="{StaticResource Brush.Rail}"
-                    BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0" Padding="24,0">
-                <DockPanel TextElement.FontSize="12" TextElement.Foreground="{StaticResource Brush.TextMuted}">
+            <Border DockPanel.Dock="Bottom" Height="34" Background="{DynamicResource Brush.Rail}"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="24,0">
+                <DockPanel TextElement.FontSize="12" TextElement.Foreground="{DynamicResource Brush.TextMuted}">
                     <!-- Queue and scheduler texts are capped so the status message keeps room. -->
                     <TextBlock DockPanel.Dock="Right" Style="{StaticResource TextBlock.Footer}" Margin="16,0,0,0"
                                MaxWidth="360" Text="{Binding QueueStatus}" />
                     <TextBlock DockPanel.Dock="Right" Style="{StaticResource TextBlock.Footer}" Margin="16,0,0,0"
-                               MaxWidth="240" Foreground="{StaticResource Brush.Warning}" Text="{Binding SchedulerStatus}" />
+                               MaxWidth="240" Foreground="{DynamicResource Brush.Warning}" Text="{Binding SchedulerStatus}" />
                     <TextBlock Style="{StaticResource TextBlock.Footer}" Text="{Binding StatusMessage}" />
                 </DockPanel>
             </Border>
@@ -284,7 +303,7 @@
                     </DockPanel.Style>
 
                     <!-- Header: name, tabs, Revert / Save / Run now -->
-                    <Border x:Name="HeaderBar" DockPanel.Dock="Top" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1"
+                    <Border x:Name="HeaderBar" DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1"
                             Padding="24,16" SizeChanged="OnHeaderSizeChanged">
                         <!-- One row when it fits; otherwise the tabs move below the name (MainWindow.LayoutHeader). -->
                         <Grid>
@@ -304,7 +323,7 @@
                                        TextTrimming="CharacterEllipsis" />
 
                             <Border x:Name="MainTabsBar" Grid.Column="1" Margin="24,0,16,0" HorizontalAlignment="Left" Padding="3"
-                                    Background="{StaticResource Brush.Surface}" BorderBrush="{StaticResource Brush.Border}"
+                                    Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
                                     BorderThickness="1" CornerRadius="8">
                                 <StackPanel Orientation="Horizontal">
                                     <RadioButton x:Name="PlanTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"

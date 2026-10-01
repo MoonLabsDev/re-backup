@@ -29,8 +29,9 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _schedulerStatus = "";
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
-        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi)
+        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme)
     {
+        Theme = theme;
         _store = store;
         _paths = paths;
         _settings = settings;
@@ -55,6 +56,9 @@ public sealed partial class MainViewModel : ObservableObject
     public event Action<string, RunLogEntry>? RunFinished;
 
     public ObservableCollection<PlanEditorViewModel> Plans { get; } = [];
+
+    /// <summary>The theme button of the icon rail.</summary>
+    public ThemeToggleViewModel Theme { get; }
 
     /// <summary>Re-applies the patterns in every open preview, e.g. after the global defaults changed.</summary>
     public void ReevaluatePreviews()

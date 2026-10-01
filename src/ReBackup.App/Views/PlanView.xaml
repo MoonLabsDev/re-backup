@@ -39,8 +39,8 @@
 
         <!-- A value tile of the Last run card. -->
         <Style x:Key="Border.Tile" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource Brush.Bg}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}" />
+            <Setter Property="Background" Value="{DynamicResource Brush.Bg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="10" />
@@ -106,7 +106,7 @@
                     <ItemsControl Margin="0,4,0,0" ItemsSource="{Binding Errors}" Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource Brush.Danger}"
+                                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
                                            Text="{Binding}" />
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -150,13 +150,13 @@
                             <Ellipse Width="8" Height="8" VerticalAlignment="Top" Margin="0,6,0,0">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="{StaticResource Brush.Accent}" />
+                                        <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Warning}">
-                                                <Setter Property="Fill" Value="{StaticResource Brush.Warning}" />
+                                                <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Failed}">
-                                                <Setter Property="Fill" Value="{StaticResource Brush.Danger}" />
+                                                <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -165,13 +165,13 @@
                             <TextBlock Grid.Column="1" Margin="8,0,0,0" TextWrapping="Wrap">
                                 <Run Text="{Binding StatusText, Mode=OneWay}" FontWeight="SemiBold" />
                                 <Run Text="{Binding TriggerText, Mode=OneWay, StringFormat='· {0}'}"
-                                     Foreground="{StaticResource Brush.TextMuted}" />
+                                     Foreground="{DynamicResource Brush.TextMuted}" />
                                 <Run Text="{Binding StartText, Mode=OneWay, StringFormat='· {0}'}"
-                                     Foreground="{StaticResource Brush.TextMuted}" />
+                                     Foreground="{DynamicResource Brush.TextMuted}" />
                             </TextBlock>
                         </Grid>
 
-                        <TextBlock Margin="16,4,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource Brush.TextMuted}"
+                        <TextBlock Margin="16,4,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}"
                                    Text="{Binding Reason}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -234,8 +234,8 @@
                     <ItemsControl ItemsSource="{Binding TriggerRows}" Focusable="False">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Margin="0,0,0,8" Padding="10,6" Background="{StaticResource Brush.Bg}"
-                                        BorderBrush="{StaticResource Brush.BorderStrong}" BorderThickness="1" CornerRadius="8">
+                                <Border Margin="0,0,0,8" Padding="10,6" Background="{DynamicResource Brush.Bg}"
+                                        BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" CornerRadius="8">
                                     <StackPanel>
                                         <DockPanel>
                                             <Button DockPanel.Dock="Right" Style="{StaticResource Button.Danger}"
@@ -246,7 +246,7 @@
 
                                             <WrapPanel VerticalAlignment="Center">
                                                 <TextBlock Style="{StaticResource TextBlock.Icon}" Margin="0,0,10,0"
-                                                           Foreground="{StaticResource Brush.TextMuted}" Text="{StaticResource Icon.Clock}" />
+                                                           Foreground="{DynamicResource Brush.TextMuted}" Text="{StaticResource Icon.Clock}" />
                                                 <ComboBox Width="112" AutomationProperties.Name="Trigger type"
                                                           ItemsSource="{x:Static vm:TriggerRowViewModel.Types}"
                                                           SelectedItem="{Binding Type}" />
@@ -283,7 +283,7 @@
                                                     <TextBox Style="{StaticResource TextBox.Field}" Width="48" AutomationProperties.Name="Day of month"
                                                              Text="{Binding DayText, UpdateSourceTrigger=PropertyChanged}" />
                                                     <TextBlock Style="{StaticResource TextBlock.RowText}" FontSize="12"
-                                                               Foreground="{StaticResource Brush.TextFaint}"
+                                                               Foreground="{DynamicResource Brush.TextFaint}"
                                                                Text="0 = last day, -1 = the day before" />
                                                 </StackPanel>
 
@@ -309,7 +309,7 @@
                                                     <TextBox Style="{StaticResource TextBox.Field}" Width="64" AutomationProperties.Name="To"
                                                              Text="{Binding ToText, UpdateSourceTrigger=PropertyChanged}" />
                                                     <TextBlock Style="{StaticResource TextBlock.RowText}" FontSize="12"
-                                                               Foreground="{StaticResource Brush.TextFaint}" Text="empty = whole day" />
+                                                               Foreground="{DynamicResource Brush.TextFaint}" Text="empty = whole day" />
                                                 </StackPanel>
                                             </WrapPanel>
                                         </DockPanel>
@@ -338,7 +338,7 @@
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
 
-                                        <TextBlock Margin="24,6,0,2" TextWrapping="Wrap" Foreground="{StaticResource Brush.Danger}"
+                                        <TextBlock Margin="24,6,0,2" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
                                                    Text="{Binding Error}">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
@@ -376,8 +376,8 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Margin="0,0,8,8" Padding="10,4" CornerRadius="6" Background="{StaticResource Brush.AccentSoft}">
-                                        <TextBlock Style="{StaticResource TextBlock.Mono}" Foreground="{StaticResource Brush.AccentLight}"
+                                    <Border Margin="0,0,8,8" Padding="10,4" CornerRadius="6" Background="{DynamicResource Brush.AccentSoft}">
+                                        <TextBlock Style="{StaticResource TextBlock.Mono}" Foreground="{DynamicResource Brush.AccentLight}"
                                                    Text="{Binding}" />
                                     </Border>
                                 </DataTemplate>
@@ -391,7 +391,7 @@
                             <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding SchedulerPaused}" Value="True">
-                                        <Setter Property="Foreground" Value="{StaticResource Brush.Warning}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>

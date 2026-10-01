@@ -17,6 +17,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly IDialogService _dialogs;
     private readonly Func<bool> _confirmRestart;
     private readonly Func<bool> _isBackupActive;
+    private readonly Action<ThemeMode> _previewTheme;
+    private bool _saved;
     private ConfigPaths _paths;
 
     [ObservableProperty] private string _configFolder = "";
@@ -24,8 +26,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _closeToTray;
     [ObservableProperty] private bool _startWithWindows;
 
+    /// <summary>The theme; applied at once while the dialog is open, restored on Cancel.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSystemTheme), nameof(IsDarkTheme), nameof(IsLightTheme))]
+    private ThemeMode _theme;
+
     public SettingsViewModel(SettingsStore store, AppSettings settings, ConfigPaths paths, string appDataRoot,
-        IDialogService dialogs, Func<bool> confirmRestart, Func<bool> isBackupActive)
+        IDialogService dialogs, Func<bool> confirmRestart, Func<bool> isBackupActive, Action<ThemeMode> previewTheme)
     {
         _store = store;
         _settings = settings;
@@ -34,11 +41,41 @@ public sealed partial class SettingsViewModel : ObservableObject
         _dialogs = dialogs;
         _confirmRestart = confirmRestart;
         _isBackupActive = isBackupActive;
+        _previewTheme = previewTheme;
 
         ConfigFolder = paths.Root;
         DefaultIgnorePatterns = string.Join(Environment.NewLine, settings.DefaultIgnorePatterns);
         CloseToTray = settings.CloseToTray;
         StartWithWindows = settings.StartWithWindows;
+        Theme = settings.Theme;   // already applied: previewing it again changes nothing
+    }
+
+    // The three segments of the theme switch; a segment that is unchecked leaves the theme as it is.
+    public bool IsSystemTheme
+    {
+        get => Theme == ThemeMode.System;
+        set { if (value) Theme = ThemeMode.System; }
+    }
+
+    public bool IsDarkTheme
+    {
+        get => Theme == ThemeMode.Dark;
+        set { if (value) Theme = ThemeMode.Dark; }
+    }
+
+    public bool IsLightTheme
+    {
+        get => Theme == ThemeMode.Light;
+        set { if (value) Theme = ThemeMode.Light; }
+    }
+
+    partial void OnThemeChanged(ThemeMode value) => _previewTheme(value);
+
+    /// <summary>The dialog closed: without a save the theme goes back to the saved one.</summary>
+    public void OnClosed()
+    {
+        if (!_saved && Theme != _settings.Theme)
+            _previewTheme(_settings.Theme);
     }
 
     /// <summary>Raised with the dialog result (true = saved).</summary>
@@ -97,6 +134,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private bool HasOtherEdits() =>
         CloseToTray != _settings.CloseToTray
+        || Theme != _settings.Theme
         || StartWithWindows != _settings.StartWithWindows
         || !ParsePatterns().SequenceEqual(_settings.DefaultIgnorePatterns);
 
@@ -112,6 +150,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         var oldPatterns = _settings.DefaultIgnorePatterns.ToList();
         var oldCloseToTray = _settings.CloseToTray;
         var oldStartWithWindows = _settings.StartWithWindows;
+        var oldTheme = _settings.Theme;
         var registryChanged = false;
 
         try
@@ -122,6 +161,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             _settings.DefaultIgnorePatterns = ParsePatterns();
             _settings.CloseToTray = CloseToTray;
             _settings.StartWithWindows = StartWithWindows;
+            _settings.Theme = Theme;
             _store.Save(_settings);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
@@ -129,6 +169,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             _settings.DefaultIgnorePatterns = oldPatterns;
             _settings.CloseToTray = oldCloseToTray;
             _settings.StartWithWindows = oldStartWithWindows;
+            _settings.Theme = oldTheme;
             if (registryChanged)
             {
                 try { StartupRegistration.Apply(oldStartWithWindows); }
@@ -138,6 +179,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        _saved = true;
         CloseRequested?.Invoke(this, true);
     }
 
