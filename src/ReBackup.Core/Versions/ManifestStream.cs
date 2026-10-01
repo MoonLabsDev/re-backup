@@ -15,6 +15,9 @@ public static class ManifestStream
     /// <summary>Size of the read window; it grows only for a single token or entry that does not fit.</summary>
     public const int InitialBufferSize = 64 * 1024;
 
+    /// <summary>Upper bound of the read window: a single token or entry larger than this is rejected.</summary>
+    public const int MaxBufferSize = 64 * 1024 * 1024;
+
     private enum Phase { Start, Properties, Files, Done }
 
     /// <exception cref="IOException">The file is missing or cannot be read.</exception>
@@ -31,6 +34,25 @@ public static class ManifestStream
     /// <inheritdoc cref="Read(string, Action{ManifestFile}, CancellationToken)"/>
     public static ManifestSummary Read(Stream stream, Action<ManifestFile> onFile,
         CancellationToken cancellationToken = default)
+    {
+        var inCallback = false;
+        try
+        {
+            return ReadCore(stream, f =>
+            {
+                inCallback = true;
+                onFile(f);
+                inCallback = false;
+            }, cancellationToken);
+        }
+        catch (Exception ex) when (!inCallback && ex is InvalidOperationException or ArgumentException or OverflowException)
+        {
+            // e.g. invalid UTF-8 in a string: Utf8JsonReader reports it other than as a JsonException.
+            throw new JsonException("The manifest cannot be read: " + ex.Message, ex);
+        }
+    }
+
+    private static ManifestSummary ReadCore(Stream stream, Action<ManifestFile> onFile, CancellationToken cancellationToken)
     {
         var buffer = new byte[InitialBufferSize];
         var length = Fill(stream, buffer, 0, out var endOfStream);
@@ -58,7 +80,11 @@ public static class ManifestStream
             length -= consumed;
             start = 0;
             if (length == buffer.Length)
+            {
+                if (buffer.Length >= MaxBufferSize)
+                    throw new JsonException("A single value of the manifest is too large.");
                 Array.Resize(ref buffer, buffer.Length * 2);
+            }
             length += Fill(stream, buffer, length, out endOfStream);
         }
     }

@@ -91,6 +91,32 @@ public class ManifestStreamTests
         stream.LargestRead.Should().BeLessOrEqualTo(ManifestStream.InitialBufferSize);
     }
 
+    [Fact]
+    public void Invalid_utf8_is_a_json_exception()
+    {
+        var json = System.Text.Encoding.UTF8.GetBytes("""{ "files": [ { "path": "@@" } ] }""");
+        var at = Array.IndexOf(json, (byte)'@');
+        json[at] = 0xC3;
+        json[at + 1] = 0x28;
+
+        var read = () => ManifestStream.Read(new MemoryStream(json), _ => { });
+
+        read.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void A_single_value_beyond_the_maximum_window_is_rejected()
+    {
+        var head = Encoding.UTF8.GetBytes("""{ "planId": " """);
+        var bytes = new byte[head.Length + ManifestStream.MaxBufferSize + 1024];
+        head.CopyTo(bytes, 0);
+        Array.Fill(bytes, (byte)'a', head.Length, bytes.Length - head.Length);
+
+        var read = () => ManifestStream.Read(new MemoryStream(bytes), _ => { });
+
+        read.Should().Throw<JsonException>();
+    }
+
     /// <summary>A forward-only stream over bytes that records how much has been read.</summary>
     private sealed class CountingStream(byte[] bytes) : Stream
     {

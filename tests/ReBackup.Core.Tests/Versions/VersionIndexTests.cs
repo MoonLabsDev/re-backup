@@ -329,6 +329,89 @@ public class VersionIndexTests : IDisposable
     }
 
     [Fact]
+    public void Invalid_utf8_in_a_manifest_falls_back_to_a_scan_and_does_not_break_the_sync()
+    {
+        Write(_target, "2026_09_29-14_05", [File("a.txt", "alpha")]);
+        var bad = Write(_target, "2026_09_30-14_05", [File("b.txt", "bravo")], withManifest: false);
+        var json = System.Text.Encoding.UTF8.GetBytes("""{ "planId": "plan1", "files": [ { "path": "@@", "size": 1 } ] }""");
+        var at = Array.IndexOf(json, (byte)'@');
+        json[at] = 0xC3;
+        json[at + 1] = 0x28;
+        System.IO.File.WriteAllBytes(Path.Combine(bad, VersionName.ManifestFileName), json);
+        var index = VersionIndex.Open(_db);
+
+        var result = index.Sync(List(_target));
+
+        result.Errors.Should().BeEmpty();
+        index.Versions().Select(v => (v.Name, v.Origin)).Should().Equal(
+            ("2026_09_29-14_05 Projects", IndexOrigin.Manifest), ("2026_09_30-14_05 Projects", IndexOrigin.Scan));
+    }
+
+    [Fact]
+    public void A_manifest_that_cannot_be_read_is_an_error_and_is_retried_by_the_next_sync()
+    {
+        var folder = Write(_target, "2026_09_30-14_05", [File("a.txt", "alpha")]);
+        var index = VersionIndex.Open(_db);
+
+        IndexSyncResult first;
+        using (new FileStream(Path.Combine(folder, VersionName.ManifestFileName), FileMode.Open, FileAccess.Read, FileShare.None))
+            first = index.Sync(List(_target));
+
+        first.Errors.Should().ContainSingle().Which.Should().StartWith("2026_09_30-14_05 Projects: ");
+        first.Imported.Should().Be(0);
+        index.Versions().Should().BeEmpty();
+        Rows("SELECT COUNT(*) FROM files").Single()[0].Should().Be(0L);
+
+        index.Sync(List(_target)).Imported.Should().Be(1);
+        index.Versions().Single().Origin.Should().Be(IndexOrigin.Manifest);
+        index.Versions().Single().Source.Should().Be(Source);
+    }
+
+    [Fact]
+    public void A_missing_target_keeps_the_rows_and_reports_an_error()
+    {
+        Write(_target, "2026_09_29-14_05", [File("a.txt", "alpha")]);
+        Write(_target, "2026_09_30-14_05", [File("a.txt", "alpha")]);
+        var index = VersionIndex.Open(_db);
+        index.Sync(List(_target), targetFolder: _target);
+        var gone = _tmp.PathOf("offline-nas");
+
+        var result = index.Sync(VersionCatalog.List(gone, PlanId, PlanName), targetFolder: gone);
+
+        result.Removed.Should().Be(0);
+        result.Errors.Should().ContainSingle();
+        index.Versions().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Duplicate_paths_in_a_manifest_count_once_and_the_first_wins()
+    {
+        var folder = Write(_target, "2026_09_30-14_05", []);
+        var version = List(_target).Single();
+        var manifest = new BackupManifest
+        {
+            PlanId = PlanId, PlanName = PlanName, Source = Source,
+            Files =
+            [
+                new ManifestFile("a.txt", 5, Mtime, ""),
+                new ManifestFile("A.TXT", 9, Mtime, ""),
+                new ManifestFile(@"sub\b.txt", 2, Mtime, ""),
+                new ManifestFile("sub/b.txt", 7, Mtime, ""),
+            ],
+        };
+        var index = VersionIndex.Open(_db);
+
+        index.Add(version, manifest);
+
+        var indexed = index.Versions().Single();
+        indexed.FileCount.Should().Be(2);
+        indexed.TotalBytes.Should().Be(7);
+        DirsOf(version.Name).Should().BeEquivalentTo(new Dictionary<string, (long, long)> { [""] = (7, 2), ["sub"] = (2, 1) });
+        FilesOf(version.Name).Select(f => (f.Path, f.Size)).Should().Equal(("a.txt", 5L), ("sub/b.txt", 2L));
+        Directory.Exists(folder).Should().BeTrue();
+    }
+
+    [Fact]
     public void Index_sets_put_one_database_per_plan_into_their_folder()
     {
         var set = new VersionIndexSet(_tmp.PathOf("indexes"));

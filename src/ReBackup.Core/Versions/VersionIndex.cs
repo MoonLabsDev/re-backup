@@ -82,10 +82,18 @@ public sealed partial class VersionIndex
     /// Brings the index in line with the version folders listed by <see cref="VersionCatalog.List"/>: rows of folders
     /// that are no longer listed are removed; listed folders that are new or whose stamp changed are imported, each in
     /// its own transaction. Cancellation throws and leaves every committed version intact.
+    /// When <paramref name="targetFolder"/> is given and does not exist (e.g. a NAS that is offline), nothing is
+    /// removed or imported and an error is reported instead.
     /// </summary>
     public IndexSyncResult Sync(IReadOnlyList<VersionInfo> folders, IProgress<IndexSyncProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string? targetFolder = null)
     {
+        if (targetFolder is not null && !Directory.Exists(targetFolder))
+        {
+            // An offline target lists no versions; that must not wipe the index.
+            return new IndexSyncResult(0, 0, 0, [$"The target folder \"{targetFolder}\" is not available."]);
+        }
+
         var known = ReadStamps();
         var listed = new HashSet<string>(folders.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
         var removed = 0;
@@ -222,9 +230,10 @@ public sealed partial class VersionIndex
                     return summary.Source;
                 });
             }
-            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+            catch (JsonException)
             {
-                // Unreadable manifest: fall back to the files themselves.
+                // Unparseable manifest: fall back to the files themselves. (A manifest that merely could not be read,
+                // e.g. a network error, is not caught: Sync reports it and the next sync retries.)
             }
         }
 
@@ -424,6 +433,7 @@ public sealed partial class VersionIndex
         private readonly SqliteTransaction _transaction;
         private readonly long _versionId;
         private readonly Dictionary<string, long> _paths = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<long> _written = [];
         private readonly Dictionary<long, long?> _dirParents = [];
         private readonly Dictionary<long, (long Size, int Files)> _dirTotals = [];
         private readonly SqliteCommand _insertPath;
@@ -480,6 +490,8 @@ public sealed partial class VersionIndex
             var slash = path.LastIndexOf('/');
             var parentId = EnsureDirectory(slash < 0 ? "" : path[..slash]);
             var pathId = EnsurePath(path, isDir: false, parentId);
+            if (!_written.Add(pathId))
+                return;   // a duplicate path (also by case or slash style): the first entry wins
 
             _insertFile.Parameters["$p"].Value = pathId;
             _insertFile.Parameters["$size"].Value = file.Size;
