@@ -76,4 +76,14 @@
     <!-- Fill of the "% of parent" bars in the ignore preview; the bar's text (Brush.Text) sits on it. -->
     <SolidColorBrush x:Key="Brush.PercentFill" Color="{StaticResource Color.Chart.TealDark}" po:Freeze="True" />
 
+    <!-- Retention period badges (pill on the rule tiles): a soft tint as fill, the strong shade as text (AA on the fill). -->
+    <SolidColorBrush x:Key="Brush.Badge.DailyFill" Color="#163B37" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.DailyText" Color="#5FD3C4" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.WeeklyFill" Color="#1E2F4A" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.WeeklyText" Color="#7FB2FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.MonthlyFill" Color="#3A2A4A" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.MonthlyText" Color="#C9A2FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.YearlyFill" Color="#3D2F14" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.YearlyText" Color="#F2B84B" po:Freeze="True" />
+
 </ResourceDictionary>

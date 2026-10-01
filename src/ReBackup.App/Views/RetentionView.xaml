@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
-             xmlns:controls="clr-namespace:ReBackup.App.Controls">
+             xmlns:controls="clr-namespace:ReBackup.App.Controls"
+             xmlns:theme="clr-namespace:ReBackup.App.Theme">
     <UserControl.Resources>
         <Style x:Key="TextBlock.Error" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
@@ -22,6 +23,114 @@
             <Setter Property="FontSize" Value="12" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
+
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <theme:EnumMatchConverter x:Key="Converter.EnumMatch" />
+
+        <!-- Words of a rule sentence between its fields. -->
+        <Style x:Key="TextBlock.Sentence" TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,8,6" />
+        </Style>
+
+        <!-- Big number of the forecast. -->
+        <Style x:Key="TextBlock.Kpi" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+        </Style>
+
+        <!-- An inline field of a rule sentence (keep count, day of month, date). -->
+        <Style x:Key="TextBox.Cell" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Width" Value="48" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="0,0,8,6" />
+            <Setter Property="Background" Value="{DynamicResource Brush.Raised}" />
+            <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+
+        <!-- The weekday list inside a rule sentence. -->
+        <Style x:Key="ComboBox.Cell" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="0,0,8,6" />
+            <Setter Property="Background" Value="{DynamicResource Brush.Raised}" />
+        </Style>
+
+        <!-- The period of a rule: a coloured pill (DAILY teal, WEEKLY blue, MONTHLY violet, YEARLY amber) that is
+             still a ComboBox. The text is the rule's PeriodLabel; the drop-down lists the periods as usual. -->
+        <Style x:Key="ComboBox.Badge" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Accent}" />
+            <Setter Property="Background" Value="{DynamicResource Brush.Badge.DailyFill}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Badge.DailyText}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid x:Name="TemplateRoot" SnapsToDevicePixels="True">
+                            <Border x:Name="Pill" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1" CornerRadius="12" Padding="10,0,8,0">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding PeriodLabel}" VerticalAlignment="Center" />
+                                    <TextBlock Margin="6,1,0,0" VerticalAlignment="Center" FontFamily="{StaticResource Font.Icon}"
+                                               FontSize="8" FontWeight="Normal" Text="{StaticResource Icon.ChevronDown}" />
+                                </StackPanel>
+                            </Border>
+                            <!-- Takes the clicks; transparent. -->
+                            <ToggleButton Focusable="False" IsTabStop="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent" />
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom" VerticalOffset="2" Focusable="False"
+                                   PopupAnimation="{DynamicResource {x:Static SystemParameters.ComboBoxPopupAnimationKey}}"
+                                   IsOpen="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <Border MinWidth="120" MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.BorderStrong}"
+                                        BorderThickness="1" CornerRadius="8" Padding="4" SnapsToDevicePixels="True"
+                                        TextElement.FontWeight="Normal" TextElement.FontSize="13">
+                                    <ScrollViewer>
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Pill" Property="BorderBrush"
+                                        Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Pill" Property="BorderBrush"
+                                        Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Period}" Value="Weekly">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Badge.WeeklyFill}" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Badge.WeeklyText}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Period}" Value="Monthly">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Badge.MonthlyFill}" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Badge.MonthlyText}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Period}" Value="Yearly">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Badge.YearlyFill}" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Badge.YearlyText}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -30,7 +139,7 @@
             <!-- ======================================================== Rules + forecast -->
             <Border Style="{StaticResource Border.Card}">
                 <StackPanel>
-                    <DockPanel Margin="0,0,0,12">
+                    <DockPanel Margin="0,0,0,14">
                         <Button DockPanel.Dock="Right" VerticalAlignment="Center" Command="{Binding AddRetentionRuleCommand}"
                                 AutomationProperties.Name="Add rule">
                             <StackPanel Orientation="Horizontal">
@@ -38,14 +147,12 @@
                                 <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Add rule" />
                             </StackPanel>
                         </Button>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="RULES" />
-                            <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
-                                       Text="A version stays if any rule keeps it; the newest one always stays." />
-                        </StackPanel>
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   Text="RULES — A VERSION STAYS IF ANY RULE KEEPS IT"
+                                   ToolTip="The newest version always stays as well." />
                     </DockPanel>
 
-                    <TextBlock Foreground="{DynamicResource Brush.Warning}" TextWrapping="Wrap" Margin="0,0,0,10"
+                    <TextBlock Foreground="{DynamicResource Brush.Warning}" TextWrapping="Wrap" Margin="0,0,0,12"
                                Text="No rules: every version is kept and the target fills up over time.">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
@@ -58,97 +165,104 @@
                         </TextBlock.Style>
                     </TextBlock>
 
-                    <ItemsControl ItemsSource="{Binding RetentionRuleRows}" Focusable="False">
+                    <!-- Rule tiles, three per row (two or one when narrow). The negative right margin takes back the gap after the last column. -->
+                    <ItemsControl ItemsSource="{Binding RetentionRuleRows}" Focusable="False" Margin="0,0,-12,0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <WrapPanel />
+                                <controls:TileGrid Columns="3" MinColumnWidth="260" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Width="330" Margin="0,0,10,10" Padding="12" Background="{DynamicResource Brush.Bg}"
-                                        BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" CornerRadius="8">
+                                <Border Margin="0,0,12,12" Padding="14" Background="{DynamicResource Brush.Bg}"
+                                        BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" CornerRadius="10">
                                     <StackPanel>
+                                        <!-- Period badge (a pill-shaped ComboBox) and remove -->
                                         <DockPanel>
-                                            <Button DockPanel.Dock="Right" Style="{StaticResource Button.Danger}"
-                                                    Content="{StaticResource Icon.Delete}" VerticalAlignment="Top"
+                                            <Button DockPanel.Dock="Right" Style="{StaticResource Button.Danger}" Width="28" Height="28"
+                                                    Content="{StaticResource Icon.Delete}" VerticalAlignment="Center"
                                                     ToolTip="Remove this rule" AutomationProperties.Name="Remove this rule"
                                                     Command="{Binding DataContext.RemoveRetentionRuleCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     CommandParameter="{Binding}" />
-                                            <StackPanel Orientation="Horizontal">
-                                                <ComboBox Width="116" AutomationProperties.Name="Period"
-                                                          ItemsSource="{x:Static vm:RetentionRuleViewModel.Periods}"
-                                                          SelectedItem="{Binding Period}" />
-
-                                                <!-- Label of the anchor field: "on" a weekday or date, "on day" of the month. -->
-                                                <TextBlock Margin="10,0,0,0">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Label}">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding Period}" Value="Weekly">
-                                                                    <Setter Property="Text" Value="on" />
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding Period}" Value="Monthly">
-                                                                    <Setter Property="Text" Value="on day" />
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding Period}" Value="Yearly">
-                                                                    <Setter Property="Text" Value="on" />
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-
-                                                <Grid Width="100" Margin="8,0,0,0">
-                                                    <ComboBox AutomationProperties.Name="Weekday"
-                                                              ItemsSource="{x:Static vm:RetentionRuleViewModel.Weekdays}"
-                                                              SelectedItem="{Binding Weekday}">
-                                                        <ComboBox.Style>
-                                                            <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-                                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Period}" Value="Weekly">
-                                                                        <Setter Property="Visibility" Value="Visible" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </ComboBox.Style>
-                                                    </ComboBox>
-                                                    <TextBox MinHeight="30" AutomationProperties.Name="Anchor"
-                                                             Text="{Binding AnchorText, UpdateSourceTrigger=PropertyChanged}">
-                                                        <TextBox.Style>
-                                                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Period}" Value="Monthly">
-                                                                        <Setter Property="Visibility" Value="Visible" />
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Period}" Value="Yearly">
-                                                                        <Setter Property="Visibility" Value="Visible" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </TextBox.Style>
-                                                    </TextBox>
-                                                </Grid>
-                                            </StackPanel>
+                                            <ComboBox Style="{StaticResource ComboBox.Badge}" HorizontalAlignment="Left"
+                                                      AutomationProperties.Name="Period" ToolTip="Change the period"
+                                                      ItemsSource="{x:Static vm:RetentionRuleViewModel.Periods}"
+                                                      SelectedItem="{Binding Period}" />
                                         </DockPanel>
 
-                                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                            <TextBlock Style="{StaticResource TextBlock.Label}" Text="keep" Margin="0,0,8,0" />
-                                            <TextBox Width="56" MinHeight="30" HorizontalContentAlignment="Center"
-                                                     AutomationProperties.Name="Keep"
-                                                     Text="{Binding KeepText, UpdateSourceTrigger=PropertyChanged}" />
-                                        </StackPanel>
+                                        <!-- The rule as a sentence:
+                                             Daily "keep the last [7] days", Weekly "on [Sunday] keep [4]",
+                                             Monthly "on day [1] keep [12]", Yearly "on [01-01] keep [3]". -->
+                                        <WrapPanel Margin="0,12,0,0">
+                                            <TextBlock Style="{StaticResource TextBlock.Sentence}" Text="keep the last"
+                                                       Visibility="{Binding Period, Converter={StaticResource Converter.EnumMatch}, ConverterParameter=Daily}" />
+                                            <TextBlock>
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Sentence}">
+                                                        <Setter Property="Text" Value="on" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Period}" Value="Daily">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Period}" Value="Monthly">
+                                                                <Setter Property="Text" Value="on day" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <ComboBox Style="{StaticResource ComboBox.Cell}" Width="116" AutomationProperties.Name="Weekday"
+                                                      ToolTip="{Binding AnchorHint}"
+                                                      ItemsSource="{x:Static vm:RetentionRuleViewModel.Weekdays}"
+                                                      SelectedItem="{Binding Weekday}"
+                                                      Visibility="{Binding Period, Converter={StaticResource Converter.EnumMatch}, ConverterParameter=Weekly}" />
+                                            <TextBox AutomationProperties.Name="Anchor" ToolTip="{Binding AnchorHint}"
+                                                     Text="{Binding AnchorText, UpdateSourceTrigger=PropertyChanged}">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource TextBox.Cell}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Period}" Value="Monthly">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Period}" Value="Yearly">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                <Setter Property="Width" Value="66" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBlock Text="keep">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Sentence}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Period}" Value="Daily">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBox AutomationProperties.Name="Keep"
+                                                     Text="{Binding KeepText, UpdateSourceTrigger=PropertyChanged}">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox" BasedOn="{StaticResource TextBox.Cell}">
+                                                        <Setter Property="ToolTip" Value="How many versions this rule keeps" />
+                                                        <Style.Triggers>
+                                                            <!-- A daily rule has no anchor field: its hint goes here. -->
+                                                            <DataTrigger Binding="{Binding Period}" Value="Daily">
+                                                                <Setter Property="ToolTip" Value="{Binding AnchorHint}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                            <TextBlock Style="{StaticResource TextBlock.Sentence}" Text="days"
+                                                       Visibility="{Binding Period, Converter={StaticResource Converter.EnumMatch}, ConverterParameter=Daily}" />
+                                        </WrapPanel>
 
-                                        <TextBlock Style="{StaticResource TextBlock.Label}" Margin="0,8,0,0" TextWrapping="Wrap"
-                                                   Foreground="{DynamicResource Brush.TextFaint}" Text="{Binding AnchorHint}" />
-
-                                        <TextBlock Style="{StaticResource TextBlock.ErrorOrNone}" Margin="0,6,0,0"
+                                        <TextBlock Style="{StaticResource TextBlock.ErrorOrNone}" Margin="0,4,0,0" FontSize="12"
                                                    Text="{Binding Error}" />
                                     </StackPanel>
                                 </Border>
@@ -156,11 +270,15 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Forecast -->
-                    <Border Height="1" Margin="0,6,0,14" Background="{DynamicResource Brush.Border}" />
+                    <!-- ======================================== Forecast -->
+                    <Border Height="1" Margin="0,2,0,16" Background="{DynamicResource Brush.Border}" />
 
-                    <DockPanel Margin="0,0,0,8">
-                        <ComboBox DockPanel.Dock="Right" Width="190" DisplayMemberPath="Label" AutomationProperties.Name="Assumed schedule"
+                    <WrapPanel Margin="0,0,0,14">
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center"
+                                   Text="FORECAST — TWO YEARS OF" />
+                        <ComboBox Margin="8,0,0,0" Width="170" Height="28" DisplayMemberPath="RunsLabel"
+                                  AutomationProperties.Name="Assumed schedule"
+                                  ToolTip="The plan has no triggers: the forecast assumes this schedule."
                                   ItemsSource="{x:Static vm:RetentionPreviewViewModel.Schedules}"
                                   SelectedItem="{Binding RetentionPreview.SelectedSchedule}">
                             <ComboBox.Style>
@@ -173,21 +291,9 @@
                                 </Style>
                             </ComboBox.Style>
                         </ComboBox>
-                        <TextBlock DockPanel.Dock="Right" Margin="0,0,8,0" VerticalAlignment="Center" Text="Assume">
+                        <TextBlock Margin="5,0,0,0" VerticalAlignment="Center" Text="THE PLAN'S SCHEDULE">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="12"
-                                   Text="using the plan's triggers">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.CardTitle}">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding RetentionPreview.UsesPlanSchedule}" Value="True">
@@ -197,16 +303,45 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center"
-                                   Text="FULL EXTENSION — TWO YEARS FROM NOW" />
-                    </DockPanel>
+                    </WrapPanel>
 
-                    <TextBlock TextWrapping="Wrap" Text="{Binding RetentionPreview.FullSummary}" />
-                    <ScrollViewer MaxHeight="180" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
-                        <controls:RetentionTimelineControl Lanes="{Binding RetentionPreview.TimelineLanes}"
-                                                           From="{Binding RetentionPreview.TimelineFrom}"
-                                                           To="{Binding RetentionPreview.TimelineTo}" />
-                    </ScrollViewer>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- KPIs; the sentence with the details is their tool tip. -->
+                        <StackPanel Margin="0,0,28,0" MinWidth="130" Background="Transparent"
+                                    ToolTip="{Binding RetentionPreview.FullSummary}"
+                                    Visibility="{Binding RetentionPreview.HasForecast, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Style="{StaticResource TextBlock.Label}" Text="Versions kept" />
+                            <TextBlock Style="{StaticResource TextBlock.Kpi}" Text="{Binding RetentionPreview.ForecastVersionsText}"
+                                       AutomationProperties.Name="Versions kept" />
+                            <TextBlock Style="{StaticResource TextBlock.Label}" Margin="0,12,0,0" Text="Space" />
+                            <TextBlock Style="{StaticResource TextBlock.Kpi}" Text="{Binding RetentionPreview.ForecastSpaceText}"
+                                       AutomationProperties.Name="Space" />
+                        </StackPanel>
+
+                        <!-- Without numbers (calculating, invalid triggers, an error) the sentence says why. -->
+                        <TextBlock Grid.ColumnSpan="2" TextWrapping="Wrap" Text="{Binding RetentionPreview.FullSummary}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RetentionPreview.HasForecast}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <ScrollViewer Grid.Column="1" MaxHeight="180" VerticalAlignment="Top" VerticalScrollBarVisibility="Auto">
+                            <controls:RetentionTimelineControl Lanes="{Binding RetentionPreview.TimelineLanes}"
+                                                               From="{Binding RetentionPreview.TimelineFrom}"
+                                                               To="{Binding RetentionPreview.TimelineTo}" />
+                        </ScrollViewer>
+                    </Grid>
                 </StackPanel>
             </Border>
 

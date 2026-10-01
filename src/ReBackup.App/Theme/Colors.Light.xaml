@@ -80,4 +80,14 @@
          teal instead of the dark chart shade. -->
     <SolidColorBrush x:Key="Brush.PercentFill" Color="#BBD7D4" po:Freeze="True" />
 
+    <!-- Retention period badges (pill on the rule tiles): a soft tint as fill, the strong shade as text (AA on the fill). -->
+    <SolidColorBrush x:Key="Brush.Badge.DailyFill" Color="#DDF3EF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.DailyText" Color="#136F65" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.WeeklyFill" Color="#E2ECFB" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.WeeklyText" Color="#1F58B0" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.MonthlyFill" Color="#EEE6FB" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.MonthlyText" Color="#6A3DB8" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.YearlyFill" Color="#FBEFD3" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.Badge.YearlyText" Color="#7E5300" po:Freeze="True" />
+
 </ResourceDictionary>

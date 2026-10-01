@@ -4,6 +4,7 @@ using System.Windows.Media;
 using ReBackup.App.Services;
 using ReBackup.App.Theme;
 using ReBackup.App.ViewModels;
+using ReBackup.Core.Retention;
 
 namespace ReBackup.App.Controls;
 
@@ -16,12 +17,17 @@ public sealed class RetentionTimelineControl : FrameworkElement
     private const double MarkerWidth = 3;
     private const double RightPadding = 8;
 
-    /// <summary>Theme keys of the lane colours (kept versions), rotated per rule.</summary>
+    /// <summary>
+    /// Theme keys of the lane colours (kept versions): one per period, the hue of the period's badge on the rule tile
+    /// (daily teal, weekly blue, monthly violet, yearly amber). A lane without a period uses the last entry.
+    /// </summary>
     private static readonly (string Key, Color Fallback)[] LaneColors =
     [
-        ("Color.Chart.Teal", Color.FromRgb(0x2B, 0xB3, 0xA3)),
+        ("Color.Chart.TealLight", Color.FromRgb(0x5F, 0xD3, 0xC4)),
         ("Color.Chart.BlueLight", Color.FromRgb(0x7F, 0xB2, 0xFF)),
         ("Color.Chart.VioletLight", Color.FromRgb(0xC9, 0xA2, 0xFF)),
+        ("Color.Chart.AmberLight", Color.FromRgb(0xF2, 0xB8, 0x4B)),
+        ("Color.TextMuted", Color.FromRgb(0x9A, 0xA4, 0xB2)),
     ];
     private static readonly Typeface TextFace = new("Segoe UI");
 
@@ -112,7 +118,7 @@ public sealed class RetentionTimelineControl : FrameworkElement
             drawingContext.DrawText(label, new Point(0, middle - label.Height / 2));
             drawingContext.DrawLine(paint.LanePen, new Point(LabelWidth, middle), new Point(LabelWidth + plotWidth, middle));
 
-            var brush = paint.Lanes[i % paint.Lanes.Length];
+            var brush = paint.Lanes[LaneColorIndex(lanes[i].Period)];
             foreach (var time in lanes[i].Times)
             {
                 drawingContext.DrawRectangle(brush, null,
@@ -138,6 +144,15 @@ public sealed class RetentionTimelineControl : FrameworkElement
                 drawingContext.DrawText(text, new Point(x + 2, axisTop + 5));
         }
     }
+
+    private static int LaneColorIndex(RetentionPeriod? period) => period switch
+    {
+        RetentionPeriod.Daily => 0,
+        RetentionPeriod.Weekly => 1,
+        RetentionPeriod.Monthly => 2,
+        RetentionPeriod.Yearly => 3,
+        _ => LaneColors.Length - 1,
+    };
 
     private static FormattedText Text(string text, double size, Brush brush, double pixelsPerDip) =>
         new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, TextFace, size, brush, pixelsPerDip);

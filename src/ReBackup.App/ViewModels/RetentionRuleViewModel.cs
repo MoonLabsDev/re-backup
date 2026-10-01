@@ -12,6 +12,7 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AnchorHint))]
     [NotifyPropertyChangedFor(nameof(Weekday))]
+    [NotifyPropertyChangedFor(nameof(PeriodLabel))]
     private RetentionPeriod _period;
 
     [ObservableProperty]
@@ -39,6 +40,9 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
 
     public static IReadOnlyList<string> Weekdays { get; } =
         ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+    /// <summary>The period in capitals, for the badge of the rule tile ("DAILY").</summary>
+    public string PeriodLabel => Period.ToString().ToUpperInvariant();
 
     public string AnchorHint => Period switch
     {

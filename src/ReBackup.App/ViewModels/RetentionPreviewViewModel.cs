@@ -9,8 +9,11 @@ using ReBackup.Core.Schedule;
 
 namespace ReBackup.App.ViewModels;
 
-/// <summary>A backup frequency assumed for the full-extension preview of a plan without triggers.</summary>
-public sealed record AssumedSchedule(string Label, TimeSpan Interval);
+/// <summary>
+/// A backup frequency assumed for the full-extension preview of a plan without triggers. <paramref name="Label"/> goes
+/// into sentences ("one backup a day"), <paramref name="RunsLabel"/> after "two years of" in the forecast title.
+/// </summary>
+public sealed record AssumedSchedule(string Label, TimeSpan Interval, string RunsLabel);
 
 /// <summary>Shows what a plan's retention rules do with the versions in its target.</summary>
 public sealed partial class RetentionPreviewViewModel : ObservableObject
@@ -32,6 +35,17 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     [ObservableProperty] private AssumedSchedule _selectedSchedule = Schedules[1];
     [ObservableProperty] private bool _usesPlanSchedule;
     [ObservableProperty] private string _fullSummary = "";
+
+    /// <summary>Versions the target holds at most once the rules are in full effect; null while there is no forecast.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasForecast), nameof(ForecastVersionsText))]
+    private int? _forecastVersions;
+
+    /// <summary>Space those versions take; null while unknown (no version size known yet) or without a forecast.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ForecastSpaceText))]
+    private long? _forecastBytes;
+
     [ObservableProperty] private IReadOnlyList<TimelineLane> _timelineLanes = [];
     [ObservableProperty] private DateTime _timelineFrom;
     [ObservableProperty] private DateTime _timelineTo;
@@ -53,17 +67,26 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     /// <summary>The empty-state text shown over the table while <see cref="ShowEmpty"/> is true.</summary>
     public string EmptyText => _targetMissing ? "The target folder does not exist (yet)." : "No versions yet";
 
+    /// <summary>True while the forecast numbers are shown; otherwise <see cref="FullSummary"/> says why there are none.</summary>
+    public bool HasForecast => ForecastVersions is not null;
+
+    /// <summary>The "Versions kept" number of the forecast, e.g. "≈ 21".</summary>
+    public string ForecastVersionsText => ForecastVersions is { } count ? $"≈ {count:N0}" : "";
+
+    /// <summary>The "Space" number of the forecast, e.g. "≈ 286.0 GB"; "unknown" while no version size is known.</summary>
+    public string ForecastSpaceText => ForecastBytes is { } bytes ? $"≈ {ByteSize.Format(bytes)}" : "unknown";
+
     partial void OnIsLoadingChanged(bool value) => OnPropertyChanged(nameof(ShowEmpty));
 
     partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(ShowEmpty));
 
     public static IReadOnlyList<AssumedSchedule> Schedules { get; } =
     [
-        new("one backup a week", TimeSpan.FromDays(7)),
-        new("one backup a day", TimeSpan.FromDays(1)),
-        new("two backups a day", TimeSpan.FromHours(12)),
-        new("a backup every 4 hours", TimeSpan.FromHours(4)),
-        new("a backup every hour", TimeSpan.FromHours(1)),
+        new("one backup a week", TimeSpan.FromDays(7), "weekly runs"),
+        new("one backup a day", TimeSpan.FromDays(1), "daily runs"),
+        new("two backups a day", TimeSpan.FromHours(12), "two runs a day"),
+        new("a backup every 4 hours", TimeSpan.FromHours(4), "runs every 4 hours"),
+        new("a backup every hour", TimeSpan.FromHours(1), "hourly runs"),
     ];
 
     partial void OnSelectedScheduleChanged(AssumedSchedule value) => RequestEvaluate();
@@ -188,6 +211,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             NowRows.ReplaceAll([]);
             NowSummary = "Correct the rules above to see what they keep.";
             ClearSimulation();
+            FullSummary = "Correct the rules above to see the forecast.";
             return;
         }
 
@@ -210,6 +234,8 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _simulateCts?.Cancel();
         _simulateCts = null;
         FullSummary = "";
+        ForecastVersions = null;
+        ForecastBytes = null;
         TimelineLanes = [];
     }
 
@@ -219,6 +245,8 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _simulateCts?.Cancel();
         var cts = _simulateCts = new CancellationTokenSource();
         FullSummary = "Calculating…";
+        ForecastVersions = null;
+        ForecastBytes = null;
 
         try
         {
@@ -275,13 +303,16 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         FullSummary = rules.Count == 0
             ? $"No rules, so nothing is ever deleted: with {frequency} there are {result.SteadyStateCount:N0} versions after two years{size}.{cut}"
             : $"With {frequency} the target holds up to {result.SteadyStateCount:N0} versions{size}.{cut}";
+        ForecastVersions = result.SteadyStateCount;
+        ForecastBytes = result.EstimatedBytes;
 
         var lanes = new List<TimelineLane>();
         for (var i = 0; i < rules.Count; i++)
         {
             var ruleIndex = i;
             lanes.Add(new TimelineLane($"{RetentionRules.Describe(rules[i])}, keep {rules[i].Keep:N0}",
-                result.Survivors.Where(s => s.Reasons.Any(r => r.RuleIndex == ruleIndex)).Select(s => s.LocalTime).ToList()));
+                result.Survivors.Where(s => s.Reasons.Any(r => r.RuleIndex == ruleIndex)).Select(s => s.LocalTime).ToList(),
+                rules[i].Period));
         }
 
         var others = result.Survivors.Where(s => s.Reasons.Count > 0 && s.Reasons.All(r => r.RuleIndex < 0)).Select(s => s.LocalTime).ToList();
