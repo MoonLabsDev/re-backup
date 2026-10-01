@@ -81,7 +81,7 @@ public sealed partial class VersionsViewModel
 
     /// <summary>
     /// Opens the copy of the selected file in the version folder with its program (meant read-only). A program, script
-    /// or shortcut is only started after the user confirms.
+    /// or shortcut is never started from a backup: its folder is shown in Explorer instead, with the file selected.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanOpenSelected))]
     private async Task OpenSelectedAsync()
@@ -89,12 +89,14 @@ public sealed partial class VersionsViewModel
         if (Current() is not { Node.IsDirectory: false } selection)
             return;
         var (folder, path) = (selection.Version.Info.Path, selection.Node.Path);
-        var extension = Path.GetExtension(selection.Node.Name);
-        if (IsRunnable(extension) &&
-            !_context.Dialogs.ConfirmDefaultNo("Open",
-                $"\"{selection.Node.Name}\" is a program, script or shortcut ({extension}). Opening it runs it from the " +
-                $"version of {selection.Version.DateText}.\n\nRun it?"))
+        if (IsRunnable(Path.GetExtension(selection.Node.Name)))
+        {
+            if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
+                _context.ReportStatus($"\"{path}\" no longer exists in the version.");
+            else
+                _context.ReportStatus($"\"{selection.Node.Name}\" is a program, script or shortcut; it is not run from a backup. Its folder is shown instead.");
             return;
+        }
         if (!await Task.Run(() => _files.OpenFile(folder, path)))
             _context.ReportStatus($"\"{path}\" cannot be opened: it no longer exists in the version, or no program opens it.");
     }
