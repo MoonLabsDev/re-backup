@@ -19,7 +19,7 @@ public class SettingsStoreTests : IDisposable
 
         settings.CloseToTray.Should().BeTrue();
         settings.StartWithWindows.Should().BeFalse();
-        settings.Theme.Should().Be(ThemeMode.System);
+        settings.Theme.Should().Be(ThemeMode.Dark);
         settings.DefaultIgnorePatterns.Should().Equal("Thumbs.db", "desktop.ini", "$RECYCLE.BIN/", "System Volume Information/");
         store.LastLoadError.Should().BeNull();
     }
@@ -75,7 +75,6 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Theory]
-    [InlineData(ThemeMode.System)]
     [InlineData(ThemeMode.Dark)]
     [InlineData(ThemeMode.Light)]
     public void Theme_round_trips_as_text(ThemeMode mode)
@@ -89,31 +88,32 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Fact]
-    public void Missing_theme_loads_as_system()
+    public void Missing_theme_loads_as_dark()
     {
         var path = _tmp.WriteFile("settings.json", """{ "closeToTray": false }""");
         var store = new SettingsStore(path);
 
         var settings = store.Load();
 
-        settings.Theme.Should().Be(ThemeMode.System);
+        settings.Theme.Should().Be(ThemeMode.Dark);
         settings.CloseToTray.Should().BeFalse();
     }
 
     [Theory]
     [InlineData("\"Sepia\"")]
+    [InlineData("\"System\"")]
     [InlineData("\"\"")]
     [InlineData("42")]
     [InlineData("null")]
     [InlineData("true")]
-    public void Unknown_theme_loads_as_system_and_keeps_the_other_settings(string json)
+    public void Unknown_theme_loads_as_dark_and_keeps_the_other_settings(string json)
     {
         var path = _tmp.WriteFile("settings.json", $$"""{ "theme": {{json}}, "closeToTray": false }""");
         var store = new SettingsStore(path);
 
         var settings = store.Load();
 
-        settings.Theme.Should().Be(ThemeMode.System);
+        settings.Theme.Should().Be(ThemeMode.Dark);
         settings.CloseToTray.Should().BeFalse();
         store.LastLoadError.Should().BeNull();
     }

@@ -80,18 +80,22 @@
                     <Grid>
                         <TextBox Style="{StaticResource TextBox.Path}" AutomationProperties.Name="Source"
                                  Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" />
-                        <Button Style="{StaticResource Button.Browse}" Content="{StaticResource Icon.OpenFolder}"
+                        <Button Style="{StaticResource Button.Browse}"
                                 ToolTip="Choose the source folder" AutomationProperties.Name="Choose the source folder"
-                                Command="{Binding DataContext.BrowseSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                Command="{Binding DataContext.BrowseSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+<Image Style="{StaticResource Image.FolderColored}" />
+</Button>
                     </Grid>
 
                     <TextBlock Style="{StaticResource TextBlock.Label}" Margin="0,12,0,6" Text="Target" />
                     <Grid>
                         <TextBox Style="{StaticResource TextBox.Path}" AutomationProperties.Name="Target"
                                  Text="{Binding Target, UpdateSourceTrigger=PropertyChanged}" />
-                        <Button Style="{StaticResource Button.Browse}" Content="{StaticResource Icon.OpenFolder}"
+                        <Button Style="{StaticResource Button.Browse}"
                                 ToolTip="Choose the target folder" AutomationProperties.Name="Choose the target folder"
-                                Command="{Binding DataContext.BrowseTargetCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                Command="{Binding DataContext.BrowseTargetCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+<Image Style="{StaticResource Image.FolderColored}" />
+</Button>
                     </Grid>
 
                     <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,16,0,0" IsChecked="{Binding Enabled}"

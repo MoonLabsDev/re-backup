@@ -4,7 +4,7 @@ using ReBackup.Core.Settings;
 
 namespace ReBackup.App.ViewModels;
 
-/// <summary>The theme button of the icon rail: shows the current mode and cycles System → Dark → Light.</summary>
+/// <summary>The theme button of the icon rail: shows the current mode and toggles Dark ↔ Light.</summary>
 public sealed partial class ThemeToggleViewModel : ObservableObject
 {
     private readonly Func<ThemeMode> _current;
@@ -26,9 +26,8 @@ public sealed partial class ThemeToggleViewModel : ObservableObject
 
     public static ThemeMode Next(ThemeMode mode) => mode switch
     {
-        ThemeMode.System => ThemeMode.Dark,
         ThemeMode.Dark => ThemeMode.Light,
-        _ => ThemeMode.System,
+        _ => ThemeMode.Dark,
     };
 
     [RelayCommand]

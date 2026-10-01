@@ -28,7 +28,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>The theme; applied at once while the dialog is open, restored on Cancel.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSystemTheme), nameof(IsDarkTheme), nameof(IsLightTheme))]
+    [NotifyPropertyChangedFor(nameof(IsDarkTheme), nameof(IsLightTheme))]
     private ThemeMode _theme;
 
     public SettingsViewModel(SettingsStore store, AppSettings settings, ConfigPaths paths, string appDataRoot,
@@ -50,13 +50,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         Theme = settings.Theme;   // already applied: previewing it again changes nothing
     }
 
-    // The three segments of the theme switch; a segment that is unchecked leaves the theme as it is.
-    public bool IsSystemTheme
-    {
-        get => Theme == ThemeMode.System;
-        set { if (value) Theme = ThemeMode.System; }
-    }
-
+    // The two segments of the theme switch; a segment that is unchecked leaves the theme as it is.
     public bool IsDarkTheme
     {
         get => Theme == ThemeMode.Dark;

@@ -3,12 +3,12 @@ using System.Text.Json.Serialization;
 
 namespace ReBackup.Core.Settings;
 
-/// <summary>The app's colour theme: follow the Windows app mode, or always dark, or always light.</summary>
-public enum ThemeMode { System, Dark, Light }
+/// <summary>The app's colour theme: dark (the default) or light.</summary>
+public enum ThemeMode { Dark, Light }
 
 /// <summary>
-/// Writes the mode as text like the other enums; reads it leniently — an unknown, empty or non-text value is
-/// <see cref="ThemeMode.System"/>, so a bad theme never discards the rest of settings.json. Set on the property:
+/// Writes the mode as text like the other enums; reads it leniently — an unknown (also the retired "System"), empty or non-text value is
+/// <see cref="ThemeMode.Dark"/>, so a bad theme never discards the rest of settings.json. Set on the property:
 /// a converter in the serializer options would win over one on the type.
 /// </summary>
 public sealed class ThemeModeConverter : JsonConverter<ThemeMode>
@@ -24,7 +24,7 @@ public sealed class ThemeModeConverter : JsonConverter<ThemeMode>
             return mode;
 
         reader.Skip();
-        return ThemeMode.System;
+        return ThemeMode.Dark;
     }
 
     public override void Write(Utf8JsonWriter writer, ThemeMode value, JsonSerializerOptions options) =>

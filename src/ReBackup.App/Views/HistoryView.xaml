@@ -53,14 +53,16 @@
                         <DataGridTemplateColumn Width="48" CanUserResize="False" CanUserSort="False">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Button Style="{StaticResource Button.Icon}" Width="28" Height="26" FontSize="13"
-                                            HorizontalAlignment="Center" Content="{StaticResource Icon.OpenFolder}"
+                                    <Button Style="{StaticResource Button.Icon}" Width="28" Height="26"
+                                            HorizontalAlignment="Center"
                                             AutomationProperties.Name="Open the version folder"
                                             ToolTip="{Binding OpenVersionToolTip}" ToolTipService.ShowOnDisabled="True"
                                             Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}"
                                             IsEnabled="{Binding CanOpenVersion}"
                                             Command="{Binding DataContext.OpenRunVersionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}" />
+                                            CommandParameter="{Binding}">
+<Image Style="{StaticResource Image.FolderColored}" />
+</Button>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>

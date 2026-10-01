@@ -304,14 +304,14 @@
                         Width="40" Height="40" FontSize="18" Content="{StaticResource Icon.Settings}"
                         ToolTip="Settings" AutomationProperties.Name="Settings"
                         Command="{Binding OpenSettingsCommand}" />
-                <!-- Theme: cycles System → Dark → Light; the glyph shows the current mode. -->
+                <!-- Theme: toggles Dark ↔ Light; the glyph shows the current mode. -->
                 <Button x:Name="ThemeButton" DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="0,0,0,4"
                         Width="40" Height="40" FontSize="17"
                         ToolTip="{Binding Theme.ToolTip}" AutomationProperties.Name="{Binding Theme.AutomationName}"
                         Command="{Binding Theme.CycleCommand}">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource Button.Icon}">
-                            <Setter Property="Content" Value="{StaticResource Icon.ThemeSystem}" />
+                            <Setter Property="Content" Value="{StaticResource Icon.ThemeDark}" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Theme.Mode}" Value="Dark">
                                     <Setter Property="Content" Value="{StaticResource Icon.ThemeDark}" />

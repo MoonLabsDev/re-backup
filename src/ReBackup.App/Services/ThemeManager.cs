@@ -1,8 +1,5 @@
-using System.IO;
-using System.Security;
 using System.Windows;
 using System.Windows.Interop;
-using Microsoft.Win32;
 using ReBackup.Core.Settings;
 using ThemeMode = ReBackup.Core.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
@@ -16,25 +13,23 @@ namespace ReBackup.App.Services;
 /// </summary>
 public static class ThemeManager
 {
-    private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private const string DarkFile = "Colors.Dark.xaml";
     private const string LightFile = "Colors.Light.xaml";
 
     private static ResourceDictionary? _dark;
     private static ResourceDictionary? _light;
-    private static bool _listening;
     private static readonly List<WeakReference<FrameworkElement>> Detached = [];
 
     /// <summary>The chosen mode. Until the first <see cref="Apply"/> the dark palette of App.xaml is in use.</summary>
     public static ThemeMode Mode { get; private set; } = ThemeMode.Dark;
 
-    /// <summary>True while the dark palette is applied (also for System when Windows uses dark apps).</summary>
+    /// <summary>True while the dark palette is applied.</summary>
     public static bool IsDark { get; private set; } = true;
 
     /// <summary>Raised on the UI thread after the mode or the applied palette changed.</summary>
     public static event EventHandler? ThemeChanged;
 
-    /// <summary>Applies <paramref name="mode"/> now; System follows the Windows app mode until another mode is chosen.</summary>
+    /// <summary>Applies <paramref name="mode"/> now.</summary>
     public static void Apply(ThemeMode mode)
     {
         var application = Application.Current ?? throw new InvalidOperationException("No WPF application is running.");
@@ -42,7 +37,6 @@ public static class ThemeManager
 
         var modeChanged = mode != Mode;
         Mode = mode;
-        ListenToSystem(mode == ThemeMode.System, application);
         SetPalette(application, ResolveDark(mode), modeChanged);
     }
 
@@ -58,27 +52,8 @@ public static class ThemeManager
             GivePalette(detachedRoot, palette);
     }
 
-    /// <summary>Whether <paramref name="mode"/> means the dark palette right now.</summary>
-    public static bool ResolveDark(ThemeMode mode) => mode switch
-    {
-        ThemeMode.Light => false,
-        ThemeMode.Dark => true,
-        _ => !WindowsUsesLightApps(),
-    };
-
-    /// <summary>HKCU …\Themes\Personalize\AppsUseLightTheme: 1 = light; missing or unreadable = dark.</summary>
-    public static bool WindowsUsesLightApps()
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(PersonalizeKey);
-            return key?.GetValue("AppsUseLightTheme") is int value && value == 1;
-        }
-        catch (Exception ex) when (ex is SecurityException or IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
+    /// <summary>Whether <paramref name="mode"/> means the dark palette.</summary>
+    public static bool ResolveDark(ThemeMode mode) => mode == ThemeMode.Dark;
 
     private static void SetPalette(Application application, bool dark, bool modeChanged)
     {
@@ -170,40 +145,4 @@ public static class ThemeManager
 
     private static ResourceDictionary Load(string file) =>
         new() { Source = new Uri($"pack://application:,,,/ReBackup.App;component/Theme/{file}", UriKind.Absolute) };
-
-    private static void ListenToSystem(bool listen, Application application)
-    {
-        if (listen == _listening)
-            return;
-        _listening = listen;
-        if (listen)
-        {
-            SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
-            application.Exit += OnApplicationExit;
-        }
-        else
-        {
-            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
-            application.Exit -= OnApplicationExit;
-        }
-    }
-
-    private static void OnApplicationExit(object? sender, ExitEventArgs e)
-    {
-        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
-        _listening = false;
-    }
-
-    /// <summary>Raised on a system events thread; the app mode switch arrives as General (and Color on some builds).</summary>
-    private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
-    {
-        if (e.Category is not (UserPreferenceCategory.General or UserPreferenceCategory.Color))
-            return;
-        var application = Application.Current;
-        application?.Dispatcher.InvokeAsync(() =>
-        {
-            if (Mode == ThemeMode.System)
-                SetPalette(application, ResolveDark(ThemeMode.System), modeChanged: false);
-        });
-    }
 }
