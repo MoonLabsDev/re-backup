@@ -335,5 +335,51 @@
       "title": "Backup in progress",
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
     }
+  },
+  "plan": {
+    "source": {
+      "title": "SOURCE → TARGET",
+      "source": "Source",
+      "target": "Target",
+      "chooseSource": "Choose the source folder",
+      "chooseTarget": "Choose the target folder",
+      "enabled": "Run on schedule",
+      "enabledToolTip": "When off, the plan runs only when started by hand.",
+      "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+    },
+    "lastRun": {
+      "title": "LAST RUN",
+      "duration": "Duration",
+      "copied": "Copied",
+      "skipped": "Skipped"
+    },
+    "schedule": {
+      "title": "SCHEDULE",
+      "note": "The plan runs at each of these local times.",
+      "add": "Add trigger",
+      "remove": "Remove this trigger",
+      "type": "Trigger type",
+      "at": "at",
+      "time": "Time",
+      "onDay": "on day",
+      "dayOfMonth": "Day of month",
+      "dayHint": "0 = last day, -1 = the day before",
+      "every": "every",
+      "everyHours": "Every hours",
+      "hoursFrom": "hours from",
+      "from": "From",
+      "to": "to",
+      "toName": "To",
+      "wholeDay": "empty = whole day",
+      "nextRuns": "Next runs"
+    },
+    "nextRuns": {
+      "none": "No triggers: this plan runs only when started by hand.",
+      "fix": "Correct the triggers above to see the next runs.",
+      "tray": "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed).",
+      "disabled": "The plan is disabled: it runs only when started by hand until it is enabled again.",
+      "paused": "The scheduler is paused.",
+      "unsaved": "Unsaved changes take effect after Save."
+    }
   }
 }

@@ -290,12 +290,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         if (triggers.Count == 0)
         {
             NextRuns = [];
-            note = "No triggers: this plan runs only when started by hand.";
+            note = Loc.T("plan.nextRuns.none");
         }
         else if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
         {
             NextRuns = [];
-            note = "Correct the triggers above to see the next runs.";
+            note = Loc.T("plan.nextRuns.fix");
         }
         else
         {
@@ -303,13 +303,16 @@ public sealed partial class PlanEditorViewModel : ObservableObject
                 .Take(5)
                 .Select(Formats.NextRun)
                 .ToList();
-            note = Enabled
-                ? "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed)."
-                : "The plan is disabled: it runs only when started by hand until it is enabled again.";
+            note = Enabled ? Loc.T("plan.nextRuns.tray") : Loc.T("plan.nextRuns.disabled");
         }
 
-        NextRunsNote = (SchedulerPaused ? "The scheduler is paused. " : "") + note +
-                       (IsDirty ? " Unsaved changes take effect after Save." : "");
+        var parts = new List<string>();
+        if (SchedulerPaused)
+            parts.Add(Loc.T("plan.nextRuns.paused"));
+        parts.Add(note);
+        if (IsDirty)
+            parts.Add(Loc.T("plan.nextRuns.unsaved"));
+        NextRunsNote = string.Join(" ", parts);
     }
 
     public void Validate() =>

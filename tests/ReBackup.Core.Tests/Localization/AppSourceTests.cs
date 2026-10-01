@@ -18,7 +18,6 @@ public class AppSourceTests
         "SettingsWindow.xaml",
         "Views/HistoryView.xaml",
         "Views/IgnorePreviewView.xaml",
-        "Views/PlanView.xaml",
         "Views/RetentionView.xaml",
         "Views/VersionsView.xaml",
     ];

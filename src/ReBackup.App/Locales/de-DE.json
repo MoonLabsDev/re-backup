@@ -335,5 +335,51 @@
       "title": "Backup läuft",
       "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"
     }
+  },
+  "plan": {
+    "source": {
+      "title": "QUELLE → ZIEL",
+      "source": "Quelle",
+      "target": "Ziel",
+      "chooseSource": "Quellordner wählen",
+      "chooseTarget": "Zielordner wählen",
+      "enabled": "Nach Zeitplan ausführen",
+      "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
+      "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+    },
+    "lastRun": {
+      "title": "LETZTER LAUF",
+      "duration": "Dauer",
+      "copied": "Kopiert",
+      "skipped": "Übersprungen"
+    },
+    "schedule": {
+      "title": "ZEITPLAN",
+      "note": "Der Plan läuft zu jeder dieser Ortszeiten.",
+      "add": "Auslöser hinzufügen",
+      "remove": "Diesen Auslöser entfernen",
+      "type": "Auslösertyp",
+      "at": "um",
+      "time": "Uhrzeit",
+      "onDay": "am Tag",
+      "dayOfMonth": "Tag im Monat",
+      "dayHint": "0 = letzter Tag, -1 = der Tag davor",
+      "every": "alle",
+      "everyHours": "Stundenintervall",
+      "hoursFrom": "Stunden von",
+      "from": "Von",
+      "to": "bis",
+      "toName": "Bis",
+      "wholeDay": "leer = ganzer Tag",
+      "nextRuns": "Nächste Läufe"
+    },
+    "nextRuns": {
+      "none": "Keine Auslöser: Dieser Plan läuft nur, wenn er von Hand gestartet wird.",
+      "fix": "Die Auslöser oben korrigieren, um die nächsten Läufe zu sehen.",
+      "tray": "Läufe finden nur statt, während ReBackup läuft (nach dem Schließen des Fensters läuft es im Infobereich weiter).",
+      "disabled": "Der Plan ist deaktiviert: Bis er wieder aktiviert wird, läuft er nur, wenn er von Hand gestartet wird.",
+      "paused": "Der Zeitplaner ist pausiert.",
+      "unsaved": "Ungespeicherte Änderungen gelten nach dem Speichern."
+    }
   }
 }
