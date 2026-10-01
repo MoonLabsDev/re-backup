@@ -10,12 +10,6 @@ namespace ReBackup.Core.Tests.Localization;
 /// <summary>The App's sources: every label key they use exists, and XAML shows no literal text.</summary>
 public class AppSourceTests
 {
-    /// <summary>XAML files whose texts are not moved to the label files yet. Each migration task removes its files.</summary>
-    private static readonly string[] NotYetMigrated =
-    [
-        "SettingsWindow.xaml",
-    ];
-
     private static readonly string[] TextProperties =
         ["Text", "Content", "Header", "ToolTip", "Title", "AutomationProperties.Name", "AutomationProperties.HelpText"];
 
@@ -41,17 +35,9 @@ public class AppSourceTests
     private static string Relative(string path) => Path.GetRelativePath(RepoPaths.AppDirectory, path).Replace('\\', '/');
 
     [Fact]
-    public void The_not_yet_migrated_files_exist()
-    {
-        foreach (var file in NotYetMigrated)
-            File.Exists(Path.Combine(RepoPaths.AppDirectory, file)).Should().BeTrue(file);
-    }
-
-    [Fact]
     public void Xaml_shows_no_literal_texts()
     {
         var literals = RepoPaths.SourceFiles(RepoPaths.AppDirectory, "*.xaml")
-            .Where(file => !NotYetMigrated.Contains(Relative(file)))
             .SelectMany(file => Literals(File.ReadAllText(file)).Select(l => $"{Relative(file)}:{l.Line} {l.Where}=\"{l.Value}\""))
             .ToList();
 

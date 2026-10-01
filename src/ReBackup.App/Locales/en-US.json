@@ -59,6 +59,33 @@
     "language": {
       "title": "LANGUAGE",
       "note": "Applies at once."
+    },
+    "windowTitle": "ReBackup settings",
+    "config": {
+      "title": "CONFIGURATION FOLDER",
+      "change": "Change…",
+      "name": "Configuration folder",
+      "dialogTitle": "Configuration folder",
+      "backupRunning": "A backup is running or queued. Wait for it to finish or cancel it before moving the configuration folder.",
+      "choose": "Choose configuration folder",
+      "containsConfiguration": "That folder already contains a ReBackup configuration.\n\nSwitch to it without copying the current plans?",
+      "otherEdits": "Your other changes in this dialog will not be saved. Continue?",
+      "restart": "ReBackup will now restart to use the new configuration folder."
+    },
+    "ignore": {
+      "title": "DEFAULT IGNORE PATTERNS",
+      "note": "One per line, gitignore syntax.",
+      "name": "Default ignore patterns"
+    },
+    "app": {
+      "title": "APP",
+      "closeToTray": "Closing the window minimizes to the tray",
+      "startWithWindows": "Start with Windows (minimized to tray)"
+    },
+    "theme": {
+      "title": "THEME",
+      "name": "Theme",
+      "note": "Applies at once."
     }
   },
   "core": {
@@ -312,6 +339,7 @@
     }
   },
   "app": {
+    "versionLabel": "ReBackup v{version}",
     "config": {
       "title": "Configuration folder",
       "unreachable": "The configuration folder {path} is not reachable:\n\n{error}\n\nYes = Retry, No = Use the default location for this session, Cancel = Exit",

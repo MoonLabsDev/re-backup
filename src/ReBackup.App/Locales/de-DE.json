@@ -59,6 +59,33 @@
     "language": {
       "title": "SPRACHE",
       "note": "Gilt sofort."
+    },
+    "windowTitle": "ReBackup-Einstellungen",
+    "config": {
+      "title": "KONFIGURATIONSORDNER",
+      "change": "Ändern …",
+      "name": "Konfigurationsordner",
+      "dialogTitle": "Konfigurationsordner",
+      "backupRunning": "Ein Backup läuft oder ist eingereiht. Vor dem Verschieben des Konfigurationsordners sein Ende abwarten oder es abbrechen.",
+      "choose": "Konfigurationsordner wählen",
+      "containsConfiguration": "Dieser Ordner enthält bereits eine ReBackup-Konfiguration.\n\nOhne Kopieren der aktuellen Pläne dorthin wechseln?",
+      "otherEdits": "Die übrigen Änderungen in diesem Dialog werden nicht gespeichert. Fortfahren?",
+      "restart": "ReBackup startet jetzt neu, um den neuen Konfigurationsordner zu verwenden."
+    },
+    "ignore": {
+      "title": "STANDARD-IGNORIERMUSTER",
+      "note": "Ein Muster pro Zeile, gitignore-Syntax.",
+      "name": "Standard-Ignoriermuster"
+    },
+    "app": {
+      "title": "APP",
+      "closeToTray": "Schließen des Fensters minimiert in den Infobereich",
+      "startWithWindows": "Mit Windows starten (im Infobereich)"
+    },
+    "theme": {
+      "title": "DESIGN",
+      "name": "Design",
+      "note": "Gilt sofort."
     }
   },
   "core": {
@@ -312,6 +339,7 @@
     }
   },
   "app": {
+    "versionLabel": "ReBackup v{version}",
     "config": {
       "title": "Konfigurationsordner",
       "unreachable": "Der Konfigurationsordner {path} ist nicht erreichbar:\n\n{error}\n\nJa = Erneut versuchen, Nein = Für diese Sitzung den Standardort verwenden, Abbrechen = Beenden",

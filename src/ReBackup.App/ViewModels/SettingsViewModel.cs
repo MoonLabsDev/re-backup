@@ -2,6 +2,7 @@ using System.IO;
 using System.Security;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Config;
 using ReBackup.Core.IO;
@@ -116,12 +117,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         if (_isBackupActive())
         {
-            _dialogs.ShowInfo("Configuration folder",
-                "A backup is running or queued. Wait for it to finish or cancel it before moving the configuration folder.");
+            _dialogs.ShowInfo(Loc.T("settings.config.dialogTitle"), Loc.T("settings.config.backupRunning"));
             return;
         }
 
-        var folder = _dialogs.PickFolder("Choose configuration folder", ConfigFolder);
+        var folder = _dialogs.PickFolder(Loc.T("settings.config.choose"), ConfigFolder);
         if (folder is null)
             return;
         if (string.Equals(PathUtil.Normalize(folder), PathUtil.Normalize(_paths.Root), StringComparison.OrdinalIgnoreCase))
@@ -130,14 +130,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         var mode = ConfigMoveMode.CopyCurrent;
         if (ConfigLocation.ContainsConfiguration(folder))
         {
-            if (!_dialogs.Confirm("Configuration folder",
-                    "That folder already contains a ReBackup configuration.\n\nSwitch to it without copying the current plans?"))
+            if (!_dialogs.Confirm(Loc.T("settings.config.dialogTitle"), Loc.T("settings.config.containsConfiguration")))
                 return;
             mode = ConfigMoveMode.UseExisting;
         }
 
-        if (HasOtherEdits() && !_dialogs.Confirm("Configuration folder",
-                "Your other changes in this dialog will not be saved. Continue?"))
+        if (HasOtherEdits() && !_dialogs.Confirm(Loc.T("settings.config.dialogTitle"), Loc.T("settings.config.otherEdits")))
             return;
 
         if (!_confirmRestart())
@@ -150,13 +148,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
             or ArgumentException or NotSupportedException)
         {
-            _dialogs.ShowError("Configuration folder", ex.Message);
+            _dialogs.ShowError(Loc.T("settings.config.dialogTitle"), Loc.Known(ex.Message));
             return;
         }
 
         ConfigFolder = _paths.Root;
         RestartRequired = true;
-        _dialogs.ShowInfo("Configuration folder", "ReBackup will now restart to use the new configuration folder.");
+        _dialogs.ShowInfo(Loc.T("settings.config.dialogTitle"), Loc.T("settings.config.restart"));
         CloseRequested?.Invoke(this, false);
     }
 
@@ -209,7 +207,7 @@ public sealed partial class SettingsViewModel : ObservableObject
                 try { StartupRegistration.Apply(oldStartWithWindows); }
                 catch (Exception revertEx) when (revertEx is IOException or UnauthorizedAccessException or SecurityException) { }
             }
-            _dialogs.ShowError("Settings", ex.Message);
+            _dialogs.ShowError(Loc.T("settings.title"), ex.Message);
             return;
         }
 

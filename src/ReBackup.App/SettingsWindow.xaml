@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:ReBackup.App.Localization"
-        Title="ReBackup settings" Width="600" Height="760" MinWidth="480" MinHeight="660"
+        Title="{l:Loc settings.windowTitle}" Width="600" Height="760" MinWidth="480" MinHeight="660"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Style="{StaticResource {x:Type Window}}">
     <Grid Margin="20,16">
@@ -17,11 +17,11 @@
 
         <Border Grid.Row="0" Style="{StaticResource Border.Card}">
             <StackPanel>
-                <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,10" Text="CONFIGURATION FOLDER" />
+                <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,10" Text="{l:Loc settings.config.title}" />
                 <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="Change…" Margin="8,0,0,0" Command="{Binding ChangeConfigFolderCommand}" />
+                    <Button DockPanel.Dock="Right" Content="{l:Loc settings.config.change}" Margin="8,0,0,0" Command="{Binding ChangeConfigFolderCommand}" />
                     <TextBox Style="{StaticResource TextBox.Code}" MinHeight="34" VerticalContentAlignment="Center"
-                             Text="{Binding ConfigFolder, Mode=OneWay}" IsReadOnly="True" AutomationProperties.Name="Configuration folder" />
+                             Text="{Binding ConfigFolder, Mode=OneWay}" IsReadOnly="True" AutomationProperties.Name="{l:Loc settings.config.name}" />
                 </DockPanel>
             </StackPanel>
         </Border>
@@ -29,24 +29,24 @@
         <Border Grid.Row="1" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="DEFAULT IGNORE PATTERNS" />
+                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="{l:Loc settings.ignore.title}" />
                     <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12"
-                               Text="One per line, gitignore syntax." />
+                               Text="{l:Loc settings.ignore.note}" />
                 </StackPanel>
                 <TextBox AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Style="{StaticResource TextBox.Code}"
-                         AutomationProperties.Name="Default ignore patterns"
+                         AutomationProperties.Name="{l:Loc settings.ignore.name}"
                          Text="{Binding DefaultIgnorePatterns, UpdateSourceTrigger=PropertyChanged}" />
             </DockPanel>
         </Border>
 
         <Border Grid.Row="2" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <StackPanel>
-                <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,12" Text="APP" />
+                <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,12" Text="{l:Loc settings.app.title}" />
                 <CheckBox Style="{StaticResource CheckBox.Switch}" IsChecked="{Binding CloseToTray}">
-                    <TextBlock TextWrapping="Wrap" Text="Closing the window minimizes to the tray" />
+                    <TextBlock TextWrapping="Wrap" Text="{l:Loc settings.app.closeToTray}" />
                 </CheckBox>
                 <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,10,0,0" IsChecked="{Binding StartWithWindows}">
-                    <TextBlock TextWrapping="Wrap" Text="Start with Windows (minimized to tray)" />
+                    <TextBlock TextWrapping="Wrap" Text="{l:Loc settings.app.startWithWindows}" />
                 </CheckBox>
             </StackPanel>
         </Border>
@@ -55,18 +55,18 @@
             <DockPanel>
                 <Border DockPanel.Dock="Right" VerticalAlignment="Center" Padding="3" CornerRadius="8" BorderThickness="1"
                         Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
-                        AutomationProperties.Name="Theme">
+                        AutomationProperties.Name="{l:Loc settings.theme.name}">
                     <StackPanel Orientation="Horizontal">
-                        <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Theme" Content="Dark"
+                        <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Theme" Content="{l:Loc enum.theme.Dark}"
                                      Margin="2,0,0,0" IsChecked="{Binding IsDarkTheme}" />
-                        <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Theme" Content="Light"
+                        <RadioButton Style="{StaticResource RadioButton.Segment}" GroupName="Theme" Content="{l:Loc enum.theme.Light}"
                                      Margin="2,0,0,0" IsChecked="{Binding IsLightTheme}" />
                     </StackPanel>
                 </Border>
                 <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="THEME" />
+                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="{l:Loc settings.theme.title}" />
                     <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
-                               Text="Applies at once." />
+                               Text="{l:Loc settings.theme.note}" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -105,10 +105,14 @@
             </DockPanel>
         </Border>
 
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="Cancel" MinWidth="84" IsCancel="True" Command="{Binding CancelCommand}" />
-            <Button Style="{StaticResource Button.Accent}" Content="OK" MinWidth="84" Margin="8,0,0,0" IsDefault="True"
+        <DockPanel Grid.Row="5" Margin="0,16,0,0" LastChildFill="False">
+            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Style="{StaticResource TextBlock.Muted}" FontSize="12"
+                       Text="{l:LocVersion}" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            <Button Content="{l:Loc common.cancel}" MinWidth="84" IsCancel="True" Command="{Binding CancelCommand}" />
+            <Button Style="{StaticResource Button.Accent}" Content="{l:Loc common.ok}" MinWidth="84" Margin="8,0,0,0" IsDefault="True"
                     Command="{Binding SaveCommand}" />
-        </StackPanel>
+            </StackPanel>
+        </DockPanel>
     </Grid>
 </Window>
