@@ -195,12 +195,16 @@ public sealed class TreemapControl : FrameworkElement
     /// <summary>Tile area: the whole size, or only the backed-up part when ignored entries are hidden (ignored ones are then 0).</summary>
     private long WeightOf(EvaluatedNode node) => _layoutHidesIgnored ? node.IncludedSize : node.TotalSize;
 
+    /// <summary>
+    /// The deepest tile under the point. Tiles are added parent first, so searching from the end finds a file before
+    /// its folders; a folder's own area (where its children are too small to draw) selects that folder.
+    /// </summary>
     private EvaluatedNode? TileAt(Point point)
     {
-        foreach (var tile in _tiles)
+        for (var i = _tiles.Count - 1; i >= 0; i--)
         {
-            if (tile.IsLeaf && tile.Rect.Contains(point))
-                return tile.Node;
+            if (_tiles[i].Rect.Contains(point))
+                return _tiles[i].Node;
         }
         return null;
     }
