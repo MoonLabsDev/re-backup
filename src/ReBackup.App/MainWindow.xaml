@@ -275,11 +275,9 @@
         <Border Grid.Column="0" Background="{DynamicResource Brush.Rail}" BorderBrush="{DynamicResource Brush.Border}"
                 BorderThickness="0,0,1,0">
             <DockPanel Margin="0,14">
-                <Border DockPanel.Dock="Top" Width="34" Height="34" CornerRadius="9" HorizontalAlignment="Center"
-                        Background="{DynamicResource Brush.Accent}">
-                    <TextBlock Text="Re:" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.AccentText}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
+                <Image DockPanel.Dock="Top" Width="36" Height="36" HorizontalAlignment="Center"
+                       Source="pack://application:,,,/Assets/rebackup-256.png" RenderOptions.BitmapScalingMode="HighQuality"
+                       ToolTip="ReBackup" AutomationProperties.Name="ReBackup" />
                 <!-- The plan's tabs, mirroring the header tabs (same SelectedTab). -->
                 <StackPanel DockPanel.Dock="Top" Margin="0,22,0,0" IsEnabled="{Binding HasSelectedPlan}"
                             KeyboardNavigation.DirectionalNavigation="Cycle">

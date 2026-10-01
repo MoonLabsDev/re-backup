@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
+using System.Windows.Media.Imaging;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Win32;
@@ -181,13 +182,7 @@ public partial class App : Application
             ContextMenu = _trayMenu,
             NoLeftClickDelay = true,
             LeftClickCommand = new RelayCommand(ShowMainWindow),
-            IconSource = new GeneratedIconSource
-            {
-                Text = "R",
-                Foreground = Brushes.White,
-                Background = new SolidColorBrush(Color.FromRgb(0x2B, 0x6C, 0xB0)),
-                FontWeight = FontWeights.Bold,
-            },
+            IconSource = new BitmapImage(new Uri("pack://application:,,,/Assets/rebackup.ico")),
         };
         // Efficiency mode would throttle the process while hidden, which would slow scheduled backups.
         _tray.ForceCreate(enablesEfficiencyMode: false);
