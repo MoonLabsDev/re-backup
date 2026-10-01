@@ -309,7 +309,7 @@
                                 </Style>
                             </ComboBox.Style>
                         </ComboBox>
-                        <TextBlock Margin="5,0,0,0" VerticalAlignment="Center" Text="{l:Loc retention.forecast.planSchedule}">
+                        <TextBlock Margin="3,0,0,0" VerticalAlignment="Center" Text="{l:Loc retention.forecast.planSchedule}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.CardTitle}">
                                     <Setter Property="Visibility" Value="Collapsed" />
