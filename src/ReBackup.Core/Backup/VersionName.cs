@@ -66,6 +66,28 @@ public static class VersionName
             : null;
     }
 
+    /// <summary>
+    /// The names of the folders directly inside <paramref name="target"/>, read in one listing (case-insensitive set);
+    /// empty when the target is not an absolute path, does not exist or cannot be read. Can block for a long time on an
+    /// unreachable network share: call it off the UI thread.
+    /// </summary>
+    public static IReadOnlySet<string> FolderNamesIn(string? target)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(target) || !Path.IsPathFullyQualified(target))
+            return names;
+        try
+        {
+            foreach (var directory in Directory.EnumerateDirectories(target))
+                names.Add(Path.GetFileName(directory));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            names.Clear();
+        }
+        return names;
+    }
+
     /// <summary><see cref="FolderIn"/> when that folder exists right now; otherwise null.</summary>
     public static string? ExistingFolderIn(string? target, string? versionName) =>
         FolderIn(target, versionName) is { } folder && Directory.Exists(folder) ? folder : null;

@@ -11,6 +11,8 @@ namespace ReBackup.App.Controls;
 /// top in <see cref="Stroke"/>; 1 draws the whole circle. While <see cref="IsIndeterminate"/> a short arc spins instead.
 /// The brushes are normally theme brushes set as DynamicResource, so a theme switch redraws the ring.
 /// Its template (Theme/Controls.xaml) centres the content.
+/// The spin does not re-render: the arc is drawn once under a RotateTransform whose angle is animated, and the
+/// animation runs only while the ring is visible (not while its window is hidden to the tray).
 /// </summary>
 public sealed class ProgressRing : ContentControl
 {
@@ -46,15 +48,15 @@ public sealed class ProgressRing : ContentControl
         nameof(TrackOpacity), typeof(double), typeof(ProgressRing),
         new FrameworkPropertyMetadata(1.0, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    /// <summary>Start angle of the spinning arc, animated while indeterminate.</summary>
-    private static readonly DependencyProperty SpinAngleProperty = DependencyProperty.Register(
-        "SpinAngle", typeof(double), typeof(ProgressRing),
-        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+    /// <summary>Turns the spinning arc; only its Angle is animated, so a spin step needs no OnRender.</summary>
+    private readonly RotateTransform _spin = new();
+    private bool _spinning;
 
     public ProgressRing()
     {
         Loaded += (_, _) => UpdateSpin();
-        Unloaded += (_, _) => BeginAnimation(SpinAngleProperty, null);
+        Unloaded += (_, _) => UpdateSpin();
+        IsVisibleChanged += (_, _) => UpdateSpin();
     }
 
     /// <summary>Progress, 0..1.</summary>
@@ -127,8 +129,13 @@ public sealed class ProgressRing : ContentControl
             return;
         if (IsIndeterminate)
         {
-            var spin = new Pen(stroke, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-            drawingContext.DrawGeometry(null, spin, Arc(center, radius, (double)GetValue(SpinAngleProperty), SpinArc * 360));
+            // Drawn once per layout or property change; the animation turns it through _spin.
+            var spinPen = new Pen(stroke, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+            _spin.CenterX = center.X;
+            _spin.CenterY = center.Y;
+            drawingContext.PushTransform(_spin);
+            drawingContext.DrawGeometry(null, spinPen, Arc(center, radius, -90, SpinArc * 360));
+            drawingContext.Pop();
             return;
         }
 
@@ -160,16 +167,18 @@ public sealed class ProgressRing : ContentControl
         return geometry;
     }
 
+    /// <summary>Spins while indeterminate, loaded and visible; otherwise the animation clock is removed.</summary>
     private void UpdateSpin()
     {
-        if (IsIndeterminate && IsLoaded)
-        {
-            var spin = new DoubleAnimation(0, 360, TimeSpan.FromSeconds(1.2)) { RepeatBehavior = RepeatBehavior.Forever };
-            BeginAnimation(SpinAngleProperty, spin);
-        }
-        else
-        {
-            BeginAnimation(SpinAngleProperty, null);
-        }
+        var spin = IsIndeterminate && IsLoaded && IsVisible;
+        if (spin == _spinning)
+            return;
+        _spinning = spin;
+        _spin.BeginAnimation(RotateTransform.AngleProperty, spin
+            ? new DoubleAnimation(0, 360, TimeSpan.FromSeconds(1.2)) { RepeatBehavior = RepeatBehavior.Forever }
+            : null);
     }
+
+    /// <summary>For tests and the harness: whether the spin animation is running.</summary>
+    internal bool IsSpinning => _spinning;
 }

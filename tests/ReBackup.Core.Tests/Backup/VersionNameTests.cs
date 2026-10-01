@@ -111,6 +111,30 @@ public class VersionNameTests
     }
 
     [Fact]
+    public void FolderNamesIn_lists_the_folders_of_the_target_once_ignoring_case()
+    {
+        using var tmp = new TempDir();
+        tmp.CreateDir("2026_09_30-14_05 Projects");
+        tmp.CreateDir(@"2026_09_30-15_05 Projects\nested");
+        File.WriteAllText(tmp.PathOf("2026_09_30-16_05 Projects"), "a file, not a folder");
+
+        var names = VersionName.FolderNamesIn(tmp.Root);
+
+        names.Should().BeEquivalentTo("2026_09_30-14_05 Projects", "2026_09_30-15_05 Projects");
+        names.Contains("2026_09_30-14_05 PROJECTS").Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(@"relative\target")]
+    [InlineData(@"Z:\does\not\exist\anywhere")]
+    public void FolderNamesIn_is_empty_for_a_missing_or_unusable_target(string? target)
+    {
+        VersionName.FolderNamesIn(target).Should().BeEmpty();
+    }
+
+    [Fact]
     public void ExistingFolderIn_returns_the_folder_only_while_it_exists()
     {
         using var tmp = new TempDir();

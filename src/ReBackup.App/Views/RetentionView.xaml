@@ -336,7 +336,9 @@
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <ScrollViewer Grid.Column="1" MaxHeight="180" VerticalAlignment="Top" VerticalScrollBarVisibility="Auto">
+                        <!-- Hidden while recalculating (or without a forecast): the sentence above takes the room. -->
+                        <ScrollViewer Grid.Column="1" MaxHeight="180" VerticalAlignment="Top" VerticalScrollBarVisibility="Auto"
+                                      Visibility="{Binding RetentionPreview.HasForecast, Converter={StaticResource BoolToVisibility}}">
                             <controls:RetentionTimelineControl Lanes="{Binding RetentionPreview.TimelineLanes}"
                                                                From="{Binding RetentionPreview.TimelineFrom}"
                                                                To="{Binding RetentionPreview.TimelineTo}" />

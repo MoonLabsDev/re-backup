@@ -155,13 +155,17 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     [RelayCommand]
     private Task RefreshAsync() => LoadAsync();
 
-    /// <summary>Shows the row's version folder in Explorer; reads the target again when the folder is gone.</summary>
+    /// <summary>
+    /// Shows the row's version folder in Explorer (checked and opened on a worker thread); reads the target again
+    /// when the folder is gone.
+    /// </summary>
     [RelayCommand]
-    private void OpenVersionFolder(RetentionNowRow? row)
+    private async Task OpenVersionFolderAsync(RetentionNowRow? row)
     {
-        if (row is null || _versionsTarget is null)
+        if (row is null || _versionsTarget is not { } target)
             return;
-        if (!_folders.OpenVersionFolder(_versionsTarget, row.Name))
+        var name = row.Name;
+        if (!await Task.Run(() => _folders.OpenVersionFolder(target, name)) && ReferenceEquals(target, _versionsTarget))
             _ = LoadAsync();
     }
 

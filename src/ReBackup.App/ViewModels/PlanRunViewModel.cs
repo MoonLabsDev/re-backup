@@ -60,6 +60,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private bool _enabled = true;
     private bool _schedulerPaused;
     private string _nextRunText = "";
+    private int _historyLoads;   // tells a version check whether its rows are still the shown ones
 
     public PlanRunViewModel(TimeProvider? timeProvider = null)
     {
@@ -181,19 +182,48 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
     /// <summary>
     /// Entries oldest first, as read from the log; shown newest first. Whether the version of each run still exists in
-    /// <paramref name="target"/> is checked here, once per load.
+    /// <paramref name="target"/> is checked once per load, off the UI thread (the target may be an unreachable share):
+    /// the rows can open their version only after that check has answered.
     /// </summary>
     public void LoadHistory(IReadOnlyList<RunLogEntry> entries, string? target = null)
     {
         History.Clear();
         for (var i = entries.Count - 1; i >= 0; i--)
             History.Add(new RunHistoryRow(entries[i], target));
+        VersionCheck = CheckVersionsAsync(++_historyLoads, target, History.Where(row => row.HasVersion).ToList());
 
         LastRun = History.Count == 0 ? null : History[0];
         LastRunText = LastRun is null
             ? NeverRunText
             : $"Last run {LastRun.StartText}: {LastRun.StatusText}";
         UpdateCard();
+    }
+
+    /// <summary>The running check of the last <see cref="LoadHistory"/>; completes when its rows were updated.</summary>
+    public Task VersionCheck { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Lists the target's folder names once on a worker thread, then marks the rows on the calling (UI) thread.
+    /// A missing or unreadable target marks every row missing. A newer load makes the answer obsolete.
+    /// </summary>
+    private async Task CheckVersionsAsync(int load, string? target, IReadOnlyList<RunHistoryRow> rows)
+    {
+        if (rows.Count == 0)
+            return;
+        IReadOnlySet<string> names;
+        try
+        {
+            names = await Task.Run(() => Core.Backup.VersionName.FolderNamesIn(target));
+        }
+        catch (Exception)
+        {
+            names = new HashSet<string>();
+        }
+        if (load != _historyLoads)
+            return;
+        foreach (var row in rows)
+            row.ApplyVersionCheck(Core.Backup.VersionName.FolderIn(target, row.VersionName) is not null &&
+                                  names.Contains(row.VersionName!));
     }
 
     /// <summary>A time on the card: "14:05" today, "Fri 03:00" within a week either way, else the date.</summary>

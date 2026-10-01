@@ -121,9 +121,16 @@ public sealed partial class MainViewModel : ObservableObject
             if (loaded.Remove(editor.Id, out var plan))
             {
                 if (editor.IsDirty)
+                {
                     editor.MarkAsExisting();
+                }
                 else
+                {
+                    var targetBefore = editor.SavedPlan().Target;
                     editor.ReplaceSaved(plan);
+                    if (!string.Equals(targetBefore, plan.Target, StringComparison.OrdinalIgnoreCase))
+                        LoadHistory(editor);
+                }
             }
             else if (unreadable.Contains(editor.Id))
             {
@@ -225,13 +232,18 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
+            var targetBefore = editor.IsNew ? null : editor.SavedPlan().Target;
             var saved = editor.TrySave(_store);
             StatusMessage = saved
                 ? $"Saved \"{editor.Name}\"."
                 : "Not saved: fix the errors shown in the plan.";
             RevalidateAll();
             if (saved)
+            {
                 PublishPlans();
+                if (!string.Equals(targetBefore, editor.SavedPlan().Target, StringComparison.OrdinalIgnoreCase))
+                    LoadHistory(editor);   // the folder buttons look in the new target
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

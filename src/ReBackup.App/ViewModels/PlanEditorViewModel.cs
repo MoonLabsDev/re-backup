@@ -82,13 +82,17 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     public string Id => _saved.Id;
 
-    /// <summary>Shows the version a run produced in Explorer; marks the row when that folder no longer exists.</summary>
+    /// <summary>
+    /// Shows the version a run produced in Explorer; marks the row when that folder no longer exists. The folder is
+    /// checked and opened on a worker thread, so a slow share never blocks the UI.
+    /// </summary>
     [RelayCommand]
-    private void OpenRunVersion(RunHistoryRow? row)
+    private async Task OpenRunVersionAsync(RunHistoryRow? row)
     {
         if (row is not { CanOpenVersion: true })
             return;
-        if (!_folders.OpenVersionFolder(row.Target, row.VersionName))
+        var (target, name) = (row.Target, row.VersionName);
+        if (!await Task.Run(() => _folders.OpenVersionFolder(target, name)))
             row.MarkVersionMissing();
     }
 

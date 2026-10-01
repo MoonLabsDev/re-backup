@@ -18,17 +18,25 @@ public sealed partial class RunHistoryRow : ObservableObject
 {
     private readonly RunLogEntry _entry;
 
-    /// <summary>Whether the run's version folder existed in the target when the history was loaded.</summary>
+    /// <summary>
+    /// Whether the run's version folder was found in the target. False until the check of the history load
+    /// (<see cref="PlanRunViewModel.LoadHistory"/>, off the UI thread) has answered.
+    /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(OpenVersionToolTip))]
     private bool _canOpenVersion;
 
-    /// <param name="target">The plan's target; the version folder is looked up there once, now.</param>
+    /// <summary>True while the target is still being looked at for this row's version.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpenVersionToolTip))]
+    private bool _isCheckingVersion;
+
+    /// <param name="target">The plan's target, where the version folder is looked up.</param>
     public RunHistoryRow(RunLogEntry entry, string? target = null)
     {
         _entry = entry;
         Target = target;
-        _canOpenVersion = HasVersion && Core.Backup.VersionName.ExistingFolderIn(target, entry.Version) is not null;
+        _isCheckingVersion = HasVersion;
     }
 
     /// <summary>The log entry of the run.</summary>
@@ -42,7 +50,17 @@ public sealed partial class RunHistoryRow : ObservableObject
 
     public bool HasVersion => !string.IsNullOrEmpty(_entry.Version);
 
-    public string OpenVersionToolTip => CanOpenVersion ? $"Open {_entry.Version} in Explorer" : "Version no longer exists";
+    public string OpenVersionToolTip =>
+        IsCheckingVersion ? "Checking whether the version still exists…"
+        : CanOpenVersion ? $"Open {_entry.Version} in Explorer"
+        : "Version no longer exists";
+
+    /// <summary>The answer of the existence check.</summary>
+    public void ApplyVersionCheck(bool exists)
+    {
+        CanOpenVersion = HasVersion && exists;
+        IsCheckingVersion = false;
+    }
 
     /// <summary>The folder was found missing when it was to be opened.</summary>
     public void MarkVersionMissing() => CanOpenVersion = false;
