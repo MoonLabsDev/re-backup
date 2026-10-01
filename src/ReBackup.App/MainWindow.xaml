@@ -299,6 +299,10 @@
                                  Content="{StaticResource Icon.History}" ToolTip="History" AutomationProperties.Name="History"
                                  AutomationProperties.AutomationId="RailHistoryTab"
                                  IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}" />
+                    <RadioButton x:Name="RailVersionsTab" Style="{StaticResource RadioButton.Rail}" GroupName="RailTabs"
+                                 Content="{StaticResource Icon.Versions}" ToolTip="Versions" AutomationProperties.Name="Versions"
+                                 AutomationProperties.AutomationId="RailVersionsTab"
+                                 IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Versions}}" />
                 </StackPanel>
                 <Button DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Style="{StaticResource Button.Icon}"
                         Width="40" Height="40" FontSize="18" Content="{StaticResource Icon.Settings}"
@@ -383,6 +387,11 @@
                                     <TextBlock Margin="0,3,0,0" MaxHeight="32" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
                                                TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                                Text="{Binding Run.DetailText}" ToolTip="{Binding Run.DetailText}" />
+                                    <!-- A restore from the Versions tab runs beside the backups. -->
+                                    <TextBlock Margin="0,3,0,0" FontSize="12" Foreground="{DynamicResource Brush.AccentLight}"
+                                               TextTrimming="CharacterEllipsis" Text="{Binding Versions.RestoreText}"
+                                               ToolTip="{Binding Versions.RestoreText}"
+                                               Visibility="{Binding Versions.IsRestoring, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
 
                                 <!-- Run now while idle, cancel while running, remove from the queue while queued. -->
@@ -507,6 +516,14 @@
                                             <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="History" />
                                         </StackPanel>
                                     </RadioButton>
+                                    <RadioButton x:Name="VersionsTab" Style="{StaticResource RadioButton.Segment}" GroupName="MainTabs"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="Versions"
+                                                 IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Versions}}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Versions}" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="Versions" />
+                                        </StackPanel>
+                                    </RadioButton>
                                 </StackPanel>
                             </Border>
 
@@ -578,6 +595,8 @@
                             Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Retention}}" />
                         <views:HistoryView
                             Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}" />
+                        <views:VersionsView
+                            Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Versions}}" />
                     </Grid>
                 </DockPanel>
             </Grid>
