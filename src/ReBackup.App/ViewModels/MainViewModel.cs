@@ -99,6 +99,27 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
 
+    /// <summary>A restore from a Versions tab is running (planning or copying).</summary>
+    public bool IsAnyRestoring => Plans.Any(p => p.Versions.IsRestoring);
+
+    /// <summary>
+    /// Cancels every running restore and waits up to <paramref name="wait"/> for their copies to stop (each finishes
+    /// its current file or removes its temp file). Blocks the calling thread; the copies do not need it. False when one
+    /// is still running after the wait.
+    /// </summary>
+    public bool StopRestores(TimeSpan wait)
+    {
+        var runs = Plans.Select(p => p.Versions.StopRestore()).ToArray();
+        try
+        {
+            return Task.WaitAll(runs, wait);
+        }
+        catch (AggregateException)
+        {
+            return true;   // a copy that failed has stopped too
+        }
+    }
+
     public IEnumerable<string> UnsavedPlanNames =>
         Plans.Where(p => p.IsDirty).Select(p => string.IsNullOrWhiteSpace(p.Name) ? "(unnamed)" : p.Name);
 
@@ -190,6 +211,11 @@ public sealed partial class MainViewModel : ObservableObject
         if (editor.Run.IsActive)
         {
             StatusMessage = $"Cancel the backup of \"{editor.Name}\" before deleting the plan.";
+            return;
+        }
+        if (editor.Versions.IsRestoring)
+        {
+            StatusMessage = $"Wait for the restore from \"{editor.Name}\" to finish, or cancel it, before deleting the plan.";
             return;
         }
 

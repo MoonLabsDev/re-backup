@@ -310,7 +310,8 @@ public partial class App : Application
 
     private void ShowSettings()
     {
-        var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs, ConfirmDiscardUnsaved,
+        var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs,
+            () => ConfirmDiscardUnsaved() && ConfirmStopRestores("restart ReBackup"),
             () => _queue.IsBusy, ThemeManager.Apply);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
@@ -347,6 +348,7 @@ public partial class App : Application
     private void Restart()
     {
         _exitRequested = true;
+        StopRestores();
         if (!StopBackups(TimeSpan.FromSeconds(15)))
         {
             // Keep the lock: a second copy must not run next to a backup that is still stopping.
@@ -386,6 +388,7 @@ public partial class App : Application
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
         _exitRequested = true;
+        _mainViewModel?.StopRestores(TimeSpan.FromSeconds(3));
         if (_queue is not null)
             StopBackups(TimeSpan.FromSeconds(3));
         DisposeTray();
@@ -408,6 +411,28 @@ public partial class App : Application
             "\n\nDiscard the changes?");
     }
 
+    /// <summary>True when no restore runs, or the user agrees to cancel the running ones to <paramref name="action"/>.</summary>
+    private bool ConfirmStopRestores(string action)
+    {
+        if (!_mainViewModel.IsAnyRestoring)
+            return true;
+        if (!_window.IsVisible)
+            ShowMainWindow();
+        return _dialogs.ConfirmDefaultNo("Restore in progress",
+            $"A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and {action}?");
+    }
+
+    /// <summary>
+    /// Cancels running restores and waits (bounded) until each has finished its current file and removed its temp
+    /// file, so the process does not end in the middle of writing into a live folder.
+    /// </summary>
+    private void StopRestores()
+    {
+        if (!_mainViewModel.StopRestores(TimeSpan.FromSeconds(10)))
+            _dialogs.ShowInfo("ReBackup",
+                "A restore did not stop within 10 seconds. A file it was writing may be incomplete (a \"*.rebackup-tmp\" file next to it).");
+    }
+
     private void ExitApp()
     {
         if (_exiting)
@@ -422,20 +447,21 @@ public partial class App : Application
             return;
         }
 
-        if (_queue.IsBusy)
+        if (!ConfirmStopRestores("exit ReBackup"))
         {
-            if (!_dialogs.Confirm("Backup in progress",
-                    "A backup is running or queued.\n\nCancel it and exit ReBackup?"))
-            {
-                _exiting = false;
-                return;
-            }
-            StopBackups(TimeSpan.FromSeconds(15));
+            _exiting = false;
+            return;
         }
-        else
+        var backupBusy = _queue.IsBusy;
+        if (backupBusy && !_dialogs.Confirm("Backup in progress",
+                "A backup is running or queued.\n\nCancel it and exit ReBackup?"))
         {
-            StopBackups(TimeSpan.Zero);
+            _exiting = false;
+            return;
         }
+
+        StopRestores();
+        StopBackups(backupBusy ? TimeSpan.FromSeconds(15) : TimeSpan.Zero);
 
         _exitRequested = true;
         DisposeTray();

@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.Core.IO;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
@@ -18,7 +20,7 @@ public sealed partial class VersionsViewModel
 
     /// <summary>
     /// Types Windows runs rather than shows when they are opened: "Open" on one of them asks first, since it would start
-    /// a program or script from the backup.
+    /// a program or script from the backup. Windows' own list (<see cref="AssocIsDangerous"/>) is asked as well.
     /// </summary>
     private static readonly HashSet<string> RunnableExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -26,9 +28,15 @@ public sealed partial class VersionsViewModel
         ".hta", ".cpl",
         // further types the shell executes in the same way
         ".pif", ".vbe", ".wsh", ".msc", ".msp", ".jar", ".psm1", ".appref-ms", ".application", ".scf",
+        ".ws", ".vb", ".chm", ".py", ".pyw", ".pyz", ".settingcontent-ms", ".library-ms", ".search-ms", ".sct", ".shb",
+        ".shs", ".website", ".diagcab", ".appinstaller", ".msix", ".appx", ".gadget", ".ps1xml", ".psd1", ".mst", ".ins",
+        ".isp",
     };
 
     private CancellationTokenSource? _restoreCts;
+
+    /// <summary>The copying of the running restore (null while none copies); it removes its temp file when canceled.</summary>
+    private Task? _restoreRun;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestoreToOriginalCommand), nameof(RestoreToCommand), nameof(CancelRestoreCommand))]
@@ -82,8 +90,8 @@ public sealed partial class VersionsViewModel
             return;
         var (folder, path) = (selection.Version.Info.Path, selection.Node.Path);
         var extension = Path.GetExtension(selection.Node.Name);
-        if (RunnableExtensions.Contains(extension) &&
-            !_context.Dialogs.Confirm("Open",
+        if (IsRunnable(extension) &&
+            !_context.Dialogs.ConfirmDefaultNo("Open",
                 $"\"{selection.Node.Name}\" is a program, script or shortcut ({extension}). Opening it runs it from the " +
                 $"version of {selection.Version.DateText}.\n\nRun it?"))
             return;
@@ -111,8 +119,22 @@ public sealed partial class VersionsViewModel
     [RelayCommand(CanExecute = nameof(IsRestoring))]
     private void CancelRestore()
     {
-        _restoreCts?.Cancel();
-        RestoreText = "Canceling after the current file…";
+        if (_restoreCts is not { } cts || cts.IsCancellationRequested)
+            return;
+        cts.Cancel();
+        // Planning cannot be interrupted (it writes nothing); the copy stops after the current file.
+        RestoreText = _restoreRun is null ? "Canceling…" : "Canceling after the current file…";
+    }
+
+    /// <summary>
+    /// Cancels a running restore (exit, restart) and returns the copy's task, which ends after the current file once
+    /// the temp file is removed; a completed task when nothing is being copied.
+    /// </summary>
+    public Task StopRestore()
+    {
+        if (IsRestoring)
+            CancelRestore();
+        return _restoreRun ?? Task.CompletedTask;
     }
 
     /// <summary><see cref="Selection"/>; when there is none although a row is selected, says why in the footer.</summary>
@@ -155,7 +177,7 @@ public sealed partial class VersionsViewModel
             var warning = _isBackupActive()
                 ? "\n\nA backup of this plan is queued or running; it may pick up the restored files."
                 : "";
-            if (!dialogs.Confirm("Restore to the original location",
+            if (!dialogs.ConfirmDefaultNo("Restore to the original location",
                     $"Restore {itemText} from the version of {versionDate} to\n" +
                     $"{Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))}?\n\n" +
                     $"Nothing there is deleted; you choose what happens to files that exist already.{warning}"))
@@ -166,6 +188,14 @@ public sealed partial class VersionsViewModel
             if (dialogs.PickFolder("Restore to…", null) is not { } folder)
                 return;
             root = folder;
+        }
+
+        if (InsideTarget(root, mode == RestoreMode.Original ? relative : Path.GetFileName(relative)) is { } target)
+        {
+            dialogs.ShowError("Restore",
+                $"The destination is inside the plan's target folder \"{target}\", where its versions are stored. " +
+                "Choose a folder outside it.");
+            return;
         }
 
         // From here until the copy ends, the restore buttons are off (a second click while planning does nothing).
@@ -220,7 +250,9 @@ public sealed partial class VersionsViewModel
             RestoreResult result;
             try
             {
-                result = await Task.Run(() => Restorer.Run(plan, policy, progress, cts.Token));
+                var run = Task.Run(() => Restorer.Run(plan, policy, progress, cts.Token));
+                _restoreRun = run;
+                result = await run;
             }
             catch (Exception ex)
             {
@@ -244,6 +276,7 @@ public sealed partial class VersionsViewModel
             if (ReferenceEquals(_restoreCts, cts))
             {
                 _restoreCts = null;
+                _restoreRun = null;
                 IsRestoring = false;
                 RestoreText = "";
                 RestoreFraction = 0;
@@ -281,6 +314,48 @@ public sealed partial class VersionsViewModel
         }
         return ConflictPolicy.Skip;
     }
+
+    /// <summary>
+    /// The plan's target when the destination (<paramref name="root"/> + <paramref name="relative"/>) would lie in it:
+    /// a restore must not write into the versions. Null otherwise.
+    /// </summary>
+    private string? InsideTarget(string root, string relative)
+    {
+        if (_savedPlan()?.Target is not { Length: > 0 } target)
+            return null;
+        try
+        {
+            var destination = relative.Length == 0
+                ? root
+                : Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+            return PathUtil.IsSameOrInside(root, target) || PathUtil.IsSameOrInside(destination, target) ? target : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;   // Restorer.Plan rejects such a path with its own message
+        }
+    }
+
+    private static bool IsRunnable(string extension)
+    {
+        if (extension.Length == 0)
+            return false;
+        if (RunnableExtensions.Contains(extension))
+            return true;
+        try
+        {
+            return AssocIsDangerous(extension);
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Windows' list of file types that are dangerous to open (shlwapi, Windows XP SP2 and later).</summary>
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AssocIsDangerous(string pszAssoc);
 
     private static string UnreadableNote(RestorePlan plan) => plan.PlanFailures.Count == 0
         ? ""

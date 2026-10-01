@@ -6,6 +6,9 @@ public interface IDialogService
 {
     bool Confirm(string title, string message);
 
+    /// <summary>Like <see cref="Confirm"/>, with No as the default answer (Enter): for actions that are hard to undo.</summary>
+    bool ConfirmDefaultNo(string title, string message);
+
     /// <summary>Yes → true, No → false, Cancel → null.</summary>
     bool? AskYesNoCancel(string title, string message);
 
