@@ -132,8 +132,6 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" Style="{StaticResource Button.Accent}" AutomationProperties.Name="Index now"
                         ToolTip="Scan the source folder" Command="{Binding Preview.IndexCommand}">
@@ -150,7 +148,7 @@
                         <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Cancel" />
                     </StackPanel>
                 </Button>
-                <ProgressBar Grid.Column="2" Width="120" Margin="12,0,0,0" VerticalAlignment="Center"
+                <ProgressBar Grid.Column="2" Width="100" Margin="12,0,0,0" VerticalAlignment="Center"
                              IsIndeterminate="{Binding Preview.IsIndexing}" />
                 <StackPanel Grid.Column="3" Margin="12,0" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource TextBlock.Small}" Text="{Binding Preview.ProgressText}"
@@ -168,19 +166,6 @@
                         </TextBlock.Style>
                     </TextBlock>
                 </StackPanel>
-                <TextBlock Grid.Column="4" Style="{StaticResource TextBlock.Small}" Margin="0,0,8,0" Text="Show" />
-                <Border Grid.Column="5" Background="{StaticResource Brush.Rail}" BorderBrush="{StaticResource Brush.BorderStrong}"
-                        BorderThickness="1" CornerRadius="8" Padding="3" VerticalAlignment="Center"
-                        AutomationProperties.Name="Sizes shown">
-                    <StackPanel Orientation="Horizontal">
-                        <RadioButton Style="{StaticResource RadioButton.Toggle}" GroupName="PreviewSizes" Content="In backup"
-                                     ToolTip="Show what goes into the backup; ignored entries show —"
-                                     IsChecked="{Binding Preview.Tree.ShowInBackup}" />
-                        <RadioButton Style="{StaticResource RadioButton.Toggle}" GroupName="PreviewSizes" Content="Total"
-                                     Margin="2,0,0,0" ToolTip="Show the total, ignored entries included"
-                                     IsChecked="{Binding Preview.Tree.ShowTotal}" />
-                    </StackPanel>
-                </Border>
             </Grid>
 
             <TextBlock Grid.Row="1" Margin="0,10,0,0" Foreground="{StaticResource Brush.Danger}" TextWrapping="Wrap"
@@ -196,30 +181,49 @@
                 </TextBlock.Style>
             </TextBlock>
 
-            <!-- Summary pills -->
-            <WrapPanel Grid.Row="2" Margin="0,12,0,0">
-                <WrapPanel.Style>
-                    <Style TargetType="WrapPanel">
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding Preview.InBackupText}" Value="">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </WrapPanel.Style>
-                <Border Style="{StaticResource Border.Pill}">
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" Fill="{StaticResource Brush.Accent}" />
-                        <TextBlock FontSize="12" Text="{Binding Preview.InBackupText}" />
-                    </StackPanel>
-                </Border>
-                <Border Style="{StaticResource Border.Pill}">
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" Fill="{StaticResource Brush.TextFaint}" />
-                        <TextBlock FontSize="12" Text="{Binding Preview.IgnoredText}" />
-                    </StackPanel>
-                </Border>
-            </WrapPanel>
+            <!-- Summary pills, with the size toggle on the right: always visible, also before the first scan. -->
+            <DockPanel Grid.Row="2" Margin="0,12,0,0">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
+                    <TextBlock Style="{StaticResource TextBlock.Small}" Margin="0,0,8,0" Text="Show" />
+                    <Border Background="{StaticResource Brush.Rail}" BorderBrush="{StaticResource Brush.BorderStrong}"
+                            BorderThickness="1" CornerRadius="8" Padding="3" VerticalAlignment="Center"
+                            AutomationProperties.Name="Sizes shown">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Style="{StaticResource RadioButton.Toggle}" GroupName="PreviewSizes" Content="In backup"
+                                         ToolTip="Show what goes into the backup; ignored entries show —"
+                                         IsChecked="{Binding Preview.Tree.ShowInBackup}" />
+                            <RadioButton Style="{StaticResource RadioButton.Toggle}" GroupName="PreviewSizes" Content="Total"
+                                         Margin="2,0,0,0" ToolTip="Show the total, ignored entries included"
+                                         IsChecked="{Binding Preview.Tree.ShowTotal}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+                <WrapPanel>
+                    <WrapPanel.Style>
+                        <Style TargetType="WrapPanel">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Preview.InBackupText}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </WrapPanel.Style>
+                    <Border Style="{StaticResource Border.Pill}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" Fill="{StaticResource Brush.Accent}" />
+                            <TextBlock FontSize="12" TextTrimming="CharacterEllipsis" Text="{Binding Preview.InBackupText}"
+                                       ToolTip="{Binding Preview.InBackupText}" />
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource Border.Pill}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" Fill="{StaticResource Brush.TextFaint}" />
+                            <TextBlock FontSize="12" TextTrimming="CharacterEllipsis" Text="{Binding Preview.IgnoredText}"
+                                       ToolTip="{Binding Preview.IgnoredText}" />
+                        </DockPanel>
+                    </Border>
+                </WrapPanel>
+            </DockPanel>
 
             <!-- Tree -->
             <Border Grid.Row="3" Margin="0,12,0,0" Style="{StaticResource Border.Card}" Padding="8,4,8,8">
@@ -264,7 +268,7 @@
                     </ListView.ItemContainerStyle>
                     <ListView.View>
                         <GridView>
-                            <GridViewColumn x:Name="NameColumn" Header="Name" Width="300">
+                            <GridViewColumn x:Name="NameColumn" Header="Name" Width="200">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" Margin="{Binding Indent}">
@@ -289,7 +293,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="% of parent" Width="180">
+                            <GridViewColumn Header="% of parent" Width="120">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Height="16" Margin="0,0,6,0" CornerRadius="4" Background="{StaticResource Brush.Bg}"
@@ -314,7 +318,7 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="Status" Width="110">
+                            <GridViewColumn Header="Status" Width="96">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">

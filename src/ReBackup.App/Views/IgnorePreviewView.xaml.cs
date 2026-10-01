@@ -4,6 +4,12 @@ namespace ReBackup.App.Views;
 
 public partial class IgnorePreviewView : UserControl
 {
+    /// <summary>Width of the theme's thin scroll bar (Theme/Controls.xaml, ScrollBar style), not the system one.</summary>
+    private const double ThemeScrollBarWidth = 10;
+
+    /// <summary>The Name column never gets narrower; below that the table scrolls sideways.</summary>
+    private const double NameMinWidth = 140;
+
     public IgnorePreviewView()
     {
         InitializeComponent();
@@ -21,8 +27,8 @@ public partial class IgnorePreviewView : UserControl
         if (!e.WidthChanged || RowsList.View is not GridView view)
             return;
         var others = view.Columns.Where(column => column != NameColumn).Sum(column => column.ActualWidth);
-        var free = RowsList.ActualWidth - others - System.Windows.SystemParameters.VerticalScrollBarWidth - 8;
-        NameColumn.Width = Math.Max(200, free);
+        var free = RowsList.ActualWidth - others - ThemeScrollBarWidth - 8;
+        NameColumn.Width = Math.Max(NameMinWidth, free);
     }
 
     private void OnRowSelectionChanged(object sender, SelectionChangedEventArgs e)
