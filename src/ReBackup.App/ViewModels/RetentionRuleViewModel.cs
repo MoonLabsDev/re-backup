@@ -1,5 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
 using ReBackup.Core.Retention;
 
 namespace ReBackup.App.ViewModels;
@@ -111,5 +112,13 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
         Changed?.Invoke();
     }
 
-    private void Refresh() => Error = RetentionRules.Validate(ToRule());
+    private void Refresh() => Error = RetentionRules.Validate(ToRule()) is { } problem ? Loc.F(problem) : null;
+
+    /// <summary>The language changed.</summary>
+    public void RefreshTexts()
+    {
+        Refresh();
+        OnPropertyChanged(nameof(AnchorHint));
+        OnPropertyChanged(nameof(PeriodLabel));
+    }
 }

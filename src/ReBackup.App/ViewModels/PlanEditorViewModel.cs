@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
@@ -312,7 +313,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
                        (IsDirty ? " Unsaved changes take effect after Save." : "");
     }
 
-    public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());
+    public void Validate() =>
+        Errors = PlanValidator.Validate(ToPlan(), _allPlans()).Select(message => Loc.F(message)).ToList();
 
     /// <summary>The language changed: the texts this editor builds in code are built again.</summary>
     public void RefreshTexts()
@@ -320,6 +322,10 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(DisplayName));
         Validate();
         RefreshNextRuns();
+        foreach (var row in TriggerRows)
+            row.RefreshTexts();
+        foreach (var row in RetentionRuleRows)
+            row.RefreshTexts();
     }
 
     public bool TrySave(PlanStore store)

@@ -60,5 +60,50 @@
       "title": "SPRACHE",
       "note": "Gilt sofort."
     }
+  },
+  "core": {
+    "plan": {
+      "nameRequired": "Ein Name ist erforderlich.",
+      "nameSpaces": "Der Name darf nicht mit Leerzeichen beginnen oder enden.",
+      "nameDot": "Der Name darf nicht mit einem Punkt enden.",
+      "namePartial": "Der Name darf nicht auf „.partial“ enden.",
+      "nameDeleting": "Der Name darf nicht auf „.deleting“ enden.",
+      "nameChars": "Der Name enthält Zeichen, die in Ordnernamen nicht erlaubt sind.",
+      "nameTaken": "Ein anderer Plan heißt bereits „{name}“.",
+      "sourceRequired": "Ein Quellordner ist erforderlich.",
+      "targetRequired": "Ein Zielordner ist erforderlich.",
+      "sourceNotAbsolute": "Die Quelle muss ein absoluter Pfad sein.",
+      "targetNotAbsolute": "Das Ziel muss ein absoluter Pfad sein.",
+      "sourceMissing": "Der Quellordner existiert nicht.",
+      "targetInsideSource": "Das Ziel darf nicht in der Quelle liegen.",
+      "sourceInsideTarget": "Die Quelle darf nicht im Ziel liegen.",
+      "retentionRule": "Aufbewahrungsregel {index}: {problem}",
+      "trigger": "Auslöser {index}: {problem}"
+    },
+    "trigger": {
+      "empty": "der Auslöser ist leer.",
+      "unknownType": "der Typ ist unbekannt.",
+      "time": "die Uhrzeit muss als HH:mm geschrieben werden, zum Beispiel 02:00.",
+      "noWeekday": "mindestens einen Wochentag wählen.",
+      "notWeekday": "„{day}“ ist kein Wochentag.",
+      "monthDay": "der Tag muss zwischen 1 und 31 liegen, 0 für den letzten Tag des Monats oder -1 bis -30 für Tage davor.",
+      "interval": "das Intervall muss eine ganze Zahl von Stunden zwischen 1 und 24 sein.",
+      "from": "die Startzeit muss als HH:mm geschrieben werden, zum Beispiel 08:00.",
+      "to": "die Endzeit muss als HH:mm geschrieben werden, zum Beispiel 20:00.",
+      "fromAfterTo": "die Startzeit darf nicht nach der Endzeit liegen.",
+      "invalid": "Der Auslöser ist ungültig: {problem}"
+    },
+    "retention": {
+      "empty": "die Regel ist leer.",
+      "unknownPeriod": "der Zeitraum ist unbekannt.",
+      "keep": "die Anzahl muss eine Zahl von 1 bis {max} sein.",
+      "weekday": "der Anker muss ein Wochentag sein, zum Beispiel Sunday.",
+      "monthDay": "der Anker muss ein Tag zwischen 1 und 31 sein, 0 für den letzten Tag des Monats oder -1 bis -30 für Tage davor.",
+      "yearDate": "der Anker muss ein Datum im Format MM-TT sein, zum Beispiel 01-01.",
+      "invalid": "Die Aufbewahrungsregel ist ungültig: {problem}"
+    },
+    "run": {
+      "nameUnusable": "Der Planname „{name}“ kann nicht verwendet werden: {problem}"
+    }
   }
 }

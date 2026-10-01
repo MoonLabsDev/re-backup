@@ -70,4 +70,16 @@ public class LocaleFileTests
         date.ToString(Load(AppLanguages.German).Entries["format.dateTime"], CultureInfo.GetCultureInfo("de-DE"))
             .Should().Be("02.10.2026 14:05");
     }
+
+
+    [Fact]
+    public void The_English_file_holds_exactly_the_Core_templates()
+    {
+        var english = Load(AppLanguages.English);
+
+        CoreTexts.Templates
+            .Where(pair => !english.TryGet(pair.Key, out var text) || text != pair.Value)
+            .Select(pair => pair.Key)
+            .Should().BeEmpty();
+    }
 }

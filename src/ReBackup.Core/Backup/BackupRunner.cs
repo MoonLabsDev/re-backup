@@ -5,6 +5,7 @@ using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.IO;
 using ReBackup.Core.Json;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
 using ReBackup.Core.Versions;
@@ -177,7 +178,8 @@ public sealed class BackupRunner : IBackupRunner
         if (plan.Name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
             throw new BackupAbortException(RunStatus.Error, "The plan name must not end with \".deleting\".");
         if (PlanValidator.NameErrors(plan.Name) is [var nameProblem, ..])
-            throw new BackupAbortException(RunStatus.Error, $"The plan name \"{plan.Name}\" cannot be used: {nameProblem}");
+            throw new BackupAbortException(RunStatus.Error,
+                CoreTexts.English("core.run.nameUnusable", ("name", plan.Name), ("problem", nameProblem)));
         if (PathUtil.IsSameOrInside(plan.Target, plan.Source))
             throw new BackupAbortException(RunStatus.Error, "The target folder is the source folder or inside it.");
         if (PathUtil.IsSameOrInside(plan.Source, plan.Target))

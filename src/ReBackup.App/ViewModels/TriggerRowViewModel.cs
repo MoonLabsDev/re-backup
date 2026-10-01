@@ -1,5 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
 using ReBackup.Core.Schedule;
 
 namespace ReBackup.App.ViewModels;
@@ -67,7 +68,7 @@ public sealed partial class TriggerRowViewModel : ObservableObject
         }
 
         _ready = true;
-        Error = ScheduleTriggers.Validate(ToTrigger());
+        Error = Problem();
     }
 
     /// <summary>Raised after every edit of this trigger.</summary>
@@ -108,9 +109,15 @@ public sealed partial class TriggerRowViewModel : ObservableObject
     {
         if (!_ready)
             return;
-        Error = ScheduleTriggers.Validate(ToTrigger());
+        Error = Problem();
         Changed?.Invoke();
     }
+
+    /// <summary>What is wrong with the trigger as edited, in the applied language; null when nothing is.</summary>
+    private string? Problem() => ScheduleTriggers.Validate(ToTrigger()) is { } problem ? Loc.F(problem) : null;
+
+    /// <summary>The language changed.</summary>
+    public void RefreshTexts() => Error = Problem();
 
     private static string? Trimmed(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 

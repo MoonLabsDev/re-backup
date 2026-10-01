@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using ReBackup.Core.Json;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Retention;
 
 namespace ReBackup.Core.Tests.Retention;
@@ -12,6 +13,9 @@ public class RetentionRulesTests
         new() { Period = period, Anchor = anchor, Keep = keep };
 
     private static DateOnly D(string text) => DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>The problem as Core renders it in English.</summary>
+    private static string? Problem(RetentionRule? rule) => RetentionRules.Validate(rule).ToEnglish();
 
     [Theory]
     [InlineData(RetentionPeriod.Daily, null)]
@@ -25,7 +29,7 @@ public class RetentionRulesTests
     [InlineData(RetentionPeriod.Yearly, "02-29")]
     public void Valid_rules_pass(RetentionPeriod period, string? anchor)
     {
-        RetentionRules.Validate(Rule(period, anchor)).Should().BeNull();
+        Problem(Rule(period, anchor)).Should().BeNull();
     }
 
     [Theory]
@@ -43,7 +47,7 @@ public class RetentionRulesTests
     [InlineData(RetentionPeriod.Yearly, "00-10")]
     public void Invalid_anchors_are_reported(RetentionPeriod period, string? anchor)
     {
-        RetentionRules.Validate(Rule(period, anchor)).Should().Contain("anchor");
+        Problem(Rule(period, anchor)).Should().Contain("anchor");
     }
 
     [Theory]
@@ -52,13 +56,13 @@ public class RetentionRulesTests
     [InlineData(10000)]
     public void Keep_must_be_between_1_and_9999(int keep)
     {
-        RetentionRules.Validate(Rule(RetentionPeriod.Daily, null, keep)).Should().Be("keep must be a number from 1 to 9999.");
+        Problem(Rule(RetentionPeriod.Daily, null, keep)).Should().Be("keep must be a number from 1 to 9999.");
     }
 
     [Fact]
     public void A_missing_rule_is_reported()
     {
-        RetentionRules.Validate(null).Should().Be("the rule is empty.");
+        Problem(null).Should().Be("the rule is empty.");
     }
 
     [Theory]
@@ -160,5 +164,13 @@ public class RetentionRulesTests
         var act = () => JsonSerializer.Deserialize<RetentionRule>("""{ "period": "Monthly", "anchor": true, "keep": 1 }""",
             JsonDefaults.Options);
         act.Should().Throw<JsonException>();
+    }
+
+
+    [Fact]
+    public void Problems_are_keys_with_arguments()
+    {
+        RetentionRules.Validate(Rule(RetentionPeriod.Daily, null, 0)).Should().Be(Message.Of("core.retention.keep", ("max", 9999)));
+        RetentionRules.Validate(Rule(RetentionPeriod.Weekly, "Sonntag")).Should().Be(Message.Of("core.retention.weekday"));
     }
 }
