@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -19,12 +18,11 @@ public static class AppLanguages
         return Supported.FirstOrDefault(language => string.Equals(language, trimmed, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>German when Windows speaks German (any region), otherwise English.</summary>
-    public static string DefaultFor(CultureInfo uiCulture) =>
-        uiCulture.TwoLetterISOLanguageName.Equals("de", StringComparison.OrdinalIgnoreCase) ? German : English;
+    /// <summary>The language until the user chooses one.</summary>
+    public const string Default = English;
 
-    /// <summary>The stored choice when it is a supported language, otherwise the default for Windows' language.</summary>
-    public static string Resolve(string? stored, CultureInfo uiCulture) => Normalize(stored) ?? DefaultFor(uiCulture);
+    /// <summary>The stored choice when it is a supported language, otherwise <see cref="Default"/>.</summary>
+    public static string Resolve(string? stored) => Normalize(stored) ?? Default;
 }
 
 /// <summary>

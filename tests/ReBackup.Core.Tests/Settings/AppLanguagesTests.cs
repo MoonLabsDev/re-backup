@@ -25,27 +25,18 @@ public class AppLanguagesTests
         AppLanguages.Normalize(tag).Should().Be(expected);
     }
 
-    [Theory]
-    [InlineData("de-DE", "de-DE")]
-    [InlineData("de-AT", "de-DE")]
-    [InlineData("de-CH", "de-DE")]
-    [InlineData("en-US", "en-US")]
-    [InlineData("en-GB", "en-US")]
-    [InlineData("fr-FR", "en-US")]
-    [InlineData("", "en-US")]
-    public void The_default_is_German_for_a_German_Windows_and_English_otherwise(string uiCulture, string expected)
+    [Fact]
+    public void The_default_is_English()
     {
-        AppLanguages.DefaultFor(CultureInfo.GetCultureInfo(uiCulture)).Should().Be(expected);
+        AppLanguages.Default.Should().Be("en-US");
     }
 
     [Fact]
-    public void Resolve_prefers_the_stored_choice()
+    public void Resolve_prefers_the_stored_choice_and_falls_back_to_English()
     {
-        var german = CultureInfo.GetCultureInfo("de-DE");
-        var french = CultureInfo.GetCultureInfo("fr-FR");
-
-        AppLanguages.Resolve("en-US", german).Should().Be("en-US");
-        AppLanguages.Resolve(null, german).Should().Be("de-DE");
-        AppLanguages.Resolve("xx-XX", french).Should().Be("en-US");
+        AppLanguages.Resolve("de-DE").Should().Be("de-DE");
+        AppLanguages.Resolve("en-US").Should().Be("en-US");
+        AppLanguages.Resolve(null).Should().Be("en-US");
+        AppLanguages.Resolve("xx-XX").Should().Be("en-US");
     }
 }

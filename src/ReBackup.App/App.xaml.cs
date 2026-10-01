@@ -46,9 +46,6 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        // Read before ReBackup sets its own culture: without a saved choice the language follows Windows.
-        var windowsLanguage = CultureInfo.CurrentUICulture;
-
         var restarted = e.Args.Contains("--restarted", StringComparer.OrdinalIgnoreCase);
         _singleInstance = SingleInstance.TryAcquire(restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
         if (_singleInstance is null)
@@ -58,8 +55,8 @@ public partial class App : Application
             return;
         }
 
-        // The bootstrap dialogs come before settings.json is read: they use Windows' language.
-        Loc.Instance.Apply(AppLanguages.DefaultFor(windowsLanguage));
+        // The bootstrap dialogs come before settings.json is read: they use the default language.
+        Loc.Instance.Apply(AppLanguages.Default);
         _appDataRoot = ConfigLocation.DefaultAppDataRoot;
         if (!BootstrapConfiguration())
         {
@@ -68,7 +65,7 @@ public partial class App : Application
             return;
         }
 
-        Loc.Instance.Apply(AppLanguages.Resolve(_settings.Language, windowsLanguage));
+        Loc.Instance.Apply(AppLanguages.Resolve(_settings.Language));
 
         // Before the first window exists, so a light theme never flashes dark.
         ThemeManager.ThemeChanged += OnThemeChanged;
