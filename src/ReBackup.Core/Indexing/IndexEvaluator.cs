@@ -12,7 +12,7 @@ public enum IncludeStatus
     Partial,
 }
 
-public sealed class EvaluatedNode
+public sealed class EvaluatedNode : IPreviewEntry
 {
     public required IndexNode Node { get; init; }
     public required IncludeStatus Status { get; init; }
@@ -31,6 +31,18 @@ public sealed class EvaluatedNode
 
     public long TotalSize => IncludedSize + IgnoredSize;
     public int TotalFiles => IncludedFiles + IgnoredFiles;
+
+    public string Name => Node.Name;
+    public string RelativePath => Node.RelativePath;
+    public bool IsDirectory => Node.IsDirectory;
+    public string? Error => Node.Error;
+
+    /// <summary>An evaluation is always of a finished index.</summary>
+    public ScanState State => ScanState.Done;
+
+    public int ChildCount => Children.Count;
+
+    public IReadOnlyList<IPreviewEntry> GetChildren() => Children;
 }
 
 public static class IndexEvaluator

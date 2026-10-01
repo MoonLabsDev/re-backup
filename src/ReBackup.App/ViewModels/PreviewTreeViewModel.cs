@@ -3,125 +3,155 @@ using ReBackup.Core.Indexing;
 
 namespace ReBackup.App.ViewModels;
 
-/// <summary>The preview tree flattened to its visible rows, so that a plain virtualized list can show it.</summary>
+/// <summary>
+/// The preview tree flattened to its visible rows, so that a plain virtualized list can show it. Works on a finished
+/// evaluation as well as on a scan that is still running (<see cref="Refresh"/> re-reads it).
+/// </summary>
 public sealed partial class PreviewTreeViewModel : ObservableObject
 {
-    private EvaluatedNode? _root;
-    private bool _revealing;
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<IPreviewEntry, PreviewRowViewModel> _placeholders = new(ReferenceEqualityComparer.Instance);
+    private IPreviewEntry? _root;
 
     [ObservableProperty] private PreviewRowViewModel? _selectedRow;
 
     public RangeObservableCollection<PreviewRowViewModel> Rows { get; } = new();
 
-    /// <summary>Shows a new evaluation. Expanded folders and the selection are kept by path.</summary>
-    public void SetRoot(EvaluatedNode? root)
+    /// <summary>Raised when a folder is expanded that is not finished yet.</summary>
+    public event Action<IPreviewEntry>? LoadingFolderExpanded;
+
+    /// <summary>Shows a new tree. Expanded folders and the selection are kept by path.</summary>
+    public void SetRoot(IPreviewEntry? root)
     {
-        var expanded = Rows.Where(r => r.IsExpanded).Select(r => r.Node.Node.RelativePath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var selectedPath = SelectedRow?.Node.Node.RelativePath;
         if (_root is null)
-            expanded.Add("");   // first evaluation: open the root
-
+            _expanded.Add("");   // first tree: open the root
         _root = root;
-        var rows = new List<PreviewRowViewModel>();
-        if (root is not null)
-            AppendRows(rows, root, root, 0, expanded);
-        Rows.ReplaceAll(rows);
-
-        SelectedRow = selectedPath is null
-            ? null
-            : Rows.FirstOrDefault(r => r.Node.Node.RelativePath.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
+        _placeholders.Clear();
+        Rebuild(reuseRows: false);
     }
 
-    /// <summary>Expands the folders above the node and selects its row.</summary>
-    public void Reveal(EvaluatedNode target)
+    /// <summary>Re-reads a running scan: the values of the visible rows, new entries and a changed order.</summary>
+    public void Refresh() => Rebuild(reuseRows: true);
+
+    /// <summary>Expands the folders above the entry and selects its row.</summary>
+    public void Reveal(IPreviewEntry target)
     {
-        if (_root is null || Rows.Count == 0)
+        if (_root is null)
             return;
 
         var previous = SelectedRow;
         var current = _root;
-        var row = Rows[0];
-        var path = target.Node.RelativePath;
         var found = true;
-        _revealing = true;   // the selection is assigned once at the end, not on every expansion
-        try
+        _expanded.Add(_root.RelativePath);
+        if (target.RelativePath.Length > 0)
         {
-            if (path.Length > 0)
+            foreach (var part in target.RelativePath.Split('/'))
             {
-                foreach (var part in path.Split('/'))
+                var child = current.GetChildren().FirstOrDefault(c => c.Name.Equals(part, StringComparison.OrdinalIgnoreCase));
+                if (child is null)
                 {
-                    var child = current.Children.FirstOrDefault(c => c.Node.Name.Equals(part, StringComparison.OrdinalIgnoreCase));
-                    if (child is null)
-                    {
-                        found = false;
-                        break;
-                    }
-                    row.IsExpanded = true;
-                    var childRow = Rows.FirstOrDefault(r => ReferenceEquals(r.Node, child));
-                    if (childRow is null)
-                    {
-                        found = false;
-                        break;
-                    }
-                    current = child;
-                    row = childRow;
+                    found = false;
+                    break;
                 }
+                _expanded.Add(current.RelativePath);
+                current = child;
             }
         }
-        finally
-        {
-            _revealing = false;
-        }
-        // Expanding resets the list, which may have pushed a null selection back; always assign explicitly.
-        SelectedRow = found ? row : previous is not null && Rows.Contains(previous) ? previous : null;
+
+        Rebuild(reuseRows: true);
+        var row = found ? Rows.FirstOrDefault(r => ReferenceEquals(r.Entry, current)) : null;
+        SelectedRow = row ?? (previous is not null && Rows.Contains(previous) ? previous : null);
     }
 
     internal void OnExpandedChanged(PreviewRowViewModel row, bool expanded)
     {
-        var index = Rows.IndexOf(row);
-        if (index < 0)
-            return;
-
-        var selected = SelectedRow;
-        ApplyExpansion(row, index, expanded);
-
-        // The list view may drop its selection on a reset; put it back (or on the collapsed folder).
-        if (!_revealing && selected is not null)
-            SelectedRow = Rows.Contains(selected) ? selected : row;
-    }
-
-    private void ApplyExpansion(PreviewRowViewModel row, int index, bool expanded)
-    {
         if (expanded)
-        {
-            var children = Sorted(row.Node)
-                .Select(child => new PreviewRowViewModel(this, child, row.Node, row.Depth + 1, isExpanded: false))
-                .ToList();
-            Rows.InsertRange(index + 1, children);
-        }
+            _expanded.Add(row.Entry.RelativePath);
         else
+            _expanded.Remove(row.Entry.RelativePath);
+        if (expanded && row.IsLoading)
+            LoadingFolderExpanded?.Invoke(row.Entry);
+        Rebuild(reuseRows: true);
+    }
+
+    private void Rebuild(bool reuseRows)
+    {
+        var selectedPath = SelectedRow is { IsPlaceholder: false } selected ? selected.Entry.RelativePath : null;
+        var known = new Dictionary<IPreviewEntry, PreviewRowViewModel>(ReferenceEqualityComparer.Instance);
+        if (reuseRows)
         {
-            var count = 0;
-            while (index + 1 + count < Rows.Count && Rows[index + 1 + count].Depth > row.Depth)
-                count++;
-            Rows.RemoveRange(index + 1, count);
+            foreach (var row in Rows)
+                known[row.Entry] = row;
+        }
+
+        var rows = new List<PreviewRowViewModel>();
+        if (_root is not null)
+            Append(rows, _root, _root, 0, known);
+
+        if (rows.Count == Rows.Count && rows.Zip(Rows).All(pair => ReferenceEquals(pair.First, pair.Second)))
+        {
+            foreach (var row in rows)
+                row.Refresh();
+            return;
+        }
+
+        Rows.ReplaceAll(rows);
+        foreach (var row in rows)
+            row.Refresh();
+        // The list view may drop its selection on a reset; put it back by path (or on the nearest visible folder above).
+        SelectedRow = selectedPath is null ? null : FindRow(selectedPath);
+    }
+
+    private PreviewRowViewModel? FindRow(string path)
+    {
+        while (true)
+        {
+            var row = Rows.FirstOrDefault(r => !r.IsPlaceholder &&
+                                               r.Entry.RelativePath.Equals(path, StringComparison.OrdinalIgnoreCase));
+            if (row is not null || path.Length == 0)
+                return row;
+            var slash = path.LastIndexOf('/');
+            path = slash < 0 ? "" : path[..slash];
         }
     }
 
-    private void AppendRows(List<PreviewRowViewModel> rows, EvaluatedNode node, EvaluatedNode parent, int depth,
-        HashSet<string> expanded)
+    private void Append(List<PreviewRowViewModel> rows, IPreviewEntry entry, IPreviewEntry parent, int depth,
+        Dictionary<IPreviewEntry, PreviewRowViewModel> known)
     {
-        var isExpanded = node.Children.Count > 0 && expanded.Contains(node.Node.RelativePath);
-        rows.Add(new PreviewRowViewModel(this, node, parent, depth, isExpanded));
-        if (!isExpanded)
+        var expanded = entry.IsDirectory && _expanded.Contains(entry.RelativePath);
+        if (known.TryGetValue(entry, out var row))
+            row.SyncExpanded(expanded);
+        else
+            row = new PreviewRowViewModel(this, entry, parent, depth, expanded);
+        rows.Add(row);
+        if (!expanded)
             return;
-        foreach (var child in Sorted(node))
-            AppendRows(rows, child, node, depth + 1, expanded);
-    }
 
-    private static IEnumerable<EvaluatedNode> Sorted(EvaluatedNode node) =>
-        node.Children
-            .OrderByDescending(c => c.TotalSize)
-            .ThenBy(c => c.Node.Name, StringComparer.OrdinalIgnoreCase);
+        // An open folder that is still waiting (open before the scan started, or kept open by path) goes first;
+        // prioritising one that is already wanted is a cheap no-op, so this may run on every refresh.
+        if (entry.State == ScanState.Waiting)
+            LoadingFolderExpanded?.Invoke(entry);
+
+        var children = entry.GetChildren();
+        if (children.Count == 0)
+        {
+            if (entry.State != ScanState.Done)
+            {
+                if (!_placeholders.TryGetValue(entry, out var placeholder))
+                {
+                    placeholder = new PreviewRowViewModel(this, new LoadingPlaceholder(entry.RelativePath), entry, depth + 1, false);
+                    _placeholders[entry] = placeholder;
+                }
+                rows.Add(placeholder);
+            }
+            return;
+        }
+
+        foreach (var child in children
+                     .OrderByDescending(c => c.TotalSize)
+                     .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            Append(rows, child, entry, depth + 1, known);
+        }
+    }
 }

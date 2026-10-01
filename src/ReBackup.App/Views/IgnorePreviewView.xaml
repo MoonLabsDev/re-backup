@@ -12,6 +12,18 @@
         <DockPanel Grid.Column="0">
             <TextBlock DockPanel.Dock="Top" Text="Ignore patterns (gitignore syntax, one per line)"
                        FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,4" />
+            <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" Foreground="DarkOrange" TextWrapping="Wrap"
+                       Text="{Binding Preview.PatternNote}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Preview.PatternNote}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
             <CheckBox DockPanel.Dock="Bottom" Margin="0,6,0,0"
                       Content="Honor .backupignore files inside the source"
                       IsChecked="{Binding HonorNestedIgnoreFiles}" />
@@ -87,6 +99,13 @@
                                 <DataTrigger Binding="{Binding IsIgnored}" Value="True">
                                     <Setter Property="Background" Value="#FBE3E1" />
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                    <Setter Property="Foreground" Value="Gray" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                    <Setter Property="Foreground" Value="Gray" />
+                                    <Setter Property="FontStyle" Value="Italic" />
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </ListView.ItemContainerStyle>
@@ -158,6 +177,18 @@
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#x23F3;" Margin="0,0,4,0" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                             <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
@@ -171,6 +202,12 @@
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsNotScanned}" Value="True">
                                                                 <Setter Property="Fill" Value="Gray" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -188,11 +225,26 @@
                 <DockPanel Grid.Row="2">
                     <CheckBox x:Name="HideIgnoredBox" DockPanel.Dock="Top" Margin="0,0,0,4"
                               Content="Hide ignored entries in the treemap (sizes then show what is backed up)" />
-                    <Border BorderBrush="#ABADB3" BorderThickness="1">
-                        <controls:TreemapControl Root="{Binding Preview.Root}"
-                                                 Selected="{Binding Preview.SelectedNode}"
-                                                 HideIgnored="{Binding IsChecked, ElementName=HideIgnoredBox}" />
-                    </Border>
+                    <Grid>
+                        <Border BorderBrush="#ABADB3" BorderThickness="1">
+                            <controls:TreemapControl Root="{Binding Preview.Root}"
+                                                     Selected="{Binding Preview.SelectedNode}"
+                                                     HideIgnored="{Binding IsChecked, ElementName=HideIgnoredBox}" />
+                        </Border>
+                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="Gray"
+                                   Text="The treemap appears after the scan.">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Preview.IsIndexing}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </DockPanel>
             </Grid>
         </DockPanel>
