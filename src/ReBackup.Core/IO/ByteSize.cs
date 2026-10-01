@@ -6,10 +6,14 @@ public static class ByteSize
 {
     private static readonly string[] Units = ["B", "KB", "MB", "GB", "TB", "PB"];
 
-    public static string Format(long bytes)
+    /// <summary>Base 1024 with one decimal, invariant ("1.5 KB"): the form written to logs.</summary>
+    public static string Format(long bytes) => Format(bytes, CultureInfo.InvariantCulture);
+
+    /// <summary>Like <see cref="Format(long)"/>, with the decimal separator of <paramref name="provider"/> ("1,5 KB").</summary>
+    public static string Format(long bytes, IFormatProvider provider)
     {
         if (bytes < 1024)
-            return string.Create(CultureInfo.InvariantCulture, $"{bytes} B");
+            return string.Create(provider, $"{bytes} B");
 
         double value = bytes;
         var unit = 0;
@@ -18,6 +22,6 @@ public static class ByteSize
             value /= 1024;
             unit++;
         }
-        return string.Create(CultureInfo.InvariantCulture, $"{value:0.0} {Units[unit]}");
+        return string.Create(provider, $"{value:0.0} {Units[unit]}");
     }
 }

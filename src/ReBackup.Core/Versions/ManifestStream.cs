@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Versions;
 
@@ -48,7 +49,7 @@ public static class ManifestStream
         catch (Exception ex) when (!inCallback && ex is InvalidOperationException or ArgumentException or OverflowException)
         {
             // e.g. invalid UTF-8 in a string: Utf8JsonReader reports it other than as a JsonException.
-            throw new JsonException("The manifest cannot be read: " + ex.Message, ex);
+            throw new JsonException(CoreTexts.English("core.manifest.unreadable", ("error", ex.Message)), ex);
         }
     }
 
@@ -71,7 +72,7 @@ public static class ManifestStream
             if (phase == Phase.Done)
                 return new ManifestSummary(fields.PlanId, fields.PlanName, fields.CreatedUtc, fields.Source);
             if (endOfStream)
-                throw new JsonException("The manifest ends too early.");
+                throw new JsonException(CoreTexts.English("core.manifest.endsEarly"));
 
             // Keep what was not consumed, then read more behind it; grow only when nothing at all was consumed.
             var consumed = start + (int)reader.BytesConsumed;
@@ -82,7 +83,7 @@ public static class ManifestStream
             if (length == buffer.Length)
             {
                 if (buffer.Length >= MaxBufferSize)
-                    throw new JsonException("A single value of the manifest is too large.");
+                    throw new JsonException(CoreTexts.English("core.manifest.valueTooLarge"));
                 Array.Resize(ref buffer, buffer.Length * 2);
             }
             length += Fill(stream, buffer, length, out endOfStream);
@@ -110,7 +111,7 @@ public static class ManifestStream
                 if (!probe.Read())
                     return false;
                 if (probe.TokenType != JsonTokenType.StartObject)
-                    throw new JsonException("A manifest is a JSON object.");
+                    throw new JsonException(CoreTexts.English("core.manifest.notObject"));
                 phase = Phase.Properties;
                 break;
 
@@ -153,7 +154,7 @@ public static class ManifestStream
                 if (probe.TokenType == JsonTokenType.Null)
                     break;
                 if (probe.TokenType != JsonTokenType.StartObject)
-                    throw new JsonException("A file entry is a JSON object.");
+                    throw new JsonException(CoreTexts.English("core.manifest.entryNotObject"));
                 var entry = probe;
                 if (!probe.TrySkip())
                     return false;
@@ -188,7 +189,7 @@ public static class ManifestStream
                 reader.Skip();
         }
         if (string.IsNullOrEmpty(path))
-            throw new JsonException("A file entry has no path.");
+            throw new JsonException(CoreTexts.English("core.manifest.entryNoPath"));
         return new ManifestFile(path, size, mtime, hash);
     }
 

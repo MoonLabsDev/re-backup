@@ -19,6 +19,7 @@
     <Color x:Key="Color.Raised">#1D232B</Color>
     <Color x:Key="Color.Border">#232A33</Color>
     <Color x:Key="Color.BorderStrong">#2A313B</Color>
+    <Color x:Key="Color.FlagOutline">#5A6472</Color>
     <Color x:Key="Color.Text">#E6EAF0</Color>
     <Color x:Key="Color.TextMuted">#9AA4B2</Color>
     <Color x:Key="Color.TextFaint">#6B7584</Color>
@@ -42,6 +43,7 @@
     <SolidColorBrush x:Key="Brush.Raised" Color="{StaticResource Color.Raised}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.BorderStrong" Color="{StaticResource Color.BorderStrong}" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.FlagOutline" Color="{StaticResource Color.FlagOutline}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.Text" Color="{StaticResource Color.Text}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.TextMuted" Color="{StaticResource Color.TextMuted}" po:Freeze="True" />
     <SolidColorBrush x:Key="Brush.TextFaint" Color="{StaticResource Color.TextFaint}" po:Freeze="True" />

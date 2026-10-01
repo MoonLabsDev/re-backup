@@ -1,7 +1,6 @@
-using System.Globalization;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
-using ReBackup.Core.IO;
+using ReBackup.App.Localization;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
@@ -29,14 +28,14 @@ public sealed partial class VersionTreeNode : ObservableObject
     }
 
     /// <summary>A message row ("Loading…", "Indexing…", "Empty folder").</summary>
-    internal VersionTreeNode(string message, int depth)
+    internal VersionTreeNode(LocText message, int depth)
     {
         Message = message;
         Depth = depth;
     }
 
     public IndexChild? Entry { get; }
-    public string? Message { get; }
+    public LocText? Message { get; }
     public int Depth { get; }
 
     /// <summary>The folder's children once loaded; null before the first expansion.</summary>
@@ -44,7 +43,7 @@ public sealed partial class VersionTreeNode : ObservableObject
 
     public bool IsMessage => Entry is null;
     public long PathId => Entry?.PathId ?? -1;
-    public string Name => Entry?.Name ?? Message ?? "";
+    public string Name => Entry?.Name ?? Message?.ToString() ?? "";
     public string Path => Entry?.Path ?? "";
     public bool IsDirectory => Entry?.IsDirectory ?? false;
     public bool IsExpandable => IsDirectory;
@@ -56,15 +55,16 @@ public sealed partial class VersionTreeNode : ObservableObject
     /// <summary>The values shown: version A's, or B's for entries only in B.</summary>
     public IndexStats? Stats => Entry?.InVersion ?? Entry?.InOther;
 
-    public string SizeText => Stats is { } stats ? ByteSize.Format(stats.Size) : "";
+    public string SizeText => Stats is { } stats ? Formats.Bytes(stats.Size) : "";
 
-    public string FilesText => IsDirectory && Stats is { } stats ? stats.Files.ToString("N0", CultureInfo.CurrentCulture) : "";
+    public string FilesText => IsDirectory && Stats is { } stats ? Formats.Count(stats.Files) : "";
 
-    public string ModifiedText => Stats?.MtimeUtc is { } mtime
-        ? mtime.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-        : "";
+    public string ModifiedText => Stats?.MtimeUtc is { } mtime ? Formats.DateAndTime(mtime.ToLocalTime()) : "";
 
-    public string StatusText => Status?.ToString() ?? "";
+    public string StatusText => Status is { } status ? Loc.T("enum.diffStatus." + status) : "";
+
+    /// <summary>The language changed: every text of the row is read again.</summary>
+    public void Refresh() => OnPropertyChanged(string.Empty);
 
     public bool IsExpanded
     {

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.App.Theme;
 using ReBackup.Core.Indexing;
@@ -66,10 +67,25 @@ public sealed class TreemapControl : FrameworkElement
         {
             ThemeManager.ThemeChanged -= OnThemeChanged;
             ThemeManager.ThemeChanged += OnThemeChanged;
+            Loc.LanguageChanged -= OnLanguageChanged;
+            Loc.LanguageChanged += OnLanguageChanged;
             OnThemeChanged(null, EventArgs.Empty);   // the theme may have changed while unloaded
         };
-        Unloaded += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+        Unloaded += (_, _) =>
+        {
+            ThemeManager.ThemeChanged -= OnThemeChanged;
+            Loc.LanguageChanged -= OnLanguageChanged;
+        };
     }
+
+    /// <summary>The tool tip of a tile, in the chosen language.</summary>
+    private static string ToolTipOf(EvaluatedNode node) =>
+        Loc.F("ignore.treemap.toolTip", ("path", node.Node.RelativePath), ("total", Formats.Bytes(node.TotalSize)),
+            ("included", Formats.Bytes(node.IncludedSize)), ("status", Loc.T("enum.includeStatus." + node.Status)));
+
+    /// <summary>The language changed: the tool tip of the tile under the mouse is built again.</summary>
+    private void OnLanguageChanged(object? sender, EventArgs e) =>
+        ToolTip = _hovered is { } node ? ToolTipOf(node) : null;
 
     public EvaluatedNode? Root
     {
@@ -145,7 +161,7 @@ public sealed class TreemapControl : FrameworkElement
         _hovered = node;
         ToolTip = node is null
             ? null
-            : $"{node.Node.RelativePath}\n{ByteSize.Format(node.TotalSize)}, backup {ByteSize.Format(node.IncludedSize)} — {node.Status}";
+            : ToolTipOf(node);
     }
 
     protected override void OnMouseLeave(MouseEventArgs e)

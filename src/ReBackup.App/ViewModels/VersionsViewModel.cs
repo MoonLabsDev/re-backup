@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
@@ -13,7 +14,7 @@ namespace ReBackup.App.ViewModels;
 /// What every plan's Versions tab shares: the index worker (syncs of one plan's index run one at a time, behind the
 /// versions finished runs hand to it), the dialogs and the footer's status line.
 /// </summary>
-public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<string> ReportStatus)
+public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<LocText> ReportStatus)
 {
     /// <summary>The plans' indexes; reads (queries) may run beside a sync.</summary>
     public VersionIndexSet Indexes => Worker.Indexes;
@@ -39,11 +40,29 @@ public sealed partial class VersionsViewModel : ObservableObject
     private bool _isSyncing;
 
     /// <summary>The sync's progress line, e.g. "Indexing 2 of 5 · 2026_10_01-11_34 MoonLabs · 120,000 files".</summary>
-    [ObservableProperty] private string _syncText = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SyncText))]
+    private LocText _sync = LocText.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowEmpty))]
-    private string? _error;
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(Error))]
+    private LocText? _errorText;
+
+    public string SyncText => Sync.ToString();
+
+    public string? Error => ErrorText?.ToString();
+
+    /// <summary>The language changed: the tab's lines, rows, tree, search and history are read again.</summary>
+    public void RefreshTexts()
+    {
+        OnPropertyChanged(string.Empty);
+        foreach (var row in VersionRows)
+            row.Refresh();
+        OnRefreshTexts();
+    }
+
+    /// <summary>The tree part's share of <see cref="RefreshTexts"/>.</summary>
+    partial void OnRefreshTexts();
 
     /// <summary>Version A: the version whose tree is shown.</summary>
     [ObservableProperty] private VersionRowViewModel? _selectedVersion;
@@ -106,8 +125,8 @@ public sealed partial class VersionsViewModel : ObservableObject
         _loaded = false;
         _reloadRequested = false;
         IsSyncing = false;
-        SyncText = "";
-        Error = null;
+        Sync = LocText.Empty;
+        ErrorText = null;
         SelectedVersion = null;
         VersionRows.ReplaceAll([]);
         OnPropertyChanged(nameof(ShowEmpty));
@@ -120,7 +139,7 @@ public sealed partial class VersionsViewModel : ObservableObject
         if (plan is null)
         {
             Invalidate();
-            Error = "Save the plan to see its versions.";
+            ErrorText = LocText.Of("versions.savePlan");
             return;
         }
 
@@ -128,8 +147,8 @@ public sealed partial class VersionsViewModel : ObservableObject
         var cts = _syncCts = new CancellationTokenSource();
         _reloadRequested = false;
         IsSyncing = true;
-        Error = null;
-        SyncText = "Reading the target…";
+        ErrorText = null;
+        Sync = LocText.Of("versions.sync.reading");
         try
         {
             // Listing the target and reading the index never wait for a sync (the index allows reads beside writes).
@@ -150,20 +169,20 @@ public sealed partial class VersionsViewModel : ObservableObject
             {
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.
                 ShowFolders([], []);
-                SyncText = "";
-                Error = TargetUnavailableText(plan.Target);
+                Sync = LocText.Empty;
+                ErrorText = TargetUnavailable(plan.Target);
                 return;
             }
             if (state == TargetState.NotCreatedYet)
             {
                 // The plan has not run yet (the first run creates the folder): nothing to list or index.
                 ShowFolders([], []);
-                SyncText = "";
+                Sync = LocText.Empty;
                 return;
             }
 
             ShowFolders(folders, indexed);
-            SyncText = "Waiting for the index…";
+            Sync = LocText.Of("versions.sync.waiting");
             var progress = new Progress<IndexSyncProgress>(p =>
             {
                 if (ReferenceEquals(_syncCts, cts) && IsSyncing)
@@ -184,15 +203,16 @@ public sealed partial class VersionsViewModel : ObservableObject
             if (targetGone)
             {
                 ApplyIndexed(versions, []);
-                SyncText = "";
-                Error = TargetUnavailableText(plan.Target);
+                Sync = LocText.Empty;
+                ErrorText = TargetUnavailable(plan.Target);
                 return;
             }
 
             ApplyIndexed(versions, result.Errors);
-            SyncText = result.Errors.Count == 0
-                ? ""
-                : $"{result.Errors.Count} version(s) could not be indexed: {string.Join("; ", result.Errors)}";
+            var errors = result.Errors;
+            Sync = errors.Count == 0
+                ? LocText.Empty
+                : LocText.Of("versions.sync.errors", ("count", errors.Count), ("errors", string.Join("; ", errors)));
             OnIndexReady();
         }
         catch (OperationCanceledException)
@@ -202,8 +222,8 @@ public sealed partial class VersionsViewModel : ObservableObject
         {
             if (ReferenceEquals(_syncCts, cts))
             {
-                Error = ex.Message;
-                SyncText = "";
+                ErrorText = LocText.Known(ex.Message);
+                Sync = LocText.Empty;
             }
         }
         finally
@@ -242,7 +262,7 @@ public sealed partial class VersionsViewModel : ObservableObject
         }
     }
 
-    private static string TargetUnavailableText(string target) => $"The target folder \"{target}\" is not available.";
+    private static LocText TargetUnavailable(string target) => LocText.Of("core.index.targetUnavailable", ("folder", target));
 
     /// <summary>Runs after every successful sync; the tree reloads here (Versions tab, tree part).</summary>
     partial void OnIndexReady();
@@ -279,10 +299,10 @@ public sealed partial class VersionsViewModel : ObservableObject
             if (!progress.Finished)
                 row.Indexed = null;   // being imported again: its old id is gone
         }
-        SyncText = progress.Finished
-            ? $"Indexing {progress.Current} of {progress.Total}"
-            : string.Create(CultureInfo.CurrentCulture,
-                $"Indexing {progress.Current} of {progress.Total} · {progress.VersionName} · {progress.FilesImported:N0} files");
+        Sync = progress.Finished
+            ? LocText.Of("versions.sync.indexing", ("current", progress.Current), ("total", progress.Total))
+            : LocText.Of("versions.sync.indexingVersion", ("current", progress.Current), ("total", progress.Total),
+                ("version", progress.VersionName), ("files", Formats.Files(progress.FilesImported)));
     }
 
     private void ApplyIndexed(IReadOnlyList<IndexedVersion> versions, IReadOnlyList<string> errors)

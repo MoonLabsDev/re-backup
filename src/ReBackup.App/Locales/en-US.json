@@ -1,0 +1,758 @@
+{
+  "raw": "{text}",
+  "language": {
+    "de-DE": "Deutsch",
+    "en-US": "English",
+    "toolTip": "Language: {language} — click to change",
+    "notSaved": "The language could not be saved:\n\n{error}"
+  },
+  "format": {
+    "date": "yyyy-MM-dd",
+    "dateTime": "yyyy-MM-dd HH:mm",
+    "dateTimeSeconds": "yyyy-MM-dd HH:mm:ss",
+    "time": "HH:mm",
+    "weekdayTime": "ddd HH:mm",
+    "nextRun": "ddd yyyy-MM-dd HH:mm"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "ok": "OK",
+    "save": "Save",
+    "revert": "Revert",
+    "refresh": "Refresh",
+    "open": "Open",
+    "expand": "Expand",
+    "name": "Name",
+    "size": "Size",
+    "files": "Files",
+    "status": "Status",
+    "modified": "Modified",
+    "date": "Date",
+    "path": "Path",
+    "version": "Version",
+    "unnamed": "(unnamed)",
+    "fileCount": { "one": "{count} file", "other": "{count:N0} files" },
+    "folderCount": { "one": "{count} folder", "other": "{count:N0} folders" },
+    "duration": {
+      "hms": "{hours} h {minutes:00} min {seconds:00} s",
+      "ms": "{minutes} min {seconds:00} s",
+      "s": "{seconds} s",
+      "underSecond": "under 1 s"
+    }
+  },
+  "enum": {
+    "triggerType": { "Daily": "Daily", "Weekly": "Weekly", "Monthly": "Monthly", "Interval": "Interval" },
+    "period": { "Daily": "Daily", "Weekly": "Weekly", "Monthly": "Monthly", "Yearly": "Yearly" },
+    "weekday": {
+      "Monday": "Monday", "Tuesday": "Tuesday", "Wednesday": "Wednesday", "Thursday": "Thursday",
+      "Friday": "Friday", "Saturday": "Saturday", "Sunday": "Sunday"
+    },
+    "weekdayShort": { "Mon": "Mon", "Tue": "Tue", "Wed": "Wed", "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun" },
+    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up" },
+    "includeStatus": { "Included": "Included", "Ignored": "Ignored", "Partial": "Partial" },
+    "diffStatus": { "Unchanged": "Unchanged", "Added": "Added", "Changed": "Changed", "Deleted": "Deleted" },
+    "historyStatus": { "New": "New", "Changed": "Changed", "Unchanged": "Unchanged", "Deleted": "Deleted", "Absent": "—" },
+    "theme": { "Dark": "Dark", "Light": "Light" }
+  },
+  "settings": {
+    "title": "Settings",
+    "language": {
+      "title": "LANGUAGE",
+      "name": "Language",
+      "note": "Applies at once."
+    },
+    "windowTitle": "ReBackup settings",
+    "config": {
+      "title": "CONFIGURATION FOLDER",
+      "change": "Change…",
+      "name": "Configuration folder",
+      "dialogTitle": "Configuration folder",
+      "backupRunning": "A backup is running or queued. Wait for it to finish or cancel it before moving the configuration folder.",
+      "choose": "Choose configuration folder",
+      "containsConfiguration": "That folder already contains a ReBackup configuration.\n\nSwitch to it without copying the current plans?",
+      "otherEdits": "Your other changes in this dialog will not be saved. Continue?",
+      "restart": "ReBackup will now restart to use the new configuration folder."
+    },
+    "ignore": {
+      "title": "DEFAULT IGNORE PATTERNS",
+      "note": "One per line, gitignore syntax.",
+      "name": "Default ignore patterns"
+    },
+    "app": {
+      "title": "APP",
+      "closeToTray": "Closing the window minimizes to the tray",
+      "startWithWindows": "Start with Windows (minimized to tray)"
+    },
+    "theme": {
+      "title": "THEME",
+      "name": "Theme",
+      "note": "Applies at once."
+    }
+  },
+  "core": {
+    "plan": {
+      "nameRequired": "Name is required.",
+      "nameSpaces": "Name must not start or end with spaces.",
+      "nameDot": "Name must not end with a dot.",
+      "namePartial": "Name must not end with \".partial\".",
+      "nameDeleting": "Name must not end with \".deleting\".",
+      "nameChars": "Name contains characters that are not allowed in folder names.",
+      "nameTaken": "Another plan is already named \"{name}\".",
+      "sourceRequired": "Source folder is required.",
+      "targetRequired": "Target folder is required.",
+      "sourceNotAbsolute": "Source must be an absolute path.",
+      "targetNotAbsolute": "Target must be an absolute path.",
+      "sourceMissing": "Source folder does not exist.",
+      "targetInsideSource": "Target must not be inside the source.",
+      "sourceInsideTarget": "Source must not be inside the target.",
+      "retentionRule": "Retention rule {index}: {problem}",
+      "trigger": "Trigger {index}: {problem}"
+    },
+    "trigger": {
+      "empty": "the trigger is empty.",
+      "unknownType": "the type is unknown.",
+      "time": "the time must be written as HH:mm, for example 02:00.",
+      "noWeekday": "choose at least one weekday.",
+      "notWeekday": "\"{day}\" is not a weekday.",
+      "monthDay": "the day must be from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
+      "interval": "the interval must be a whole number of hours from 1 to 24.",
+      "from": "the start time must be written as HH:mm, for example 08:00.",
+      "to": "the end time must be written as HH:mm, for example 20:00.",
+      "fromAfterTo": "the start time must not be after the end time.",
+      "invalid": "The trigger is not valid: {problem}"
+    },
+    "retention": {
+      "empty": "the rule is empty.",
+      "unknownPeriod": "the period is unknown.",
+      "keep": "keep must be a number from 1 to {max}.",
+      "weekday": "the anchor must be a weekday, for example Sunday.",
+      "monthDay": "the anchor must be a day from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
+      "yearDate": "the anchor must be a date written as MM-DD, for example 01-01.",
+      "invalid": "The retention rule is not valid: {problem}"
+    },
+    "run": {
+      "nameUnusable": "The plan name \"{name}\" cannot be used: {problem}",
+      "sourceMissing": "Source folder \"{source}\" does not exist.",
+      "noTarget": "No target folder is set.",
+      "nameNotFolder": "The plan name \"{name}\" cannot be used as a folder name.",
+      "namePartial": "The plan name must not end with \".partial\".",
+      "nameDeleting": "The plan name must not end with \".deleting\".",
+      "targetInsideSource": "The target folder is the source folder or inside it.",
+      "sourceInsideTarget": "The source folder is inside the target folder.",
+      "sourceUnreadable": "The source folder could not be read: {error}",
+      "notEnoughSpace": "The backup needs {required} but only {free} is free on the target.",
+      "targetFull": "The target ran out of space during the backup.",
+      "sourceGone": "The source folder is no longer available.",
+      "retentionFailed": "Retention was skipped: {error}",
+      "retentionRulesUnreadable": "Retention was skipped: the plan's current rules could not be read: {error}",
+      "retentionPlanGone": "Retention was skipped: the plan no longer exists.",
+      "retentionDeleteFailed": "Retention could not delete \"{version}\": {error}",
+      "freeSpaceRulesUnreadable": "Old versions were not deleted to free space: the plan's current rules could not be read: {error}",
+      "freeSpacePlanGone": "Old versions were not deleted to free space: the plan no longer exists.",
+      "freeSpaceExamineFailed": "Old versions could not be examined to free space: {error}",
+      "freeSpaceDeleteFailed": "\"{version}\" could not be deleted to free space: {error}",
+      "remainsFailed": "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
+      "removedRemainsLeft": "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
+      "indexFailed": "The version index could not be updated: {error}"
+    },
+    "skip": {
+      "ignoreFileUnreadable": "ignore file could not be read; its patterns were not applied",
+      "reservedName": "the name is reserved for the backup manifest",
+      "changed": "changed while it was copied; the copy may be inconsistent"
+    },
+    "file": {
+      "noLongerExists": "no longer exists",
+      "accessDenied": "access denied",
+      "locked": "locked by another program"
+    },
+    "scan": {
+      "link": "Link is not followed.",
+      "tooDeep": "Folder nesting too deep."
+    },
+    "restore": {
+      "destinationNotAbsolute": "The destination must be an absolute path.",
+      "versionMissing": "The version folder \"{folder}\" does not exist.",
+      "destinationInVersion": "The destination must not be the version folder or inside it.",
+      "outside": "\"{path}\" is outside the version.",
+      "throughLink": "\"{path}\" goes through the link \"{link}\".",
+      "sameName": "Two selected items are called \"{name}\"; they would end up in the same place.",
+      "isLink": "\"{path}\" is a link.",
+      "manifest": "The manifest is not part of the backup.",
+      "notInVersion": "\"{path}\" does not exist in the version.",
+      "folderExists": "A folder with this name exists.",
+      "destinationLink": "the destination folder is a link",
+      "outsideDestination": "\"{path}\" is outside the destination.",
+      "notAPath": "\"{path}\" is not a path inside the version.",
+      "accessDenied": "access denied (read-only, or in use by another program)"
+    },
+    "index": {
+      "targetUnavailable": "The target folder \"{folder}\" is not available."
+    },
+    "manifest": {
+      "empty": "The manifest is empty.",
+      "unreadable": "The manifest cannot be read: {error}",
+      "endsEarly": "The manifest ends too early.",
+      "valueTooLarge": "A single value of the manifest is too large.",
+      "notObject": "A manifest is a JSON object.",
+      "entryNotObject": "A file entry is a JSON object.",
+      "entryNoPath": "A file entry has no path."
+    },
+    "planFile": {
+      "empty": "File is empty.",
+      "idMismatch": "Plan id \"{id}\" does not match file name \"{file}\".",
+      "emptyTrigger": "The list of triggers contains an empty entry.",
+      "emptyRule": "The list of retention rules contains an empty entry."
+    },
+    "config": {
+      "containsConfiguration": "The chosen folder already contains a ReBackup configuration."
+    }
+  },
+  "shell": {
+    "tab": { "plan": "Plan", "ignore": "Ignore", "retention": "Retention", "history": "History", "versions": "Versions" },
+    "rail": {
+      "settings": "Settings",
+      "themeToolTip": "Theme: {theme} — click to change",
+      "themeName": "Theme: {theme}"
+    },
+    "plans": {
+      "title": "PLANS",
+      "new": "New plan",
+      "newName": "New plan",
+      "delete": "Delete plan",
+      "list": "Plans",
+      "deleteConfirm": "Delete plan \"{plan}\"?\n\nBackups already stored in the target are not touched.",
+      "deleteHistory": "Also delete this plan's run history?",
+      "historyNotDeleted": "The plan was deleted, but its run history could not be: {error}"
+    },
+    "noPlan": "No plan selected. Create one with the + button next to PLANS.",
+    "actions": {
+      "saveToolTip": "Save (Ctrl+S)",
+      "runNow": "Run now",
+      "saveFailed": "Save failed",
+      "chooseSource": "Choose source folder",
+      "chooseTarget": "Choose target folder"
+    },
+    "card": {
+      "removeFromQueue": "Remove from the queue",
+      "cancelBackup": "Cancel the backup",
+      "canceling": "Canceling…"
+    },
+    "status": {
+      "configuration": "Configuration: {path}",
+      "reloadFailed": "Plans could not be reloaded: {error}",
+      "reloaded": "Plans reloaded after a change on disk.",
+      "loadErrors": {
+        "one": "{count} plan file could not be read: {details}",
+        "other": "{count} plan files could not be read: {details}"
+      },
+      "deleteCancelBackup": "Cancel the backup of \"{plan}\" before deleting the plan.",
+      "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "saved": "Saved \"{plan}\".",
+      "notSaved": "Not saved: fix the errors shown in the plan.",
+      "scheduledFailed": "A scheduled backup could not be queued: {error}",
+      "scheduleFailed": "The schedule could not be updated: {error}",
+      "canceling": "Canceling the backup of \"{plan}\"…",
+      "saveFirst": "Save \"{plan}\" without errors before running it.",
+      "alreadyQueued": "\"{plan}\" is already queued or running.",
+      "removed": "The queued backup of \"{plan}\" was removed.",
+      "completed": "Backup of \"{plan}\" completed in {duration}.",
+      "completedSkipped": {
+        "one": "Backup of \"{plan}\" completed with {count} skipped entry.",
+        "other": "Backup of \"{plan}\" completed with {count:N0} skipped entries."
+      },
+      "canceled": "Backup of \"{plan}\" was canceled.",
+      "aborted": "Backup of \"{plan}\" was aborted: {reason}",
+      "indexError": "The version index of \"{plan}\" could not be updated: {error}",
+      "historyUnreadable": "The run history of \"{plan}\" could not be read: {error}"
+    },
+    "queue": {
+      "idle": "No backup running",
+      "running": "Backing up \"{plan}\"",
+      "percent": " — {percent:0} %",
+      "waiting": " · {count} queued",
+      "queued": { "one": "{count} backup queued", "other": "{count} backups queued" }
+    },
+    "scheduler": { "paused": "Scheduler paused" }
+  },
+  "card": {
+    "neverRun": "Never run",
+    "lastRun": "Last run {when}: {status}",
+    "runNow": "Run now",
+    "retryNow": "Retry now",
+    "queued": "Queued",
+    "after": "after \"{plan}\"",
+    "startsNext": "starts next",
+    "canceling": "Canceling",
+    "stopping": "Stopping",
+    "removingCopy": "removing the incomplete copy…",
+    "stoppingBackup": "stopping the backup…",
+    "starting": "Starting…",
+    "scan": "scan",
+    "indexing": "Indexing…",
+    "creatingFolders": "Creating folders",
+    "copying": "Copying…",
+    "copyDetail": { "one": "{bytes} · {count} file", "other": "{bytes} · {count:N0} files" },
+    "finishing": "Finishing",
+    "removingOld": "removing old versions…",
+    "completingVersion": "completing the version…",
+    "manualOnly": "Manual only",
+    "schedulerPaused": "Scheduler paused",
+    "canceledAt": "Canceled · {when}",
+    "targetFull": "Target full",
+    "targetFullToolTip": "The target is full.",
+    "failed": "Failed",
+    "failedReason": "Failed: {reason}",
+    "skipped": "{count:N0} skipped",
+    "retentionWarnings": "Retention warnings",
+    "backedUpAt": "Backed up · {when}",
+    "lastShort": "last {when} · {result}",
+    "neverRunShort": "never run",
+    "result": { "ok": "OK", "warnings": "warnings", "canceled": "canceled", "failed": "failed" },
+    "remaining": {
+      "underMinute": "less than a minute left",
+      "minutes": "{minutes} min left",
+      "hours": "{hours} h {minutes:00} min left"
+    },
+    "schedule": {
+      "notSaved": "not saved yet",
+      "none": "no schedule",
+      "errors": "schedule has errors",
+      "next": "next {when}"
+    }
+  },
+  "run": {
+    "status": {
+      "completed": "Completed",
+      "completedWithWarnings": "Completed with warnings",
+      "completedRetentionWarnings": "Completed (retention warnings)",
+      "full": "Aborted: target full",
+      "error": "Aborted: error",
+      "canceled": "Canceled"
+    }
+  },
+  "tray": {
+    "open": "Open",
+    "runPlan": "Run plan",
+    "pause": "Pause scheduler",
+    "resume": "Resume scheduler",
+    "exit": "Exit",
+    "notification": {
+      "title": "Backup \"{plan}\"",
+      "completed": "Completed in {duration}.",
+      "completedSkipped": {
+        "one": "Completed in {duration}, {count} entry was skipped.",
+        "other": "Completed in {duration}, {count:N0} entries were skipped."
+      },
+      "canceled": "Canceled after {duration}.",
+      "full": "Aborted after {duration}, the target is full. {reason}",
+      "error": "Aborted after {duration} with an error. {reason}"
+    }
+  },
+  "app": {
+    "versionLabel": "ReBackup v{version}",
+    "config": {
+      "title": "Configuration folder",
+      "unreachable": "The configuration folder {path} is not reachable:\n\n{error}\n\nYes = Retry, No = Use the default location for this session, Cancel = Exit",
+      "defaultUnusable": "The default location {path} is not usable either:\n\n{error}"
+    },
+    "settingsUnreadable": "settings.json could not be read, defaults are used.\n\n{error}",
+    "themeNotSaved": "The theme could not be saved:\n\n{error}",
+    "restartStuck": "A running backup could not be stopped in time. Please start ReBackup again manually.",
+    "restartFailed": "ReBackup could not restart itself. Please start it again manually.",
+    "unsaved": {
+      "title": "Unsaved changes",
+      "message": "These plans have unsaved changes:\n\n{plans}\n\nDiscard the changes?"
+    },
+    "restoreRunning": {
+      "title": "Restore in progress",
+      "restart": "A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and restart ReBackup?",
+      "exit": "A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and exit ReBackup?"
+    },
+    "restoreStuck": "A restore did not stop within 10 seconds. A file it was writing may be incomplete (a \"*.rebackup-tmp\" file next to it).",
+    "backupRunning": {
+      "title": "Backup in progress",
+      "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
+    }
+  },
+  "plan": {
+    "source": {
+      "title": "SOURCE → TARGET",
+      "source": "Source",
+      "target": "Target",
+      "chooseSource": "Choose the source folder",
+      "chooseTarget": "Choose the target folder",
+      "enabled": "Run on schedule",
+      "enabledToolTip": "When off, the plan runs only when started by hand.",
+      "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+    },
+    "lastRun": {
+      "title": "LAST RUN",
+      "duration": "Duration",
+      "copied": "Copied",
+      "skipped": "Skipped"
+    },
+    "schedule": {
+      "title": "SCHEDULE",
+      "note": "The plan runs at each of these local times.",
+      "add": "Add trigger",
+      "remove": "Remove this trigger",
+      "type": "Trigger type",
+      "at": "at",
+      "time": "Time",
+      "onDay": "on day",
+      "dayOfMonth": "Day of month",
+      "dayHint": "0 = last day, -1 = the day before",
+      "every": "every",
+      "everyHours": "Interval in hours",
+      "hoursFrom": "hours from",
+      "from": "From",
+      "to": "to",
+      "toName": "To",
+      "wholeDay": "empty = whole day",
+      "nextRuns": "Next runs"
+    },
+    "nextRuns": {
+      "none": "No triggers: this plan runs only when started by hand.",
+      "fix": "Correct the triggers above to see the next runs.",
+      "tray": "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed).",
+      "disabled": "The plan is disabled: it runs only when started by hand until it is enabled again.",
+      "paused": "The scheduler is paused.",
+      "unsaved": "Unsaved changes take effect after Save."
+    }
+  },
+  "ignore": {
+    "patterns": {
+      "title": "IGNORE PATTERNS",
+      "syntax": "gitignore syntax, one per line",
+      "nested": "Honor .backupignore files inside the source",
+      "global": "Also apply the global default patterns",
+      "name": "Ignore patterns",
+      "resize": "Resize the pattern panel"
+    },
+    "index": {
+      "now": "Index now",
+      "toolTip": "Scan the source folder",
+      "cancel": "Cancel the scan"
+    },
+    "sizes": {
+      "show": "Show",
+      "name": "Sizes shown",
+      "inBackup": "In backup",
+      "inBackupToolTip": "Show what goes into the backup; ignored entries show —",
+      "total": "Total",
+      "totalToolTip": "Show the total, ignored entries included"
+    },
+    "tree": {
+      "name": "Preview tree",
+      "ignoreThis": "Ignore this",
+      "ignoreExtension": "Ignore all files with this extension",
+      "unignore": "Un-ignore this",
+      "percent": "% of parent"
+    },
+    "treemap": {
+      "resize": "Resize the treemap",
+      "hover": "Hover a tile for its path and sizes",
+      "byBackup": "Sized by what is in the backup; ignored entries are left out",
+      "byTotal": "Sized by the total; ignored entries in grey",
+      "empty": "The treemap appears after the scan.",
+      "toolTip": "{path}\n{total}, backup {included} — {status}"
+    },
+    "patternNote": "Changes to the patterns are applied when the scan is finished.",
+    "sourceMissing": "The source folder does not exist.",
+    "progress": {
+      "notIndexed": "Not indexed yet.",
+      "indexed": "Indexed {files} in {folders}.",
+      "live": "{files}, {folders} so far — {waiting} waiting",
+      "canceledPrevious": "Indexing canceled; showing the previous index.",
+      "canceledIncomplete": "Scan canceled — incomplete.",
+      "failedPrevious": "Indexing failed; showing the previous index.",
+      "failedIncomplete": "Scan failed — incomplete."
+    },
+    "summary": {
+      "live": "So far — included: {includedFiles}, {includedSize}   ·   ignored: {ignoredFiles}, {ignoredSize}",
+      "done": "Included: {includedFiles}, {includedSize}   ·   Ignored: {ignoredFiles}, {ignoredSize}"
+    },
+    "pill": {
+      "inBackup": "in backup {prefix}{size} · {prefix}{files}",
+      "ignored": "ignored {prefix}{size} · {prefix}{files}"
+    },
+    "row": {
+      "placeholder": "loading …",
+      "waiting": "waiting",
+      "loading": "loading",
+      "notScanned": "Not scanned",
+      "ignoredByParent": "Ignored because a parent folder is ignored by \"{pattern}\" ({origin})",
+      "ignoredBy": "Ignored by \"{pattern}\" ({origin})",
+      "partly": "Partly ignored: {size} in {files} are skipped",
+      "reincluded": "Re-included by \"{pattern}\" ({origin})",
+      "included": "Included",
+      "stillScanning": "Still being scanned; the numbers still grow.",
+      "notScannedReason": "Not scanned: {error}"
+    },
+    "origin": {
+      "globalDefaults": "Global defaults",
+      "plan": "Plan"
+    }
+  },
+  "retention": {
+    "rules": {
+      "add": "Add rule",
+      "title": "RULES — A VERSION STAYS IF ANY RULE KEEPS IT",
+      "titleToolTip": "The newest version always stays as well.",
+      "none": "No rules: every version is kept and the target fills up over time.",
+      "remove": "Remove this rule",
+      "period": "Period",
+      "periodToolTip": "Change the period",
+      "keepTheLast": "keep the last",
+      "on": "on",
+      "onDay": "on day",
+      "weekday": "Weekday",
+      "anchor": "Anchor",
+      "keep": "keep",
+      "keepName": "Keep",
+      "keepToolTip": "How many versions this rule keeps",
+      "days": "days"
+    },
+    "hint": {
+      "daily": "the last backup of each day",
+      "weekly": "the backup of that weekday, otherwise the first one after it",
+      "monthly": "day of the month: 1 to 31, 0 = last day, -1 = the day before the last day, …",
+      "yearly": "date as MM-DD, for example 01-01"
+    },
+    "forecast": {
+      "title": "FORECAST — TWO YEARS OF",
+      "assumed": "Assumed schedule",
+      "assumedToolTip": "The plan has no triggers: the forecast assumes this schedule.",
+      "planSchedule": "THE PLAN'S SCHEDULE",
+      "planFrequency": "the plan's schedule",
+      "versionsKept": "Versions kept",
+      "space": "Space",
+      "unknown": "unknown",
+      "calculating": "Calculating…",
+      "fixRules": "Correct the rules above to see the forecast.",
+      "fixTriggers": "Correct the plan's triggers on the Plan tab to see the full extension.",
+      "failed": "The full extension could not be calculated: {error}",
+      "noRules": "No rules, so nothing is ever deleted: with {frequency} there are {count:N0} versions after two years{size}.{cut}",
+      "withRules": {
+        "one": "With {frequency} the target holds up to {count} version{size}.{cut}",
+        "other": "With {frequency} the target holds up to {count:N0} versions{size}.{cut}"
+      },
+      "size": ", about {size}",
+      "cut": " The simulation stopped after {runs:N0} runs."
+    },
+    "scheduleLabel": {
+      "weekly": "one backup a week",
+      "daily": "one backup a day",
+      "twiceDaily": "two backups a day",
+      "every4Hours": "a backup every 4 hours",
+      "hourly": "a backup every hour"
+    },
+    "scheduleRuns": {
+      "weekly": "weekly runs",
+      "daily": "daily runs",
+      "twiceDaily": "two runs a day",
+      "every4Hours": "runs every 4 hours",
+      "hourly": "hourly runs"
+    },
+    "now": {
+      "title": "VERSIONS IN THE TARGET NOW",
+      "refreshToolTip": "Read the target again",
+      "notLoaded": "The versions in the target have not been read yet.",
+      "targetMissing": "The target folder does not exist (yet).",
+      "noVersions": "There are no versions in the target yet.",
+      "empty": "No versions yet",
+      "fixRules": "Correct the rules above to see what they keep.",
+      "summary": {
+        "one": "{count} version, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})",
+        "other": "{count:N0} versions, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})"
+      },
+      "unmanaged": "  ·  {count:N0} not managed",
+      "openInExplorer": "Open in Explorer",
+      "openFolder": "Open the version folder"
+    },
+    "column": { "decision": "Decision", "keptBy": "Kept by", "folder": "Folder" },
+    "decision": { "keep": "Keep", "delete": "Delete", "notManaged": "Not managed" },
+    "owner": {
+      "noManifest": "no manifest in the folder",
+      "foreign": "the manifest belongs to another plan",
+      "renamed": "renamed or copied by hand",
+      "unreadable": "the manifest cannot be read"
+    },
+    "reason": { "newest": "Newest", "noRules": "No rules" },
+    "describe": { "weekly": "Weekly({day})", "monthly": "Monthly({day})", "yearly": "Yearly({date})" },
+    "timeline": { "lane": "{rule}, keep {keep:N0}", "all": "All versions", "newest": "Newest" },
+    "targetUnreadable": "The target folder could not be read: {error}"
+  },
+  "history": {
+    "title": "RUN HISTORY",
+    "column": { "start": "Start", "duration": "Duration", "trigger": "Trigger", "result": "Result", "reason": "Reason" },
+    "openVersion": {
+      "name": "Open the version folder",
+      "checking": "Checking whether the version still exists…",
+      "open": "Open {version} in Explorer",
+      "missing": "Version no longer exists"
+    },
+    "details": {
+      "version": "Version: {version}",
+      "skipped": "Skipped ({count:N0}):",
+      "more": "… and {count:N0} more",
+      "deleted": "Deleted by retention:",
+      "warnings": "Warnings:"
+    }
+  },
+  "versions": {
+    "title": "VERSIONS",
+    "list": "Versions",
+    "refreshToolTip": "Read the target again and update the index",
+    "refreshName": "Refresh versions",
+    "empty": "No versions in the target yet",
+    "savePlan": "Save the plan to see its versions.",
+    "copyMissing": "The copy in \"{version}\" no longer exists.",
+    "sync": {
+      "reading": "Reading the target…",
+      "waiting": "Waiting for the index…",
+      "errors": {
+        "one": "{count} version could not be indexed: {errors}",
+        "other": "{count} versions could not be indexed: {errors}"
+      },
+      "indexing": "Indexing {current} of {total}",
+      "indexingVersion": "Indexing {current} of {total} · {version} · {files}"
+    },
+    "index": {
+      "notIndexed": "not indexed",
+      "indexing": "indexing…",
+      "indexed": "indexed",
+      "failed": "could not be indexed"
+    },
+    "notManaged": {
+      "noManifest": "Not managed: no manifest",
+      "foreign": "Not managed: manifest of another plan",
+      "unreadable": "Not managed: manifest cannot be read",
+      "renamed": "Not managed: renamed or copied by hand"
+    },
+    "toolbar": {
+      "search": "Search names (substring, or * and ?)",
+      "searchToolTip": "A part of a name, or a pattern with * and ?",
+      "compareWith": "Compare with",
+      "swapToolTip": "Swap: show the other version's tree",
+      "swapName": "Swap versions",
+      "changedOnly": "Changed only",
+      "openToolTip": "Open the file (the copy in the version)",
+      "showInExplorer": "Show in Explorer",
+      "restoreOriginal": "Restore to original location",
+      "restoreOriginalToolTip": "Copy the selection back to where it came from",
+      "restore": "Restore",
+      "restoreTo": "Restore to…",
+      "restoreToName": "Restore to a folder",
+      "restoreToToolTip": "Copy the selection into a folder you choose",
+      "cancelRestore": "Cancel the restore",
+      "cancelRestoreToolTip": "Stop after the current file"
+    },
+    "menu": { "restoreOriginal": "Restore to original location…" },
+    "compare": { "notManaged": " (not managed)" },
+    "tree": {
+      "name": "Version tree",
+      "selectVersion": "Select a version.",
+      "notIndexed": "This version could not be indexed.",
+      "indexing": "Indexing…",
+      "otherIndexing": "The version to compare with is being indexed…",
+      "unreadable": "The version cannot be read from the index: {error}",
+      "noFiles": "This version holds no files.",
+      "cannotRead": "Cannot be read: {error}",
+      "loading": "Loading…",
+      "emptyFolder": "Empty folder"
+    },
+    "search": {
+      "results": "Search results",
+      "notIndexed": "The version is not indexed yet.",
+      "none": "No matches",
+      "capped": "The first {limit} matches",
+      "count": { "one": "{count} match", "other": "{count:N0} matches" },
+      "failed": "The search failed: {error}"
+    },
+    "history": {
+      "name": "File history",
+      "title": "HISTORY OF {name}",
+      "unreadable": "HISTORY OF {name} — cannot be read: {error}",
+      "showCopy": "Show this copy in Explorer"
+    }
+  },
+  "restore": {
+    "title": "Restore",
+    "notInVersion": "\"{path}\" no longer exists in the version.",
+    "runnable": "\"{name}\" is a program, script or shortcut; it is not run from a backup. Its folder is shown instead.",
+    "cannotOpen": "\"{path}\" cannot be opened: it no longer exists in the version, or no program opens it.",
+    "canceling": "Canceling…",
+    "cancelingAfterFile": "Canceling after the current file…",
+    "reindexing": "The version is being indexed again; try once the tree has been reloaded.",
+    "item": "\"{path}\"",
+    "originUnknown": "The original location of this version is not known. Use \"Restore to…\".",
+    "backupRunningWarning": "\n\nA backup of this plan is queued or running; it may pick up the restored files.",
+    "confirmTitle": "Restore to the original location",
+    "confirm": "Restore {item} from the version of {date} to\n{destination}?\n\nNothing there is deleted; you choose what happens to files that exist already.{warning}",
+    "confirmVersion": "Restore the whole version of {date} to\n{destination}?\n\nNothing there is deleted; you choose what happens to files that exist already.{warning}",
+    "pickFolder": "Restore to…",
+    "insideTarget": "The destination is inside the plan's target folder \"{target}\", where its versions are stored. Choose a folder outside it.",
+    "preparing": "Preparing the restore…",
+    "canceledNothing": "Restore canceled; nothing was written.",
+    "unreadableNote": {
+      "one": " {count} part of the version could not be read.",
+      "other": " {count:N0} parts of the version could not be read."
+    },
+    "cannotRestore": "{item} cannot be restored: {reason}",
+    "cannotRestoreVersion": "The version cannot be restored: {reason}",
+    "restoring": "Restoring…",
+    "restoringFrom": "Restoring {item} from the version of {date}…",
+    "restoringVersion": "Restoring the whole version of {date}…",
+    "progress": {
+      "one": "Restoring {done:N0} of {count} file · {percent:0} %",
+      "other": "Restoring {done:N0} of {count:N0} files · {percent:0} %"
+    },
+    "stopped": "The restore stopped: {error}",
+    "failures": {
+      "one": "{summary}\n\n{count} item could not be restored to {root}:",
+      "other": "{summary}\n\n{count:N0} items could not be restored to {root}:"
+    },
+    "conflictsOriginal": {
+      "one": "{count} file already exists in the original location:\n{examples}{more}\n\nWhat should happen to it?",
+      "other": "{count:N0} files already exist in the original location:\n{examples}{more}\n\nWhat should happen to them?"
+    },
+    "conflictsFolder": {
+      "one": "{count} file already exists in {folder}:\n{examples}{more}\n\nWhat should happen to it?",
+      "other": "{count:N0} files already exist in {folder}:\n{examples}{more}\n\nWhat should happen to them?"
+    },
+    "unreadable": {
+      "one": "{count} part of the version cannot be read; its files will not be restored. Restore the rest?",
+      "other": "{count:N0} parts of the version cannot be read; their files will not be restored. Restore the rest?"
+    },
+    "restoreRest": "Restore the rest",
+    "summary": {
+      "copied": "{count:N0} copied",
+      "keptBoth": "{count:N0} kept beside the existing file",
+      "skipped": "{count:N0} skipped",
+      "failed": "{count:N0} failed",
+      "finished": "Restore finished: {parts}.",
+      "canceled": "Restore canceled: {parts}."
+    }
+  },
+  "dialog": {
+    "conflict": {
+      "note": "Keep both writes the version's copy next to the existing file, with the version's time in its name. Nothing is ever deleted.",
+      "detailsName": "Parts of the version that cannot be read",
+      "details": {
+        "one": "{count} part of the version cannot be read; its files are not restored:",
+        "other": "{count:N0} parts of the version cannot be read; their files are not restored:"
+      },
+      "overwrite": "Overwrite",
+      "overwriteToolTip": "Replace the existing files with the version's copies",
+      "skip": "Skip",
+      "skipToolTip": "Leave the existing files as they are",
+      "keepBoth": "Keep both"
+    },
+    "failures": {
+      "linesName": "Paths and reasons",
+      "more": "… and {count:N0} more"
+    }
+  }
+}

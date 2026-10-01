@@ -1,5 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
 using ReBackup.Core.Retention;
 
 namespace ReBackup.App.ViewModels;
@@ -41,15 +42,15 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
     public static IReadOnlyList<string> Weekdays { get; } =
         ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-    /// <summary>The period in capitals, for the badge of the rule tile ("DAILY").</summary>
-    public string PeriodLabel => Period.ToString().ToUpperInvariant();
+    /// <summary>The period in capitals, for the badge of the rule tile ("DAILY" / "TÄGLICH").</summary>
+    public string PeriodLabel => Loc.T("enum.period." + Period).ToUpper(Loc.Culture);
 
     public string AnchorHint => Period switch
     {
-        RetentionPeriod.Daily => "the last backup of each day",
-        RetentionPeriod.Weekly => "the backup of that weekday, otherwise the first one after it",
-        RetentionPeriod.Monthly => "day of the month: 1 to 31, 0 = last day, -1 = the day before the last day, …",
-        _ => "date as MM-DD, for example 01-01",
+        RetentionPeriod.Daily => Loc.T("retention.hint.daily"),
+        RetentionPeriod.Weekly => Loc.T("retention.hint.weekly"),
+        RetentionPeriod.Monthly => Loc.T("retention.hint.monthly"),
+        _ => Loc.T("retention.hint.yearly"),
     };
 
     /// <summary>
@@ -111,5 +112,13 @@ public sealed partial class RetentionRuleViewModel : ObservableObject
         Changed?.Invoke();
     }
 
-    private void Refresh() => Error = RetentionRules.Validate(ToRule());
+    private void Refresh() => Error = RetentionRules.Validate(ToRule()) is { } problem ? Loc.F(problem) : null;
+
+    /// <summary>The language changed.</summary>
+    public void RefreshTexts()
+    {
+        Refresh();
+        OnPropertyChanged(nameof(AnchorHint));
+        OnPropertyChanged(nameof(PeriodLabel));
+    }
 }

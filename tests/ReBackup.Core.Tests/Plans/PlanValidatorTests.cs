@@ -1,4 +1,5 @@
 using FluentAssertions;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
 using ReBackup.Core.Schedule;
@@ -19,8 +20,9 @@ public class PlanValidatorTests : IDisposable
         Target = _tmp.PathOf("dst"),
     };
 
+    /// <summary>The errors as Core renders them in English (the texts did not change, only their form did).</summary>
     private static IReadOnlyList<string> Validate(BackupPlan plan, params BackupPlan[] others) =>
-        PlanValidator.Validate(plan, others.Append(plan));
+        PlanValidator.Validate(plan, others.Append(plan)).Select(message => CoreTexts.English(message)).ToList();
 
     [Fact]
     public void Valid_plan_has_no_errors()
@@ -145,9 +147,27 @@ public class PlanValidatorTests : IDisposable
     [Fact]
     public void NameErrors_checks_the_name_alone()
     {
-        PlanValidator.NameErrors("Projects").Should().BeEmpty();
-        PlanValidator.NameErrors("Projects.").Should().Equal("Name must not end with a dot.");
-        PlanValidator.NameErrors(" x ").Should().Equal("Name must not start or end with spaces.");
-        PlanValidator.NameErrors(null).Should().Equal("Name is required.");
+        static IEnumerable<string> English(string? name) => PlanValidator.NameErrors(name).Select(m => CoreTexts.English(m));
+
+        English("Projects").Should().BeEmpty();
+        English("Projects.").Should().Equal("Name must not end with a dot.");
+        English(" x ").Should().Equal("Name must not start or end with spaces.");
+        English(null).Should().Equal("Name is required.");
+    }
+
+
+    [Fact]
+    public void Errors_are_keys_with_arguments()
+    {
+        var plan = ValidPlan();
+        var other = ValidPlan();
+        other.Name = "PROJECTS";
+        plan.Retention = [new RetentionRule { Period = RetentionPeriod.Daily, Keep = 0 }];
+        plan.Triggers = [new ScheduleTrigger { Type = TriggerType.Weekly, Days = ["Mo"], Time = "18:00" }];
+
+        PlanValidator.Validate(plan, [plan, other]).Should().Equal(
+            Message.Of("core.plan.nameTaken", ("name", "Projects")),
+            Message.Of("core.plan.retentionRule", ("index", 1), ("problem", Message.Of("core.retention.keep", ("max", 9999)))),
+            Message.Of("core.plan.trigger", ("index", 1), ("problem", Message.Of("core.trigger.notWeekday", ("day", "Mo")))));
     }
 }

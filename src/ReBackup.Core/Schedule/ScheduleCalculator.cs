@@ -1,3 +1,4 @@
+using ReBackup.Core.Localization;
 using ReBackup.Core.Retention;
 
 namespace ReBackup.Core.Schedule;
@@ -16,7 +17,7 @@ public static class ScheduleCalculator
     public static IEnumerable<DateTime> Occurrences(ScheduleTrigger trigger, DateTime afterUtc, TimeZoneInfo zone)
     {
         if (ScheduleTriggers.Validate(trigger) is { } problem)
-            throw new ArgumentException($"The trigger is not valid: {problem}", nameof(trigger));
+            throw new ArgumentException(CoreTexts.English("core.trigger.invalid", ("problem", problem)), nameof(trigger));
         return Iterate(trigger, DateTime.SpecifyKind(afterUtc, DateTimeKind.Utc), zone);
     }
 

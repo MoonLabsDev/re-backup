@@ -1,8 +1,8 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
@@ -101,7 +101,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
 
     public string DisplayName =>
-        (IsDirty ? "• " : "") + (string.IsNullOrWhiteSpace(Name) ? "(unnamed)" : Name);
+        (IsDirty ? "• " : "") + (string.IsNullOrWhiteSpace(Name) ? Loc.T("common.unnamed") : Name);
 
     partial void OnNameChanged(string value)
     {
@@ -290,29 +290,49 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         if (triggers.Count == 0)
         {
             NextRuns = [];
-            note = "No triggers: this plan runs only when started by hand.";
+            note = Loc.T("plan.nextRuns.none");
         }
         else if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
         {
             NextRuns = [];
-            note = "Correct the triggers above to see the next runs.";
+            note = Loc.T("plan.nextRuns.fix");
         }
         else
         {
             NextRuns = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local)
                 .Take(5)
-                .Select(time => time.ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture))
+                .Select(Formats.NextRun)
                 .ToList();
-            note = Enabled
-                ? "Runs happen only while ReBackup is running (it keeps running in the tray when the window is closed)."
-                : "The plan is disabled: it runs only when started by hand until it is enabled again.";
+            note = Enabled ? Loc.T("plan.nextRuns.tray") : Loc.T("plan.nextRuns.disabled");
         }
 
-        NextRunsNote = (SchedulerPaused ? "The scheduler is paused. " : "") + note +
-                       (IsDirty ? " Unsaved changes take effect after Save." : "");
+        var parts = new List<string>();
+        if (SchedulerPaused)
+            parts.Add(Loc.T("plan.nextRuns.paused"));
+        parts.Add(note);
+        if (IsDirty)
+            parts.Add(Loc.T("plan.nextRuns.unsaved"));
+        NextRunsNote = string.Join(" ", parts);
     }
 
-    public void Validate() => Errors = PlanValidator.Validate(ToPlan(), _allPlans());
+    public void Validate() =>
+        Errors = PlanValidator.Validate(ToPlan(), _allPlans()).Select(message => Loc.F(message)).ToList();
+
+    /// <summary>The language changed: the texts this editor builds in code are built again.</summary>
+    public void RefreshTexts()
+    {
+        OnPropertyChanged(nameof(DisplayName));
+        Validate();
+        RefreshNextRuns();
+        foreach (var row in TriggerRows)
+            row.RefreshTexts();
+        foreach (var row in RetentionRuleRows)
+            row.RefreshTexts();
+        Run.RefreshTexts();
+        Preview.RefreshTexts();
+        RetentionPreview.RefreshTexts();
+        Versions.RefreshTexts();
+    }
 
     public bool TrySave(PlanStore store)
     {

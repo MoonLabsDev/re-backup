@@ -1,6 +1,7 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.IO;
@@ -11,15 +12,19 @@ using ReBackup.Core.Schedule;
 namespace ReBackup.App.ViewModels;
 
 /// <summary>
-/// A backup frequency assumed for the full-extension preview of a plan without triggers. <paramref name="Label"/> goes
-/// into sentences ("one backup a day"), <paramref name="RunsLabel"/> after "two years of" in the forecast title.
+/// A backup frequency assumed for the full-extension preview of a plan without triggers. <paramref name="Key"/> names
+/// its labels: <c>retention.scheduleLabel.&lt;Key&gt;</c> goes into sentences ("one backup a day"),
+/// <c>retention.scheduleRuns.&lt;Key&gt;</c> after "two years of" in the forecast title (the view binds it).
 /// </summary>
-public sealed record AssumedSchedule(string Label, TimeSpan Interval, string RunsLabel);
+public sealed record AssumedSchedule(string Key, TimeSpan Interval)
+{
+    /// <summary>The frequency as it goes into a sentence, in the applied language.</summary>
+    public string Label => Loc.T("retention.scheduleLabel." + Key);
+}
 
 /// <summary>Shows what a plan's retention rules do with the versions in its target.</summary>
 public sealed partial class RetentionPreviewViewModel : ObservableObject
 {
-    private const string NotLoadedText = "The versions in the target have not been read yet.";
     private static readonly TimeSpan EvaluateDelay = TimeSpan.FromMilliseconds(300);
 
     private readonly Func<BackupPlan> _plan;
@@ -33,11 +38,41 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private CancellationTokenSource? _simulateCts;
 
     [ObservableProperty] private bool _isLoading;
-    [ObservableProperty] private string? _error;
-    [ObservableProperty] private string _nowSummary = NotLoadedText;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Error))]
+    private LocText? _errorText;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NowSummary))]
+    private LocText _now = LocText.Of("retention.now.notLoaded");
+
     [ObservableProperty] private AssumedSchedule _selectedSchedule = Schedules[1];
     [ObservableProperty] private bool _usesPlanSchedule;
-    [ObservableProperty] private string _fullSummary = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FullSummary))]
+    private LocText _full = LocText.Empty;
+
+    public string? Error => ErrorText?.ToString();
+
+    public string NowSummary => Now.ToString();
+
+    public string FullSummary => Full.ToString();
+
+    /// <summary>The language changed: the summaries, rows and timeline are built again (the target is not read again).</summary>
+    public void RefreshTexts()
+    {
+        OnPropertyChanged(string.Empty);
+        if (_versions is null)
+            return;
+        try
+        {
+            Evaluate();
+        }
+        catch (Exception ex)
+        {
+            ErrorText = LocText.Known(ex.Message);
+        }
+    }
 
     /// <summary>Versions the target holds at most once the rules are in full effect; null while there is no forecast.</summary>
     [ObservableProperty]
@@ -70,28 +105,28 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     public bool ShowEmpty => _versions is { Count: 0 } && !IsLoading && Error is null;
 
     /// <summary>The empty-state text shown over the table while <see cref="ShowEmpty"/> is true.</summary>
-    public string EmptyText => _targetMissing ? "The target folder does not exist (yet)." : "No versions yet";
+    public string EmptyText => _targetMissing ? Loc.T("retention.now.targetMissing") : Loc.T("retention.now.empty");
 
     /// <summary>True while the forecast numbers are shown; otherwise <see cref="FullSummary"/> says why there are none.</summary>
     public bool HasForecast => ForecastVersions is not null;
 
     /// <summary>The "Versions kept" number of the forecast, e.g. "≈ 21".</summary>
-    public string ForecastVersionsText => ForecastVersions is { } count ? $"≈ {count:N0}" : "";
+    public string ForecastVersionsText => ForecastVersions is { } count ? string.Create(Loc.Culture, $"≈ {count:N0}") : "";
 
     /// <summary>The "Space" number of the forecast, e.g. "≈ 286.0 GB"; "unknown" while no version size is known.</summary>
-    public string ForecastSpaceText => ForecastBytes is { } bytes ? $"≈ {ByteSize.Format(bytes)}" : "unknown";
+    public string ForecastSpaceText => ForecastBytes is { } bytes ? "≈ " + Formats.Bytes(bytes) : Loc.T("retention.forecast.unknown");
 
     partial void OnIsLoadingChanged(bool value) => OnPropertyChanged(nameof(ShowEmpty));
 
-    partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(ShowEmpty));
+    partial void OnErrorTextChanged(LocText? value) => OnPropertyChanged(nameof(ShowEmpty));
 
     public static IReadOnlyList<AssumedSchedule> Schedules { get; } =
     [
-        new("one backup a week", TimeSpan.FromDays(7), "weekly runs"),
-        new("one backup a day", TimeSpan.FromDays(1), "daily runs"),
-        new("two backups a day", TimeSpan.FromHours(12), "two runs a day"),
-        new("a backup every 4 hours", TimeSpan.FromHours(4), "runs every 4 hours"),
-        new("a backup every hour", TimeSpan.FromHours(1), "hourly runs"),
+        new("weekly", TimeSpan.FromDays(7)),
+        new("daily", TimeSpan.FromDays(1)),
+        new("twiceDaily", TimeSpan.FromHours(12)),
+        new("every4Hours", TimeSpan.FromHours(4)),
+        new("hourly", TimeSpan.FromHours(1)),
     ];
 
     partial void OnSelectedScheduleChanged(AssumedSchedule value) => RequestEvaluate();
@@ -124,9 +159,9 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowEmpty));
         _targetMissing = false;
         IsLoading = false;
-        Error = null;
+        ErrorText = null;
         NowRows.ReplaceAll([]);
-        NowSummary = NotLoadedText;
+        Now = LocText.Of("retention.now.notLoaded");
         ClearSimulation();
     }
 
@@ -148,7 +183,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Error = ex.Message;
+            ErrorText = LocText.Known(ex.Message);
         }
     }
 
@@ -175,7 +210,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         var cts = _loadCts = new CancellationTokenSource();
         var plan = _plan();   // a snapshot, because the target is read on a worker thread
         IsLoading = true;
-        Error = null;
+        ErrorText = null;
         try
         {
             var (versions, targetMissing) = await Task.Run(() =>
@@ -203,9 +238,9 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 _versionsTarget = null;
                 _targetMissing = false;
                 NowRows.ReplaceAll([]);
-                NowSummary = "";
+                Now = LocText.Empty;
                 ClearSimulation();
-                Error = $"The target folder could not be read: {ex.Message}";
+                ErrorText = LocText.Of("retention.targetUnreadable", ("error", ex.Message));
             }
         }
         finally
@@ -231,22 +266,26 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         catch (ArgumentException)
         {
             NowRows.ReplaceAll([]);
-            NowSummary = "Correct the rules above to see what they keep.";
+            Now = LocText.Of("retention.now.fixRules");
             ClearSimulation();
-            FullSummary = "Correct the rules above to see the forecast.";
+            Full = LocText.Of("retention.forecast.fixRules");
             return;
         }
 
-        NowRows.ReplaceAll(decisions.Reverse().Select(d => new RetentionNowRow(d)));
+        NowRows.ReplaceAll(decisions.Reverse().Select(d => new RetentionNowRow(d, rules)));
 
         var managed = decisions.Where(d => d.Decision is not null).ToList();
         var deleted = managed.Where(d => d.Delete).ToList();
         var unmanaged = decisions.Count - managed.Count;
-        NowSummary = decisions.Count == 0
-            ? _targetMissing ? "The target folder does not exist (yet)." : "There are no versions in the target yet."
-            : $"{managed.Count:N0} versions, {ByteSize.Format(SizeOf(managed))}  →  the rules keep " +
-              $"{managed.Count - deleted.Count:N0} and delete {deleted.Count:N0} (frees {ByteSize.Format(SizeOf(deleted))})" +
-              (unmanaged > 0 ? $"  ·  {unmanaged:N0} not managed" : "");
+        var targetMissing = _targetMissing;
+        var (count, keep, delete) = (managed.Count, managed.Count - deleted.Count, deleted.Count);
+        var (size, freed) = (SizeOf(managed), SizeOf(deleted));
+        Now = decisions.Count == 0
+            ? targetMissing ? LocText.Of("retention.now.targetMissing") : LocText.Of("retention.now.noVersions")
+            : new LocText(() =>
+                Loc.F("retention.now.summary", ("count", count), ("size", Formats.Bytes(size)), ("keep", keep),
+                    ("delete", delete), ("freed", Formats.Bytes(freed))) +
+                (unmanaged > 0 ? Loc.F("retention.now.unmanaged", ("count", unmanaged)) : ""));
 
         _ = SimulateAsync(versions, rules, plan.Triggers);
     }
@@ -255,7 +294,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     {
         _simulateCts?.Cancel();
         _simulateCts = null;
-        FullSummary = "";
+        Full = LocText.Empty;
         ForecastVersions = null;
         ForecastBytes = null;
         TimelineLanes = [];
@@ -266,7 +305,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     {
         _simulateCts?.Cancel();
         var cts = _simulateCts = new CancellationTokenSource();
-        FullSummary = "Calculating…";
+        Full = LocText.Of("retention.forecast.calculating");
         ForecastVersions = null;
         ForecastBytes = null;
 
@@ -274,24 +313,24 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         {
             var now = DateTime.Now;
             IEnumerable<DateTime> runs;
-            string frequency;
+            string frequencyKey;
             if (triggers.Count > 0)
             {
                 if (triggers.Any(t => ScheduleTriggers.Validate(t) is not null))
                 {
                     ClearSimulation();
-                    FullSummary = "Correct the plan's triggers on the Plan tab to see the full extension.";
+                    Full = LocText.Of("retention.forecast.fixTriggers");
                     return;
                 }
                 runs = ScheduleCalculator.LocalRunTimes(triggers, DateTime.UtcNow, TimeZoneInfo.Local);
-                frequency = "the plan's schedule";
+                frequencyKey = "retention.forecast.planFrequency";
             }
             else
             {
                 // The assumed backups run at 02:00 and then every interval.
                 var schedule = SelectedSchedule;
                 runs = RetentionSimulator.Every(now.Date.AddHours(2), schedule.Interval);
-                frequency = schedule.Label;
+                frequencyKey = "retention.scheduleLabel." + schedule.Key;
             }
 
             var owned = versions.Where(v => v.IsOwned).ToList();
@@ -301,7 +340,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
 
             var result = await Task.Run(() => RetentionSimulator.Simulate(seeds, rules, runs, now, average, cts.Token), cts.Token);
             if (ReferenceEquals(_simulateCts, cts))
-                ShowSimulation(result, rules, frequency, now);
+                ShowSimulation(result, rules, frequencyKey, now);
         }
         catch (OperationCanceledException)
         {
@@ -312,34 +351,41 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             if (ReferenceEquals(_simulateCts, cts))
             {
                 ClearSimulation();
-                FullSummary = $"The full extension could not be calculated: {ex.Message}";
+                Full = LocText.Of("retention.forecast.failed", ("error", ex.Message));
             }
         }
     }
 
-    private void ShowSimulation(SimulationResult result, IReadOnlyList<RetentionRule> rules, string frequency,
+    private void ShowSimulation(SimulationResult result, IReadOnlyList<RetentionRule> rules, string frequencyKey,
         DateTime now)
     {
-        var size = result.EstimatedBytes is { } bytes ? $", about {ByteSize.Format(bytes)}" : "";
-        var cut = result.Truncated ? $" The simulation stopped after {result.RunsSimulated:N0} runs." : "";
-        FullSummary = rules.Count == 0
-            ? $"No rules, so nothing is ever deleted: with {frequency} there are {result.SteadyStateCount:N0} versions after two years{size}.{cut}"
-            : $"With {frequency} the target holds up to {result.SteadyStateCount:N0} versions{size}.{cut}";
-        ForecastVersions = result.SteadyStateCount;
-        ForecastBytes = result.EstimatedBytes;
+        var (count, bytes, truncated, runs) = (result.SteadyStateCount, result.EstimatedBytes, result.Truncated, result.RunsSimulated);
+        var noRules = rules.Count == 0;
+        Full = new LocText(() =>
+        {
+            var frequency = Loc.T(frequencyKey);
+            var size = bytes is { } total ? Loc.F("retention.forecast.size", ("size", Formats.Bytes(total))) : "";
+            var cut = truncated ? Loc.F("retention.forecast.cut", ("runs", runs)) : "";
+            return noRules
+                ? Loc.F("retention.forecast.noRules", ("frequency", frequency), ("count", count), ("size", size), ("cut", cut))
+                : Loc.F("retention.forecast.withRules", ("frequency", frequency), ("count", count), ("size", size), ("cut", cut));
+        });
+        ForecastVersions = count;
+        ForecastBytes = bytes;
 
         var lanes = new List<TimelineLane>();
         for (var i = 0; i < rules.Count; i++)
         {
             var ruleIndex = i;
-            lanes.Add(new TimelineLane($"{RetentionRules.Describe(rules[i])}, keep {rules[i].Keep:N0}",
+            lanes.Add(new TimelineLane(
+                Loc.F("retention.timeline.lane", ("rule", RetentionTexts.Describe(rules[i])), ("keep", rules[i].Keep)),
                 result.Survivors.Where(s => s.Reasons.Any(r => r.RuleIndex == ruleIndex)).Select(s => s.LocalTime).ToList(),
                 rules[i].Period));
         }
 
         var others = result.Survivors.Where(s => s.Reasons.Count > 0 && s.Reasons.All(r => r.RuleIndex < 0)).Select(s => s.LocalTime).ToList();
         if (others.Count > 0)
-            lanes.Add(new TimelineLane(rules.Count == 0 ? "All versions" : "Newest", others));
+            lanes.Add(new TimelineLane(noRules ? Loc.T("retention.timeline.all") : Loc.T("retention.timeline.newest"), others));
 
         TimelineFrom = result.Survivors.Count > 0 ? result.Survivors[0].LocalTime : now;
         TimelineTo = result.Horizon;

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using ReBackup.Core.Json;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Schedule;
 
 namespace ReBackup.Core.Tests.Schedule;
@@ -8,6 +9,9 @@ namespace ReBackup.Core.Tests.Schedule;
 public class ScheduleTriggersTests
 {
     private static ScheduleTrigger Daily(string? time) => new() { Type = TriggerType.Daily, Time = time };
+
+    /// <summary>The problem as Core renders it in English.</summary>
+    private static string? Problem(ScheduleTrigger? trigger) => ScheduleTriggers.Validate(trigger).ToEnglish();
 
     [Fact]
     public void Valid_triggers_pass()
@@ -24,7 +28,7 @@ public class ScheduleTriggersTests
             new() { Type = TriggerType.Interval, EveryHours = 24 },
         ];
 
-        triggers.Select(ScheduleTriggers.Validate).Should().OnlyContain(problem => problem == null);
+        triggers.Select(Problem).Should().OnlyContain(problem => problem == null);
     }
 
     [Theory]
@@ -35,17 +39,17 @@ public class ScheduleTriggersTests
     [InlineData("02:60")]
     public void A_time_that_is_not_HH_mm_is_reported(string? time)
     {
-        ScheduleTriggers.Validate(Daily(time)).Should().Be("the time must be written as HH:mm, for example 02:00.");
+        Problem(Daily(time)).Should().Be("the time must be written as HH:mm, for example 02:00.");
     }
 
     [Fact]
     public void Weekly_needs_valid_weekdays()
     {
-        ScheduleTriggers.Validate(new ScheduleTrigger { Type = TriggerType.Weekly, Time = "18:00" })
+        Problem(new ScheduleTrigger { Type = TriggerType.Weekly, Time = "18:00" })
             .Should().Be("choose at least one weekday.");
-        ScheduleTriggers.Validate(new ScheduleTrigger { Type = TriggerType.Weekly, Days = [], Time = "18:00" })
+        Problem(new ScheduleTrigger { Type = TriggerType.Weekly, Days = [], Time = "18:00" })
             .Should().Be("choose at least one weekday.");
-        ScheduleTriggers.Validate(new ScheduleTrigger { Type = TriggerType.Weekly, Days = ["Mon", "Mo"], Time = "18:00" })
+        Problem(new ScheduleTrigger { Type = TriggerType.Weekly, Days = ["Mon", "Mo"], Time = "18:00" })
             .Should().Be("\"Mo\" is not a weekday.");
     }
 
@@ -55,7 +59,7 @@ public class ScheduleTriggersTests
     [InlineData(-31)]
     public void Monthly_needs_a_day_in_range(int? day)
     {
-        ScheduleTriggers.Validate(new ScheduleTrigger { Type = TriggerType.Monthly, Day = day, Time = "03:00" })
+        Problem(new ScheduleTrigger { Type = TriggerType.Monthly, Day = day, Time = "03:00" })
             .Should().Be("the day must be from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.");
     }
 
@@ -68,15 +72,15 @@ public class ScheduleTriggersTests
     [InlineData(4, "20:00", "08:00", "the start time must not be after the end time.")]
     public void Interval_problems_are_reported(int? everyHours, string? from, string? to, string expected)
     {
-        ScheduleTriggers.Validate(new ScheduleTrigger { Type = TriggerType.Interval, EveryHours = everyHours, From = from, To = to })
+        Problem(new ScheduleTrigger { Type = TriggerType.Interval, EveryHours = everyHours, From = from, To = to })
             .Should().Be(expected);
     }
 
     [Fact]
     public void A_missing_or_unknown_trigger_is_reported()
     {
-        ScheduleTriggers.Validate(null).Should().Be("the trigger is empty.");
-        ScheduleTriggers.Validate(new ScheduleTrigger { Type = (TriggerType)42, Time = "02:00" }).Should().Be("the type is unknown.");
+        Problem(null).Should().Be("the trigger is empty.");
+        Problem(new ScheduleTrigger { Type = (TriggerType)42, Time = "02:00" }).Should().Be("the type is unknown.");
     }
 
     [Fact]
@@ -114,5 +118,23 @@ public class ScheduleTriggersTests
         saved.RootElement[2].EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("type", "everyHours", "from", "to");
         saved.RootElement[3].GetProperty("day").GetInt32().Should().Be(1);
         saved.RootElement[0].GetProperty("type").GetString().Should().Be("Daily");
+    }
+
+
+    [Fact]
+    public void Problems_are_keys_with_arguments()
+    {
+        ScheduleTriggers.Validate(new ScheduleTrigger { Type = TriggerType.Weekly, Days = ["Mon", "Mo"], Time = "18:00" })
+            .Should().Be(Message.Of("core.trigger.notWeekday", ("day", "Mo")));
+        ScheduleTriggers.Validate(Daily("25:00")).Should().Be(Message.Of("core.trigger.time"));
+        ScheduleTriggers.Validate(Daily("02:00")).Should().BeNull();
+    }
+
+    [Fact]
+    public void An_invalid_trigger_is_refused_with_the_English_problem()
+    {
+        FluentActions.Invoking(() => ScheduleCalculator.Occurrences(Daily("later"), DateTime.UtcNow, TimeZoneInfo.Utc).First())
+            .Should().Throw<ArgumentException>()
+            .WithMessage("The trigger is not valid: the time must be written as HH:mm, for example 02:00.*");
     }
 }

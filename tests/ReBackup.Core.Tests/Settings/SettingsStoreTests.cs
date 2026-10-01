@@ -125,4 +125,57 @@ public class SettingsStoreTests : IDisposable
 
         new SettingsStore(path).Load().Theme.Should().Be(ThemeMode.Light);
     }
+
+    [Theory]
+    [InlineData("de-DE")]
+    [InlineData("en-US")]
+    public void Language_round_trips_as_text(string language)
+    {
+        var store = new SettingsStore(_tmp.PathOf("settings.json"));
+
+        store.Save(new AppSettings { Language = language });
+
+        File.ReadAllText(store.SettingsFile).Should().Contain($"\"language\": \"{language}\"");
+        store.Load().Language.Should().Be(language);
+    }
+
+    [Fact]
+    public void No_language_is_not_written_and_loads_as_null()
+    {
+        var store = new SettingsStore(_tmp.PathOf("settings.json"));
+
+        store.Save(new AppSettings());
+
+        File.ReadAllText(store.SettingsFile).Should().NotContain("language");
+        store.Load().Language.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("\"fr-FR\"")]
+    [InlineData("\"\"")]
+    [InlineData("42")]
+    [InlineData("null")]
+    [InlineData("true")]
+    [InlineData("{ \"a\": 1 }")]
+    [InlineData("[\"de-DE\"]")]
+    public void Unknown_language_loads_as_null_and_keeps_the_other_settings(string json)
+    {
+        var path = _tmp.WriteFile("settings.json", $$"""{ "closeToTray": false, "language": {{json}}, "theme": "Light" }""");
+        var store = new SettingsStore(path);
+
+        var settings = store.Load();
+
+        settings.Language.Should().BeNull();
+        settings.CloseToTray.Should().BeFalse();
+        settings.Theme.Should().Be(ThemeMode.Light);
+        store.LastLoadError.Should().BeNull();
+    }
+
+    [Fact]
+    public void Language_is_read_case_insensitively()
+    {
+        var path = _tmp.WriteFile("settings.json", """{ "language": "de-de" }""");
+
+        new SettingsStore(path).Load().Language.Should().Be("de-DE");
+    }
 }

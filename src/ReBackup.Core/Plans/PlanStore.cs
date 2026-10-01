@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using ReBackup.Core.IO;
 using ReBackup.Core.Json;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Plans;
 
@@ -77,15 +78,15 @@ public sealed class PlanStore : IDisposable
     private static BackupPlan ReadPlan(string file)
     {
         var plan = JsonSerializer.Deserialize<BackupPlan>(File.ReadAllText(file), JsonDefaults.Options)
-            ?? throw new JsonException("File is empty.");
+            ?? throw new JsonException(CoreTexts.English("core.planFile.empty"));
         var expectedId = Path.GetFileNameWithoutExtension(file);
         if (!string.Equals(plan.Id, expectedId, StringComparison.OrdinalIgnoreCase))
-            throw new JsonException($"Plan id \"{plan.Id}\" does not match file name \"{expectedId}\".");
+            throw new JsonException(CoreTexts.English("core.planFile.idMismatch", ("id", plan.Id), ("file", expectedId)));
         // An entry written as null would reach the editor and the scheduler as a null reference.
         if (plan.Triggers.Any(trigger => trigger is null))
-            throw new JsonException("The list of triggers contains an empty entry.");
+            throw new JsonException(CoreTexts.English("core.planFile.emptyTrigger"));
         if (plan.Retention.Any(rule => rule is null))
-            throw new JsonException("The list of retention rules contains an empty entry.");
+            throw new JsonException(CoreTexts.English("core.planFile.emptyRule"));
         plan.Ignore ??= new IgnoreSettings();
         plan.Ignore.Patterns ??= [];
         return plan;

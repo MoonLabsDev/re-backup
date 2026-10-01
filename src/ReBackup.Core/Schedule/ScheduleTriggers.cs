@@ -1,4 +1,5 @@
 using System.Globalization;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Retention;
 
 namespace ReBackup.Core.Schedule;
@@ -11,43 +12,41 @@ public static class ScheduleTriggers
     /// <summary>The weekday names triggers are written with, Monday first.</summary>
     public static IReadOnlyList<string> ShortDayNames { get; } = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-    /// <summary>Null when the trigger can be used; otherwise what is wrong with it.</summary>
-    public static string? Validate(ScheduleTrigger? trigger)
+    /// <summary>Null when the trigger can be used; otherwise what is wrong with it (keys under <c>core.trigger</c>).</summary>
+    public static Message? Validate(ScheduleTrigger? trigger)
     {
         if (trigger is null)
-            return "the trigger is empty.";
+            return Message.Of("core.trigger.empty");
         if (!Enum.IsDefined(trigger.Type))
-            return "the type is unknown.";
+            return Message.Of("core.trigger.unknownType");
 
         if (trigger.Type != TriggerType.Interval && !TryParseTime(trigger.Time, out _))
-            return "the time must be written as HH:mm, for example 02:00.";
+            return Message.Of("core.trigger.time");
 
         switch (trigger.Type)
         {
             case TriggerType.Weekly:
                 if (trigger.Days is not { Count: > 0 })
-                    return "choose at least one weekday.";
+                    return Message.Of("core.trigger.noWeekday");
                 foreach (var day in trigger.Days)
                 {
                     if (!RetentionRules.TryGetWeekday(day, out _))
-                        return $"\"{day}\" is not a weekday.";
+                        return Message.Of("core.trigger.notWeekday", ("day", day));
                 }
                 return null;
 
             case TriggerType.Monthly:
-                return trigger.Day is >= -30 and <= 31
-                    ? null
-                    : "the day must be from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.";
+                return trigger.Day is >= -30 and <= 31 ? null : Message.Of("core.trigger.monthDay");
 
             case TriggerType.Interval:
                 if (trigger.EveryHours is not (>= 1 and <= 24))
-                    return "the interval must be a whole number of hours from 1 to 24.";
+                    return Message.Of("core.trigger.interval");
                 if (trigger.From is not null && !TryParseTime(trigger.From, out _))
-                    return "the start time must be written as HH:mm, for example 08:00.";
+                    return Message.Of("core.trigger.from");
                 if (trigger.To is not null && !TryParseTime(trigger.To, out _))
-                    return "the end time must be written as HH:mm, for example 20:00.";
+                    return Message.Of("core.trigger.to");
                 var (from, to) = IntervalWindow(trigger);
-                return from > to ? "the start time must not be after the end time." : null;
+                return from > to ? Message.Of("core.trigger.fromAfterTo") : null;
 
             default:
                 return null;

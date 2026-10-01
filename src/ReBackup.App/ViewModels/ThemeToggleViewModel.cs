@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.Core.Settings;
 
 namespace ReBackup.App.ViewModels;
@@ -20,9 +21,9 @@ public sealed partial class ThemeToggleViewModel : ObservableObject
 
     public ThemeMode Mode => _current();
 
-    public string ToolTip => $"Theme: {Mode} — click to change";
+    public string ToolTip => Loc.F("shell.rail.themeToolTip", ("theme", Loc.T("enum.theme." + Mode)));
 
-    public string AutomationName => $"Theme: {Mode}";
+    public string AutomationName => Loc.F("shell.rail.themeName", ("theme", Loc.T("enum.theme." + Mode)));
 
     public static ThemeMode Next(ThemeMode mode) => mode switch
     {

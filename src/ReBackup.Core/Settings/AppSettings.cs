@@ -12,4 +12,9 @@ public sealed class AppSettings
     public bool StartWithWindows { get; set; }
     [JsonConverter(typeof(ThemeModeConverter))]
     public ThemeMode Theme { get; set; } = ThemeMode.Dark;
+
+    /// <summary>"de-DE" or "en-US"; null until the user chooses one (then the Windows language decides).</summary>
+    [JsonConverter(typeof(LanguageConverter))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Language { get; set; }
 }

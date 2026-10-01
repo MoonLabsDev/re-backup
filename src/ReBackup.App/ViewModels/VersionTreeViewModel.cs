@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReBackup.App.Localization;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
@@ -37,13 +38,20 @@ public sealed partial class VersionTreeViewModel : ObservableObject
     public long? ShownOtherId => _index is null ? null : _otherId;
 
     /// <summary>Shows a message instead of a tree (no version, not indexed yet, an error).</summary>
-    public void ShowMessage(string message)
+    public void ShowMessage(LocText message)
     {
         _generation++;
         _index = null;
         _statuses = null;
         _roots = [new VersionTreeNode(message, 0)];
         Rebuild();
+    }
+
+    /// <summary>The language changed: the rows' texts are read again.</summary>
+    public void RefreshTexts()
+    {
+        foreach (var row in Rows)
+            row.Refresh();
     }
 
     /// <summary>
@@ -76,7 +84,7 @@ public sealed partial class VersionTreeViewModel : ObservableObject
         _otherId = otherId;
         _statuses = statuses;
         _changedOnly = changedOnly;
-        _roots = roots.Count == 0 ? [new VersionTreeNode("This version holds no files.", 0)] : roots;
+        _roots = roots.Count == 0 ? [new VersionTreeNode(LocText.Of("versions.tree.noFiles"), 0)] : roots;
         Rebuild();
         await LoadExpandedPendingAsync(index, generation);
         if (generation != _generation)
@@ -201,7 +209,7 @@ public sealed partial class VersionTreeViewModel : ObservableObject
         {
             if (generation != _generation)
                 return;
-            node.Children = [new VersionTreeNode($"Cannot be read: {ex.Message}", node.Depth + 1)];
+            node.Children = [new VersionTreeNode(LocText.Of("versions.tree.cannotRead", ("error", ex.Message)), node.Depth + 1)];
         }
         Rebuild();
     }
@@ -259,9 +267,9 @@ public sealed partial class VersionTreeViewModel : ObservableObject
             if (!expanded)
                 continue;
             if (node.Children is null)
-                rows.Add(new VersionTreeNode("Loading…", node.Depth + 1));
+                rows.Add(new VersionTreeNode(LocText.Of("versions.tree.loading"), node.Depth + 1));
             else if (node.Children.Count == 0)
-                rows.Add(new VersionTreeNode("Empty folder", node.Depth + 1));
+                rows.Add(new VersionTreeNode(LocText.Of("versions.tree.emptyFolder"), node.Depth + 1));
             else
                 Append(rows, node.Children);
         }

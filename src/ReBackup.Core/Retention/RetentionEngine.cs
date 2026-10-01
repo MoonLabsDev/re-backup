@@ -1,3 +1,5 @@
+using ReBackup.Core.Localization;
+
 namespace ReBackup.Core.Retention;
 
 /// <summary>A version as retention sees it: its folder name and the local time in that name.</summary>
@@ -29,7 +31,8 @@ public static class RetentionEngine
         for (var i = 0; i < rules.Count; i++)
         {
             if (RetentionRules.Validate(rules[i]) is { } problem)
-                throw new ArgumentException($"Retention rule {i + 1}: {problem}", nameof(rules));
+                throw new ArgumentException(
+                    CoreTexts.English("core.plan.retentionRule", ("index", i + 1), ("problem", problem)), nameof(rules));
         }
 
         var ordered = versions

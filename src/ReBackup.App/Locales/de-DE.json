@@ -1,0 +1,758 @@
+{
+  "raw": "{text}",
+  "language": {
+    "de-DE": "Deutsch",
+    "en-US": "English",
+    "toolTip": "Sprache: {language} – zum Ändern klicken",
+    "notSaved": "Die Sprache konnte nicht gespeichert werden:\n\n{error}"
+  },
+  "format": {
+    "date": "dd.MM.yyyy",
+    "dateTime": "dd.MM.yyyy HH:mm",
+    "dateTimeSeconds": "dd.MM.yyyy HH:mm:ss",
+    "time": "HH:mm",
+    "weekdayTime": "ddd HH:mm",
+    "nextRun": "ddd dd.MM.yyyy HH:mm"
+  },
+  "common": {
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "ok": "OK",
+    "save": "Speichern",
+    "revert": "Verwerfen",
+    "refresh": "Aktualisieren",
+    "open": "Öffnen",
+    "expand": "Aufklappen",
+    "name": "Name",
+    "size": "Größe",
+    "files": "Dateien",
+    "status": "Status",
+    "modified": "Geändert",
+    "date": "Datum",
+    "path": "Pfad",
+    "version": "Version",
+    "unnamed": "(unbenannt)",
+    "fileCount": { "one": "{count} Datei", "other": "{count:N0} Dateien" },
+    "folderCount": { "one": "{count} Ordner", "other": "{count:N0} Ordner" },
+    "duration": {
+      "hms": "{hours} h {minutes:00} min {seconds:00} s",
+      "ms": "{minutes} min {seconds:00} s",
+      "s": "{seconds} s",
+      "underSecond": "unter 1 s"
+    }
+  },
+  "enum": {
+    "triggerType": { "Daily": "Täglich", "Weekly": "Wöchentlich", "Monthly": "Monatlich", "Interval": "Intervall" },
+    "period": { "Daily": "Täglich", "Weekly": "Wöchentlich", "Monthly": "Monatlich", "Yearly": "Jährlich" },
+    "weekday": {
+      "Monday": "Montag", "Tuesday": "Dienstag", "Wednesday": "Mittwoch", "Thursday": "Donnerstag",
+      "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag"
+    },
+    "weekdayShort": { "Mon": "Mo", "Tue": "Di", "Wed": "Mi", "Thu": "Do", "Fri": "Fr", "Sat": "Sa", "Sun": "So" },
+    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt" },
+    "includeStatus": { "Included": "Enthalten", "Ignored": "Ignoriert", "Partial": "Teilweise" },
+    "diffStatus": { "Unchanged": "Unverändert", "Added": "Hinzugefügt", "Changed": "Geändert", "Deleted": "Gelöscht" },
+    "historyStatus": { "New": "Neu", "Changed": "Geändert", "Unchanged": "Unverändert", "Deleted": "Gelöscht", "Absent": "—" },
+    "theme": { "Dark": "Dunkel", "Light": "Hell" }
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language": {
+      "title": "SPRACHE",
+      "name": "Sprache",
+      "note": "Gilt sofort."
+    },
+    "windowTitle": "ReBackup-Einstellungen",
+    "config": {
+      "title": "KONFIGURATIONSORDNER",
+      "change": "Ändern …",
+      "name": "Konfigurationsordner",
+      "dialogTitle": "Konfigurationsordner",
+      "backupRunning": "Ein Backup läuft oder ist eingereiht. Vor dem Verschieben des Konfigurationsordners sein Ende abwarten oder es abbrechen.",
+      "choose": "Konfigurationsordner wählen",
+      "containsConfiguration": "Dieser Ordner enthält bereits eine ReBackup-Konfiguration.\n\nOhne Kopieren der aktuellen Pläne dorthin wechseln?",
+      "otherEdits": "Die übrigen Änderungen in diesem Dialog werden nicht gespeichert. Fortfahren?",
+      "restart": "ReBackup startet jetzt neu, um den neuen Konfigurationsordner zu verwenden."
+    },
+    "ignore": {
+      "title": "STANDARD-IGNORIERMUSTER",
+      "note": "Ein Muster pro Zeile, gitignore-Syntax.",
+      "name": "Standard-Ignoriermuster"
+    },
+    "app": {
+      "title": "APP",
+      "closeToTray": "Schließen des Fensters minimiert in den Infobereich",
+      "startWithWindows": "Mit Windows starten (im Infobereich)"
+    },
+    "theme": {
+      "title": "DESIGN",
+      "name": "Design",
+      "note": "Gilt sofort."
+    }
+  },
+  "core": {
+    "plan": {
+      "nameRequired": "Ein Name ist erforderlich.",
+      "nameSpaces": "Der Name darf nicht mit Leerzeichen beginnen oder enden.",
+      "nameDot": "Der Name darf nicht mit einem Punkt enden.",
+      "namePartial": "Der Name darf nicht auf „.partial“ enden.",
+      "nameDeleting": "Der Name darf nicht auf „.deleting“ enden.",
+      "nameChars": "Der Name enthält Zeichen, die in Ordnernamen nicht erlaubt sind.",
+      "nameTaken": "Ein anderer Plan heißt bereits „{name}“.",
+      "sourceRequired": "Ein Quellordner ist erforderlich.",
+      "targetRequired": "Ein Zielordner ist erforderlich.",
+      "sourceNotAbsolute": "Die Quelle muss ein absoluter Pfad sein.",
+      "targetNotAbsolute": "Das Ziel muss ein absoluter Pfad sein.",
+      "sourceMissing": "Der Quellordner existiert nicht.",
+      "targetInsideSource": "Das Ziel darf nicht in der Quelle liegen.",
+      "sourceInsideTarget": "Die Quelle darf nicht im Ziel liegen.",
+      "retentionRule": "Aufbewahrungsregel {index}: {problem}",
+      "trigger": "Auslöser {index}: {problem}"
+    },
+    "trigger": {
+      "empty": "der Auslöser ist leer.",
+      "unknownType": "der Typ ist unbekannt.",
+      "time": "die Uhrzeit muss als HH:mm geschrieben werden, zum Beispiel 02:00.",
+      "noWeekday": "mindestens einen Wochentag wählen.",
+      "notWeekday": "„{day}“ ist kein Wochentag.",
+      "monthDay": "der Tag muss zwischen 1 und 31 liegen, 0 für den letzten Tag des Monats oder -1 bis -30 für Tage davor.",
+      "interval": "das Intervall muss eine ganze Zahl von Stunden zwischen 1 und 24 sein.",
+      "from": "die Startzeit muss als HH:mm geschrieben werden, zum Beispiel 08:00.",
+      "to": "die Endzeit muss als HH:mm geschrieben werden, zum Beispiel 20:00.",
+      "fromAfterTo": "die Startzeit darf nicht nach der Endzeit liegen.",
+      "invalid": "Der Auslöser ist ungültig: {problem}"
+    },
+    "retention": {
+      "empty": "die Regel ist leer.",
+      "unknownPeriod": "der Zeitraum ist unbekannt.",
+      "keep": "die Anzahl muss eine Zahl von 1 bis {max} sein.",
+      "weekday": "der Anker muss ein Wochentag sein, zum Beispiel „Sunday“ (englischer Name, wie in der Plandatei).",
+      "monthDay": "der Anker muss ein Tag zwischen 1 und 31 sein, 0 für den letzten Tag des Monats oder -1 bis -30 für Tage davor.",
+      "yearDate": "der Anker muss ein Datum im Format MM-TT sein, zum Beispiel 01-01.",
+      "invalid": "Die Aufbewahrungsregel ist ungültig: {problem}"
+    },
+    "run": {
+      "nameUnusable": "Der Planname „{name}“ kann nicht verwendet werden: {problem}",
+      "sourceMissing": "Der Quellordner „{source}“ existiert nicht.",
+      "noTarget": "Es ist kein Zielordner festgelegt.",
+      "nameNotFolder": "Der Planname „{name}“ kann nicht als Ordnername verwendet werden.",
+      "namePartial": "Der Planname darf nicht auf „.partial“ enden.",
+      "nameDeleting": "Der Planname darf nicht auf „.deleting“ enden.",
+      "targetInsideSource": "Der Zielordner ist der Quellordner oder liegt darin.",
+      "sourceInsideTarget": "Der Quellordner liegt im Zielordner.",
+      "sourceUnreadable": "Der Quellordner konnte nicht gelesen werden: {error}",
+      "notEnoughSpace": "Das Backup braucht {required}, auf dem Ziel sind aber nur {free} frei.",
+      "targetFull": "Auf dem Ziel ist während des Backups der Platz ausgegangen.",
+      "sourceGone": "Der Quellordner ist nicht mehr verfügbar.",
+      "retentionFailed": "Die Aufbewahrung wurde übersprungen: {error}",
+      "retentionRulesUnreadable": "Die Aufbewahrung wurde übersprungen: Die aktuellen Regeln des Plans konnten nicht gelesen werden: {error}",
+      "retentionPlanGone": "Die Aufbewahrung wurde übersprungen: Den Plan gibt es nicht mehr.",
+      "retentionDeleteFailed": "Die Aufbewahrung konnte „{version}“ nicht löschen: {error}",
+      "freeSpaceRulesUnreadable": "Alte Versionen wurden nicht gelöscht, um Platz zu schaffen: Die aktuellen Regeln des Plans konnten nicht gelesen werden: {error}",
+      "freeSpacePlanGone": "Alte Versionen wurden nicht gelöscht, um Platz zu schaffen: Den Plan gibt es nicht mehr.",
+      "freeSpaceExamineFailed": "Alte Versionen konnten nicht geprüft werden, um Platz zu schaffen: {error}",
+      "freeSpaceDeleteFailed": "„{version}“ konnte nicht gelöscht werden, um Platz zu schaffen: {error}",
+      "remainsFailed": "Reste einer früheren Löschung konnten nicht gelöscht werden („{name}“): {error}",
+      "removedRemainsLeft": "„{version}“ wurde aus den Versionen entfernt, seine Reste konnten aber noch nicht gelöscht werden: {error}",
+      "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
+    },
+    "skip": {
+      "ignoreFileUnreadable": "Ignorierdatei konnte nicht gelesen werden; ihre Muster wurden nicht angewendet",
+      "reservedName": "der Name ist für das Backup-Manifest reserviert",
+      "changed": "wurde während des Kopierens geändert; die Kopie ist möglicherweise inkonsistent"
+    },
+    "file": {
+      "noLongerExists": "existiert nicht mehr",
+      "accessDenied": "Zugriff verweigert",
+      "locked": "von einem anderen Programm gesperrt"
+    },
+    "scan": {
+      "link": "Verknüpfung wird nicht verfolgt.",
+      "tooDeep": "Ordner zu tief verschachtelt."
+    },
+    "restore": {
+      "destinationNotAbsolute": "Das Ziel muss ein absoluter Pfad sein.",
+      "versionMissing": "Der Versionsordner „{folder}“ existiert nicht.",
+      "destinationInVersion": "Das Ziel darf nicht der Versionsordner sein oder darin liegen.",
+      "outside": "„{path}“ liegt außerhalb der Version.",
+      "throughLink": "„{path}“ führt über die Verknüpfung „{link}“.",
+      "sameName": "Zwei ausgewählte Einträge heißen „{name}“; sie würden am selben Ort landen.",
+      "isLink": "„{path}“ ist eine Verknüpfung.",
+      "manifest": "Das Manifest gehört nicht zum Backup.",
+      "notInVersion": "„{path}“ existiert nicht in der Version.",
+      "folderExists": "Ein Ordner mit diesem Namen existiert bereits.",
+      "destinationLink": "der Zielordner ist eine Verknüpfung",
+      "outsideDestination": "„{path}“ liegt außerhalb des Ziels.",
+      "notAPath": "„{path}“ ist kein Pfad innerhalb der Version.",
+      "accessDenied": "Zugriff verweigert (schreibgeschützt oder von einem anderen Programm verwendet)"
+    },
+    "index": {
+      "targetUnavailable": "Der Zielordner „{folder}“ ist nicht verfügbar."
+    },
+    "manifest": {
+      "empty": "Das Manifest ist leer.",
+      "unreadable": "Das Manifest kann nicht gelesen werden: {error}",
+      "endsEarly": "Das Manifest endet zu früh.",
+      "valueTooLarge": "Ein einzelner Wert des Manifests ist zu groß.",
+      "notObject": "Ein Manifest ist ein JSON-Objekt.",
+      "entryNotObject": "Ein Dateieintrag ist ein JSON-Objekt.",
+      "entryNoPath": "Ein Dateieintrag hat keinen Pfad."
+    },
+    "planFile": {
+      "empty": "Die Datei ist leer.",
+      "idMismatch": "Die Plan-ID „{id}“ passt nicht zum Dateinamen „{file}“.",
+      "emptyTrigger": "Die Liste der Auslöser enthält einen leeren Eintrag.",
+      "emptyRule": "Die Liste der Aufbewahrungsregeln enthält einen leeren Eintrag."
+    },
+    "config": {
+      "containsConfiguration": "Der gewählte Ordner enthält bereits eine ReBackup-Konfiguration."
+    }
+  },
+  "shell": {
+    "tab": { "plan": "Plan", "ignore": "Ignorieren", "retention": "Aufbewahrung", "history": "Verlauf", "versions": "Versionen" },
+    "rail": {
+      "settings": "Einstellungen",
+      "themeToolTip": "Design: {theme} – zum Ändern klicken",
+      "themeName": "Design: {theme}"
+    },
+    "plans": {
+      "title": "PLÄNE",
+      "new": "Neuer Plan",
+      "newName": "Neuer Plan",
+      "delete": "Plan löschen",
+      "list": "Pläne",
+      "deleteConfirm": "Plan „{plan}“ löschen?\n\nBereits im Ziel gespeicherte Backups bleiben unberührt.",
+      "deleteHistory": "Auch den Laufverlauf dieses Plans löschen?",
+      "historyNotDeleted": "Der Plan wurde gelöscht, sein Laufverlauf aber nicht: {error}"
+    },
+    "noPlan": "Kein Plan ausgewählt. Mit der Schaltfläche + neben PLÄNE einen anlegen.",
+    "actions": {
+      "saveToolTip": "Speichern (Strg+S)",
+      "runNow": "Jetzt ausführen",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "chooseSource": "Quellordner wählen",
+      "chooseTarget": "Zielordner wählen"
+    },
+    "card": {
+      "removeFromQueue": "Aus der Warteschlange entfernen",
+      "cancelBackup": "Backup abbrechen",
+      "canceling": "Wird abgebrochen …"
+    },
+    "status": {
+      "configuration": "Konfiguration: {path}",
+      "reloadFailed": "Die Pläne konnten nicht neu geladen werden: {error}",
+      "reloaded": "Pläne nach einer Änderung auf dem Datenträger neu geladen.",
+      "loadErrors": {
+        "one": "{count} Plandatei konnte nicht gelesen werden: {details}",
+        "other": "{count} Plandateien konnten nicht gelesen werden: {details}"
+      },
+      "deleteCancelBackup": "Vor dem Löschen des Plans das Backup von „{plan}“ abbrechen.",
+      "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
+      "saved": "„{plan}“ gespeichert.",
+      "notSaved": "Nicht gespeichert: Die im Plan angezeigten Fehler beheben.",
+      "scheduledFailed": "Ein geplantes Backup konnte nicht eingereiht werden: {error}",
+      "scheduleFailed": "Der Zeitplan konnte nicht aktualisiert werden: {error}",
+      "canceling": "Backup von „{plan}“ wird abgebrochen …",
+      "saveFirst": "„{plan}“ vor dem Ausführen fehlerfrei speichern.",
+      "alreadyQueued": "„{plan}“ ist bereits eingereiht oder läuft.",
+      "removed": "Das eingereihte Backup von „{plan}“ wurde entfernt.",
+      "completed": "Backup von „{plan}“ in {duration} abgeschlossen.",
+      "completedSkipped": {
+        "one": "Backup von „{plan}“ abgeschlossen, {count} Eintrag übersprungen.",
+        "other": "Backup von „{plan}“ abgeschlossen, {count:N0} Einträge übersprungen."
+      },
+      "canceled": "Backup von „{plan}“ wurde abgebrochen.",
+      "aborted": "Backup von „{plan}“ ist fehlgeschlagen: {reason}",
+      "indexError": "Der Versionsindex von „{plan}“ konnte nicht aktualisiert werden: {error}",
+      "historyUnreadable": "Der Laufverlauf von „{plan}“ konnte nicht gelesen werden: {error}"
+    },
+    "queue": {
+      "idle": "Kein Backup aktiv",
+      "running": "Backup von „{plan}“ läuft",
+      "percent": " – {percent:0} %",
+      "waiting": " · {count} wartend",
+      "queued": { "one": "{count} Backup eingereiht", "other": "{count} Backups eingereiht" }
+    },
+    "scheduler": { "paused": "Zeitplaner pausiert" }
+  },
+  "card": {
+    "neverRun": "Noch nie gelaufen",
+    "lastRun": "Letzter Lauf {when}: {status}",
+    "runNow": "Jetzt ausführen",
+    "retryNow": "Jetzt erneut versuchen",
+    "queued": "Eingereiht",
+    "after": "nach „{plan}“",
+    "startsNext": "startet als Nächstes",
+    "canceling": "Wird abgebrochen",
+    "stopping": "Wird beendet",
+    "removingCopy": "unvollständige Kopie wird entfernt …",
+    "stoppingBackup": "Backup wird beendet …",
+    "starting": "Startet …",
+    "scan": "Scan",
+    "indexing": "Indizieren …",
+    "creatingFolders": "Ordner anlegen",
+    "copying": "Kopieren …",
+    "copyDetail": { "one": "{bytes} · {count} Datei", "other": "{bytes} · {count:N0} Dateien" },
+    "finishing": "Abschließen",
+    "removingOld": "alte Versionen werden entfernt …",
+    "completingVersion": "Version wird abgeschlossen …",
+    "manualOnly": "Nur manuell",
+    "schedulerPaused": "Zeitplaner pausiert",
+    "canceledAt": "Abgebrochen · {when}",
+    "targetFull": "Ziel voll",
+    "targetFullToolTip": "Das Ziel ist voll.",
+    "failed": "Fehlgeschlagen",
+    "failedReason": "Fehlgeschlagen: {reason}",
+    "skipped": "{count:N0} übersprungen",
+    "retentionWarnings": "Warnungen der Aufbewahrung",
+    "backedUpAt": "Gesichert · {when}",
+    "lastShort": "zuletzt {when} · {result}",
+    "neverRunShort": "noch nie gelaufen",
+    "result": { "ok": "OK", "warnings": "Warnungen", "canceled": "abgebrochen", "failed": "fehlgeschlagen" },
+    "remaining": {
+      "underMinute": "weniger als eine Minute übrig",
+      "minutes": "noch {minutes} min",
+      "hours": "noch {hours} h {minutes:00} min"
+    },
+    "schedule": {
+      "notSaved": "noch nicht gespeichert",
+      "none": "kein Zeitplan",
+      "errors": "Zeitplan fehlerhaft",
+      "next": "nächster Lauf {when}"
+    }
+  },
+  "run": {
+    "status": {
+      "completed": "Abgeschlossen",
+      "completedWithWarnings": "Mit Warnungen abgeschlossen",
+      "completedRetentionWarnings": "Abgeschlossen (Warnungen der Aufbewahrung)",
+      "full": "Abgebrochen: Ziel voll",
+      "error": "Abgebrochen: Fehler",
+      "canceled": "Abgebrochen"
+    }
+  },
+  "tray": {
+    "open": "Öffnen",
+    "runPlan": "Plan ausführen",
+    "pause": "Zeitplaner pausieren",
+    "resume": "Zeitplaner fortsetzen",
+    "exit": "Beenden",
+    "notification": {
+      "title": "Backup „{plan}“",
+      "completed": "In {duration} abgeschlossen.",
+      "completedSkipped": {
+        "one": "In {duration} abgeschlossen, {count} Eintrag wurde übersprungen.",
+        "other": "In {duration} abgeschlossen, {count:N0} Einträge wurden übersprungen."
+      },
+      "canceled": "Nach {duration} abgebrochen.",
+      "full": "Nach {duration} abgebrochen, das Ziel ist voll. {reason}",
+      "error": "Nach {duration} mit einem Fehler abgebrochen. {reason}"
+    }
+  },
+  "app": {
+    "versionLabel": "ReBackup v{version}",
+    "config": {
+      "title": "Konfigurationsordner",
+      "unreachable": "Der Konfigurationsordner {path} ist nicht erreichbar:\n\n{error}\n\nJa = Erneut versuchen, Nein = Für diese Sitzung den Standardort verwenden, Abbrechen = Beenden",
+      "defaultUnusable": "Auch der Standardort {path} ist nicht nutzbar:\n\n{error}"
+    },
+    "settingsUnreadable": "settings.json konnte nicht gelesen werden, es gelten die Standardwerte.\n\n{error}",
+    "themeNotSaved": "Das Design konnte nicht gespeichert werden:\n\n{error}",
+    "restartStuck": "Ein laufendes Backup konnte nicht rechtzeitig beendet werden. Bitte ReBackup von Hand neu starten.",
+    "restartFailed": "ReBackup konnte sich nicht selbst neu starten. Bitte von Hand neu starten.",
+    "unsaved": {
+      "title": "Ungespeicherte Änderungen",
+      "message": "Diese Pläne haben ungespeicherte Änderungen:\n\n{plans}\n\nÄnderungen verwerfen?"
+    },
+    "restoreRunning": {
+      "title": "Wiederherstellung läuft",
+      "restart": "Eine Wiederherstellung läuft. Bereits wiederhergestellte Dateien bleiben, der Rest wird nicht wiederhergestellt.\n\nAbbrechen und ReBackup neu starten?",
+      "exit": "Eine Wiederherstellung läuft. Bereits wiederhergestellte Dateien bleiben, der Rest wird nicht wiederhergestellt.\n\nAbbrechen und ReBackup beenden?"
+    },
+    "restoreStuck": "Eine Wiederherstellung wurde nicht innerhalb von 10 Sekunden beendet. Eine gerade geschriebene Datei ist möglicherweise unvollständig (daneben liegt eine Datei „*.rebackup-tmp“).",
+    "backupRunning": {
+      "title": "Backup läuft",
+      "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"
+    }
+  },
+  "plan": {
+    "source": {
+      "title": "QUELLE → ZIEL",
+      "source": "Quelle",
+      "target": "Ziel",
+      "chooseSource": "Quellordner wählen",
+      "chooseTarget": "Zielordner wählen",
+      "enabled": "Nach Zeitplan ausführen",
+      "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
+      "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+    },
+    "lastRun": {
+      "title": "LETZTER LAUF",
+      "duration": "Dauer",
+      "copied": "Kopiert",
+      "skipped": "Übersprungen"
+    },
+    "schedule": {
+      "title": "ZEITPLAN",
+      "note": "Der Plan läuft zu jeder dieser Ortszeiten.",
+      "add": "Auslöser hinzufügen",
+      "remove": "Diesen Auslöser entfernen",
+      "type": "Auslösertyp",
+      "at": "um",
+      "time": "Uhrzeit",
+      "onDay": "am Tag",
+      "dayOfMonth": "Tag im Monat",
+      "dayHint": "0 = letzter Tag, -1 = der Tag davor",
+      "every": "alle",
+      "everyHours": "Intervall in Stunden",
+      "hoursFrom": "Stunden von",
+      "from": "Von",
+      "to": "bis",
+      "toName": "Bis",
+      "wholeDay": "leer = ganzer Tag",
+      "nextRuns": "Nächste Läufe"
+    },
+    "nextRuns": {
+      "none": "Keine Auslöser: Dieser Plan läuft nur, wenn er von Hand gestartet wird.",
+      "fix": "Die Auslöser oben korrigieren, um die nächsten Läufe zu sehen.",
+      "tray": "Läufe finden nur statt, während ReBackup läuft (nach dem Schließen des Fensters läuft es im Infobereich weiter).",
+      "disabled": "Der Plan ist deaktiviert: Bis er wieder aktiviert wird, läuft er nur, wenn er von Hand gestartet wird.",
+      "paused": "Der Zeitplaner ist pausiert.",
+      "unsaved": "Ungespeicherte Änderungen gelten nach dem Speichern."
+    }
+  },
+  "ignore": {
+    "patterns": {
+      "title": "IGNORIERMUSTER",
+      "syntax": "gitignore-Syntax, ein Muster pro Zeile",
+      "nested": ".backupignore-Dateien in der Quelle beachten",
+      "global": "Auch die globalen Standardmuster anwenden",
+      "name": "Ignoriermuster",
+      "resize": "Größe des Musterbereichs ändern"
+    },
+    "index": {
+      "now": "Jetzt indizieren",
+      "toolTip": "Den Quellordner scannen",
+      "cancel": "Scan abbrechen"
+    },
+    "sizes": {
+      "show": "Anzeigen",
+      "name": "Angezeigte Größen",
+      "inBackup": "Im Backup",
+      "inBackupToolTip": "Zeigt, was ins Backup kommt; ignorierte Einträge zeigen —",
+      "total": "Gesamt",
+      "totalToolTip": "Zeigt die Gesamtgröße, ignorierte Einträge eingeschlossen"
+    },
+    "tree": {
+      "name": "Vorschaubaum",
+      "ignoreThis": "Dies ignorieren",
+      "ignoreExtension": "Alle Dateien mit dieser Endung ignorieren",
+      "unignore": "Nicht mehr ignorieren",
+      "percent": "% des Ordners"
+    },
+    "treemap": {
+      "resize": "Größe der Treemap ändern",
+      "hover": "Für Pfad und Größen auf eine Kachel zeigen",
+      "byBackup": "Größe nach Backup-Inhalt; ignorierte Einträge fehlen",
+      "byTotal": "Größe nach Gesamtgröße; ignorierte Einträge grau",
+      "empty": "Die Treemap erscheint nach dem Scan.",
+      "toolTip": "{path}\n{total}, im Backup {included} – {status}"
+    },
+    "patternNote": "Änderungen an den Mustern gelten, sobald der Scan fertig ist.",
+    "sourceMissing": "Der Quellordner existiert nicht.",
+    "progress": {
+      "notIndexed": "Noch nicht indiziert.",
+      "indexed": "Indiziert: {files}, {folders}.",
+      "live": "Bisher {files}, {folders} – {waiting} ausstehend",
+      "canceledPrevious": "Indizieren abgebrochen; der vorherige Index wird angezeigt.",
+      "canceledIncomplete": "Scan abgebrochen – unvollständig.",
+      "failedPrevious": "Indizieren fehlgeschlagen; der vorherige Index wird angezeigt.",
+      "failedIncomplete": "Scan fehlgeschlagen – unvollständig."
+    },
+    "summary": {
+      "live": "Bisher – enthalten: {includedFiles}, {includedSize}   ·   ignoriert: {ignoredFiles}, {ignoredSize}",
+      "done": "Enthalten: {includedFiles}, {includedSize}   ·   Ignoriert: {ignoredFiles}, {ignoredSize}"
+    },
+    "pill": {
+      "inBackup": "im Backup {prefix}{size} · {prefix}{files}",
+      "ignored": "ignoriert {prefix}{size} · {prefix}{files}"
+    },
+    "row": {
+      "placeholder": "wird geladen …",
+      "waiting": "wartet",
+      "loading": "lädt",
+      "notScanned": "Nicht gescannt",
+      "ignoredByParent": "Ignoriert, weil ein übergeordneter Ordner durch „{pattern}“ ({origin}) ignoriert wird",
+      "ignoredBy": "Ignoriert durch „{pattern}“ ({origin})",
+      "partly": "Teilweise ignoriert: {size} in {files} werden übersprungen",
+      "reincluded": "Wieder einbezogen durch „{pattern}“ ({origin})",
+      "included": "Enthalten",
+      "stillScanning": "Wird noch gescannt; die Zahlen wachsen noch.",
+      "notScannedReason": "Nicht gescannt: {error}"
+    },
+    "origin": {
+      "globalDefaults": "Globale Standardmuster",
+      "plan": "Plan"
+    }
+  },
+  "retention": {
+    "rules": {
+      "add": "Regel hinzufügen",
+      "title": "REGELN – EINE VERSION BLEIBT, WENN EINE REGEL SIE BEHÄLT",
+      "titleToolTip": "Die neueste Version bleibt außerdem immer erhalten.",
+      "none": "Keine Regeln: Jede Version bleibt erhalten, und das Ziel füllt sich mit der Zeit.",
+      "remove": "Diese Regel entfernen",
+      "period": "Zeitraum",
+      "periodToolTip": "Zeitraum ändern",
+      "keepTheLast": "die letzten",
+      "on": "am",
+      "onDay": "am Tag",
+      "weekday": "Wochentag",
+      "anchor": "Anker",
+      "keep": "Anzahl",
+      "keepName": "Anzahl",
+      "keepToolTip": "Wie viele Versionen diese Regel behält",
+      "days": "Tage"
+    },
+    "hint": {
+      "daily": "das letzte Backup jedes Tages",
+      "weekly": "das Backup dieses Wochentags, sonst das erste danach",
+      "monthly": "Tag des Monats: 1 bis 31, 0 = letzter Tag, -1 = der Tag vor dem letzten, …",
+      "yearly": "Datum als MM-TT, zum Beispiel 01-01"
+    },
+    "forecast": {
+      "title": "PROGNOSE – ZWEI JAHRE MIT",
+      "assumed": "Angenommener Zeitplan",
+      "assumedToolTip": "Der Plan hat keine Auslöser: Die Prognose nimmt diesen Zeitplan an.",
+      "planSchedule": "DEM ZEITPLAN DES PLANS",
+      "planFrequency": "dem Zeitplan des Plans",
+      "versionsKept": "Behaltene Versionen",
+      "space": "Speicherplatz",
+      "unknown": "unbekannt",
+      "calculating": "Wird berechnet …",
+      "fixRules": "Die Regeln oben korrigieren, um die Prognose zu sehen.",
+      "fixTriggers": "Die Auslöser des Plans im Tab „Plan“ korrigieren, um die volle Ausdehnung zu sehen.",
+      "failed": "Die volle Ausdehnung konnte nicht berechnet werden: {error}",
+      "noRules": "Keine Regeln, daher wird nie etwas gelöscht: Mit {frequency} gibt es nach zwei Jahren {count:N0} Versionen{size}.{cut}",
+      "withRules": {
+        "one": "Mit {frequency} enthält das Ziel bis zu {count} Version{size}.{cut}",
+        "other": "Mit {frequency} enthält das Ziel bis zu {count:N0} Versionen{size}.{cut}"
+      },
+      "size": ", etwa {size}",
+      "cut": " Die Simulation endete nach {runs:N0} Läufen."
+    },
+    "scheduleLabel": {
+      "weekly": "einem Backup pro Woche",
+      "daily": "einem Backup pro Tag",
+      "twiceDaily": "zwei Backups pro Tag",
+      "every4Hours": "einem Backup alle 4 Stunden",
+      "hourly": "einem Backup pro Stunde"
+    },
+    "scheduleRuns": {
+      "weekly": "wöchentlichen Läufen",
+      "daily": "täglichen Läufen",
+      "twiceDaily": "zwei Läufen pro Tag",
+      "every4Hours": "Läufen alle 4 Stunden",
+      "hourly": "stündlichen Läufen"
+    },
+    "now": {
+      "title": "VERSIONEN IM ZIEL – JETZT",
+      "refreshToolTip": "Ziel erneut lesen",
+      "notLoaded": "Die Versionen im Ziel wurden noch nicht gelesen.",
+      "targetMissing": "Der Zielordner existiert (noch) nicht.",
+      "noVersions": "Im Ziel gibt es noch keine Versionen.",
+      "empty": "Noch keine Versionen",
+      "fixRules": "Die Regeln oben korrigieren, um zu sehen, was sie behalten.",
+      "summary": {
+        "one": "{count} Version, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)",
+        "other": "{count:N0} Versionen, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)"
+      },
+      "unmanaged": "  ·  {count:N0} nicht verwaltet",
+      "openInExplorer": "Im Explorer öffnen",
+      "openFolder": "Versionsordner öffnen"
+    },
+    "column": { "decision": "Entscheidung", "keptBy": "Behalten durch", "folder": "Ordner" },
+    "decision": { "keep": "Behalten", "delete": "Löschen", "notManaged": "Nicht verwaltet" },
+    "owner": {
+      "noManifest": "kein Manifest im Ordner",
+      "foreign": "das Manifest gehört zu einem anderen Plan",
+      "renamed": "von Hand umbenannt oder kopiert",
+      "unreadable": "das Manifest kann nicht gelesen werden"
+    },
+    "reason": { "newest": "Neueste", "noRules": "Keine Regeln" },
+    "describe": { "weekly": "Wöchentlich({day})", "monthly": "Monatlich({day})", "yearly": "Jährlich({date})" },
+    "timeline": { "lane": "{rule}, {keep:N0} behalten", "all": "Alle Versionen", "newest": "Neueste" },
+    "targetUnreadable": "Der Zielordner konnte nicht gelesen werden: {error}"
+  },
+  "history": {
+    "title": "LAUFVERLAUF",
+    "column": { "start": "Start", "duration": "Dauer", "trigger": "Auslöser", "result": "Ergebnis", "reason": "Grund" },
+    "openVersion": {
+      "name": "Versionsordner öffnen",
+      "checking": "Es wird geprüft, ob die Version noch existiert …",
+      "open": "{version} im Explorer öffnen",
+      "missing": "Die Version existiert nicht mehr"
+    },
+    "details": {
+      "version": "Version: {version}",
+      "skipped": "Übersprungen ({count:N0}):",
+      "more": "… und {count:N0} weitere",
+      "deleted": "Durch die Aufbewahrung gelöscht:",
+      "warnings": "Warnungen:"
+    }
+  },
+  "versions": {
+    "title": "VERSIONEN",
+    "list": "Versionen",
+    "refreshToolTip": "Ziel erneut lesen und den Index aktualisieren",
+    "refreshName": "Versionen aktualisieren",
+    "empty": "Noch keine Versionen im Ziel",
+    "savePlan": "Den Plan speichern, um seine Versionen zu sehen.",
+    "copyMissing": "Die Kopie in „{version}“ existiert nicht mehr.",
+    "sync": {
+      "reading": "Ziel wird gelesen …",
+      "waiting": "Auf den Index wird gewartet …",
+      "errors": {
+        "one": "{count} Version konnte nicht indiziert werden: {errors}",
+        "other": "{count} Versionen konnten nicht indiziert werden: {errors}"
+      },
+      "indexing": "Index wird erstellt: {current} von {total}",
+      "indexingVersion": "Index wird erstellt: {current} von {total} · {version} · {files}"
+    },
+    "index": {
+      "notIndexed": "nicht indiziert",
+      "indexing": "wird indiziert …",
+      "indexed": "indiziert",
+      "failed": "konnte nicht indiziert werden"
+    },
+    "notManaged": {
+      "noManifest": "Nicht verwaltet: kein Manifest",
+      "foreign": "Nicht verwaltet: Manifest eines anderen Plans",
+      "unreadable": "Nicht verwaltet: Manifest nicht lesbar",
+      "renamed": "Nicht verwaltet: von Hand umbenannt oder kopiert"
+    },
+    "toolbar": {
+      "search": "Namen suchen (Teil eines Namens oder * und ?)",
+      "searchToolTip": "Ein Teil eines Namens oder ein Muster mit * und ?",
+      "compareWith": "Vergleichen mit",
+      "swapToolTip": "Tauschen: den Baum der anderen Version zeigen",
+      "swapName": "Versionen tauschen",
+      "changedOnly": "Nur Änderungen",
+      "openToolTip": "Die Datei öffnen (die Kopie in der Version)",
+      "showInExplorer": "Im Explorer zeigen",
+      "restoreOriginal": "Am ursprünglichen Ort wiederherstellen",
+      "restoreOriginalToolTip": "Die Auswahl dorthin zurückkopieren, woher sie stammt",
+      "restore": "Wiederherstellen",
+      "restoreTo": "Wiederherstellen nach …",
+      "restoreToName": "In einen Ordner wiederherstellen",
+      "restoreToToolTip": "Die Auswahl in einen gewählten Ordner kopieren",
+      "cancelRestore": "Wiederherstellung abbrechen",
+      "cancelRestoreToolTip": "Nach der aktuellen Datei anhalten"
+    },
+    "menu": { "restoreOriginal": "Am ursprünglichen Ort wiederherstellen …" },
+    "compare": { "notManaged": " (nicht verwaltet)" },
+    "tree": {
+      "name": "Versionsbaum",
+      "selectVersion": "Eine Version auswählen.",
+      "notIndexed": "Diese Version konnte nicht indiziert werden.",
+      "indexing": "Wird indiziert …",
+      "otherIndexing": "Die Vergleichsversion wird indiziert …",
+      "unreadable": "Die Version kann nicht aus dem Index gelesen werden: {error}",
+      "noFiles": "Diese Version enthält keine Dateien.",
+      "cannotRead": "Nicht lesbar: {error}",
+      "loading": "Wird geladen …",
+      "emptyFolder": "Leerer Ordner"
+    },
+    "search": {
+      "results": "Suchergebnisse",
+      "notIndexed": "Die Version ist noch nicht indiziert.",
+      "none": "Keine Treffer",
+      "capped": "Die ersten {limit} Treffer",
+      "count": { "one": "{count} Treffer", "other": "{count:N0} Treffer" },
+      "failed": "Die Suche ist fehlgeschlagen: {error}"
+    },
+    "history": {
+      "name": "Dateiverlauf",
+      "title": "VERLAUF VON {name}",
+      "unreadable": "VERLAUF VON {name} – nicht lesbar: {error}",
+      "showCopy": "Diese Kopie im Explorer zeigen"
+    }
+  },
+  "restore": {
+    "title": "Wiederherstellen",
+    "notInVersion": "„{path}“ existiert nicht mehr in der Version.",
+    "runnable": "„{name}“ ist ein Programm, Skript oder eine Verknüpfung und wird nicht aus einem Backup gestartet. Stattdessen wird sein Ordner gezeigt.",
+    "cannotOpen": "„{path}“ kann nicht geöffnet werden: Es existiert nicht mehr in der Version, oder kein Programm öffnet es.",
+    "canceling": "Wird abgebrochen …",
+    "cancelingAfterFile": "Abbruch nach der aktuellen Datei …",
+    "reindexing": "Die Version wird neu indiziert; nach dem Neuladen des Baums erneut versuchen.",
+    "item": "„{path}“",
+    "originUnknown": "Der ursprüngliche Ort dieser Version ist nicht bekannt. „Wiederherstellen nach …“ verwenden.",
+    "backupRunningWarning": "\n\nEin Backup dieses Plans ist eingereiht oder läuft; es kann die wiederhergestellten Dateien mitsichern.",
+    "confirmTitle": "Am ursprünglichen Ort wiederherstellen",
+    "confirm": "{item} aus der Version vom {date} wiederherstellen nach\n{destination}?\n\nDort wird nichts gelöscht; was mit bereits vorhandenen Dateien geschieht, entscheiden Sie.{warning}",
+    "confirmVersion": "Die gesamte Version vom {date} wiederherstellen nach\n{destination}?\n\nDort wird nichts gelöscht; was mit bereits vorhandenen Dateien geschieht, entscheiden Sie.{warning}",
+    "pickFolder": "Wiederherstellen nach …",
+    "insideTarget": "Der gewählte Ordner liegt im Zielordner „{target}“ des Plans, in dem seine Versionen liegen. Einen Ordner außerhalb wählen.",
+    "preparing": "Wiederherstellung wird vorbereitet …",
+    "canceledNothing": "Wiederherstellung abgebrochen; es wurde nichts geschrieben.",
+    "unreadableNote": {
+      "one": " {count} Teil der Version konnte nicht gelesen werden.",
+      "other": " {count:N0} Teile der Version konnten nicht gelesen werden."
+    },
+    "cannotRestore": "{item} kann nicht wiederhergestellt werden: {reason}",
+    "cannotRestoreVersion": "Die Version kann nicht wiederhergestellt werden: {reason}",
+    "restoring": "Wird wiederhergestellt …",
+    "restoringFrom": "{item} wird aus der Version vom {date} wiederhergestellt …",
+    "restoringVersion": "Die gesamte Version vom {date} wird wiederhergestellt …",
+    "progress": {
+      "one": "Wiederherstellen: {done:N0} von {count} Datei · {percent:0} %",
+      "other": "Wiederherstellen: {done:N0} von {count:N0} Dateien · {percent:0} %"
+    },
+    "stopped": "Die Wiederherstellung wurde angehalten: {error}",
+    "failures": {
+      "one": "{summary}\n\n{count} Eintrag konnte nicht nach {root} wiederhergestellt werden:",
+      "other": "{summary}\n\n{count:N0} Einträge konnten nicht nach {root} wiederhergestellt werden:"
+    },
+    "conflictsOriginal": {
+      "one": "{count} Datei existiert bereits am ursprünglichen Ort:\n{examples}{more}\n\nWas soll mit ihr geschehen?",
+      "other": "{count:N0} Dateien existieren bereits am ursprünglichen Ort:\n{examples}{more}\n\nWas soll mit ihnen geschehen?"
+    },
+    "conflictsFolder": {
+      "one": "{count} Datei existiert bereits in {folder}:\n{examples}{more}\n\nWas soll mit ihr geschehen?",
+      "other": "{count:N0} Dateien existieren bereits in {folder}:\n{examples}{more}\n\nWas soll mit ihnen geschehen?"
+    },
+    "unreadable": {
+      "one": "{count} Teil der Version kann nicht gelesen werden; seine Dateien werden nicht wiederhergestellt. Den Rest wiederherstellen?",
+      "other": "{count:N0} Teile der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt. Den Rest wiederherstellen?"
+    },
+    "restoreRest": "Rest wiederherstellen",
+    "summary": {
+      "copied": "{count:N0} kopiert",
+      "keptBoth": "{count:N0} neben der vorhandenen Datei abgelegt",
+      "skipped": "{count:N0} übersprungen",
+      "failed": "{count:N0} fehlgeschlagen",
+      "finished": "Wiederherstellung abgeschlossen: {parts}.",
+      "canceled": "Wiederherstellung abgebrochen: {parts}."
+    }
+  },
+  "dialog": {
+    "conflict": {
+      "note": "„Beide behalten“ legt die Kopie der Version neben die vorhandene Datei, mit der Zeit der Version im Namen. Es wird nie etwas gelöscht.",
+      "detailsName": "Nicht lesbare Teile der Version",
+      "details": {
+        "one": "{count} Teil der Version kann nicht gelesen werden; seine Dateien werden nicht wiederhergestellt:",
+        "other": "{count:N0} Teile der Version können nicht gelesen werden; ihre Dateien werden nicht wiederhergestellt:"
+      },
+      "overwrite": "Überschreiben",
+      "overwriteToolTip": "Die vorhandenen Dateien durch die Kopien der Version ersetzen",
+      "skip": "Überspringen",
+      "skipToolTip": "Die vorhandenen Dateien unverändert lassen",
+      "keepBoth": "Beide behalten"
+    },
+    "failures": {
+      "linesName": "Pfade und Gründe",
+      "more": "… und {count:N0} weitere"
+    }
+  }
+}

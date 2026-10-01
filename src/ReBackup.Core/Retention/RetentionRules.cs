@@ -1,4 +1,5 @@
 using System.Globalization;
+using ReBackup.Core.Localization;
 
 namespace ReBackup.Core.Retention;
 
@@ -9,24 +10,21 @@ public static class RetentionRules
 
     private static readonly string[] ShortDayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    /// <summary>Null when the rule can be used; otherwise what is wrong with it.</summary>
-    public static string? Validate(RetentionRule? rule)
+    /// <summary>Null when the rule can be used; otherwise what is wrong with it (keys under <c>core.retention</c>).</summary>
+    public static Message? Validate(RetentionRule? rule)
     {
         if (rule is null)
-            return "the rule is empty.";
+            return Message.Of("core.retention.empty");
         if (!Enum.IsDefined(rule.Period))
-            return "the period is unknown.";
+            return Message.Of("core.retention.unknownPeriod");
         if (rule.Keep < 1 || rule.Keep > MaxKeep)
-            return $"keep must be a number from 1 to {MaxKeep}.";
+            return Message.Of("core.retention.keep", ("max", MaxKeep));
 
         return rule.Period switch
         {
-            RetentionPeriod.Weekly when !TryGetWeekday(rule.Anchor, out _) =>
-                "the anchor must be a weekday, for example Sunday.",
-            RetentionPeriod.Monthly when !TryGetMonthDay(rule.Anchor, out _) =>
-                "the anchor must be a day from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-            RetentionPeriod.Yearly when !TryGetYearDate(rule.Anchor, out _, out _) =>
-                "the anchor must be a date written as MM-DD, for example 01-01.",
+            RetentionPeriod.Weekly when !TryGetWeekday(rule.Anchor, out _) => Message.Of("core.retention.weekday"),
+            RetentionPeriod.Monthly when !TryGetMonthDay(rule.Anchor, out _) => Message.Of("core.retention.monthDay"),
+            RetentionPeriod.Yearly when !TryGetYearDate(rule.Anchor, out _, out _) => Message.Of("core.retention.yearDate"),
             _ => null,
         };
     }
@@ -123,7 +121,7 @@ public static class RetentionRules
                 return date.Year == 1 ? DateOnly.MinValue : YearAnchor(date.Year - 1, month, day);
 
             default:
-                throw new ArgumentException($"The retention rule is not valid: {Validate(rule)}", nameof(rule));
+                throw new ArgumentException(CoreTexts.English("core.retention.invalid", ("problem", Validate(rule))), nameof(rule));
         }
     }
 }

@@ -1,7 +1,8 @@
 <UserControl x:Class="ReBackup.App.Views.VersionsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:core="clr-namespace:ReBackup.Core.Versions;assembly=ReBackup.Core">
+             xmlns:core="clr-namespace:ReBackup.Core.Versions;assembly=ReBackup.Core"
+             xmlns:l="clr-namespace:ReBackup.App.Localization">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
@@ -74,11 +75,11 @@
 
         <!-- The actions on the selected entry: toolbar buttons and the tree's context menu use the same commands. -->
         <ContextMenu x:Key="Menu.Entry">
-            <MenuItem Header="Open" Command="{Binding Versions.OpenSelectedCommand}" />
-            <MenuItem Header="Show in Explorer" Command="{Binding Versions.ShowSelectedInExplorerCommand}" />
+            <MenuItem Header="{l:Loc common.open}" Command="{Binding Versions.OpenSelectedCommand}" />
+            <MenuItem Header="{l:Loc versions.toolbar.showInExplorer}" Command="{Binding Versions.ShowSelectedInExplorerCommand}" />
             <Separator />
-            <MenuItem Header="Restore to original location…" Command="{Binding Versions.RestoreToOriginalCommand}" />
-            <MenuItem Header="Restore to…" Command="{Binding Versions.RestoreToCommand}" />
+            <MenuItem Header="{l:Loc versions.menu.restoreOriginal}" Command="{Binding Versions.RestoreToOriginalCommand}" />
+            <MenuItem Header="{l:Loc versions.toolbar.restoreTo}" Command="{Binding Versions.RestoreToCommand}" />
         </ContextMenu>
     </UserControl.Resources>
 
@@ -94,9 +95,9 @@
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="18,0,10,6">
                     <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Refresh}"
-                            ToolTip="Read the target again and update the index" AutomationProperties.Name="Refresh versions"
+                            ToolTip="{l:Loc versions.refreshToolTip}" AutomationProperties.Name="{l:Loc versions.refreshName}"
                             Command="{Binding Versions.RefreshCommand}" />
-                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center" Text="VERSIONS" />
+                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center" Text="{l:Loc versions.title}" />
                 </DockPanel>
 
                 <StackPanel DockPanel.Dock="Top" Margin="18,0,18,8">
@@ -110,7 +111,7 @@
 
                 <Grid>
                     <ListBox ItemsSource="{Binding Versions.VersionRows}" SelectedItem="{Binding Versions.SelectedVersion}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Versions"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="{l:Loc versions.list}"
                              VirtualizingPanel.IsVirtualizing="True">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
@@ -158,7 +159,7 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                     <TextBlock Style="{StaticResource TextBlock.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Text="No versions in the target yet"
+                               Text="{l:Loc versions.empty}"
                                Visibility="{Binding Versions.ShowEmpty, Converter={StaticResource BoolToVisibility}}" />
                 </Grid>
             </DockPanel>
@@ -177,40 +178,40 @@
                     <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <Grid Width="220" Margin="0,0,12,6">
                             <TextBox x:Name="SearchBox" Padding="18,0,8,0" VerticalContentAlignment="Center" Height="32"
-                                     AutomationProperties.Name="Search names (substring, or * and ?)"
-                                     ToolTip="A part of a name, or a pattern with * and ?"
+                                     AutomationProperties.Name="{l:Loc versions.toolbar.search}"
+                                     ToolTip="{l:Loc versions.toolbar.searchToolTip}"
                                      Text="{Binding Versions.SearchText, UpdateSourceTrigger=PropertyChanged}" />
                             <TextBlock Style="{StaticResource TextBlock.Icon}" Margin="10,0,0,0" FontSize="12" IsHitTestVisible="False"
                                        HorizontalAlignment="Left" Foreground="{DynamicResource Brush.TextFaint}" Text="{StaticResource Icon.Search}" />
                         </Grid>
                         <StackPanel Orientation="Horizontal" Margin="0,0,12,6">
-                            <TextBlock Style="{StaticResource TextBlock.Muted}" VerticalAlignment="Center" Margin="0,0,8,0" Text="Compare with" />
+                            <TextBlock Style="{StaticResource TextBlock.Muted}" VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Loc versions.toolbar.compareWith}" />
                             <ComboBox Width="190" ItemsSource="{Binding Versions.CompareChoices}" DisplayMemberPath="Label"
-                                      SelectedItem="{Binding Versions.SelectedCompare}" AutomationProperties.Name="Compare with" />
+                                      SelectedItem="{Binding Versions.SelectedCompare}" AutomationProperties.Name="{l:Loc versions.toolbar.compareWith}" />
                             <Button Style="{StaticResource Button.Icon}" Margin="4,0,0,0" Content="{StaticResource Icon.Swap}"
-                                    ToolTip="Swap: show the other version's tree" AutomationProperties.Name="Swap versions"
+                                    ToolTip="{l:Loc versions.toolbar.swapToolTip}" AutomationProperties.Name="{l:Loc versions.toolbar.swapName}"
                                     Command="{Binding Versions.SwapCommand}" />
                         </StackPanel>
                         <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,0,16,6" VerticalAlignment="Center"
-                                  Content="Changed only" IsChecked="{Binding Versions.ChangedOnly}"
+                                  Content="{l:Loc versions.toolbar.changedOnly}" IsChecked="{Binding Versions.ChangedOnly}"
                                   IsEnabled="{Binding Versions.IsComparing}" />
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                             <Button Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.OpenFile}"
-                                    ToolTip="Open the file (the copy in the version)" AutomationProperties.Name="Open"
+                                    ToolTip="{l:Loc versions.toolbar.openToolTip}" AutomationProperties.Name="{l:Loc common.open}"
                                     Command="{Binding Versions.OpenSelectedCommand}" />
                             <Button Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Explorer}"
-                                    ToolTip="Show in Explorer" AutomationProperties.Name="Show in Explorer"
+                                    ToolTip="{l:Loc versions.toolbar.showInExplorer}" AutomationProperties.Name="{l:Loc versions.toolbar.showInExplorer}"
                                     Command="{Binding Versions.ShowSelectedInExplorerCommand}" />
-                            <Button Margin="6,0,0,0" AutomationProperties.Name="Restore to original location"
-                                    ToolTip="Copy the selection back to where it came from"
+                            <Button Margin="6,0,0,0" AutomationProperties.Name="{l:Loc versions.toolbar.restoreOriginal}"
+                                    ToolTip="{l:Loc versions.toolbar.restoreOriginalToolTip}"
                                     Command="{Binding Versions.RestoreToOriginalCommand}">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Restore}" />
-                                    <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Restore" />
+                                    <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc versions.toolbar.restore}" />
                                 </StackPanel>
                             </Button>
-                            <Button Margin="6,0,0,0" Content="Restore to…" AutomationProperties.Name="Restore to a folder"
-                                    ToolTip="Copy the selection into a folder you choose"
+                            <Button Margin="6,0,0,0" Content="{l:Loc versions.toolbar.restoreTo}" AutomationProperties.Name="{l:Loc versions.toolbar.restoreToName}"
+                                    ToolTip="{l:Loc versions.toolbar.restoreToToolTip}"
                                     Command="{Binding Versions.RestoreToCommand}" />
                         </StackPanel>
                     </WrapPanel>
@@ -219,10 +220,10 @@
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8"
                                Visibility="{Binding Versions.IsRestoring, Converter={StaticResource BoolToVisibility}}">
                         <Button DockPanel.Dock="Right" Margin="8,0,0,0" Command="{Binding Versions.CancelRestoreCommand}"
-                                AutomationProperties.Name="Cancel the restore" ToolTip="Stop after the current file">
+                                AutomationProperties.Name="{l:Loc versions.toolbar.cancelRestore}" ToolTip="{l:Loc versions.toolbar.cancelRestoreToolTip}">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="12" Text="{StaticResource Icon.Stop}" />
-                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="Cancel" />
+                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{l:Loc common.cancel}" />
                             </StackPanel>
                         </Button>
                         <StackPanel VerticalAlignment="Center">
@@ -238,7 +239,7 @@
                     <Grid>
                         <!-- The tree of version A (with B's entries while comparing). -->
                         <ListView x:Name="TreeList" SelectionMode="Single"
-                                  AutomationProperties.Name="Version tree"
+                                  AutomationProperties.Name="{l:Loc versions.tree.name}"
                                   ItemsSource="{Binding Versions.Tree.Rows}"
                                   SelectedItem="{Binding Versions.Tree.SelectedNode}"
                                   SelectionChanged="OnTreeSelectionChanged"
@@ -273,12 +274,12 @@
                             </ListView.ItemContainerStyle>
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn x:Name="NameColumn" Header="Name" Width="260">
+                                    <GridViewColumn x:Name="NameColumn" Header="{l:Loc common.name}" Width="260">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" Margin="{Binding Indent}">
                                                     <ToggleButton Style="{StaticResource ToggleButton.Expander}"
-                                                                  AutomationProperties.Name="Expand" IsChecked="{Binding IsExpanded}" />
+                                                                  AutomationProperties.Name="{l:Loc common.expand}" IsChecked="{Binding IsExpanded}" />
                                                     <TextBlock Margin="0,0,6,0" FontSize="12">
                                                         <TextBlock.Style>
                                                             <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
@@ -301,14 +302,14 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Size" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                                    <GridViewColumn Header="{l:Loc common.size}" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Modified" Width="130">
+                                    <GridViewColumn Header="{l:Loc common.modified}" Width="130">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextMuted}"
@@ -316,7 +317,7 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Status" Width="110">
+                                    <GridViewColumn Header="{l:Loc common.status}" Width="110">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
@@ -331,13 +332,13 @@
                         </ListView>
 
                         <!-- Search hits replace the tree; selecting one reveals it in the tree. -->
-                        <ListView Style="{StaticResource ListView.Table}" SelectionMode="Single" AutomationProperties.Name="Search results"
+                        <ListView Style="{StaticResource ListView.Table}" SelectionMode="Single" AutomationProperties.Name="{l:Loc versions.search.results}"
                                   ItemsSource="{Binding Versions.SearchResults}" SelectedItem="{Binding Versions.SelectedSearchHit}"
                                   Visibility="{Binding Versions.IsSearchActive, Converter={StaticResource BoolToVisibility}}"
                                   VirtualizingPanel.IsVirtualizing="True">
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn Header="Path" Width="460">
+                                    <GridViewColumn Header="{l:Loc common.path}" Width="460">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
@@ -360,7 +361,7 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="Size" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                                    <GridViewColumn Header="{l:Loc common.size}" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
@@ -382,17 +383,17 @@
                                TextTrimming="CharacterEllipsis" Text="{Binding Versions.HistoryTitle}"
                                ToolTip="{Binding Versions.HistoryTitle}" />
                     <ListView Style="{StaticResource ListView.Table}" ItemsSource="{Binding Versions.HistoryRows}"
-                              SelectionMode="Single" AutomationProperties.Name="File history" Margin="8,0">
+                              SelectionMode="Single" AutomationProperties.Name="{l:Loc versions.history.name}" Margin="8,0">
                         <ListView.View>
                             <GridView>
-                                <GridViewColumn Header="Version" Width="140">
+                                <GridViewColumn Header="{l:Loc common.version}" Width="140">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Typography.NumeralAlignment="Tabular" Text="{Binding DateText}" ToolTip="{Binding VersionName}" />
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
-                                <GridViewColumn Header="Status" Width="120">
+                                <GridViewColumn Header="{l:Loc common.status}" Width="120">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal">
@@ -402,14 +403,14 @@
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
-                                <GridViewColumn Header="Size" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                                <GridViewColumn Header="{l:Loc common.size}" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
-                                <GridViewColumn Header="Modified" Width="140">
+                                <GridViewColumn Header="{l:Loc common.modified}" Width="140">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextMuted}"
@@ -421,7 +422,7 @@
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <Button Style="{StaticResource Button.Icon}" Width="28" Height="26"
-                                                    ToolTip="Show this copy in Explorer" AutomationProperties.Name="Show this copy in Explorer"
+                                                    ToolTip="{l:Loc versions.history.showCopy}" AutomationProperties.Name="{l:Loc versions.history.showCopy}"
                                                     Visibility="{Binding CanOpen, Converter={StaticResource BoolToVisibility}}"
                                                     Command="{Binding DataContext.Versions.OpenHistoryCopyCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     CommandParameter="{Binding}">

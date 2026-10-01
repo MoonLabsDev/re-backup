@@ -1,9 +1,9 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Localization;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
-using ReBackup.Core.IO;
 using ReBackup.Core.Plans;
 
 namespace ReBackup.App.ViewModels;
@@ -14,7 +14,6 @@ namespace ReBackup.App.ViewModels;
 /// </summary>
 public sealed partial class IgnorePreviewViewModel : ObservableObject
 {
-    private const string NotIndexedText = "Not indexed yet.";
     private static readonly TimeSpan ReevaluateDelay = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LiveRefreshInterval = TimeSpan.FromMilliseconds(250);
 
@@ -31,15 +30,45 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(PatternNote))]
     private bool _isIndexing;
 
-    [ObservableProperty] private string _progressText = NotIndexedText;
-    [ObservableProperty] private string? _error;
-    [ObservableProperty] private string _summary = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProgressText))]
+    private LocText _progress = LocText.Of("ignore.progress.notIndexed");
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Error))]
+    private LocText? _errorText;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Summary))]
+    private LocText _summaryText = LocText.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(InBackupText))]
+    private LocText _inBackupPill = LocText.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IgnoredText))]
+    private LocText _ignoredPill = LocText.Empty;
+
+    public string ProgressText => Progress.ToString();
+
+    public string? Error => ErrorText?.ToString();
+
+    public string Summary => SummaryText.ToString();
 
     /// <summary>Size and files that go into the backup, for the summary pill ("" before the first scan).</summary>
-    [ObservableProperty] private string _inBackupText = "";
+    public string InBackupText => InBackupPill.ToString();
 
     /// <summary>Size and files that are ignored, for the summary pill ("" before the first scan).</summary>
-    [ObservableProperty] private string _ignoredText = "";
+    public string IgnoredText => IgnoredPill.ToString();
+
+    /// <summary>The language changed: the texts and the tree's rows are read again.</summary>
+    public void RefreshTexts()
+    {
+        OnPropertyChanged(string.Empty);
+        foreach (var row in Tree.Rows)
+            row.Refresh();
+    }
 
     /// <summary>The evaluated tree of the last complete scan (treemap, sizes); null while a scan runs.</summary>
     [ObservableProperty] private EvaluatedNode? _root;
@@ -70,7 +99,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     public PreviewTreeViewModel Tree { get; } = new();
 
     /// <summary>Shown next to the patterns while a scan runs.</summary>
-    public string? PatternNote => IsIndexing ? "Changes to the patterns are applied when the scan is finished." : null;
+    public string? PatternNote => IsIndexing ? Loc.T("ignore.patternNote") : null;
 
     partial void OnSelectedNodeChanged(IPreviewEntry? value)
     {
@@ -92,11 +121,11 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         IsIndexing = false;
         Root = null;
         Tree.SetRoot(null);
-        Summary = "";
-        InBackupText = "";
-        IgnoredText = "";
-        Error = null;
-        ProgressText = NotIndexedText;
+        SummaryText = LocText.Empty;
+        InBackupPill = LocText.Empty;
+        IgnoredPill = LocText.Empty;
+        ErrorText = null;
+        Progress = LocText.Of("ignore.progress.notIndexed");
     }
 
     /// <summary>Re-applies the patterns to the cached index after a short pause in typing. No rescan; not during a scan.</summary>
@@ -119,7 +148,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Error = ex.Message;
+            ErrorText = LocText.Known(ex.Message);
         }
     }
 
@@ -129,7 +158,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         var source = _source();
         if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source))
         {
-            Error = "The source folder does not exist.";
+            ErrorText = LocText.Of("ignore.sourceMissing");
             return;
         }
 
@@ -137,7 +166,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         _evaluateCts?.Cancel();
         _evaluationVersion++;   // an evaluation still running from an earlier cancel must not publish over this scan
         var cts = _indexCts = new CancellationTokenSource();
-        Error = null;
+        ErrorText = null;
 
         LiveScan scan;
         try
@@ -146,7 +175,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            Error = ex.Message;
+            ErrorText = LocText.Known(ex.Message);
             return;
         }
 
@@ -172,7 +201,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             {
             }
             IsIndexing = false;
-            ProgressText = $"Indexed {index.FileCount:N0} files in {index.DirectoryCount:N0} folders.";
+            Progress = LocText.Of("ignore.progress.indexed", ("files", Formats.Files(index.FileCount)),
+                ("folders", Formats.Folders(index.DirectoryCount)));
             RequestReevaluate();   // in case the patterns were edited while the result was being evaluated
         }
         catch (OperationCanceledException)
@@ -184,12 +214,12 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             if (_index is not null)
             {
                 if (await ShowPreviousIndexAsync(cts))
-                    ProgressText = "Indexing canceled; showing the previous index.";
+                    Progress = LocText.Of("ignore.progress.canceledPrevious");
             }
             else
             {
                 Tree.Refresh();
-                ProgressText = "Scan canceled — incomplete.";
+                Progress = LocText.Of("ignore.progress.canceledIncomplete");
             }
         }
         catch (Exception ex)
@@ -205,8 +235,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
                 return;
             if (!restored)
                 Tree.Refresh();
-            ProgressText = restored ? "Indexing failed; showing the previous index." : "Scan failed — incomplete.";
-            Error = ex.Message;
+            Progress = restored ? LocText.Of("ignore.progress.failedPrevious") : LocText.Of("ignore.progress.failedIncomplete");
+            ErrorText = LocText.Known(ex.Message);
         }
         finally
         {
@@ -232,7 +262,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             if (ReferenceEquals(_indexCts, cts))
-                Error = ex.Message;   // must not escape the command
+                ErrorText = LocText.Known(ex.Message);   // must not escape the command
             return false;
         }
         return shown && ReferenceEquals(_indexCts, cts);
@@ -244,17 +274,32 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private void ShowLive(LiveScan scan)
     {
         Tree.Refresh();
-        ProgressText = $"{scan.Files:N0} files, {scan.Directories:N0} folders so far — {scan.WaitingFolders:N0} folders waiting";
+        Progress = LocText.Of("ignore.progress.live",
+            ("files", Formats.Files(scan.Files)), ("folders", Formats.Folders(scan.Directories)),
+            ("waiting", Formats.Folders(scan.WaitingFolders)));
         var root = scan.Root;
-        Summary = $"So far — included: {root.IncludedFiles:N0} files, {ByteSize.Format(root.IncludedSize)}   ·   " +
-                  $"ignored: {root.IgnoredFiles:N0} files, {ByteSize.Format(root.IgnoredSize)}";
+        SummaryText = SummaryOf("ignore.summary.live", root);
         SetPills(root, "≥ ");
+    }
+
+    /// <summary>The summary line of the numbers <paramref name="root"/> has now.</summary>
+    private static LocText SummaryOf(string key, IPreviewEntry root)
+    {
+        var (includedFiles, includedSize, ignoredFiles, ignoredSize) =
+            (root.IncludedFiles, root.IncludedSize, root.IgnoredFiles, root.IgnoredSize);
+        return new LocText(() => Loc.F(key, ("includedFiles", Formats.Files(includedFiles)),
+            ("includedSize", Formats.Bytes(includedSize)), ("ignoredFiles", Formats.Files(ignoredFiles)),
+            ("ignoredSize", Formats.Bytes(ignoredSize))));
     }
 
     private void SetPills(IPreviewEntry root, string prefix)
     {
-        InBackupText = $"in backup {prefix}{ByteSize.Format(root.IncludedSize)} · {prefix}{root.IncludedFiles:N0} files";
-        IgnoredText = $"ignored {prefix}{ByteSize.Format(root.IgnoredSize)} · {prefix}{root.IgnoredFiles:N0} files";
+        var (includedSize, includedFiles, ignoredSize, ignoredFiles) =
+            (root.IncludedSize, root.IncludedFiles, root.IgnoredSize, root.IgnoredFiles);
+        InBackupPill = new LocText(() => Loc.F("ignore.pill.inBackup",
+            ("prefix", prefix), ("size", Formats.Bytes(includedSize)), ("files", Formats.Files(includedFiles))));
+        IgnoredPill = new LocText(() => Loc.F("ignore.pill.ignored",
+            ("prefix", prefix), ("size", Formats.Bytes(ignoredSize)), ("files", Formats.Files(ignoredFiles))));
     }
 
     /// <summary>Evaluates and publishes the index. False means a newer evaluation superseded this one.</summary>
@@ -275,11 +320,10 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
 
         _index = index;
         LastEvaluatedIncludedSize = root.IncludedSize;
-        Error = null;
+        ErrorText = null;
         Root = root;
         Tree.SetRoot(root);
-        Summary = $"Included: {root.IncludedFiles:N0} files, {ByteSize.Format(root.IncludedSize)}   ·   " +
-                  $"Ignored: {root.IgnoredFiles:N0} files, {ByteSize.Format(root.IgnoredSize)}";
+        SummaryText = SummaryOf("ignore.summary.done", root);
         SetPills(root, "");
         return true;
     }

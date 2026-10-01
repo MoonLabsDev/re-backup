@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
+using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.App.Theme;
 using ReBackup.App.ViewModels;
@@ -61,9 +62,15 @@ public sealed class RetentionTimelineControl : FrameworkElement
         {
             ThemeManager.ThemeChanged -= OnThemeChanged;
             ThemeManager.ThemeChanged += OnThemeChanged;
+            Loc.LanguageChanged -= OnLanguageChanged;
+            Loc.LanguageChanged += OnLanguageChanged;
             OnThemeChanged(null, EventArgs.Empty);   // the theme may have changed while unloaded
         };
-        Unloaded += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+        Unloaded += (_, _) =>
+        {
+            ThemeManager.ThemeChanged -= OnThemeChanged;
+            Loc.LanguageChanged -= OnLanguageChanged;
+        };
     }
 
     public IReadOnlyList<TimelineLane>? Lanes
@@ -139,7 +146,7 @@ public sealed class RetentionTimelineControl : FrameworkElement
                 continue;
             var x = X(tick);
             drawingContext.DrawLine(paint.AxisPen, new Point(x, axisTop), new Point(x, axisTop + 4));
-            var text = Text(tick.ToString(labelFormat, CultureInfo.CurrentCulture), 10, paint.Label, pixelsPerDip);
+            var text = Text(tick.ToString(labelFormat, Loc.Culture), 10, paint.Label, pixelsPerDip);
             if (x + 2 + text.Width <= ActualWidth)
                 drawingContext.DrawText(text, new Point(x + 2, axisTop + 5));
         }
@@ -155,7 +162,9 @@ public sealed class RetentionTimelineControl : FrameworkElement
     };
 
     private static FormattedText Text(string text, double size, Brush brush, double pixelsPerDip) =>
-        new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, TextFace, size, brush, pixelsPerDip);
+        new(text, Loc.Culture, FlowDirection.LeftToRight, TextFace, size, brush, pixelsPerDip);
+
+    private void OnLanguageChanged(object? sender, EventArgs e) => InvalidateVisual();
 
     private void OnThemeChanged(object? sender, EventArgs e)
     {
