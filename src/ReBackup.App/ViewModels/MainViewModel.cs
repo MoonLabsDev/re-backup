@@ -308,10 +308,13 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void Save()
     {
-        var editor = SelectedPlan;
-        if (editor is null || !editor.IsDirty)
-            return;
+        if (SelectedPlan is { IsDirty: true } editor)
+            SaveEditor(editor);
+    }
 
+    /// <summary>Saves the plan's edits; true when they are saved. Reports in the footer, or with a dialog when the file fails.</summary>
+    private bool SaveEditor(PlanEditorViewModel editor)
+    {
         try
         {
             var targetBefore = editor.IsNew ? null : editor.SavedPlan().Target;
@@ -327,10 +330,12 @@ public sealed partial class MainViewModel : ObservableObject
                     editor.Versions.OnSavedTargetChanged();
                 }
             }
+            return saved;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _dialogs.ShowError(Loc.T("shell.actions.saveFailed"), ex.Message);
+            return false;
         }
     }
 
@@ -487,8 +492,24 @@ public sealed partial class MainViewModel : ObservableObject
     private void RunNow(PlanEditorViewModel? editor)
     {
         editor ??= SelectedPlan;
-        if (editor is not null)
-            Start(editor);
+        if (editor is null)
+            return;
+
+        // A run uses the plan as saved: unsaved edits are saved first, after asking, rather than refused in the footer.
+        if (editor.Errors.Count > 0)
+        {
+            _dialogs.ShowError(Loc.T("shell.runUnsaved.title"),
+                Loc.F("shell.runUnsaved.errors", ("plan", editor.Name),
+                    ("errors", string.Join("\n", editor.Errors.Select(e => "  " + e)))));
+            return;
+        }
+        if (editor.IsDirty)
+        {
+            if (!_dialogs.Confirm(Loc.T("shell.runUnsaved.title"), Loc.F("shell.runUnsaved.saveAndRun", ("plan", editor.Name))) ||
+                !SaveEditor(editor))
+                return;
+        }
+        Start(editor);
     }
 
     [RelayCommand]

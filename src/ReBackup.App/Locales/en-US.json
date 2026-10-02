@@ -164,7 +164,8 @@
     "file": {
       "noLongerExists": "no longer exists",
       "accessDenied": "access denied",
-      "locked": "locked by another program"
+      "locked": "locked by another program",
+      "cannotOpen": "cannot be opened: {error}"
     },
     "scan": {
       "link": "Link is not followed.",
@@ -232,6 +233,11 @@
       "saveFailed": "Save failed",
       "chooseSource": "Choose source folder",
       "chooseTarget": "Choose target folder"
+    },
+    "runUnsaved": {
+      "title": "Run now",
+      "saveAndRun": "\"{plan}\" has unsaved changes. A run uses the plan as saved.\n\nSave the changes and run?",
+      "errors": "\"{plan}\" has errors and can be neither saved nor run like this:\n\n{errors}"
     },
     "card": {
       "removeFromQueue": "Remove from the queue",
