@@ -116,6 +116,18 @@
                                Text="{Binding Versions.SyncText}" />
                     <TextBlock Style="{StaticResource TextBlock.Line}" Foreground="{DynamicResource Brush.Danger}"
                                Text="{Binding Versions.Error}" />
+
+                    <!-- A running deletion: progress, remaining time and cancel. -->
+                    <DockPanel Margin="0,6,0,0" Visibility="{Binding Versions.IsDeleting, Converter={StaticResource BoolToVisibility}}">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Margin="8,0,0,0" VerticalAlignment="Top"
+                                Content="{StaticResource Icon.Stop}" Command="{Binding Versions.CancelDeleteCommand}"
+                                AutomationProperties.Name="{l:Loc versions.delete.cancel}" ToolTip="{l:Loc versions.delete.cancelToolTip}" />
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.AccentLight}"
+                                       Text="{Binding Versions.DeleteText}" />
+                            <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.DeleteFraction, Mode=OneWay}" />
+                        </StackPanel>
+                    </DockPanel>
                 </StackPanel>
 
                 <Grid>

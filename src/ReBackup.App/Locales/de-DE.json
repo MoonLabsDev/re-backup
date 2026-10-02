@@ -632,7 +632,18 @@
       },
       "notManaged": "keine Version dieses Plans mehr; unverändert gelassen",
       "remainsLeft": "keine Version mehr, aber Reste sind übrig (der nächste Lauf des Plans entfernt sie): {error}",
-      "stopped": "Das Löschen wurde angehalten: {error}"
+      "stopped": "Das Löschen wurde angehalten: {error}",
+      "progress": {
+        "one": "Löschen: {done:N0} von {count:N0} Datei · Version {current} von {versions}",
+        "other": "Löschen: {done:N0} von {count:N0} Dateien · Version {current} von {versions}"
+      },
+      "cancel": "Löschen abbrechen",
+      "cancelToolTip": "Nach der Version anhalten, die gerade gelöscht wird",
+      "canceling": "Abbruch nach der aktuellen Version …",
+      "canceled": {
+        "one": "Löschen abgebrochen; {count} Version gelöscht.",
+        "other": "Löschen abgebrochen; {count} Versionen gelöscht."
+      }
     },
     "empty": "Noch keine Versionen im Ziel",
     "savePlan": "Den Plan speichern, um seine Versionen zu sehen.",

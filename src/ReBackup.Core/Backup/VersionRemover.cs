@@ -18,14 +18,15 @@ public static class VersionRemover
     /// <exception cref="VersionRemainsException">The folder no longer is a version, but its remains could not be deleted.</exception>
     /// <exception cref="IOException">The folder is a link, is in use or is gone, or the disk reports an error: nothing was changed.</exception>
     /// <exception cref="UnauthorizedAccessException">Access is denied: nothing was changed.</exception>
-    public static void Remove(string versionPath, ITargetVolume volume)
+    /// <param name="onFileDeleted">Called after every deleted file (the manifest aside), on the calling thread.</param>
+    public static void Remove(string versionPath, ITargetVolume volume, Action<int>? onFileDeleted = null)
     {
         RefuseLink(versionPath);
         var doomed = versionPath + VersionName.DeletingSuffix;
         volume.MoveDirectory(versionPath, doomed);
         try
         {
-            RemoveRemains(doomed, volume);
+            RemoveRemains(doomed, volume, onFileDeleted);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -37,18 +38,40 @@ public static class VersionRemover
     /// Deletes a folder that already has the ".deleting" name. The manifest goes last: while it exists, the remains
     /// can still be attributed to a plan. Links inside the folder are removed as links; what they point to stays.
     /// </summary>
-    public static void RemoveRemains(string doomedPath, ITargetVolume volume)
+    /// <param name="onFileDeleted">Called with 1 after every deleted file (the manifest aside), on the calling thread.</param>
+    public static void RemoveRemains(string doomedPath, ITargetVolume volume, Action<int>? onFileDeleted = null)
     {
         RefuseLink(doomedPath);
         RemoveLinks(doomedPath);
         foreach (var entry in Directory.EnumerateFileSystemEntries(doomedPath).ToList())
         {
             if (Directory.Exists(entry))
-                volume.DeleteDirectory(entry);
+            {
+                RemoveTree(entry, volume, onFileDeleted);
+            }
             else if (!Path.GetFileName(entry).Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
+            {
                 File.Delete(entry);
+                onFileDeleted?.Invoke(1);
+            }
         }
         volume.DeleteDirectory(doomedPath);
+    }
+
+    /// <summary>
+    /// Deletes a folder file by file, so that the progress can be reported; each folder is handed to the volume once
+    /// it is empty. (The links are gone by now: <see cref="RemoveLinks"/>.)
+    /// </summary>
+    private static void RemoveTree(string directory, ITargetVolume volume, Action<int>? onFileDeleted)
+    {
+        foreach (var child in Directory.EnumerateDirectories(directory).ToList())
+            RemoveTree(child, volume, onFileDeleted);
+        foreach (var file in Directory.EnumerateFiles(directory).ToList())
+        {
+            File.Delete(file);
+            onFileDeleted?.Invoke(1);
+        }
+        volume.DeleteDirectory(directory);
     }
 
     /// <summary>
