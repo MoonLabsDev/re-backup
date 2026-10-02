@@ -15,12 +15,60 @@ public sealed partial class VersionsViewModel
     /// <summary>The rows marked in the version list (several with Ctrl or Shift); the delete acts on these.</summary>
     private IReadOnlyList<VersionRowViewModel> _marked = [];
 
+    /// <summary>The remaining time is shown once the deletion has run this long (the first files say little about the rate).</summary>
+    private static readonly TimeSpan EtaWarmUp = TimeSpan.FromSeconds(3);
+
+    private CancellationTokenSource? _deleteCts;
+
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(DeleteVersionsCommand), nameof(RestoreToOriginalCommand), nameof(RestoreToCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteVersionsCommand), nameof(RestoreToOriginalCommand), nameof(RestoreToCommand),
+        nameof(CancelDeleteCommand))]
     private bool _isDeleting;
+
+    /// <summary>"Deleting 1,200 of 50,000 files · version 1 of 3 · 4 min left" while a deletion runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DeleteText))]
+    private LocText _deleteProgress = LocText.Empty;
+
+    public string DeleteText => DeleteProgress.ToString();
+
+    [ObservableProperty] private double _deleteFraction;
 
     /// <summary>Versions were deleted by hand (the retention preview reads the target again).</summary>
     public event Action? VersionsDeleted;
+
+    /// <summary>Stops the deletion after the version being deleted (a half-deleted version would be left as remains).</summary>
+    [RelayCommand(CanExecute = nameof(IsDeleting))]
+    private void CancelDelete()
+    {
+        if (_deleteCts is not { } cts || cts.IsCancellationRequested)
+            return;
+        cts.Cancel();
+        DeleteProgress = LocText.Of("versions.delete.canceling");
+    }
+
+    /// <summary>
+    /// The progress line of a deletion, with the remaining time from the average rate since it started; reports come on
+    /// the UI thread.
+    /// </summary>
+    private IProgress<VersionDeletionProgress> DeletionProgress(CancellationTokenSource cts)
+    {
+        var clock = Stopwatch.StartNew();
+        return new Progress<VersionDeletionProgress>(p =>
+        {
+            if (!IsDeleting || !ReferenceEquals(_deleteCts, cts) || cts.IsCancellationRequested)
+                return;
+            DeleteFraction = p.Fraction;
+            TimeSpan? remaining = null;
+            var elapsed = clock.Elapsed;
+            if (elapsed >= EtaWarmUp && p.FilesDone > 0 && p.FilesTotal > p.FilesDone)
+                remaining = TimeSpan.FromSeconds((p.FilesTotal - p.FilesDone) * elapsed.TotalSeconds / p.FilesDone);
+            DeleteProgress = new LocText(() =>
+                Loc.F("versions.delete.progress", ("done", p.FilesDone), ("count", Math.Max(p.FilesTotal, p.FilesDone)),
+                    ("current", p.Current), ("versions", p.VersionCount)) +
+                (remaining is { } left ? " · " + PlanRunViewModel.FormatRemaining(left) : ""));
+        });
+    }
 
     /// <summary>The version list's selection changed.</summary>
     public void SetMarkedVersions(IEnumerable<VersionRowViewModel> rows)
@@ -67,13 +115,18 @@ public sealed partial class VersionsViewModel
 
         // A sync must not import folders that are being deleted; the target is read again afterwards.
         _syncCts?.Cancel();
+        var cts = _deleteCts = new CancellationTokenSource();
         IsDeleting = true;
+        DeleteFraction = 0;
         var names = managed.Select(r => r.Name).ToList();
-        _context.ReportStatus(LocText.Of("versions.delete.deleting", ("count", names.Count)));
+        DeleteProgress = LocText.Of("versions.delete.deleting", ("count", names.Count));
+        _context.ReportStatus(DeleteProgress);
+        var progress = DeletionProgress(cts);
         IReadOnlyList<VersionDeletion> results;
         try
         {
-            results = await Task.Run(() => VersionDeleter.Delete(plan.Target, plan.Id, names));
+            results = await Task.Run(() => VersionDeleter.Delete(plan.Target, plan.Id, names, progress: progress,
+                cancellationToken: cts.Token));
             var gone = results.Where(r => r.Outcome is not (VersionDeletionOutcome.Failed or VersionDeletionOutcome.NotManaged))
                 .Select(r => r.Name)
                 .ToList();
@@ -96,12 +149,19 @@ public sealed partial class VersionsViewModel
         }
         finally
         {
+            _deleteCts = null;
             IsDeleting = false;
+            DeleteProgress = LocText.Empty;
+            DeleteFraction = 0;
         }
 
+        var canceled = cts.IsCancellationRequested;
+        cts.Dispose();
         var deleted = results.Count(r => r.Outcome is VersionDeletionOutcome.Deleted or VersionDeletionOutcome.RemainsLeft
             or VersionDeletionOutcome.Gone);
-        if (results.Count > 0)
+        if (canceled)
+            _context.ReportStatus(LocText.Of("versions.delete.canceled", ("count", deleted)));
+        else if (results.Count > 0)
             _context.ReportStatus(LocText.Of("versions.delete.done", ("count", deleted)));
 
         var problems = results.Where(r => r.Outcome is VersionDeletionOutcome.Failed or VersionDeletionOutcome.NotManaged

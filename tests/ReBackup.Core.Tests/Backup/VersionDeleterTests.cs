@@ -91,14 +91,42 @@ public class VersionDeleterTests : IDisposable
     }
 
     [Fact]
+    public void Reports_the_progress_over_all_versions_by_files()
+    {
+        _tmp.WriteFile($@"target\{New}\more.bin", "x");   // not in the manifest: the total comes from the manifests
+        var reports = new List<VersionDeletionProgress>();
+
+        VersionDeleter.Delete(_target, PlanId, [Old, New], progress: new SyncProgress<VersionDeletionProgress>(reports.Add));
+
+        reports.Should().NotBeEmpty();
+        reports.Should().OnlyContain(r => r.VersionCount == 2 && r.FilesTotal == 2);
+        reports.First().Should().Be(new VersionDeletionProgress(1, 2, Old, 0, 2));
+        reports.Select(r => r.FilesDone).Should().BeInAscendingOrder();
+        reports.Last().Should().Be(new VersionDeletionProgress(2, 2, New, 3, 2), "files beyond the manifest still count");
+        reports.Last().Fraction.Should().Be(1);
+    }
+
+    [Fact]
+    public void Cancellation_during_a_version_finishes_it_and_returns_what_was_done()
+    {
+        using var cts = new CancellationTokenSource();
+        var volume = new ScriptedVolume { BeforeMove = _ => cts.Cancel() };
+
+        var results = VersionDeleter.Delete(_target, PlanId, [Old, New], volume, cancellationToken: cts.Token);
+
+        results.Should().Equal(new VersionDeletion(Old, VersionDeletionOutcome.Deleted, null));
+        Directory.GetDirectories(_target).Select(Path.GetFileName).Should().Equal(New);
+    }
+
+    [Fact]
     public void Cancellation_stops_before_the_next_version()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        var act = () => VersionDeleter.Delete(_target, PlanId, [Old, New], cancellationToken: cts.Token);
+        var results = VersionDeleter.Delete(_target, PlanId, [Old, New], cancellationToken: cts.Token);
 
-        act.Should().Throw<OperationCanceledException>();
+        results.Should().BeEmpty("the versions not started are left out");
         Directory.GetDirectories(_target).Should().HaveCount(2);
     }
 }

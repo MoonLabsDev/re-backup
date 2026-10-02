@@ -632,7 +632,18 @@
       },
       "notManaged": "no longer a version of this plan; left as it is",
       "remainsLeft": "no longer a version, but remains are left (the next run of the plan removes them): {error}",
-      "stopped": "Deleting stopped: {error}"
+      "stopped": "Deleting stopped: {error}",
+      "progress": {
+        "one": "Deleting {done:N0} of {count:N0} file · version {current} of {versions}",
+        "other": "Deleting {done:N0} of {count:N0} files · version {current} of {versions}"
+      },
+      "cancel": "Cancel deleting",
+      "cancelToolTip": "Stop after the version being deleted",
+      "canceling": "Stopping after the current version…",
+      "canceled": {
+        "one": "Deleting canceled; {count} version deleted.",
+        "other": "Deleting canceled; {count} versions deleted."
+      }
     },
     "empty": "No versions in the target yet",
     "savePlan": "Save the plan to see its versions.",

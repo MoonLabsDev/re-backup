@@ -29,6 +29,19 @@ public class VersionRemoverTests : IDisposable
     }
 
     [Fact]
+    public void Reports_every_deleted_file_but_not_the_manifest()
+    {
+        _tmp.WriteFile($@"target\{Name}\sub\b.txt", "b");
+        var reported = new List<int>();
+
+        VersionRemover.Remove(_version, new PhysicalTargetVolume(), reported.Add);
+
+        // data.bin, sub/b.txt and sub/deep/c.txt, one call per file
+        reported.Should().Equal(1, 1, 1);
+        Directory.GetFileSystemEntries(_target).Should().BeEmpty();
+    }
+
+    [Fact]
     public void A_failing_rename_leaves_the_version_untouched()
     {
         var volume = new ScriptedVolume { FailMove = _ => true };
