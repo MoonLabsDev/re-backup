@@ -98,11 +98,15 @@ public class VersionDeleterTests : IDisposable
 
         VersionDeleter.Delete(_target, PlanId, [Old, New], progress: new SyncProgress<VersionDeletionProgress>(reports.Add));
 
-        reports.Should().NotBeEmpty();
-        reports.Should().OnlyContain(r => r.VersionCount == 2 && r.FilesTotal == 2);
-        reports.First().Should().Be(new VersionDeletionProgress(1, 2, Old, 0, 2));
-        reports.Select(r => r.FilesDone).Should().BeInAscendingOrder();
-        reports.Last().Should().Be(new VersionDeletionProgress(2, 2, New, 3, 2), "files beyond the manifest still count");
+        reports.TakeWhile(r => r.Phase == VersionDeletionPhase.Preparing).Should().Equal(
+            new VersionDeletionProgress(VersionDeletionPhase.Preparing, 1, 2, Old, 0, 0),
+            new VersionDeletionProgress(VersionDeletionPhase.Preparing, 2, 2, New, 0, 1));
+        var deleting = reports.SkipWhile(r => r.Phase == VersionDeletionPhase.Preparing).ToList();
+        deleting.Should().OnlyContain(r => r.Phase == VersionDeletionPhase.Deleting && r.VersionCount == 2 && r.FilesTotal == 2);
+        deleting.First().Should().Be(new VersionDeletionProgress(VersionDeletionPhase.Deleting, 1, 2, Old, 0, 2));
+        deleting.Select(r => r.FilesDone).Should().BeInAscendingOrder();
+        deleting.Last().Should().Be(new VersionDeletionProgress(VersionDeletionPhase.Deleting, 2, 2, New, 3, 2),
+            "files beyond the manifest still count");
         reports.Last().Fraction.Should().Be(1);
     }
 

@@ -59,6 +59,13 @@ public sealed partial class VersionsViewModel
             if (!IsDeleting || !ReferenceEquals(_deleteCts, cts) || cts.IsCancellationRequested)
                 return;
             DeleteFraction = p.Fraction;
+            if (p.Phase == VersionDeletionPhase.Preparing)
+            {
+                clock.Restart();   // the rate counts from the first deleted file on
+                DeleteProgress = LocText.Of("versions.delete.preparing", ("current", p.Current), ("versions", p.VersionCount));
+                return;
+            }
+
             TimeSpan? remaining = null;
             var elapsed = clock.Elapsed;
             if (elapsed >= EtaWarmUp && p.FilesDone > 0 && p.FilesTotal > p.FilesDone)

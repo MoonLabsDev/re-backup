@@ -42,16 +42,15 @@ public static class VersionRemover
     public static void RemoveRemains(string doomedPath, ITargetVolume volume, Action<int>? onFileDeleted = null)
     {
         RefuseLink(doomedPath);
-        RemoveLinks(doomedPath);
-        foreach (var entry in Directory.EnumerateFileSystemEntries(doomedPath).ToList())
+        foreach (var entry in new DirectoryInfo(doomedPath).EnumerateFileSystemInfos().ToList())
         {
-            if (Directory.Exists(entry))
+            if (entry is DirectoryInfo directory)
             {
-                RemoveTree(entry, volume, onFileDeleted);
+                RemoveTree(directory, volume, onFileDeleted);
             }
-            else if (!Path.GetFileName(entry).Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
+            else if (!entry.Name.Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
             {
-                File.Delete(entry);
+                entry.Delete();
                 onFileDeleted?.Invoke(1);
             }
         }
@@ -59,35 +58,33 @@ public static class VersionRemover
     }
 
     /// <summary>
-    /// Deletes a folder file by file, so that the progress can be reported; each folder is handed to the volume once
-    /// it is empty. (The links are gone by now: <see cref="RemoveLinks"/>.)
+    /// Deletes a folder file by file in one pass, so that the progress can be reported from the first file on; each
+    /// folder is handed to the volume once it is empty. A junction or directory link is removed as a link and never
+    /// entered: what it points to stays. (A recursive deletion would not follow it either, but fails on a junction
+    /// further down: .NET then reports "access denied" after removing the junction.)
     /// </summary>
-    private static void RemoveTree(string directory, ITargetVolume volume, Action<int>? onFileDeleted)
+    private static void RemoveTree(DirectoryInfo directory, ITargetVolume volume, Action<int>? onFileDeleted)
     {
-        foreach (var child in Directory.EnumerateDirectories(directory).ToList())
-            RemoveTree(child, volume, onFileDeleted);
-        foreach (var file in Directory.EnumerateFiles(directory).ToList())
+        // The attributes come with the listing; only reparse points need the extra look at their link target.
+        if ((directory.Attributes & FileAttributes.ReparsePoint) != 0 && directory.LinkTarget is not null)
         {
-            File.Delete(file);
-            onFileDeleted?.Invoke(1);
+            Directory.Delete(directory.FullName);   // not recursive: the link only
+            return;
         }
-        volume.DeleteDirectory(directory);
-    }
 
-    /// <summary>
-    /// Removes every junction and directory link below the folder without touching its target, so that the
-    /// recursive deletion afterwards only meets real folders. (That deletion would not follow a link either, but
-    /// it fails on a junction further down: .NET then reports "access denied" after removing the junction.)
-    /// </summary>
-    private static void RemoveLinks(string directory)
-    {
-        foreach (var child in Directory.EnumerateDirectories(directory).ToList())
+        foreach (var entry in directory.EnumerateFileSystemInfos().ToList())
         {
-            if (new DirectoryInfo(child).LinkTarget is not null)
-                Directory.Delete(child);   // not recursive: the link only
+            if (entry is DirectoryInfo child)
+            {
+                RemoveTree(child, volume, onFileDeleted);
+            }
             else
-                RemoveLinks(child);
+            {
+                entry.Delete();
+                onFileDeleted?.Invoke(1);
+            }
         }
+        volume.DeleteDirectory(directory.FullName);
     }
 
     /// <summary>A link would lead the deletion out of the target: its content is not ours to delete.</summary>

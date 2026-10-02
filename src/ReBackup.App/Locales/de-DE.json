@@ -637,6 +637,7 @@
         "one": "Löschen: {done:N0} von {count:N0} Datei · Version {current} von {versions}",
         "other": "Löschen: {done:N0} von {count:N0} Dateien · Version {current} von {versions}"
       },
+      "preparing": "Vorbereiten: Manifest von Version {current} von {versions} wird gelesen …",
       "cancel": "Löschen abbrechen",
       "cancelToolTip": "Nach der Version anhalten, die gerade gelöscht wird",
       "canceling": "Abbruch nach der aktuellen Version …",

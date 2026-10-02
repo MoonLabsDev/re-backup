@@ -24,15 +24,19 @@ public enum VersionDeletionOutcome
 /// <summary>What happened to one version a person asked to delete; <see cref="Error"/> for RemainsLeft and Failed.</summary>
 public sealed record VersionDeletion(string Name, VersionDeletionOutcome Outcome, string? Error);
 
+/// <summary>Preparing: the versions' manifests are read for their file counts. Deleting: the files are deleted.</summary>
+public enum VersionDeletionPhase { Preparing, Deleting }
+
 /// <summary>
-/// A deletion's progress: the version being deleted (1-based <see cref="Current"/> of <see cref="VersionCount"/>) and
+/// A deletion's progress: the version being examined or deleted (1-based <see cref="Current"/> of <see cref="VersionCount"/>) and
 /// the files deleted so far over all versions, of the total their manifests list.
 /// </summary>
-public readonly record struct VersionDeletionProgress(int Current, int VersionCount, string VersionName, long FilesDone,
+public readonly record struct VersionDeletionProgress(VersionDeletionPhase Phase, int Current, int VersionCount, string VersionName, long FilesDone,
     long FilesTotal)
 {
     /// <summary>0..1 by files; by versions when the manifests list no files.</summary>
-    public double Fraction => FilesTotal > 0
+    public double Fraction => Phase == VersionDeletionPhase.Preparing ? 0
+        : FilesTotal > 0
         ? Math.Clamp((double)FilesDone / FilesTotal, 0, 1)
         : VersionCount > 0 ? Math.Clamp((double)(Current - 1) / VersionCount, 0, 1) : 1;
 }
@@ -47,7 +51,7 @@ public static class VersionDeleter
     /// single version. Cancellation stops between versions: the versions not started yet are left out of the result.
     /// </summary>
     /// <param name="progress">
-    /// Gets a report when each version starts, then at most every <see cref="ProgressInterval"/> while its files are
+    /// Gets a report while the manifests are read (for the file counts), then when each version starts, then at most every <see cref="ProgressInterval"/> while its files are
     /// deleted, and when it ends; on the deleting thread.
     /// </param>
     public static IReadOnlyList<VersionDeletion> Delete(string target, string planId, IReadOnlyList<string> versionNames,
@@ -55,7 +59,16 @@ public static class VersionDeleter
         CancellationToken cancellationToken = default)
     {
         volume ??= new PhysicalTargetVolume();
-        var filesTotal = progress is null ? 0 : versionNames.Sum(name => FileCountOf(target, name));
+        long filesTotal = 0;
+        if (progress is not null)
+        {
+            for (var i = 0; i < versionNames.Count && !cancellationToken.IsCancellationRequested; i++)
+            {
+                progress.Report(new VersionDeletionProgress(VersionDeletionPhase.Preparing, i + 1, versionNames.Count,
+                    versionNames[i], 0, filesTotal));
+                filesTotal += FileCountOf(target, versionNames[i]);
+            }
+        }
         long filesDone = 0;
         var results = new List<VersionDeletion>(versionNames.Count);
         for (var i = 0; i < versionNames.Count; i++)
@@ -64,7 +77,7 @@ public static class VersionDeleter
                 break;
             var name = versionNames[i];
             var current = i + 1;
-            progress?.Report(new VersionDeletionProgress(current, versionNames.Count, name, filesDone, filesTotal));
+            progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
             var sinceReport = Stopwatch.StartNew();
             results.Add(DeleteOne(target, planId, name, volume, progress is null ? null : count =>
             {
@@ -72,9 +85,9 @@ public static class VersionDeleter
                 if (sinceReport.Elapsed < ProgressInterval)
                     return;
                 sinceReport.Restart();
-                progress.Report(new VersionDeletionProgress(current, versionNames.Count, name, filesDone, filesTotal));
+                progress.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
             }));
-            progress?.Report(new VersionDeletionProgress(current, versionNames.Count, name, filesDone, filesTotal));
+            progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
         }
         return results;
     }
