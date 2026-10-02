@@ -544,7 +544,8 @@ public sealed class BackupRunner : IBackupRunner
 
             if (copied is null)
             {
-                if (skipReason == NoLongerExists && !Directory.Exists(work.SourceRoot))
+                // Every file fails once the whole source is gone (e.g. a drive or share went away): abort, do not skip all.
+                if (!Directory.Exists(work.SourceRoot))
                     throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
                 entry.AddSkipped(new SkippedEntry(file.RelativePath, skipReason!));
             }
@@ -681,6 +682,9 @@ public sealed class BackupRunner : IBackupRunner
         FileNotFoundException or DirectoryNotFoundException => NoLongerExists,
         UnauthorizedAccessException => CoreTexts.English("core.file.accessDenied"),
         IOException io when IsLocked(io) => CoreTexts.English("core.file.locked"),
+        // Opening reads the source only, so any other failure here is the source file's own: e.g. a WSL symlink
+        // (Windows cannot open it, error 1920). A source that is gone altogether is caught by the caller.
+        IOException io => CoreTexts.English("core.file.cannotOpen", ("error", io.Message)),
         _ => null,
     };
 

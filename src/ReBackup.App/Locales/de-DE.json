@@ -164,7 +164,8 @@
     "file": {
       "noLongerExists": "existiert nicht mehr",
       "accessDenied": "Zugriff verweigert",
-      "locked": "von einem anderen Programm gesperrt"
+      "locked": "von einem anderen Programm gesperrt",
+      "cannotOpen": "kann nicht geöffnet werden: {error}"
     },
     "scan": {
       "link": "Verknüpfung wird nicht verfolgt.",
@@ -232,6 +233,11 @@
       "saveFailed": "Speichern fehlgeschlagen",
       "chooseSource": "Quellordner wählen",
       "chooseTarget": "Zielordner wählen"
+    },
+    "runUnsaved": {
+      "title": "Jetzt ausführen",
+      "saveAndRun": "„{plan}“ hat ungespeicherte Änderungen. Ein Lauf verwendet den gespeicherten Plan.\n\nÄnderungen speichern und starten?",
+      "errors": "„{plan}“ hat Fehler und kann so weder gespeichert noch ausgeführt werden:\n\n{errors}"
     },
     "card": {
       "removeFromQueue": "Aus der Warteschlange entfernen",

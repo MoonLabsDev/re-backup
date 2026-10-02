@@ -85,6 +85,7 @@ public static class CoreTexts
         ["core.file.noLongerExists"] = "no longer exists",
         ["core.file.accessDenied"] = "access denied",
         ["core.file.locked"] = "locked by another program",
+        ["core.file.cannotOpen"] = "cannot be opened: {error}",
 
         ["core.scan.link"] = "Link is not followed.",
         ["core.scan.tooDeep"] = "Folder nesting too deep.",
