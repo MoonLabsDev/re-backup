@@ -46,6 +46,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions);
+        Versions.VersionsDeleted += () => RetentionPreview.ReloadIfLoaded();
         Preview.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(IgnorePreviewViewModel.SelectedNode))

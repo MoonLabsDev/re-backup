@@ -39,7 +39,8 @@ public sealed partial class VersionsViewModel
     private Task? _restoreRun;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(RestoreToOriginalCommand), nameof(RestoreToCommand), nameof(CancelRestoreCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RestoreToOriginalCommand), nameof(RestoreToCommand), nameof(CancelRestoreCommand),
+        nameof(DeleteVersionsCommand))]
     private bool _isRestoring;
 
     /// <summary>"Restoring 120 of 300 files · 34 %" while a restore runs (Versions tab and plan card).</summary>
@@ -81,7 +82,7 @@ public sealed partial class VersionsViewModel
 
     private bool CanActOnSelected() => Selection is not null;
 
-    private bool CanRestore() => !IsRestoring && Selection is not null;
+    private bool CanRestore() => !IsRestoring && !IsDeleting && Selection is not null;
 
     /// <summary>
     /// Opens the copy of the selected file in the version folder with its program (meant read-only). A program, script

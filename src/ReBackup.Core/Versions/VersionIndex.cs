@@ -38,6 +38,7 @@ public sealed partial class VersionIndex
         CREATE TABLE IF NOT EXISTS dirs     (version_id INTEGER NOT NULL, path_id INTEGER NOT NULL, size INTEGER NOT NULL,
                                              files INTEGER NOT NULL,
                                              PRIMARY KEY (version_id, path_id)) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS dirs_path ON dirs(path_id);
         INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
         """;
 
@@ -97,20 +98,7 @@ public sealed partial class VersionIndex
 
         var known = ReadStamps();
         var listed = new HashSet<string>(folders.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
-        var removed = 0;
-        foreach (var (name, entry) in known)
-        {
-            if (listed.Contains(name))
-                continue;
-            lock (_writeGate)
-            {
-                using var connection = OpenConnection();
-                using var transaction = connection.BeginTransaction();
-                DeleteVersion(connection, transaction, entry.Id);
-                transaction.Commit();
-            }
-            removed++;
-        }
+        var removed = Remove(known.Keys.Where(name => !listed.Contains(name)).ToList());
 
         var imported = 0;
         var unchanged = 0;
@@ -152,6 +140,34 @@ public sealed partial class VersionIndex
             }
         }
         return new IndexSyncResult(imported, unchanged, removed, errors);
+    }
+
+    /// <summary>
+    /// Takes the versions <paramref name="names"/> (matched without regard to case; unknown names are ignored) out of the
+    /// index, together with the paths no remaining version uses, in one transaction. Returns how many were removed.
+    /// </summary>
+    public int Remove(IReadOnlyCollection<string> names)
+    {
+        if (names.Count == 0)
+            return 0;
+        var known = ReadStamps();
+        var ids = names.Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(known.ContainsKey)
+            .Select(name => known[name].Id)
+            .ToList();
+        if (ids.Count == 0)
+            return 0;
+
+        lock (_writeGate)
+        {
+            using var connection = OpenConnection();
+            using var transaction = connection.BeginTransaction();
+            foreach (var id in ids)
+                DeleteVersion(connection, transaction, id);
+            DeleteUnusedPaths(connection, transaction);
+            transaction.Commit();
+        }
+        return ids.Count;
     }
 
     /// <summary>The indexed versions, oldest first.</summary>
@@ -328,6 +344,20 @@ public sealed partial class VersionIndex
             DELETE FROM versions WHERE id = $id;
             """);
         delete.Parameters.AddWithValue("$id", versionId);
+        delete.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Paths that neither a file nor a folder row refers to. A folder path has a folder row in every version that holds
+    /// anything below it, so no path that is still in use loses its parent.
+    /// </summary>
+    private static void DeleteUnusedPaths(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var delete = Command(connection, transaction, """
+            DELETE FROM paths
+            WHERE NOT EXISTS (SELECT 1 FROM files WHERE files.path_id = paths.id)
+              AND NOT EXISTS (SELECT 1 FROM dirs WHERE dirs.path_id = paths.id)
+            """);
         delete.ExecuteNonQuery();
     }
 
