@@ -203,6 +203,54 @@ public class VersionIndexTests : IDisposable
     }
 
     [Fact]
+    public void A_sync_that_removes_versions_also_removes_the_paths_no_version_uses_any_more()
+    {
+        var old = Write(_target, "2026_09_29-14_05", [File("gone/x.txt", "x"), File("a.txt", "alpha")]);
+        Write(_target, "2026_09_30-14_05", [File("a.txt", "alpha")]);
+        var index = VersionIndex.Open(_db);
+        index.Sync(List(_target));
+
+        Directory.Delete(old, recursive: true);
+        index.Sync(List(_target));
+
+        Rows("SELECT path, is_dir FROM paths ORDER BY path").Select(r => ((string)r[0]!, (long)r[1]!))
+            .Should().Equal(("", 1L), ("a.txt", 0L));
+    }
+
+    [Fact]
+    public void Remove_takes_the_versions_and_their_unused_paths_out_of_the_index()
+    {
+        Write(_target, "2026_09_28-14_05", [File("only-old/x.txt", "x"), File("a.txt", "alpha")]);
+        Write(_target, "2026_09_29-14_05", [File("a.txt", "alpha")]);
+        Write(_target, "2026_09_30-14_05", [File("b.txt", "bravo")]);
+        var index = VersionIndex.Open(_db);
+        index.Sync(List(_target));
+
+        var removed = index.Remove(["2026_09_28-14_05 PROJECTS", "2026_09_30-14_05 Projects", "not indexed"]);
+
+        removed.Should().Be(2, "names are matched without regard to case; unknown names are ignored");
+        index.Versions().Select(v => v.Name).Should().Equal("2026_09_29-14_05 Projects");
+        Rows("SELECT path FROM paths ORDER BY path").Select(r => (string)r[0]!).Should().Equal("", "a.txt");
+        Rows("SELECT COUNT(*) FROM files").Single()[0].Should().Be(1L);
+        Rows("SELECT COUNT(*) FROM dirs").Single()[0].Should().Be(1L);
+    }
+
+    [Fact]
+    public void A_version_imported_after_a_removal_gets_its_paths_again()
+    {
+        Write(_target, "2026_09_29-14_05", [File("sub/a.txt", "alpha")]);
+        var index = VersionIndex.Open(_db);
+        index.Sync(List(_target));
+        index.Remove(["2026_09_29-14_05 Projects"]);
+
+        Write(_target, "2026_09_30-14_05", [File("sub/a.txt", "alpha")]);
+        index.Sync(List(_target));
+
+        FilesOf("2026_09_30-14_05 Projects").Select(f => f.Path).Should().Equal("sub/a.txt");
+        DirsOf("2026_09_30-14_05 Projects").Keys.Should().BeEquivalentTo("", "sub");
+    }
+
+    [Fact]
     public void Shares_paths_between_versions()
     {
         Write(_target, "2026_09_29-14_05", [File("sub/a.txt", "alpha")]);

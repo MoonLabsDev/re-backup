@@ -33,6 +33,23 @@ public partial class VersionsView : UserControl
         ((ListViewItem)sender).IsSelected = true;
     }
 
+    private void OnVersionRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Right-click on a version outside the marked ones marks only that one, as Explorer does.
+        var item = (ListBoxItem)sender;
+        if (!item.IsSelected && ItemsControl.ItemsControlFromItemContainer(item) is ListBox list)
+        {
+            list.SelectedItems.Clear();
+            item.IsSelected = true;
+        }
+    }
+
+    private void OnVersionSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is PlanEditorViewModel editor)
+            editor.Versions.SetMarkedVersions(((ListBox)sender).SelectedItems.OfType<VersionRowViewModel>());
+    }
+
     private void OnTreeSizeChanged(object sender, SizeChangedEventArgs e)
     {
         // The Name column takes the width the fixed columns leave (room kept for the vertical scroll bar).

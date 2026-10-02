@@ -606,6 +606,34 @@
     "list": "Versionen",
     "refreshToolTip": "Ziel erneut lesen und den Index aktualisieren",
     "refreshName": "Versionen aktualisieren",
+    "delete": {
+      "title": "Versionen löschen",
+      "menu": "Versionen löschen …",
+      "toolTip": "Die ausgewählten Versionen löschen (Entf); mehrere mit Strg oder Umschalt",
+      "name": "Die ausgewählten Versionen löschen",
+      "backupRunning": "Ein Backup dieses Plans ist eingereiht oder läuft. Versionen erst löschen, wenn es fertig ist.",
+      "confirm": "Diese Version endgültig löschen?\n\n{versions}\n\nIhr Ordner ({size}) wird aus dem Ziel entfernt und die Version aus dem Index. Das lässt sich nicht rückgängig machen.",
+      "confirmMany": "Diese {count} Versionen endgültig löschen?\n\n{versions}{more}\n\nZusammen {size}. Ihre Ordner werden aus dem Ziel entfernt und die Versionen aus dem Index. Das lässt sich nicht rückgängig machen.",
+      "notManagedNote": {
+        "one": "{count} ausgewählter Ordner wird nicht von diesem Plan verwaltet und bleibt unverändert.",
+        "other": "{count} ausgewählte Ordner werden nicht von diesem Plan verwaltet und bleiben unverändert."
+      },
+      "deleting": {
+        "one": "{count} Version wird gelöscht …",
+        "other": "{count} Versionen werden gelöscht …"
+      },
+      "done": {
+        "one": "{count} Version gelöscht.",
+        "other": "{count} Versionen gelöscht."
+      },
+      "problems": {
+        "one": "{done}\n\n{count} Version konnte nicht vollständig gelöscht werden:",
+        "other": "{done}\n\n{count} Versionen konnten nicht vollständig gelöscht werden:"
+      },
+      "notManaged": "keine Version dieses Plans mehr; unverändert gelassen",
+      "remainsLeft": "keine Version mehr, aber Reste sind übrig (der nächste Lauf des Plans entfernt sie): {error}",
+      "stopped": "Das Löschen wurde angehalten: {error}"
+    },
     "empty": "Noch keine Versionen im Ziel",
     "savePlan": "Den Plan speichern, um seine Versionen zu sehen.",
     "copyMissing": "Die Kopie in „{version}“ existiert nicht mehr.",

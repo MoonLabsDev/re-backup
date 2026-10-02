@@ -81,6 +81,11 @@
             <MenuItem Header="{l:Loc versions.menu.restoreOriginal}" Command="{Binding Versions.RestoreToOriginalCommand}" />
             <MenuItem Header="{l:Loc versions.toolbar.restoreTo}" Command="{Binding Versions.RestoreToCommand}" />
         </ContextMenu>
+
+        <!-- The version list's menu: acts on the marked versions. -->
+        <ContextMenu x:Key="Menu.Version">
+            <MenuItem Header="{l:Loc versions.delete.menu}" Command="{Binding Versions.DeleteVersionsCommand}" />
+        </ContextMenu>
     </UserControl.Resources>
 
     <Grid Margin="24,20">
@@ -97,6 +102,10 @@
                     <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Refresh}"
                             ToolTip="{l:Loc versions.refreshToolTip}" AutomationProperties.Name="{l:Loc versions.refreshName}"
                             Command="{Binding Versions.RefreshCommand}" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Delete}"
+                            ToolTip="{l:Loc versions.delete.toolTip}" AutomationProperties.Name="{l:Loc versions.delete.name}"
+                            ToolTipService.ShowOnDisabled="True"
+                            Command="{Binding Versions.DeleteVersionsCommand}" />
                     <TextBlock Style="{StaticResource TextBlock.CardTitle}" VerticalAlignment="Center" Text="{l:Loc versions.title}" />
                 </DockPanel>
 
@@ -110,13 +119,20 @@
                 </StackPanel>
 
                 <Grid>
+                    <!-- Several versions can be marked (Ctrl, Shift) to delete them; the tree shows the first. -->
                     <ListBox ItemsSource="{Binding Versions.VersionRows}" SelectedItem="{Binding Versions.SelectedVersion}"
+                             SelectionMode="Extended" SelectionChanged="OnVersionSelectionChanged"
+                             ContextMenu="{StaticResource Menu.Version}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="{l:Loc versions.list}"
                              VirtualizingPanel.IsVirtualizing="True">
+                        <ListBox.InputBindings>
+                            <KeyBinding Key="Delete" Command="{Binding Versions.DeleteVersionsCommand}" />
+                        </ListBox.InputBindings>
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                 <Setter Property="ToolTip" Value="{Binding Name}" />
+                                <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnVersionRightButtonDown" />
                             </Style>
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>

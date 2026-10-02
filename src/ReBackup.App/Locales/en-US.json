@@ -606,6 +606,34 @@
     "list": "Versions",
     "refreshToolTip": "Read the target again and update the index",
     "refreshName": "Refresh versions",
+    "delete": {
+      "title": "Delete versions",
+      "menu": "Delete versions…",
+      "toolTip": "Delete the selected versions (Del); several with Ctrl or Shift",
+      "name": "Delete the selected versions",
+      "backupRunning": "A backup of this plan is queued or running. Delete versions once it has finished.",
+      "confirm": "Delete this version for good?\n\n{versions}\n\nIts folder ({size}) is removed from the target and the version leaves the index. This cannot be undone.",
+      "confirmMany": "Delete these {count} versions for good?\n\n{versions}{more}\n\nTogether {size}. Their folders are removed from the target and the versions leave the index. This cannot be undone.",
+      "notManagedNote": {
+        "one": "{count} selected folder is not managed by this plan and stays as it is.",
+        "other": "{count} selected folders are not managed by this plan and stay as they are."
+      },
+      "deleting": {
+        "one": "Deleting {count} version…",
+        "other": "Deleting {count} versions…"
+      },
+      "done": {
+        "one": "{count} version deleted.",
+        "other": "{count} versions deleted."
+      },
+      "problems": {
+        "one": "{done}\n\n{count} version could not be deleted completely:",
+        "other": "{done}\n\n{count} versions could not be deleted completely:"
+      },
+      "notManaged": "no longer a version of this plan; left as it is",
+      "remainsLeft": "no longer a version, but remains are left (the next run of the plan removes them): {error}",
+      "stopped": "Deleting stopped: {error}"
+    },
     "empty": "No versions in the target yet",
     "savePlan": "Save the plan to see its versions.",
     "copyMissing": "The copy in \"{version}\" no longer exists.",
