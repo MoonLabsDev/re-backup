@@ -637,6 +637,7 @@
         "one": "Deleting {done:N0} of {count:N0} file · version {current} of {versions}",
         "other": "Deleting {done:N0} of {count:N0} files · version {current} of {versions}"
       },
+      "preparing": "Preparing: reading the manifest of version {current} of {versions}…",
       "cancel": "Cancel deleting",
       "cancelToolTip": "Stop after the version being deleted",
       "canceling": "Stopping after the current version…",
