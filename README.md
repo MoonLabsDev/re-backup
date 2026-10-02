@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-2BB3A3">
+  <img alt="Version 1.0.1" src="https://img.shields.io/badge/version-1.0.1-2BB3A3">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0F1216">
   <img alt=".NET 9 WPF" src="https://img.shields.io/badge/.NET%209-WPF-512BD4">
   <img alt="License: Unlicense" src="https://img.shields.io/badge/license-Unlicense-lightgrey">
@@ -61,7 +61,7 @@
 | **Schedules** | Triggers: **Daily** (time), **Weekly** (weekdays + time), **Monthly** (day 1–31, `0` = last day, `-1` = the day before it), **Interval** (every *n* hours between two times). Shows the next five runs. On startup, a plan that missed a trigger gets **one catch-up run** about a minute later. |
 | **Versions** | Every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. |
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
-| **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted, optionally changed only), and see a **file's history** across all versions. Backed by a local SQLite index per plan. |
+| **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted, optionally changed only), and see a **file's history** across all versions. **Delete versions** by hand (one or several, after a confirmation); the index is cleaned up with them. Backed by a local SQLite index per plan. |
 | **Restore** | Restore a file, a folder or a whole version to its original location or to a folder of your choice. If files already exist you choose **Overwrite**, **Skip** or **Keep both** (or cancel). A restore **never deletes** anything at the destination. |
 | **App** | **Dark and Light** theme, **English and German** (both switch at once, no restart), tray icon with Open, Run plan, Pause scheduler and Exit, a notification when a run ends, start with Windows, a single instance. |
 | **Distribution** | One self-contained `.exe` for Windows x64; no installer, no .NET runtime to install. |
@@ -119,9 +119,9 @@ dotnet run --project src/ReBackup.App         # start the app
 `publish.ps1` publishes the app in Release as one file and copies it to `dist\`.
 
 ```powershell
-.\publish.ps1                       # dist\ReBackup-1.0.0-win-x64.exe, self-contained (.NET runtime included)
-.\publish.ps1 -Version 1.0.1        # override the version from Directory.Build.props
-.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.0.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
+.\publish.ps1                       # dist\ReBackup-1.0.1-win-x64.exe, self-contained (.NET runtime included)
+.\publish.ps1 -Version 1.0.2        # override the version from Directory.Build.props
+.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.0.1-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
 .\publish.ps1 -Runtime win-arm64    # for Windows on ARM
 ```
 
