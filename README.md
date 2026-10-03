@@ -13,7 +13,11 @@
   <img alt="Version 1.0.3" src="https://img.shields.io/badge/version-1.0.3-2BB3A3">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0F1216">
   <img alt=".NET 9 WPF" src="https://img.shields.io/badge/.NET%209-WPF-512BD4">
-  <img alt="License: Unlicense" src="https://img.shields.io/badge/license-Unlicense-lightgrey">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-lightgrey">
+</p>
+
+<p align="center">
+  Made by <a href="https://moon-labs.io">Moon Labs UG</a>
 </p>
 
 ![ReBackup: the Plan tab with source, target, last run and schedule](docs/images/plan.png)
@@ -197,6 +201,13 @@ No, one source per plan. Create one plan per folder.
 
 ---
 
+## Disclaimer
+
+ReBackup was developed with the help of AI. It is provided as is, without warranty of any kind, and without
+liability for lost or damaged data. Check your backups regularly and try a restore now and then: a backup is only
+as good as the restore you have tested.
+
 ## License
 
-ReBackup is released into the public domain under [The Unlicense](LICENSE).
+ReBackup is released under the [MIT License](LICENSE).
+Copyright © 2026 [Moon Labs UG](https://moon-labs.io).
