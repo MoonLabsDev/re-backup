@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  Made by <a href="https://moon-labs.io">Moon Labs UG</a>
+  Made by <a href="https://moon-labs.io">Moon Labs UG (haftungsbeschränkt)</a>
 </p>
 
 ![ReBackup: the Plan tab with source, target, last run and schedule](docs/images/plan.png)
@@ -210,4 +210,4 @@ as good as the restore you have tested.
 ## License
 
 ReBackup is released under the [MIT License](LICENSE).
-Copyright © 2026 [Moon Labs UG](https://moon-labs.io).
+Copyright © 2026 [Moon Labs UG (haftungsbeschränkt)](https://moon-labs.io).
