@@ -169,9 +169,11 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
             return;
         }
 
+        // Folders first, then by name without regard to case (as in Explorer and the Versions tab's tree).
         foreach (var child in children
-                     .OrderByDescending(c => c.TotalSize)
-                     .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+                     .OrderByDescending(c => c.IsDirectory)
+                     .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(c => c.Name, StringComparer.Ordinal))
         {
             Append(rows, child, entry, depth + 1, known);
         }
