@@ -58,6 +58,17 @@ public static class VersionRemover
     }
 
     /// <summary>
+    /// Deletes a folder that is not a version (e.g. an unfinished ".partial" copy) with everything in it, file by file;
+    /// links inside it are removed as links. The folder itself must not be a link.
+    /// </summary>
+    /// <param name="onFileDeleted">Called with 1 after every deleted file, on the calling thread.</param>
+    public static void RemoveFolder(string path, ITargetVolume volume, Action<int>? onFileDeleted = null)
+    {
+        RefuseLink(path);
+        RemoveTree(new DirectoryInfo(path), volume, onFileDeleted);
+    }
+
+    /// <summary>
     /// Deletes a folder file by file in one pass, so that the progress can be reported from the first file on; each
     /// folder is handed to the volume once it is empty. A junction or directory link is removed as a link and never
     /// entered: what it points to stays. (A recursive deletion would not follow it either, but fails on a junction

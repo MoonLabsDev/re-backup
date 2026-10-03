@@ -294,6 +294,11 @@
     "removingCopy": "unvollständige Kopie wird entfernt …",
     "stoppingBackup": "Backup wird beendet …",
     "starting": "Startet …",
+    "removingLeftovers": "Räumt auf …",
+    "leftoversDetail": {
+      "one": "Reste früherer Läufe: {count:N0} Datei entfernt",
+      "other": "Reste früherer Läufe: {count:N0} Dateien entfernt"
+    },
     "scan": "Scan",
     "indexing": "Indizieren …",
     "creatingFolders": "Ordner anlegen",

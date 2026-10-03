@@ -312,6 +312,11 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 Show(PlanCardState.Indexing, PlanCardAction.Cancel, 0, true, Loc.T("card.scan"), Loc.T("card.indexing"),
                     Loc.F("common.fileCount", ("count", p.FilesDone)));
                 break;
+            case BackupPhase.RemovingLeftovers:
+                // An unfinished copy or the remains of a deleted version (e.g. after the app was ended mid-run).
+                Show(PlanCardState.Indexing, PlanCardAction.Cancel, 0, true, "", Loc.T("card.removingLeftovers"),
+                    Loc.F("card.leftoversDetail", ("count", p.FilesDone)));
+                break;
             case BackupPhase.CreatingFolders:
                 Show(PlanCardState.CreatingFolders, PlanCardAction.Cancel, p.Fraction, false, percent,
                     Loc.T("card.creatingFolders"), string.Create(Loc.Culture, $"{p.FilesDone:N0} / {p.FilesTotal:N0}"));

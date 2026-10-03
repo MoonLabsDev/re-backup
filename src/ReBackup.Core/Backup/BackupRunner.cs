@@ -14,9 +14,10 @@ namespace ReBackup.Core.Backup;
 
 /// <summary>
 /// CreatingFolders counts folders in FilesDone/FilesTotal. CleaningUp: the run did not finish and the incomplete copy
-/// is being removed.
+/// is being removed. RemovingLeftovers: before indexing, what earlier runs left behind (an unfinished copy, the remains of
+/// a deleted version) is removed; FilesDone counts the files removed, CurrentFile is the folder.
 /// </summary>
-public enum BackupPhase { Indexing, CreatingFolders, Copying, Finishing, CleaningUp, Retention }
+public enum BackupPhase { Indexing, CreatingFolders, Copying, Finishing, CleaningUp, Retention, RemovingLeftovers }
 
 public readonly record struct BackupProgress(
     BackupPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal, string CurrentFile)
@@ -186,7 +187,7 @@ public sealed class BackupRunner : IBackupRunner
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceInsideTarget"));
 
         Directory.CreateDirectory(plan.Target);
-        DeleteLeftovers(plan, entry);
+        DeleteLeftovers(plan, entry, progress, cancellationToken);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
         var index = SourceIndexer.Build(plan.Source, indexProgress, cancellationToken);
@@ -287,8 +288,27 @@ public sealed class BackupRunner : IBackupRunner
     }
 
     /// <summary>Removes what earlier runs of this plan left behind: unfinished ".partial" folders and ".deleting" remains.</summary>
-    private void DeleteLeftovers(BackupPlan plan, RunLogEntry entry)
+    /// <remarks>
+    /// On a network target this can take long (a run that was killed leaves a whole copy), so the files removed are
+    /// reported, and cancellation stops between files: the rest stays for the next run.
+    /// </remarks>
+    private void DeleteLeftovers(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
+        CancellationToken cancellationToken)
     {
+        var removed = 0;
+        var sinceReport = Stopwatch.StartNew();
+        var current = "";
+        void Report() => progress?.Report(new BackupProgress(BackupPhase.RemovingLeftovers, removed, 0, 0, 0, current));
+        void OnFileDeleted(int count)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            removed += count;
+            if (sinceReport.Elapsed < ProgressInterval)
+                return;
+            sinceReport.Restart();
+            Report();
+        }
+
         foreach (var directory in Directory.EnumerateDirectories(plan.Target).ToList())
         {
             var name = Path.GetFileName(directory);
@@ -306,21 +326,34 @@ public sealed class BackupRunner : IBackupRunner
                 // choice, and so is leaving a folder that cannot be examined.
                 if (HasManifest(directory) != false)
                     continue;
-                TryDeleteDirectory(directory);
+                current = name;
+                Report();
+                try
+                {
+                    VersionRemover.RemoveFolder(directory, _volume, OnFileDeleted);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Best effort; the next run of the plan tries again.
+                }
+                Report();
             }
             else if (name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 if (!VersionName.TryParseAny(name[..^VersionName.DeletingSuffix.Length], out _, out var folderPlanName) ||
                     !IsOwnRemains(directory, plan, folderPlanName))
                     continue;
+                current = name;
+                Report();
                 try
                 {
-                    VersionRemover.RemoveRemains(directory, _volume);
+                    VersionRemover.RemoveRemains(directory, _volume, OnFileDeleted);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     entry.Warnings.Add(CoreTexts.English("core.run.remainsFailed", ("name", name), ("error", ex.Message)));
                 }
+                Report();
             }
         }
     }

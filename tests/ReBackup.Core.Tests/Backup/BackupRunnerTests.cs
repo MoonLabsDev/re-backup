@@ -287,6 +287,34 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Removing_leftovers_reports_its_own_phase_with_the_files_removed()
+    {
+        _tmp.WriteFile(@"target\2026_09_29-10_00 Projects.partial\x.txt", "stale");
+        _tmp.WriteFile(@"target\2026_09_29-10_00 Projects.partial\sub\y.txt", "stale");
+        VersionFolder.Create(_target, "2026_09_28-09_00 Projects.deleting", "p1");
+        var reports = new List<BackupProgress>();
+
+        await Runner().RunAsync(Request(Plan()), new SyncProgress<BackupProgress>(reports.Add));
+
+        var leftovers = reports.TakeWhile(r => r.Phase == BackupPhase.RemovingLeftovers).ToList();
+        leftovers.Should().NotBeEmpty("the leftovers are removed before the source is indexed");
+        leftovers.Select(r => r.FilesDone).Should().BeInAscendingOrder();
+        leftovers.Last().FilesDone.Should().Be(3, "x.txt and y.txt of the partial folder, data.bin of the remains");
+        reports.Skip(leftovers.Count).Should().NotContain(r => r.Phase == BackupPhase.RemovingLeftovers);
+        TargetEntries().Should().BeEquivalentTo($"{Minute} Projects");
+    }
+
+    [Fact]
+    public async Task Without_leftovers_there_is_no_leftover_phase()
+    {
+        var reports = new List<BackupProgress>();
+
+        await Runner().RunAsync(Request(Plan()), new SyncProgress<BackupProgress>(reports.Add));
+
+        reports.Should().NotContain(r => r.Phase == BackupPhase.RemovingLeftovers);
+    }
+
+    [Fact]
     public async Task A_plan_name_ending_in_partial_aborts_as_Error_and_touches_nothing()
     {
         _tmp.WriteFile(@"target\2026_09_28-09_00 Projects\a.txt", "older version");

@@ -294,6 +294,11 @@
     "removingCopy": "removing the incomplete copy…",
     "stoppingBackup": "stopping the backup…",
     "starting": "Starting…",
+    "removingLeftovers": "Cleaning up…",
+    "leftoversDetail": {
+      "one": "Leftovers of earlier runs: {count:N0} file removed",
+      "other": "Leftovers of earlier runs: {count:N0} files removed"
+    },
     "scan": "scan",
     "indexing": "Indexing…",
     "creatingFolders": "Creating folders",
