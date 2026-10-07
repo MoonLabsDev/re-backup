@@ -35,6 +35,8 @@ public sealed partial class VersionsViewModel : ObservableObject
     private VersionIndex? _index;
     /// <summary>The target folder the shown rows were listed from; their <see cref="VersionInfo.Path"/> is relative to it.</summary>
     private string? _versionsTarget;
+    /// <summary>The location the shown rows were listed from (the restore reads the versions there).</summary>
+    private StorageLocation? _versionsLocation;
     private bool _loaded;
     private bool _reloadRequested;
 
@@ -126,6 +128,7 @@ public sealed partial class VersionsViewModel : ObservableObject
         _syncCts = null;
         _index = null;
         _versionsTarget = null;
+        _versionsLocation = null;
         _loaded = false;
         _reloadRequested = false;
         IsSyncing = false;
@@ -171,6 +174,7 @@ public sealed partial class VersionsViewModel : ObservableObject
 
             _index = index;
             _versionsTarget = plan.Target.Path;
+            _versionsLocation = plan.Target;
             if (state == TargetState.Unreachable)
             {
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.

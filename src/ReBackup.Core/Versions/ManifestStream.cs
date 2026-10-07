@@ -28,6 +28,16 @@ public static class ManifestStream
     /// <exception cref="IOException">The stream cannot be read (from a storage: a <c>StorageException</c>).</exception>
     /// <exception cref="JsonException">The content is not a manifest.</exception>
     public static ManifestSummary Read(Stream stream, Action<ManifestFile> onFile,
+        CancellationToken cancellationToken = default) =>
+        Read(stream, onFile, onDirectory: null, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="Read(Stream, Action{ManifestFile}, CancellationToken)"/>, and hands every entry of the directory
+    /// list of a format 2 manifest to <paramref name="onDirectory"/> (null entries are passed over).
+    /// </summary>
+    /// <exception cref="IOException">The stream cannot be read (from a storage: a <c>StorageException</c>).</exception>
+    /// <exception cref="JsonException">The content is not a manifest.</exception>
+    public static ManifestSummary Read(Stream stream, Action<ManifestFile> onFile, Action<string>? onDirectory,
         CancellationToken cancellationToken = default)
     {
         var inCallback = false;
@@ -38,6 +48,11 @@ public static class ManifestStream
                 inCallback = true;
                 onFile(f);
                 inCallback = false;
+            }, onDirectory is null ? null : d =>
+            {
+                inCallback = true;
+                onDirectory(d);
+                inCallback = false;
             }, cancellationToken);
         }
         catch (Exception ex) when (!inCallback && ex is InvalidOperationException or ArgumentException or OverflowException)
@@ -47,7 +62,8 @@ public static class ManifestStream
         }
     }
 
-    private static ManifestSummary ReadCore(Stream stream, Action<ManifestFile> onFile, CancellationToken cancellationToken)
+    private static ManifestSummary ReadCore(Stream stream, Action<ManifestFile> onFile, Action<string>? onDirectory,
+        CancellationToken cancellationToken)
     {
         var buffer = new byte[InitialBufferSize];
         var length = Fill(stream, buffer, 0, out var endOfStream);
@@ -60,7 +76,7 @@ public static class ManifestStream
         {
             cancellationToken.ThrowIfCancellationRequested();
             var reader = new Utf8JsonReader(buffer.AsSpan(start, length - start), endOfStream, state);
-            while (phase != Phase.Done && TryStep(ref reader, ref phase, fields, onFile))
+            while (phase != Phase.Done && TryStep(ref reader, ref phase, fields, onFile, onDirectory))
             {
             }
             if (phase == Phase.Done)
@@ -96,7 +112,8 @@ public static class ManifestStream
     /// Reads one unit (the opening brace, one property, or one file entry) on a copy of the reader and takes it over
     /// only when the unit is complete in the buffer. False: more data is needed.
     /// </summary>
-    private static bool TryStep(ref Utf8JsonReader reader, ref Phase phase, Fields fields, Action<ManifestFile> onFile)
+    private static bool TryStep(ref Utf8JsonReader reader, ref Phase phase, Fields fields, Action<ManifestFile> onFile,
+        Action<string>? onDirectory)
     {
         var probe = reader;
         switch (phase)
@@ -172,6 +189,8 @@ public static class ManifestStream
                 }
                 if (probe.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray && !probe.TrySkip())
                     return false;
+                if (probe.TokenType == JsonTokenType.String && onDirectory is not null && probe.GetString() is { Length: > 0 } directory)
+                    onDirectory(directory);
                 break;
             }
         }
