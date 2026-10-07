@@ -10,7 +10,7 @@ public class ProjectReferenceTests
     [Theory]
     [InlineData("ReBackup.Shared", new string[0])]
     [InlineData("ReBackup.Shared.Wpf", new[] { "ReBackup.Shared" })]
-    [InlineData("ReBackup.Storage", new string[0], Skip = "Task 3")]
+    [InlineData("ReBackup.Storage", new string[0])]
     public void Library_references_only_what_is_allowed(string project, string[] allowed)
     {
         ProjectReferencesOf(project).Should().BeSubsetOf(allowed);
@@ -18,7 +18,7 @@ public class ProjectReferenceTests
 
     [Theory]
     [InlineData("ReBackup.Shared")]
-    [InlineData("ReBackup.Storage", Skip = "Task 3")]
+    [InlineData("ReBackup.Storage")]
     public void Library_has_no_package_references(string project) =>
         PackageReferencesOf(project).Should().BeEmpty();
 
