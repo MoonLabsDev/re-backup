@@ -124,6 +124,27 @@ public class BackupRunnerRetentionTests : IDisposable
     }
 
     [Fact]
+    public async Task Remains_of_a_version_made_under_an_earlier_plan_name_are_finished_by_the_next_run()
+    {
+        var older = Old(3, name: "Old name");
+        var first = await Run(Plan(Daily(1)),
+            target: s => new FaultyStorage(s) { FailDelete = path => path == $"{OldName(3, "Old name")}/data.bin" });
+
+        first.Status.Should().Be(RunStatus.Completed);
+        first.RetentionDeleted.Should().Equal(OldName(3, "Old name"));
+        first.Warnings.Should().ContainSingle().Which.Should()
+            .StartWith($"\"{OldName(3, "Old name")}\" was removed from the versions, but its remains could not be deleted yet");
+        File.Exists(Path.Combine(older, "data.bin")).Should().BeTrue();
+
+        _time.Advance(TimeSpan.FromMinutes(1));
+        var next = await Run(Plan());
+
+        next.Status.Should().Be(RunStatus.Completed);
+        next.Warnings.Should().BeEmpty("the remains are the plan's own, not a folder someone renamed");
+        Directory.Exists(older).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task A_version_that_cannot_be_deleted_is_a_warning_and_the_run_stays_completed()
     {
         Old(26);

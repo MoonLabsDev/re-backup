@@ -170,6 +170,21 @@ public class VersionDeleterTests : IDisposable
     }
 
     [Fact]
+    public async Task Remains_of_a_version_made_under_an_earlier_plan_name_are_finished_by_the_next_cleanup()
+    {
+        const string older = "2026_08_01-02_00 Old name";   // made before the plan was renamed to "Projects"
+        VersionFolder.Create(_target, older, PlanId);
+        var storage = new FaultyStorage(Target) { FailDelete = path => path == $"{older}/data.bin" };
+
+        var result = (await Delete([older], storage)).Single();
+
+        result.Outcome.Should().Be(VersionDeletionOutcome.RemainsLeft);
+        var warnings = await LeftoverCleaner.CleanAsync(Target, PlanId, PlanName, null, CancellationToken.None);
+        warnings.Should().BeEmpty();
+        Directory.Exists(Path.Combine(_target, older)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Reports_the_progress_over_all_versions_by_files()
     {
         _tmp.WriteFile($@"target\{New}\more.bin", "x");   // not in the manifest: the total comes from the manifests

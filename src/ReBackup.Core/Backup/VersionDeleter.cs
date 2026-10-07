@@ -53,7 +53,10 @@ public static class VersionDeleter
     /// was started is finished (a half-deleted one would be left as remains), the versions not started yet are left out of
     /// the result.
     /// </summary>
-    /// <param name="planName">The plan's current name; it goes into the deletion marker.</param>
+    /// <param name="planName">
+    /// The plan's current name; it goes into the deletion marker unless the folder is named after an earlier one
+    /// (<see cref="VersionRemover.RemoveAsync"/>).
+    /// </param>
     /// <param name="progress">
     /// Gets a report while the manifests are read (for the file counts), then when each version starts, then at most every <see cref="ProgressInterval"/> while its files are
     /// deleted, and when it ends; on the deleting thread.

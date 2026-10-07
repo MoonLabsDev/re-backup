@@ -496,7 +496,10 @@ public sealed class BackupRunner : IBackupRunner
         return true;
     }
 
-    /// <summary>What the markers this run writes say: the plan, now, and this computer.</summary>
+    /// <summary>
+    /// What the markers this run writes say: the plan, now, and this computer. A deletion marker names the plan name
+    /// the version folder carries instead (<see cref="VersionRemover.RemoveAsync"/>).
+    /// </summary>
     private MarkerInfo Marker(BackupPlan plan) =>
         new(VersionMarkers.FormatVersion, plan.Id, plan.Name, _time.GetUtcNow().UtcDateTime, _host);
 

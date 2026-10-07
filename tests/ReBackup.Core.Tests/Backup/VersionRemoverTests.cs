@@ -145,6 +145,22 @@ public class VersionRemoverTests : IDisposable
     }
 
     [Fact]
+    public async Task The_deleting_marker_names_the_plan_the_folder_was_made_under()
+    {
+        // Made as "Old name"; the plan has been renamed to "Projects" since (Marker carries the current name).
+        const string older = "2026_09_02-02_00 Old name";
+        var storage = new InMemoryStorage();
+        await VersionFolder.CreateAsync(storage, older, "p1");
+        var faulty = new FaultyStorage(storage) { FailDelete = path => path == older + "/data.bin" };
+
+        var act = () => VersionRemover.RemoveAsync(faulty, older, Marker);
+
+        await act.Should().ThrowAsync<VersionRemainsException>();
+        (await VersionMarkers.TryReadAsync(storage, $"{older}/re-deleting.json", CancellationToken.None))
+            .Should().Be(Marker with { PlanName = "Old name" });
+    }
+
+    [Fact]
     public async Task Cancellation_stops_between_batches_and_the_deleting_marker_stays()
     {
         var storage = await MemoryVersion(extraFiles: 1500);
@@ -243,7 +259,8 @@ public class VersionRemoverTests : IDisposable
     {
         var act = () => VersionRemover.RemoveAsync(Target, "", Marker);
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        // The same refusal the storages give for deleting their root.
+        await act.Should().ThrowAsync<StorageConflictException>();
         File.Exists(Path.Combine(_version, "data.bin")).Should().BeTrue();
     }
 

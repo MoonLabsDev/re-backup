@@ -143,15 +143,20 @@ public class LeftoverCleanerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_marked_folder_named_after_the_plan_name_in_its_marker_is_cleaned()
+    public async Task Remains_of_a_version_made_before_the_plan_was_renamed_are_cleaned()
     {
-        // Written before the plan was renamed from "Old name" to "Projects".
+        // Made under "Old name"; the plan is "Projects" now. Its deletion stops half-way, with the marker as the
+        // remover writes it for the renamed plan.
         const string older = "2026_09_02-02_00 Old name";
-        _storage.AddFile($"{older}/a.txt", [1]);
-        await VersionMarkers.WriteDeletingAsync(_storage, older, Marker() with { PlanName = "Old name" }, CancellationToken.None);
+        await VersionFolder.CreateAsync(_storage, older, PlanId);
+        var faulty = new FaultyStorage(_storage) { FailDelete = path => path == older + "/data.bin" };
+        var removal = () => VersionRemover.RemoveAsync(faulty, older, Marker());
+        await removal.Should().ThrowAsync<VersionRemainsException>();
+        FilesIn(older).Should().Contain(older + "/re-deleting.json");
 
         (await Clean()).Should().BeEmpty();
         FilesIn(older).Should().BeEmpty();
+        (await _storage.StatAsync(older, CancellationToken.None)).Should().BeNull();
     }
 
     [Fact]
