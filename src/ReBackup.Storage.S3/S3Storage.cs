@@ -17,6 +17,9 @@ public sealed class S3Storage : IStorage
     // S3 directories have no time of their own.
     private static readonly DateTime DirectoryTime = DateTime.UnixEpoch;
 
+    // DeleteObjects takes at most 1000 keys.
+    private const int MaxDeleteBatch = 1000;
+
     private readonly IAmazonS3 _client;
     private readonly string _bucket;
     private readonly string _prefix;
@@ -134,11 +137,63 @@ public sealed class S3Storage : IStorage
         }
     }
 
-    public Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct) =>
-        throw new NotImplementedException();
+    /// <summary>Starts an <see cref="S3Writer"/>. An exclusive create checks with <c>HeadObject</c> first; the commit is exclusive too (<c>If-None-Match</c>). <see cref="CreateOptions.ModifiedUtc"/> and <see cref="CreateOptions.Durable"/> are ignored.</summary>
+    public async Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var key = S3Keys.ToKey(_prefix, path);
+        if (path.Length == 0) throw new ArgumentException("A file path is required.", nameof(path));
+        if (!options.Overwrite)
+        {
+            bool exists;
+            try
+            {
+                await _client.GetObjectMetadataAsync(new GetObjectMetadataRequest { BucketName = _bucket, Key = key }, ct).ConfigureAwait(false);
+                exists = true;
+            }
+            catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                exists = false;
+            }
+            catch (Exception ex) when (ex is not StorageException)
+            {
+                throw S3Errors.Map(ex, path, ct);
+            }
+            if (exists) throw new StorageConflictException(path);
+        }
+        return new S3Writer(_client, _bucket, key, path, options.Overwrite);
+    }
 
-    public Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct) =>
-        throw new NotImplementedException();
+    /// <summary>
+    /// Deletes in <c>DeleteObjects</c> batches of up to 1000 keys, in the given order. Each path is checked for objects below it first:
+    /// a directory with content is a conflict (after the paths before it are deleted), a lone placeholder <c>x/</c> is deleted with it.
+    /// </summary>
+    public async Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var targets = paths.Select(p => (Path: p, Key: S3Keys.ToKey(_prefix, p))).ToList();
+        foreach (var (p, _) in targets)
+            if (p.Length == 0) throw new StorageConflictException(p, "The root cannot be deleted.");
+
+        var batch = new List<(string Key, string Path)>();
+        foreach (var (path, key) in targets)
+        {
+            ct.ThrowIfCancellationRequested();
+            var (hasPlaceholder, hasContent) = await ProbeBelowAsync(path, key, ct).ConfigureAwait(false);
+            if (hasContent && batch.Count > 0)
+            {
+                // The content may be keys of this very call that are still queued.
+                await DeleteBatchAsync(batch, ct).ConfigureAwait(false);
+                (hasPlaceholder, hasContent) = await ProbeBelowAsync(path, key, ct).ConfigureAwait(false);
+            }
+            if (hasContent) throw new StorageConflictException(path, $"The directory '{path}' is not empty.");
+
+            if (batch.Count + (hasPlaceholder ? 2 : 1) > MaxDeleteBatch) await DeleteBatchAsync(batch, ct).ConfigureAwait(false);
+            batch.Add((key, path));
+            if (hasPlaceholder) batch.Add((key + "/", path));
+        }
+        await DeleteBatchAsync(batch, ct).ConfigureAwait(false);
+    }
 
     public Task EnsureDirectoryAsync(string path, CancellationToken ct)
     {
@@ -164,6 +219,65 @@ public sealed class S3Storage : IStorage
         {
             throw S3Errors.Map(ex, folder, ct);
         }
+    }
+
+    /// <summary>Whether the placeholder <c>key/</c> exists, and whether any other object lies below <paramref name="key"/>.</summary>
+    private async Task<(bool HasPlaceholder, bool HasContent)> ProbeBelowAsync(string path, string key, CancellationToken ct)
+    {
+        var placeholder = key + "/";
+        try
+        {
+            // Keys are listed in order, so a placeholder comes before everything below it.
+            var below = await _client.ListObjectsV2Async(
+                new ListObjectsV2Request { BucketName = _bucket, Prefix = placeholder, MaxKeys = 2 }, ct).ConfigureAwait(false);
+            var keys = below.S3Objects ?? [];
+            return (keys.Any(o => o.Key == placeholder), keys.Any(o => o.Key != placeholder));
+        }
+        catch (Exception ex) when (ex is not StorageException)
+        {
+            throw S3Errors.Map(ex, path, ct);
+        }
+    }
+
+    /// <summary>Deletes the queued keys with one <c>DeleteObjects</c> and empties the queue. Per-key errors are mapped; a missing key is none.</summary>
+    private async Task DeleteBatchAsync(List<(string Key, string Path)> batch, CancellationToken ct)
+    {
+        if (batch.Count == 0) return;
+        var request = new DeleteObjectsRequest
+        {
+            BucketName = _bucket,
+            Objects = batch.Select(b => new KeyVersion { Key = b.Key }).ToList(),
+            Quiet = true,
+        };
+
+        DeleteObjectsResponse response;
+        try
+        {
+            response = await _client.DeleteObjectsAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (DeleteObjectsException ex)
+        {
+            // The SDK may raise the per-key errors as an exception instead of returning them.
+            response = ex.Response;
+        }
+        catch (Exception ex) when (ex is not StorageException)
+        {
+            throw S3Errors.Map(ex, batch[0].Path, ct);
+        }
+
+        foreach (var error in response?.DeleteErrors ?? [])
+        {
+            if (error.Code == "NoSuchKey") continue;
+            var path = batch.FirstOrDefault(b => b.Key == error.Key).Path ?? batch[0].Path;
+            var status = error.Code switch
+            {
+                "AccessDenied" => HttpStatusCode.Forbidden,
+                "InternalError" or "SlowDown" or "ServiceUnavailable" => HttpStatusCode.ServiceUnavailable,
+                _ => default,
+            };
+            throw S3Errors.Map(new AmazonS3Exception($"DeleteObjects failed for a key ({error.Code}).", ErrorType.Unknown, error.Code, null, status), path, ct);
+        }
+        batch.Clear();
     }
 
     private static StorageEntry Directory(string path) => new(path, true, 0, DirectoryTime, false, null);

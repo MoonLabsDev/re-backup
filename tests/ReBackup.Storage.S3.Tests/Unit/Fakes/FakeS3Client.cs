@@ -24,6 +24,27 @@ public class FakeS3Client : DispatchProxy
     /// <summary>Fails the named SDK method (e.g. <c>ListObjectsV2Async</c>) with the given exception.</summary>
     public Dictionary<string, Exception> Failures { get; } = [];
 
+    /// <summary>A write request as received: the key, the body bytes (copied when the call came in) and the <c>If-None-Match</c> value.</summary>
+    public sealed record Upload(string Key, byte[] Body, string? IfNoneMatch, long? ContentLength);
+
+    public List<Upload> Puts { get; } = [];
+    public List<InitiateMultipartUploadRequest> Initiates { get; } = [];
+    public List<(int PartNumber, byte[] Body, long? PartSize)> Parts { get; } = [];
+    public List<CompleteMultipartUploadRequest> Completes { get; } = [];
+    public List<AbortMultipartUploadRequest> Aborts { get; } = [];
+    public List<List<string>> DeleteBatches { get; } = [];
+
+    /// <summary>Per-key errors a <c>DeleteObjects</c> reports in its response (the key is not deleted).</summary>
+    public Dictionary<string, string> DeleteErrors { get; } = [];
+
+    /// <summary>Runs inside every <c>UploadPart</c> before it completes (to hold an upload in flight).</summary>
+    public Func<UploadPartRequest, CancellationToken, Task>? UploadPartHook { get; set; }
+
+    public int UploadsInFlight => _uploadsInFlight;
+    public int MaxUploadsInFlight { get; private set; }
+    private int _uploadsInFlight;
+    private readonly Dictionary<string, string> _multipartKeys = [];
+
     public static (IAmazonS3 Client, FakeS3Client Fake) Create()
     {
         var proxy = Create<IAmazonS3, FakeS3Client>();
@@ -50,6 +71,18 @@ public class FakeS3Client : DispatchProxy
                     return Task.FromResult(Head((GetObjectMetadataRequest)args![0]!));
                 case "GetObjectAsync":
                     return Task.FromResult(Get((GetObjectRequest)args![0]!));
+                case "PutObjectAsync":
+                    return Task.FromResult(Put((PutObjectRequest)args![0]!));
+                case "InitiateMultipartUploadAsync":
+                    return Task.FromResult(Initiate((InitiateMultipartUploadRequest)args![0]!));
+                case "UploadPartAsync":
+                    return UploadPartAsync((UploadPartRequest)args![0]!, (CancellationToken)args[1]!);
+                case "CompleteMultipartUploadAsync":
+                    return Task.FromResult(Complete((CompleteMultipartUploadRequest)args![0]!));
+                case "AbortMultipartUploadAsync":
+                    return Task.FromResult(Abort((AbortMultipartUploadRequest)args![0]!));
+                case "DeleteObjectsAsync":
+                    return Task.FromResult(Delete((DeleteObjectsRequest)args![0]!));
                 case "Dispose":
                     return null;
                 default:
@@ -120,5 +153,79 @@ public class FakeS3Client : DispatchProxy
         var o = Objects.FirstOrDefault(x => x.Key == request.Key)
             ?? throw new AmazonS3Exception("no such key", ErrorType.Unknown, "NoSuchKey", "req", System.Net.HttpStatusCode.NotFound);
         return new GetObjectResponse { ResponseStream = BodyFactory?.Invoke(o) ?? new MemoryStream(o.Body ?? []) };
+    }
+
+    private static AmazonS3Exception PreconditionFailed() =>
+        new("At least one of the pre-conditions you specified did not hold", ErrorType.Sender, "PreconditionFailed", "req", System.Net.HttpStatusCode.PreconditionFailed);
+
+    private static byte[] ReadAll(Stream stream)
+    {
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        return copy.ToArray();
+    }
+
+    private PutObjectResponse Put(PutObjectRequest request)
+    {
+        var body = ReadAll(request.InputStream);
+        Puts.Add(new Upload(request.Key, body, request.IfNoneMatch, request.Headers.ContentLength));
+        if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
+        Objects.RemoveAll(o => o.Key == request.Key);
+        Objects.Add(new Obj(request.Key, body.Length, Body: body));
+        return new PutObjectResponse { ETag = "\"put\"" };
+    }
+
+    private InitiateMultipartUploadResponse Initiate(InitiateMultipartUploadRequest request)
+    {
+        Initiates.Add(request);
+        var id = "upload-" + Initiates.Count;
+        _multipartKeys[id] = request.Key;
+        return new InitiateMultipartUploadResponse { BucketName = request.BucketName, Key = request.Key, UploadId = id };
+    }
+
+    private async Task<UploadPartResponse> UploadPartAsync(UploadPartRequest request, CancellationToken ct)
+    {
+        var inFlight = Interlocked.Increment(ref _uploadsInFlight);
+        lock (Parts) MaxUploadsInFlight = Math.Max(MaxUploadsInFlight, inFlight);
+        try
+        {
+            var body = ReadAll(request.InputStream);
+            if (UploadPartHook is { } hook) await hook(request, ct);
+            lock (Parts) Parts.Add((request.PartNumber ?? 0, body, request.PartSize));
+            return new UploadPartResponse { PartNumber = request.PartNumber, ETag = $"\"part{request.PartNumber}\"" };
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _uploadsInFlight);
+        }
+    }
+
+    private CompleteMultipartUploadResponse Complete(CompleteMultipartUploadRequest request)
+    {
+        Completes.Add(request);
+        if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
+        var body = Parts.OrderBy(p => p.PartNumber).SelectMany(p => p.Body).ToArray();
+        Objects.RemoveAll(o => o.Key == request.Key);
+        Objects.Add(new Obj(request.Key, body.Length, Body: body));
+        return new CompleteMultipartUploadResponse { Key = request.Key, ETag = "\"multi\"" };
+    }
+
+    private AbortMultipartUploadResponse Abort(AbortMultipartUploadRequest request)
+    {
+        Aborts.Add(request);
+        return new AbortMultipartUploadResponse();
+    }
+
+    private DeleteObjectsResponse Delete(DeleteObjectsRequest request)
+    {
+        var keys = request.Objects.Select(o => o.Key).ToList();
+        DeleteBatches.Add(keys);
+        var errors = new List<DeleteError>();
+        foreach (var key in keys)
+        {
+            if (DeleteErrors.TryGetValue(key, out var code)) errors.Add(new DeleteError { Key = key, Code = code, Message = "failed" });
+            else Objects.RemoveAll(o => o.Key == key);
+        }
+        return new DeleteObjectsResponse { DeleteErrors = errors };
     }
 }
