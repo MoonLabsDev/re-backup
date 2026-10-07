@@ -95,6 +95,8 @@ public static class LeftoverCleaner
             {
                 case null:
                     return;   // cannot be examined: left alone
+                case false when string.Equals(name, currentVersionName, StringComparison.OrdinalIgnoreCase):
+                    return;   // the folder the current run reserved, its marker maybe not visible yet: never remains
                 case false:
                     await CleanEmptyRemainsAsync(target, folder, planName, folderPlanName, warnings, ct).ConfigureAwait(false);
                     return;

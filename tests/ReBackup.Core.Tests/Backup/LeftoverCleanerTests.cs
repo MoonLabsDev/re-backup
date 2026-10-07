@@ -185,6 +185,16 @@ public class LeftoverCleanerTests : IDisposable
     }
 
     [Fact]
+    public async Task The_empty_folder_of_the_current_run_is_never_removed_as_remains()
+    {
+        await _storage.EnsureDirectoryAsync(Folder, CancellationToken.None);   // reserved, its marker not visible yet
+
+        (await Clean(current: Folder.ToUpperInvariant())).Should().BeEmpty();
+
+        (await _storage.StatAsync(Folder, CancellationToken.None)).Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task An_unmarked_folder_without_a_manifest_that_holds_anything_is_left_alone()
     {
         _storage.AddFile($"{Folder}/a.txt", [1]);
