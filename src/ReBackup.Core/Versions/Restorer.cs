@@ -1,7 +1,10 @@
 using System.Globalization;
+using System.Text.Json;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
 using ReBackup.Core.Localization;
+using ReBackup.Shared.IO;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Versions;
 
@@ -11,14 +14,23 @@ public enum RestoreMode { Original, ToFolder }
 /// <summary>What happens to a file that already exists at the destination; asked once per restore.</summary>
 public enum ConflictPolicy { Overwrite, Skip, KeepBoth }
 
-/// <summary>One file to copy: its path in the version folder and where it goes.</summary>
-public sealed record RestoreFile(string Source, string Destination, long Size);
+/// <summary>
+/// One file to copy: its path in the versions' storage, where it goes in the destination storage, and the modified time
+/// it gets there (the manifest's, else the copy's; null when unknown).
+/// </summary>
+public sealed record RestoreFile(string Source, string Destination, long Size, DateTime? ModifiedUtc = null);
 
-/// <summary>Everything a restore will do; made by <see cref="Restorer.Plan"/>, nothing is written yet.</summary>
+/// <summary>Everything a restore will do; made by <see cref="Restorer.PlanAsync"/>, nothing is written yet.</summary>
 public sealed class RestorePlan
 {
-    public required string VersionFolder { get; init; }
-    public required string DestinationRoot { get; init; }
+    /// <summary>The storage the version is read from (the plan's target).</summary>
+    public required IStorage Versions { get; init; }
+
+    /// <summary>The version's folder in <see cref="Versions"/>.</summary>
+    public required string VersionPath { get; init; }
+
+    /// <summary>The storage written to; <see cref="RestoreFile.Destination"/> and <see cref="Directories"/> are paths in it.</summary>
+    public required IStorage Destination { get; init; }
 
     /// <summary>The version's time: the stamp of "keep both" names.</summary>
     public required DateTime VersionTime { get; init; }
@@ -31,13 +43,17 @@ public sealed class RestorePlan
     /// <summary>Files whose destination exists already.</summary>
     public required IReadOnlyList<RestoreFile> Conflicts { get; init; }
 
-    /// <summary>Parts of the version that could not be listed (unreadable folders); <see cref="Restorer.Run"/> reports them as failures.</summary>
+    /// <summary>Parts of the version that could not be listed (unreadable folders); <see cref="Restorer.RunAsync"/> reports them as failures.</summary>
     public IReadOnlyList<RestoreFailure> PlanFailures { get; init; } = [];
 
     public long TotalBytes => Files.Sum(f => f.Size);
 }
 
-public sealed record RestoreFailure(string Path, string Reason);
+/// <summary>
+/// <paramref name="Path"/> is a path in the destination storage, or in the versions' storage when <paramref name="InVersion"/>
+/// (a part of the version that could not be read).
+/// </summary>
+public sealed record RestoreFailure(string Path, string Reason, bool InVersion = false);
 
 /// <summary>
 /// <paramref name="Copied"/> counts files written to their own name (also overwritten ones), <paramref name="KeptBoth"/>
@@ -53,99 +69,176 @@ public readonly record struct RestoreProgress(int FilesDone, int FilesTotal, lon
 
 /// <summary>
 /// Copies files and folders from a version back. Never deletes or moves anything at the destination; the only file
-/// it replaces is a conflicting one under <see cref="ConflictPolicy.Overwrite"/>.
+/// it replaces is a conflicting one under <see cref="ConflictPolicy.Overwrite"/>. Nothing is written through a link at
+/// the destination, and links in the version are not followed.
 /// </summary>
 public static class Restorer
 {
-    public const string TempSuffix = ".rebackup-tmp";
     private const int BufferSize = 1024 * 1024;
-    private const int ErrorSharingViolation = 32;
-    private const int ErrorLockViolation = 33;
+
+    /// <summary>How often a "keep both" file is tried under a further name when its name is taken while it is written.</summary>
+    private const int KeepBothAttempts = 100;
 
     /// <summary>
     /// Lists what restoring <paramref name="relativePaths"/> (files or folders of the version, forward or back slashes,
-    /// "" = the whole version) to <paramref name="destinationRoot"/> copies, and which files exist there already.
-    /// Original: destination = root + relative path. ToFolder: destination = root + the item's name.
+    /// "" = the whole version) to <paramref name="destination"/> copies, and which files exist there already.
+    /// Original: destination path = relative path. ToFolder: destination path = the item's name. The manifest supplies
+    /// the files' modified times and the empty folders a storage without real folders cannot list.
     /// </summary>
-    /// <exception cref="ArgumentException">A path leaves the version or the destination, does not exist, or is a link.</exception>
-    /// <exception cref="DirectoryNotFoundException">The version folder does not exist.</exception>
-    public static RestorePlan Plan(string versionFolder, IReadOnlyList<string> relativePaths, string destinationRoot,
-        RestoreMode mode)
+    /// <exception cref="ArgumentException">A path leaves the version, does not exist, or is a link; the destination lies in the version.</exception>
+    /// <exception cref="StorageNotFoundException">The version folder does not exist.</exception>
+    /// <exception cref="StorageException">The version cannot be read.</exception>
+    public static async Task<RestorePlan> PlanAsync(IStorage versions, string versionPath, IReadOnlyList<string> relativePaths,
+        IStorage destination, RestoreMode mode, CancellationToken ct = default)
     {
-        if (!Path.IsPathFullyQualified(destinationRoot))
-            throw new ArgumentException(CoreTexts.English("core.restore.destinationNotAbsolute"), nameof(destinationRoot));
-        versionFolder = PathUtil.Normalize(versionFolder);
-        destinationRoot = PathUtil.Normalize(destinationRoot);
-        if (!Directory.Exists(versionFolder))
-            throw new DirectoryNotFoundException(CoreTexts.English("core.restore.versionMissing", ("folder", versionFolder)));
-        if (PathUtil.IsSameOrInside(destinationRoot, versionFolder))
-            throw new ArgumentException(CoreTexts.English("core.restore.destinationInVersion"), nameof(destinationRoot));
+        ArgumentNullException.ThrowIfNull(versions);
+        ArgumentNullException.ThrowIfNull(destination);
+        StoragePath.Validate(versionPath);
+        if (await versions.StatAsync(versionPath, ct).ConfigureAwait(false) is not { IsDirectory: true } versionEntry)
+            throw new StorageNotFoundException(versionPath,
+                CoreTexts.English("core.restore.versionMissing", ("folder", DisplayPath(versions, versionPath))));
+        if (versions is FileSystemStorage fromFolder && destination is FileSystemStorage toFolder &&
+            PathUtil.IsSameOrInside(toFolder.RootPath, fromFolder.FullPathOf(versionPath)))
+            throw new ArgumentException(CoreTexts.English("core.restore.destinationInVersion"), nameof(destination));
 
-        var directories = new List<string>();
-        var files = new List<RestoreFile>();
-        var planFailures = new List<RestoreFailure>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var comparer = versions.Capabilities.HasFlag(StorageCapabilities.CaseSensitive)
+            ? StringComparer.Ordinal
+            : StringComparer.OrdinalIgnoreCase;
+        string InVersion(string path) => versionPath.Length == 0 ? path : path[(versionPath.Length + 1)..];
+
+        var selected = new List<(string Relative, string Destination, StorageEntry Entry)>();
         var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
         foreach (var relativePath in relativePaths)
         {
             var relative = CheckRelative(relativePath);
-            var source = relative.Length == 0 ? versionFolder : Path.GetFullPath(Path.Combine(versionFolder, relative));
-            if (!PathUtil.IsSameOrInside(source, versionFolder))
-                throw new ArgumentException(CoreTexts.English("core.restore.outside", ("path", relativePath)), nameof(relativePaths));
-            if (FindLink(source, versionFolder, includeRoot: false) is { } linkInside)
-                throw new ArgumentException(CoreTexts.English("core.restore.throughLink", ("path", relativePath), ("link", linkInside)), nameof(relativePaths));
-            var name = relative.Length == 0 ? Path.GetFileName(versionFolder) : Path.GetFileName(relative);
+            var entry = relative.Length == 0
+                ? versionEntry
+                : await FindInVersionAsync(versions, versionPath, relative, relativePath, ct).ConfigureAwait(false);
+            var name = relative.Length == 0 ? StoragePath.Name(versionPath) : StoragePath.Name(relative);
             if (mode == RestoreMode.ToFolder)
             {
                 if (names.TryGetValue(name, out var earlier) && !string.Equals(earlier, relative, StringComparison.OrdinalIgnoreCase))
                     throw new ArgumentException(CoreTexts.English("core.restore.sameName", ("name", name)), nameof(relativePaths));
                 names[name] = relative;
             }
-            var destination = mode == RestoreMode.Original
-                ? (relative.Length == 0 ? destinationRoot : Path.Combine(destinationRoot, relative))
-                : Path.Combine(destinationRoot, name);
+            if (!entry.IsDirectory && IsManifest(relative))
+                throw new ArgumentException(CoreTexts.English("core.restore.manifest"), nameof(relativePaths));
+            selected.Add((relative, mode == RestoreMode.Original ? relative : name, entry));
+        }
 
-            if (File.Exists(source))
+        var manifest = await ReadManifestAsync(versions, versionPath, selected.Select(s => s.Relative).ToList(), comparer, ct)
+            .ConfigureAwait(false);
+        var directories = new List<string>();
+        var knownDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = new List<RestoreFile>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var planFailures = new List<RestoreFailure>();
+        var links = new List<string>();
+
+        void AddDirectory(string path)
+        {
+            if (knownDirectories.Add(path))
+                directories.Add(path);
+        }
+
+        void AddFile(StorageEntry source, string target)
+        {
+            if (!seen.Add(target))
+                return;
+            var modified = manifest is not null && manifest.Mtimes.TryGetValue(InVersion(source.Path), out var mtime)
+                ? mtime
+                : source.ModifiedUtc;
+            files.Add(new RestoreFile(source.Path, target, source.Size, modified));
+        }
+
+        foreach (var (relative, target, entry) in selected)
+        {
+            if (!entry.IsDirectory)
             {
-                if (IsLink(source))
-                    throw new ArgumentException(CoreTexts.English("core.restore.isLink", ("path", relativePath)), nameof(relativePaths));
-                if (IsManifest(source, versionFolder))
-                    throw new ArgumentException(CoreTexts.English("core.restore.manifest"), nameof(relativePaths));
-                AddFile(files, seen, source, destination, new FileInfo(source).Length, destinationRoot);
+                AddFile(entry, target);
+                continue;
             }
-            else if (Directory.Exists(source))
+
+            var pending = new Stack<(string Source, string Destination)>();
+            pending.Push((entry.Path, target));
+            while (pending.Count > 0)
             {
-                if (IsLink(source))
-                    throw new ArgumentException(CoreTexts.English("core.restore.isLink", ("path", relativePath)), nameof(relativePaths));
-                AddFolder(directories, files, planFailures, seen, source, destination, versionFolder, destinationRoot);
+                ct.ThrowIfCancellationRequested();
+                var (source, destinationFolder) = pending.Pop();
+                AddDirectory(destinationFolder);
+                List<StorageEntry> children;
+                try
+                {
+                    children = await ListAsync(versions, source, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is StorageException or ArgumentException)
+                {
+                    planFailures.Add(new RestoreFailure(source, Reason(ex), InVersion: true));
+                    continue;
+                }
+
+                foreach (var child in children)
+                {
+                    if (child.IsLink)
+                    {
+                        links.Add(child.Path);   // links are not followed
+                        continue;
+                    }
+                    var childTarget = StoragePath.Combine(destinationFolder, StoragePath.Name(child.Path));
+                    if (child.IsDirectory)
+                        pending.Push((child.Path, childTarget));
+                    else if (!IsManifest(InVersion(child.Path)))
+                        AddFile(child, childTarget);
+                }
             }
-            else
+
+            // Empty folders that a storage without real folders knows only from the manifest (format 2).
+            foreach (var folder in manifest?.Directories ?? [])
             {
-                throw new ArgumentException(CoreTexts.English("core.restore.notInVersion", ("path", relativePath)), nameof(relativePaths));
+                if (!IsSameOrBelow(folder, relative, comparer))
+                    continue;
+                var inStorage = StoragePath.Combine(versionPath, folder);
+                if (links.Any(link => IsSameOrBelow(inStorage, link, comparer)))
+                    continue;
+                var folderTarget = StoragePath.Combine(target, folder[relative.Length..].TrimStart('/'));
+                if (!seen.Contains(folderTarget))
+                    AddDirectory(folderTarget);
             }
+        }
+
+        var conflicts = new List<RestoreFile>();
+        var clearWays = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await ExistsOnClearWayAsync(destination, file.Destination, clearWays, ct).ConfigureAwait(false))
+                conflicts.Add(file);
         }
 
         return new RestorePlan
         {
-            VersionFolder = versionFolder,
-            DestinationRoot = destinationRoot,
-            VersionTime = VersionTimeOf(versionFolder),
+            Versions = versions,
+            VersionPath = versionPath,
+            Destination = destination,
+            VersionTime = VersionTimeOf(versionPath, manifest?.CreatedUtc, versionEntry),
             Directories = directories,
             Files = files,
-            Conflicts = files.Where(f => File.Exists(f.Destination) || Directory.Exists(f.Destination)).ToList(),
+            Conflicts = conflicts,
             PlanFailures = planFailures,
         };
     }
 
     /// <summary>
-    /// Copies the plan's files. Each file is written to <c>&lt;name&gt;.&lt;8 hex&gt;.rebackup-tmp</c> next to its target first and
-    /// then renamed; it keeps the version's last write time. A file that cannot be written is recorded as a failure
-    /// and the rest continues. Cancellation stops before the next file (a half-written temp file is removed).
+    /// Copies the plan's files through the destination's <see cref="StorageWriter"/>: a file appears complete or not at
+    /// all, and gets the version's modified time. Folders are created only on storages with real folders. A file that
+    /// cannot be written is recorded as a failure and the rest continues. Skip and KeepBoth never replace a file, also
+    /// not one that appeared after planning. Cancellation stops before the next file (a half-written file is discarded).
     /// </summary>
-    public static RestoreResult Run(RestorePlan plan, ConflictPolicy policy, IProgress<RestoreProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+    public static async Task<RestoreResult> RunAsync(RestorePlan plan, ConflictPolicy policy,
+        IProgress<RestoreProgress>? progress = null, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(plan);
+        var destination = plan.Destination;
         var failures = new List<RestoreFailure>(plan.PlanFailures);
         int copied = 0, skipped = 0, keptBoth = 0, filesDone = 0;
         long bytesDone = 0;
@@ -153,84 +246,124 @@ public static class Restorer
         var buffer = new byte[BufferSize];
         RestoreResult Result(bool canceled) => new(copied, skipped, keptBoth, failures, canceled);
 
-        foreach (var directory in plan.Directories)
+        if (destination.Capabilities.HasFlag(StorageCapabilities.EmptyDirectories))
         {
-            try
+            foreach (var directory in plan.Directories)
             {
-                ThrowIfLink(directory, plan.DestinationRoot);
-                Directory.CreateDirectory(directory);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                failures.Add(new RestoreFailure(directory, Reason(ex)));
+                if (ct.IsCancellationRequested)
+                    return Result(canceled: true);
+                try
+                {
+                    if (await BlockedWayAsync(destination, directory, ct).ConfigureAwait(false) is { } blocked)
+                        failures.Add(new RestoreFailure(directory, blocked));
+                    else
+                        await destination.EnsureDirectoryAsync(directory, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return Result(canceled: true);
+                }
+                catch (Exception ex) when (ex is StorageException or ArgumentException)
+                {
+                    failures.Add(new RestoreFailure(directory, Reason(ex)));
+                }
             }
         }
 
         foreach (var file in plan.Files)
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (ct.IsCancellationRequested)
                 return Result(canceled: true);
 
             var bytesBefore = bytesDone;
             progress?.Report(new RestoreProgress(filesDone, plan.Files.Count, bytesDone, bytesTotal, file.Destination));
             try
             {
-                var target = file.Destination;
-                var overwrite = false;
-                var keepBoth = false;
-                if (File.Exists(target) || Directory.Exists(target))
+                switch (await RestoreFileAsync().ConfigureAwait(false))
                 {
-                    switch (policy)
-                    {
-                        case ConflictPolicy.Skip:
-                            skipped++;
-                            continue;
-                        case ConflictPolicy.KeepBoth:
-                            target = KeepBothName(target, plan.VersionTime);
-                            keepBoth = true;
-                            break;
-                        default:
-                            if (Directory.Exists(target))
-                                throw new IOException(CoreTexts.English("core.restore.folderExists"));
-                            overwrite = true;
-                            break;
-                    }
+                    case Outcome.Copied:
+                        copied++;
+                        break;
+                    case Outcome.KeptBoth:
+                        keptBoth++;
+                        break;
+                    case Outcome.Skipped:
+                        skipped++;
+                        break;
                 }
-
-                var parent = Path.GetDirectoryName(target)!;
-                ThrowIfLink(parent, plan.DestinationRoot);
-                Directory.CreateDirectory(parent);
-                var temp = CopyToTemp(file.Source, target, buffer, count =>
-                {
-                    bytesDone += count;
-                    progress?.Report(new RestoreProgress(filesDone, plan.Files.Count, bytesDone, bytesTotal, file.Destination));
-                }, cancellationToken);
-                if (temp is null)
-                    return Result(canceled: true);
-
-                try
-                {
-                    File.Move(temp, target, overwrite);
-                }
-                catch
-                {
-                    TryDelete(temp);
-                    throw;
-                }
-
-                if (keepBoth)
-                    keptBoth++;
-                else
-                    copied++;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                return Result(canceled: true);
+            }
+            catch (Exception ex) when (ex is StorageException or ArgumentException)
+            {
+                // ArgumentException: a name the destination cannot hold (e.g. ':' on Windows); only this file fails.
                 failures.Add(new RestoreFailure(file.Destination, Reason(ex)));
+            }
+            catch (RefusedException ex)
+            {
+                failures.Add(new RestoreFailure(file.Destination, ex.Message));
             }
             finally
             {
                 filesDone++;
                 bytesDone = bytesBefore + file.Size;
+            }
+
+            async Task<Outcome> RestoreFileAsync()
+            {
+                // Checked right before writing, from the root down: a link anywhere on the way is never written through,
+                // and a file where a folder belongs fails the file (it is no conflict).
+                var target = file.Destination;
+                if (await BlockedWayAsync(destination, StoragePath.Parent(target), ct).ConfigureAwait(false) is { } blocked)
+                    throw new RefusedException(blocked);
+
+                var keepBoth = false;
+                if (await destination.StatAsync(target, ct).ConfigureAwait(false) is { } existing)
+                {
+                    switch (policy)
+                    {
+                        case ConflictPolicy.Skip:
+                            return Outcome.Skipped;
+                        case ConflictPolicy.KeepBoth:
+                            target = await FreeKeepBothNameAsync(destination, file.Destination, plan.VersionTime, ct).ConfigureAwait(false);
+                            keepBoth = true;
+                            break;
+                        default:
+                            if (existing.IsLink)
+                                throw new RefusedException(CoreTexts.English("core.restore.destinationLink"));
+                            if (existing.IsDirectory)
+                                throw new RefusedException(CoreTexts.English("core.restore.folderExists"));
+                            break;
+                    }
+                }
+
+                for (var attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        bytesDone = bytesBefore;
+                        await CopyAsync(plan.Versions, file, destination, target, policy == ConflictPolicy.Overwrite, buffer, count =>
+                        {
+                            bytesDone += count;
+                            progress?.Report(new RestoreProgress(filesDone, plan.Files.Count, bytesDone, bytesTotal, file.Destination));
+                        }, ct).ConfigureAwait(false);
+                        return keepBoth ? Outcome.KeptBoth : Outcome.Copied;
+                    }
+                    catch (StorageConflictException) when (policy != ConflictPolicy.Overwrite)
+                    {
+                        // Only the target itself being taken (it appeared after planning) is a conflict: it is someone's
+                        // file and never replaced. Anything else (e.g. a file where a folder on the way belongs) fails.
+                        if (await destination.StatAsync(target, ct).ConfigureAwait(false) is null ||
+                            (policy == ConflictPolicy.KeepBoth && attempt >= KeepBothAttempts))
+                            throw;
+                        if (policy == ConflictPolicy.Skip)
+                            return Outcome.Skipped;
+                        target = await FreeKeepBothNameAsync(destination, file.Destination, plan.VersionTime, ct).ConfigureAwait(false);
+                        keepBoth = true;
+                    }
+                }
             }
         }
 
@@ -239,187 +372,235 @@ public static class Restorer
     }
 
     /// <summary>
-    /// <c>name (2026_09_30-14_05).ext</c> next to <paramref name="destination"/>; <c>name (2026_09_30-14_05) 2.ext</c>,
-    /// <c>… 3.ext</c> … when that exists too.
+    /// The <paramref name="number"/>th "keep both" name of <paramref name="destination"/> (a storage path):
+    /// <c>name (2026_09_30-14_05).ext</c> for 1, <c>name (2026_09_30-14_05) 2.ext</c> for 2, and so on.
     /// </summary>
-    public static string KeepBothName(string destination, DateTime versionTime)
+    public static string KeepBothName(string destination, DateTime versionTime, int number)
     {
-        var folder = Path.GetDirectoryName(destination)!;
-        var stem = Path.GetFileNameWithoutExtension(destination);
-        var extension = Path.GetExtension(destination);
+        var name = StoragePath.Name(destination);
+        var stem = Path.GetFileNameWithoutExtension(name);
+        var extension = Path.GetExtension(name);
         var stamp = versionTime.ToString("yyyy_MM_dd-HH_mm", CultureInfo.InvariantCulture);
-        var candidate = Path.Combine(folder, $"{stem} ({stamp}){extension}");
-        for (var n = 2; File.Exists(candidate) || Directory.Exists(candidate); n++)
-            candidate = Path.Combine(folder, $"{stem} ({stamp}) {n}{extension}");
-        return candidate;
+        var counter = number > 1 ? $" {number}" : "";
+        return StoragePath.Combine(StoragePath.Parent(destination), $"{stem} ({stamp}){counter}{extension}");
+    }
+
+    /// <summary>The first "keep both" name of <paramref name="destination"/> that nothing (file, folder or link) uses yet.</summary>
+    private static async Task<string> FreeKeepBothNameAsync(IStorage storage, string destination, DateTime versionTime,
+        CancellationToken ct)
+    {
+        for (var number = 1; ; number++)
+        {
+            var candidate = KeepBothName(destination, versionTime, number);
+            if (await storage.StatAsync(candidate, ct).ConfigureAwait(false) is null)
+                return candidate;
+        }
     }
 
     /// <summary>
-    /// Copies into a new, uniquely named temp file next to <paramref name="target"/> (created with CreateNew, so an
-    /// existing file is never touched) and returns its path; null when canceled. On any failure the temp file is removed.
+    /// Copies one file into a new file of the destination and commits it; with <paramref name="overwrite"/> false the
+    /// create is exclusive (<see cref="StorageConflictException"/> when the name is taken, also at the commit). Disposing
+    /// the writer without a commit discards what was written. Cancellation is honoured by every read and between the
+    /// chunks, so it usually discards the file; only once the end of the source has been read does the commit run
+    /// without the token, so a file whose last read already returned is still committed.
     /// </summary>
-    private static string? CopyToTemp(string source, string target, byte[] buffer, Action<int> onBytes,
-        CancellationToken cancellationToken)
+    private static async Task CopyAsync(IStorage versions, RestoreFile file, IStorage destination, string target, bool overwrite,
+        byte[] buffer, Action<int> onBytes, CancellationToken ct)
     {
-        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
-            BufferSize, FileOptions.SequentialScan);
-        var (output, temp) = CreateTemp(target);
-        try
+        var input = await versions.OpenReadAsync(file.Source, ct).ConfigureAwait(false);
+        await using (input.ConfigureAwait(false))
         {
-            using (output)
+            var output = await destination.CreateAsync(target, new CreateOptions(Overwrite: overwrite, ModifiedUtc: file.ModifiedUtc), ct)
+                .ConfigureAwait(false);
+            await using (output.ConfigureAwait(false))
             {
                 int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        output.Dispose();
-                        TryDelete(temp);
-                        return null;
-                    }
-                    output.Write(buffer, 0, read);
+                    ct.ThrowIfCancellationRequested();
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                     onBytes(read);
                 }
-            }
-
-            File.SetLastWriteTimeUtc(temp, File.GetLastWriteTimeUtc(source));
-            return temp;
-        }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
-    }
-
-    private static (FileStream Stream, string Path) CreateTemp(string target)
-    {
-        while (true)
-        {
-            var temp = $"{target}.{Random.Shared.Next():x8}{TempSuffix}";
-            try
-            {
-                return (new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize), temp);
-            }
-            catch (IOException) when (File.Exists(temp) || Directory.Exists(temp))
-            {
-                // taken by someone else: try another name
+                await output.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
     }
 
-    /// <summary>The first existing component from <paramref name="root"/> down to <paramref name="path"/> that is a link.</summary>
-    private static string? FindLink(string path, string root, bool includeRoot)
+    /// <summary>
+    /// The entry of <paramref name="relative"/> (not "") in the version, after checking every part of the path on the
+    /// way: none may be a link (they are not followed), and the entry must exist.
+    /// </summary>
+    private static async Task<StorageEntry> FindInVersionAsync(IStorage versions, string versionPath, string relative,
+        string relativePath, CancellationToken ct)
     {
-        if (includeRoot && IsLinkIfExists(root))
-            return root;
-        var relative = Path.GetRelativePath(root, path);
-        if (relative == ".")
-            return null;
-        var current = root;
-        foreach (var part in relative.Split(Path.DirectorySeparatorChar))
+        StorageEntry? entry = null;
+        var current = versionPath;
+        foreach (var part in relative.Split('/'))
         {
-            current = Path.Combine(current, part);
-            if (!File.Exists(current) && !Directory.Exists(current))
+            current = StoragePath.Combine(current, part);
+            entry = await versions.StatAsync(current, ct).ConfigureAwait(false);
+            if (entry is null)
+                throw new ArgumentException(CoreTexts.English("core.restore.notInVersion", ("path", relativePath)), nameof(relativePath));
+            if (entry.IsLink)
+                throw new ArgumentException(CoreTexts.English("core.restore.throughLink", ("path", relativePath),
+                    ("link", DisplayPath(versions, current))), nameof(relativePath));
+        }
+        return entry!;
+    }
+
+    /// <summary>
+    /// Why nothing may be written at or below the folder <paramref name="path"/>, or null when the way is clear. Every
+    /// existing part (the storage's root, every folder on the way and the folder itself) must be a folder and not a
+    /// link: a link would send the writes wherever it points (<c>core.restore.destinationLink</c>), and a file where a
+    /// folder belongs makes every file below fail (<c>core.restore.fileInPlaceOfFolder</c>). Asks the storage one part
+    /// at a time from the root down, and stops at the first part that does not exist (it is created as a folder).
+    /// </summary>
+    private static async Task<string?> BlockedWayAsync(IStorage storage, string path, CancellationToken ct)
+    {
+        var current = "";
+        var parts = path.Length == 0 ? [] : path.Split('/');
+        for (var i = -1; i < parts.Length; i++)
+        {
+            if (i >= 0)
+                current = StoragePath.Combine(current, parts[i]);
+            if (await storage.StatAsync(current, ct).ConfigureAwait(false) is not { } entry)
                 return null;
-            if (IsLink(current))
-                return current;
+            if (entry.IsLink)
+                return CoreTexts.English("core.restore.destinationLink");
+            if (!entry.IsDirectory)
+                return CoreTexts.English("core.restore.fileInPlaceOfFolder", ("folder", current));
         }
         return null;
     }
 
-    private static bool IsLinkIfExists(string path) => (File.Exists(path) || Directory.Exists(path)) && IsLink(path);
-
-    private static void ThrowIfLink(string folder, string destinationRoot)
-    {
-        if (FindLink(folder, destinationRoot, includeRoot: true) is not null)
-            throw new IOException(CoreTexts.English("core.restore.destinationLink"));
-    }
-
-    private static void AddFolder(List<string> directories, List<RestoreFile> files, List<RestoreFailure> planFailures,
-        HashSet<string> seen,
-        string sourceFolder, string destinationFolder, string versionFolder, string destinationRoot)
-    {
-        var pending = new Stack<(string Source, string Destination)>();
-        pending.Push((sourceFolder, destinationFolder));
-        while (pending.Count > 0)
-        {
-            var (source, destination) = pending.Pop();
-            CheckInside(destination, destinationRoot);
-            directories.Add(destination);
-            List<FileSystemInfo> entries;
-            try
-            {
-                entries = new DirectoryInfo(source).EnumerateFileSystemInfos().ToList();
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                planFailures.Add(new RestoreFailure(source, Reason(ex)));
-                continue;
-            }
-
-            foreach (var entry in entries)
-            {
-                if ((entry.Attributes & FileAttributes.ReparsePoint) != 0)
-                    continue;   // links are not followed
-                var target = Path.Combine(destination, entry.Name);
-                if (entry is DirectoryInfo)
-                    pending.Push((entry.FullName, target));
-                else if (entry is FileInfo file && !IsManifest(file.FullName, versionFolder))
-                    AddFile(files, seen, file.FullName, target, file.Length, destinationRoot);
-            }
-        }
-    }
-
-    private static void AddFile(List<RestoreFile> files, HashSet<string> seen, string source, string destination,
-        long size, string destinationRoot)
-    {
-        CheckInside(destination, destinationRoot);
-        if (seen.Add(destination))
-            files.Add(new RestoreFile(source, destination, size));
-    }
-
-    private static void CheckInside(string destination, string destinationRoot)
-    {
-        if (!PathUtil.IsSameOrInside(destination, destinationRoot))
-            throw new ArgumentException(CoreTexts.English("core.restore.outsideDestination", ("path", destination)));
-    }
-
-    /// <summary>The path with back slashes; rooted paths, drive letters and "." or ".." segments are rejected.</summary>
-    private static string CheckRelative(string relativePath)
-    {
-        var relative = relativePath.Replace('/', Path.DirectorySeparatorChar).Trim(Path.DirectorySeparatorChar);
-        if (Path.IsPathRooted(relativePath) || relative.Contains(Path.VolumeSeparatorChar) ||
-            relative.Split(Path.DirectorySeparatorChar).Any(part => part is "." or ".." || (relative.Length > 0 && part.Length == 0)))
-            throw new ArgumentException(CoreTexts.English("core.restore.notAPath", ("path", relativePath)), nameof(relativePath));
-        return relative;
-    }
-
-    private static bool IsManifest(string path, string versionFolder) =>
-        string.Equals(path, Path.Combine(versionFolder, VersionName.ManifestFileName), StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsLink(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
-
-    private static DateTime VersionTimeOf(string versionFolder) =>
-        VersionName.TryParseAny(Path.GetFileName(versionFolder), out var time, out _)
-            ? time
-            : Directory.GetLastWriteTime(versionFolder);
-
-    private static string Reason(Exception exception) => exception switch
-    {
-        UnauthorizedAccessException => CoreTexts.English("core.restore.accessDenied"),
-        IOException io when (io.HResult & 0xFFFF) is ErrorSharingViolation or ErrorLockViolation => CoreTexts.English("core.file.locked"),
-        _ => exception.Message,
-    };
-
-    private static void TryDelete(string path)
+    /// <summary>
+    /// Whether <paramref name="path"/> exists in the destination on a clear way (<see cref="BlockedWayAsync"/>). A file
+    /// behind a link or a file in place of a folder (both fail in the run), or with a name the storage cannot address,
+    /// is no conflict. The folders on the way are checked once per plan.
+    /// </summary>
+    private static async Task<bool> ExistsOnClearWayAsync(IStorage storage, string path, Dictionary<string, bool> clearWays,
+        CancellationToken ct)
     {
         try
         {
-            File.Delete(path);
+            var parent = StoragePath.Parent(path);
+            if (!clearWays.TryGetValue(parent, out var clear))
+                clearWays[parent] = clear = await BlockedWayAsync(storage, parent, ct).ConfigureAwait(false) is null;
+            return clear && await storage.StatAsync(path, ct).ConfigureAwait(false) is not null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
+            return false;   // the run reports it for this file
         }
     }
+
+    private static async Task<List<StorageEntry>> ListAsync(IStorage storage, string folder, CancellationToken ct)
+    {
+        var entries = new List<StorageEntry>();
+        await foreach (var entry in storage.ListAsync(folder, recursive: false, ct).ConfigureAwait(false))
+            entries.Add(entry);
+        return entries;
+    }
+
+    /// <summary>What the restore takes from a manifest: file times and folders (both version-relative), and the creation time.</summary>
+    private sealed record ManifestData(Dictionary<string, DateTime> Mtimes, List<string> Directories, DateTime CreatedUtc);
+
+    /// <summary>
+    /// The modified times of the manifest's files and its folders, both at or below the selected paths, and the version's
+    /// creation time. Null when the version has no readable manifest: the copies' own times are used then.
+    /// </summary>
+    private static async Task<ManifestData?> ReadManifestAsync(IStorage versions, string versionPath, List<string> selected,
+        StringComparer comparer, CancellationToken ct)
+    {
+        var mtimes = new Dictionary<string, DateTime>(comparer);
+        var directories = new List<string>();
+        try
+        {
+            var stream = await versions.OpenReadAsync(StoragePath.Combine(versionPath, VersionName.ManifestFileName), ct)
+                .ConfigureAwait(false);
+            ManifestSummary summary;
+            await using (stream.ConfigureAwait(false))
+            {
+                summary = ManifestStream.Read(stream,
+                    file =>
+                    {
+                        if (file.MtimeUtc != default && IsSelected(file.Path))
+                            mtimes[file.Path] = file.MtimeUtc;
+                    },
+                    folder =>
+                    {
+                        if (TryCheckRelative(folder) is { Length: > 0 } valid && IsSelected(valid))
+                            directories.Add(valid);
+                    }, ct);
+            }
+            return new ManifestData(mtimes, directories, summary.CreatedUtc);
+        }
+        catch (Exception ex) when (ex is StorageException or JsonException)
+        {
+            return null;
+        }
+
+        bool IsSelected(string path) => selected.Any(root => IsSameOrBelow(path, root, comparer));
+    }
+
+    /// <summary>True when <paramref name="path"/> is <paramref name="root"/> or lies below it (<c>""</c> holds everything).</summary>
+    private static bool IsSameOrBelow(string path, string root, StringComparer comparer) =>
+        root.Length == 0 || comparer.Equals(path, root) ||
+        (path.Length > root.Length && path[root.Length] == '/' && comparer.Equals(path[..root.Length], root));
+
+    /// <summary>The path with forward slashes; rooted paths, drive letters and "." or ".." segments are rejected.</summary>
+    private static string CheckRelative(string relativePath) =>
+        TryCheckRelative(relativePath) ??
+        throw new ArgumentException(CoreTexts.English("core.restore.notAPath", ("path", relativePath)), nameof(relativePath));
+
+    private static string? TryCheckRelative(string relativePath)
+    {
+        var relative = relativePath.Replace('\\', '/').Trim('/');
+        if (Path.IsPathRooted(relativePath) || relative.Contains(':') ||
+            relative.Split('/').Any(part => part is "." or ".." || (relative.Length > 0 && part.Length == 0)))
+            return null;
+        return relative;
+    }
+
+    private static bool IsManifest(string relative) =>
+        string.Equals(relative, VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The time in the folder name; else the manifest's creation time; else the folder's modified time (all local).</summary>
+    private static DateTime VersionTimeOf(string versionPath, DateTime? createdUtc, StorageEntry versionEntry)
+    {
+        if (VersionName.TryParseAny(StoragePath.Name(versionPath), out var time, out _))
+            return time;
+        if (createdUtc is { } created && created != default)
+            return (created.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(created, DateTimeKind.Utc) : created).ToLocalTime();
+        return versionEntry.ModifiedUtc.ToLocalTime();
+    }
+
+    /// <summary>A path for messages: the full path on a file system, else the storage path.</summary>
+    private static string DisplayPath(IStorage storage, string path)
+    {
+        if (storage is not FileSystemStorage folder)
+            return path;
+        try
+        {
+            return folder.FullPathOf(path);
+        }
+        catch (ArgumentException)
+        {
+            return path;
+        }
+    }
+
+    private static string Reason(Exception exception) => exception switch
+    {
+        StorageAccessDeniedException => CoreTexts.English("core.restore.accessDenied"),
+        StorageLockedException => CoreTexts.English("core.file.locked"),
+        StorageException { InnerException: { } inner } => inner.Message,
+        ArgumentException { ParamName: { } name } => exception.Message.Replace($" (Parameter '{name}')", "", StringComparison.Ordinal),
+        _ => exception.Message,
+    };
+
+    private enum Outcome { Copied, KeptBoth, Skipped }
+
+    /// <summary>A file the restore does not write, with the reason (a link on the way or in its place, a file where a folder belongs, a folder in its place).</summary>
+    private sealed class RefusedException(string message) : Exception(message);
 }

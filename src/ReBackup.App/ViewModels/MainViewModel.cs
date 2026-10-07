@@ -2,14 +2,15 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -49,10 +50,11 @@ public sealed partial class MainViewModel : ObservableObject
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
-        LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex)
+        LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
+        IStorageFactory storages)
     {
         _folders = folders;
-        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text));
+        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages);
         Theme = theme;
         Language = language;
         Loc.LanguageChanged += (_, _) => OnLanguageChanged();
@@ -194,9 +196,9 @@ public sealed partial class MainViewModel : ObservableObject
                 }
                 else
                 {
-                    var targetBefore = editor.SavedPlan().Target;
+                    var targetBefore = editor.SavedPlan().Target.Path;
                     editor.ReplaceSaved(plan);
-                    if (!string.Equals(targetBefore, plan.Target, StringComparison.OrdinalIgnoreCase))
+                    if (!string.Equals(targetBefore, plan.Target.Path, StringComparison.OrdinalIgnoreCase))
                     {
                         LoadHistory(editor);
                         editor.Versions.OnSavedTargetChanged();
@@ -317,14 +319,14 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            var targetBefore = editor.IsNew ? null : editor.SavedPlan().Target;
+            var targetBefore = editor.IsNew ? null : editor.SavedPlan().Target.Path;
             var saved = editor.TrySave(_store);
             SetStatus(saved ? LocText.Of("shell.status.saved", ("plan", editor.Name)) : LocText.Of("shell.status.notSaved"));
             RevalidateAll();
             if (saved)
             {
                 PublishPlans();
-                if (!string.Equals(targetBefore, editor.SavedPlan().Target, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(targetBefore, editor.SavedPlan().Target.Path, StringComparison.OrdinalIgnoreCase))
                 {
                     LoadHistory(editor);   // the folder buttons look in the new target
                     editor.Versions.OnSavedTargetChanged();
@@ -617,7 +619,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll(),
-                editor.IsNew ? null : editor.SavedPlan().Target);
+                editor.IsNew ? null : editor.SavedPlan().Target.Path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

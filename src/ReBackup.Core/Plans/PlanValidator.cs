@@ -1,7 +1,8 @@
-using ReBackup.Core.IO;
-using ReBackup.Core.Localization;
-using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.IO;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Plans;
 
@@ -13,18 +14,7 @@ public static class PlanValidator
         var errors = new List<Message>();
         ValidateName(plan, allPlans, errors);
 
-        var sourceOk = ValidatePath(plan.Source, "core.plan.sourceRequired", "core.plan.sourceNotAbsolute", errors);
-        if (sourceOk && !Directory.Exists(plan.Source))
-            errors.Add(Message.Of("core.plan.sourceMissing"));
-        var targetOk = ValidatePath(plan.Target, "core.plan.targetRequired", "core.plan.targetNotAbsolute", errors);
-
-        if (sourceOk && targetOk)
-        {
-            if (PathUtil.IsSameOrInside(plan.Target, plan.Source))
-                errors.Add(Message.Of("core.plan.targetInsideSource"));
-            else if (PathUtil.IsSameOrInside(plan.Source, plan.Target))
-                errors.Add(Message.Of("core.plan.sourceInsideTarget"));
-        }
+        ValidateLocations(plan, errors);
 
         for (var i = 0; i < plan.Retention.Count; i++)
         {
@@ -39,6 +29,37 @@ public static class PlanValidator
         }
 
         return errors;
+    }
+
+    /// <summary>
+    /// The path rules apply to file system locations only; any other kind is not supported yet. Nothing is opened:
+    /// other kinds will supply their own checks.
+    /// </summary>
+    private static void ValidateLocations(BackupPlan plan, List<Message> errors)
+    {
+        var sourceOk = ValidateLocation(plan.Source, "core.plan.sourceRequired", "core.plan.sourceNotAbsolute", errors);
+        if (sourceOk && !Directory.Exists(plan.Source.Path))
+            errors.Add(Message.Of("core.plan.sourceMissing"));
+        var targetOk = ValidateLocation(plan.Target, "core.plan.targetRequired", "core.plan.targetNotAbsolute", errors);
+
+        // Overlap only makes sense when both sides are folders on the same kind of file system.
+        if (sourceOk && targetOk)
+        {
+            if (PathUtil.IsSameOrInside(plan.Target.Path, plan.Source.Path))
+                errors.Add(Message.Of("core.plan.targetInsideSource"));
+            else if (PathUtil.IsSameOrInside(plan.Source.Path, plan.Target.Path))
+                errors.Add(Message.Of("core.plan.sourceInsideTarget"));
+        }
+    }
+
+    private static bool ValidateLocation(StorageLocation location, string requiredKey, string absoluteKey, List<Message> errors)
+    {
+        if (!location.IsFileSystem)
+        {
+            errors.Add(Message.Of("core.plan.unsupportedLocation"));
+            return false;
+        }
+        return ValidatePath(location.Path, requiredKey, absoluteKey, errors);
     }
 
     private static void ValidateName(BackupPlan plan, IEnumerable<BackupPlan> allPlans, List<Message> errors)

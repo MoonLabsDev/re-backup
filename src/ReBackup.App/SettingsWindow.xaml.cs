@@ -1,5 +1,5 @@
 using System.Windows;
-using ReBackup.App.Services;
+using ReBackup.Shared.Wpf.Services;
 using ReBackup.App.ViewModels;
 
 namespace ReBackup.App;

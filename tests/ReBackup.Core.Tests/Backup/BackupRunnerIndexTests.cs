@@ -2,8 +2,11 @@ using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Backup;
 
@@ -18,13 +21,13 @@ public class BackupRunnerIndexTests : IDisposable
         _time.SetLocalTimeZone(TimeZoneInfo.CreateCustomTimeZone("test", TimeSpan.FromHours(2), "test", "test"));
         _tmp.WriteFile(@"source\a.txt", "alpha");
         _tmp.WriteFile(@"source\sub\b.bin", "bravo-bravo");
-        _plan = new BackupPlan { Id = "p1", Name = "Projects", Source = _tmp.PathOf("source"), Target = _tmp.PathOf("target") };
+        _plan = new BackupPlan { Id = "p1", Name = "Projects", Source = StorageLocation.FileSystem(_tmp.PathOf("source")), Target = StorageLocation.FileSystem(_tmp.PathOf("target")) };
     }
 
     public void Dispose() => _tmp.Dispose();
 
     private Task<RunLogEntry> Run(IVersionIndexSink sink) =>
-        new BackupRunner(new PhysicalTargetVolume(), _time, indexSink: sink)
+        new BackupRunner(timeProvider: _time, indexSink: sink)
             .RunAsync(new BackupRequest(_plan, [], RunTrigger.Manual));
 
     [Fact]
@@ -40,10 +43,11 @@ public class BackupRunnerIndexTests : IDisposable
         version.Name.Should().Be("2026_09_30-16_05 Projects");
         version.LocalTime.Should().Be(new DateTime(2026, 9, 30, 16, 5, 0));
         version.Ownership.Should().Be(VersionOwnership.Owned);
-        version.Source.Should().Be(_plan.Source);
+        version.Source.Should().Be(_plan.Source.Path);
         version.FileCount.Should().Be(2);
         version.TotalBytes.Should().Be(16);
-        indexes.For("p1").Sync(VersionCatalog.List(_plan.Target, "p1", "Projects")).Unchanged
+        var target = new FileSystemStorage(_plan.Target.Path);
+        indexes.For("p1").Sync(await VersionCatalog.ListAsync(target, "p1", "Projects"), target).Unchanged
             .Should().Be(1, "the index knows the manifest on disk, so the next sync does not read it again");
     }
 
@@ -61,7 +65,7 @@ public class BackupRunnerIndexTests : IDisposable
     public async Task A_run_that_does_not_finish_adds_nothing()
     {
         var sink = new RecordingSink();
-        _plan.Source = _tmp.PathOf("missing");
+        _plan.Source = StorageLocation.FileSystem(_tmp.PathOf("missing"));
 
         var entry = await Run(sink);
 
@@ -89,13 +93,13 @@ public class BackupRunnerIndexTests : IDisposable
 
     private sealed class FailingSink : IVersionIndexSink
     {
-        public void Add(string planId, VersionInfo version, BackupManifest manifest) =>
+        public void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest) =>
             throw new InvalidOperationException("disk on fire");
     }
 
     private sealed class RecordingSink : IVersionIndexSink
     {
         public int Calls { get; private set; }
-        public void Add(string planId, VersionInfo version, BackupManifest manifest) => Calls++;
+        public void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest) => Calls++;
     }
 }

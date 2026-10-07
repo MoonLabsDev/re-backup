@@ -1,8 +1,11 @@
 using System.IO.Hashing;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
+using ReBackup.Shared.Json;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Tests.TestSupport;
 
@@ -20,18 +23,24 @@ public static class VersionBuilder
     public static TestFile File(string path, string content, DateTime? mtimeUtc = null) =>
         new(path, content, mtimeUtc ?? Mtime);
 
-    /// <summary>Creates <c>&lt;target&gt;\&lt;minute&gt; Projects</c> with the files and, unless told not to, a manifest.</summary>
-    public static string Write(string target, string minute, IEnumerable<TestFile> files, bool withManifest = true)
+    /// <summary>
+    /// Creates <c>&lt;target&gt;\&lt;minute&gt; Projects</c> with the files and, unless told not to, a manifest.
+    /// <paramref name="formatVersion"/> 1 writes the manifest as ReBackup 1.0.5 did: without <c>directories</c>.
+    /// </summary>
+    public static string Write(string target, string minute, IEnumerable<TestFile> files, bool withManifest = true,
+        int formatVersion = 2)
     {
         var folder = Path.Combine(target, $"{minute} {PlanName}");
         Directory.CreateDirectory(folder);
         var manifest = new BackupManifest
         {
+            FormatVersion = formatVersion,
             PlanId = PlanId,
             PlanName = PlanName,
             CreatedUtc = Mtime,
             Source = Source,
         };
+        var directories = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var file in files)
         {
             var path = Path.Combine(folder, file.Path.Replace('/', Path.DirectorySeparatorChar));
@@ -41,17 +50,31 @@ public static class VersionBuilder
             System.IO.File.SetLastWriteTimeUtc(path, file.MtimeUtc);
             manifest.Files.Add(new ManifestFile(file.Path, bytes.Length, file.MtimeUtc,
                 "xxh64:" + Convert.ToHexStringLower(XxHash64.Hash(bytes))));
+            for (var dir = StoragePath.Parent(file.Path); dir.Length > 0; dir = StoragePath.Parent(dir))
+                directories.Add(dir);
         }
         manifest.FileCount = manifest.Files.Count;
         manifest.TotalBytes = manifest.Files.Sum(f => f.Size);
+        manifest.Directories = [.. directories];
         if (withManifest)
-        {
-            System.IO.File.WriteAllText(Path.Combine(folder, VersionName.ManifestFileName),
-                JsonSerializer.Serialize(manifest, JsonDefaults.Options));
-        }
+            System.IO.File.WriteAllText(Path.Combine(folder, VersionName.ManifestFileName), Serialize(manifest));
         return folder;
     }
 
+    /// <summary>The manifest as JSON; a format 1 manifest leaves <c>directories</c> out, as 1.0.5 did.</summary>
+    public static string Serialize(BackupManifest manifest)
+    {
+        if (manifest.FormatVersion >= 2)
+            return JsonSerializer.Serialize(manifest, JsonDefaults.Options);
+        var node = JsonSerializer.SerializeToNode(manifest, JsonDefaults.Options)!.AsObject();
+        node.Remove("directories");
+        return node.ToJsonString(JsonDefaults.Options);
+    }
+
+    /// <summary>A file system storage on the target folder.</summary>
+    public static IStorage TargetStorage(string target) => new FileSystemStorage(target);
+
     /// <summary>The target's versions as the app lists them.</summary>
-    public static IReadOnlyList<VersionInfo> List(string target) => VersionCatalog.List(target, PlanId, PlanName);
+    public static Task<IReadOnlyList<VersionInfo>> ListAsync(string target) =>
+        VersionCatalog.ListAsync(TargetStorage(target), PlanId, PlanName);
 }

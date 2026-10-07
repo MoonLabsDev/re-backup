@@ -1,6 +1,7 @@
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Retention;
+using ReBackup.Shared.Retention;
 
 namespace ReBackup.App.ViewModels;
 

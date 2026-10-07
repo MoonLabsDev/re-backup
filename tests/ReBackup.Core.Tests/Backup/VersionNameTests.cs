@@ -1,6 +1,8 @@
 using FluentAssertions;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Storage.FileSystem;
+using ReBackup.Storage.InMemory;
 
 namespace ReBackup.Core.Tests.Backup;
 
@@ -111,40 +113,43 @@ public class VersionNameTests
     }
 
     [Fact]
-    public void FolderNamesIn_lists_the_folders_of_the_target_once_ignoring_case()
+    public async Task FolderNamesIn_lists_the_folders_of_the_target_once_ignoring_case()
     {
         using var tmp = new TempDir();
         tmp.CreateDir("2026_09_30-14_05 Projects");
         tmp.CreateDir(@"2026_09_30-15_05 Projects\nested");
         File.WriteAllText(tmp.PathOf("2026_09_30-16_05 Projects"), "a file, not a folder");
 
-        var names = VersionName.FolderNamesIn(tmp.Root);
+        var names = await VersionName.FolderNamesInAsync(new FileSystemStorage(tmp.Root));
 
         names.Should().BeEquivalentTo("2026_09_30-14_05 Projects", "2026_09_30-15_05 Projects");
         names.Contains("2026_09_30-14_05 PROJECTS").Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData(@"relative\target")]
-    [InlineData(@"Z:\does\not\exist\anywhere")]
-    public void FolderNamesIn_is_empty_for_a_missing_or_unusable_target(string? target)
+    [Fact]
+    public async Task FolderNamesIn_is_empty_for_a_missing_or_unusable_target()
     {
-        VersionName.FolderNamesIn(target).Should().BeEmpty();
+        using var tmp = new TempDir();
+
+        (await VersionName.FolderNamesInAsync(null)).Should().BeEmpty();
+        (await VersionName.FolderNamesInAsync(new FileSystemStorage(tmp.PathOf("does-not-exist")))).Should().BeEmpty();
+        (await VersionName.FolderNamesInAsync(new WrappedStorage(new InMemoryStorage()) { Unavailable = true })).Should().BeEmpty();
     }
 
     [Fact]
-    public void ExistingFolderIn_returns_the_folder_only_while_it_exists()
+    public async Task ExistingFolderIn_returns_the_folder_only_while_it_exists()
     {
         using var tmp = new TempDir();
         tmp.CreateDir("2026_09_30-14_05 Projects");
         File.WriteAllText(tmp.PathOf("2026_09_30-15_05 Projects"), "a file, not a folder");
+        var target = new FileSystemStorage(tmp.Root);
 
-        VersionName.ExistingFolderIn(tmp.Root, "2026_09_30-14_05 Projects")
-            .Should().Be(tmp.PathOf("2026_09_30-14_05 Projects"));
-        VersionName.ExistingFolderIn(tmp.Root, "2026_09_30-15_05 Projects").Should().BeNull("it is a file");
-        VersionName.ExistingFolderIn(tmp.Root, "2026_09_30-16_05 Projects").Should().BeNull("it does not exist");
-        VersionName.ExistingFolderIn(tmp.Root, "..").Should().BeNull("it is not a folder name");
+        (await VersionName.ExistingFolderInAsync(target, "2026_09_30-14_05 Projects")).Should().Be("2026_09_30-14_05 Projects");
+        (await VersionName.ExistingFolderInAsync(target, "2026_09_30-15_05 Projects")).Should().BeNull("it is a file");
+        (await VersionName.ExistingFolderInAsync(target, "2026_09_30-16_05 Projects")).Should().BeNull("it does not exist");
+        (await VersionName.ExistingFolderInAsync(target, "..")).Should().BeNull("it is not a folder name");
+        (await VersionName.ExistingFolderInAsync(target, "a/b")).Should().BeNull("it is not a folder name");
+        (await VersionName.ExistingFolderInAsync(new WrappedStorage(new InMemoryStorage()) { Unavailable = true }, "2026_09_30-14_05 Projects"))
+            .Should().BeNull("an unreachable target has no folders right now");
     }
 }

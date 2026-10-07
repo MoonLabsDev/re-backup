@@ -2,7 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
+using ReBackup.Shared.IO;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.App.Services;
 
@@ -10,10 +11,11 @@ namespace ReBackup.App.Services;
 public interface IFolderOpener
 {
     /// <summary>
-    /// Opens the folder <paramref name="versionName"/> directly inside <paramref name="target"/>. Nothing is started
-    /// (false) unless the name is one plain folder name and that folder exists right now.
+    /// Opens the folder <paramref name="versionName"/> directly inside the local or network folder
+    /// <paramref name="target"/>. Nothing is started (false) unless the name is one plain folder name and that folder
+    /// exists right now.
     /// </summary>
-    bool OpenVersionFolder(string? target, string? versionName);
+    Task<bool> OpenVersionFolderAsync(string? target, string? versionName);
 
     /// <summary>
     /// Opens a file of a version with the program Windows associates with it. False (nothing started) unless the path
@@ -31,9 +33,10 @@ public sealed class ExplorerFolderOpener : IFolderOpener
     private static string Explorer =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
 
-    public bool OpenVersionFolder(string? target, string? versionName)
+    public async Task<bool> OpenVersionFolderAsync(string? target, string? versionName)
     {
-        if (VersionName.ExistingFolderIn(target, versionName) is not { } folder)
+        if (VersionName.FolderIn(target, versionName) is not { } folder ||
+            await VersionName.ExistingFolderInAsync(new FileSystemStorage(target!), versionName).ConfigureAwait(false) is null)
             return false;
         // Quoted, so commas and spaces in the name are part of the path; a folder name cannot hold a quote.
         return Start(new ProcessStartInfo(Explorer, $"\"{folder}\"") { UseShellExecute = false });

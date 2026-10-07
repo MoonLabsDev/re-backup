@@ -3,9 +3,11 @@ using System.IO;
 using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
-using ReBackup.Core.IO;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.IO;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.App.ViewModels;
 
@@ -35,7 +37,7 @@ public sealed partial class VersionsViewModel
 
     private CancellationTokenSource? _restoreCts;
 
-    /// <summary>The copying of the running restore (null while none copies); it removes its temp file when canceled.</summary>
+    /// <summary>The copying of the running restore (null while none copies); it discards its unfinished file when canceled.</summary>
     private Task? _restoreRun;
 
     [ObservableProperty]
@@ -93,7 +95,7 @@ public sealed partial class VersionsViewModel
     {
         if (Current() is not { Node.IsDirectory: false } selection)
             return;
-        var (folder, path) = (selection.Version.Info.Path, selection.Node.Path);
+        var (folder, path) = (FolderOf(selection.Version) ?? "", selection.Node.Path);
         if (IsRunnable(Path.GetExtension(selection.Node.Name)))
         {
             if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
@@ -112,7 +114,7 @@ public sealed partial class VersionsViewModel
     {
         if (Current() is not { } selection)
             return;
-        var (folder, path) = (selection.Version.Info.Path, selection.Node.Path);
+        var (folder, path) = (FolderOf(selection.Version) ?? "", selection.Node.Path);
         if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
             _context.ReportStatus(LocText.Of("restore.notInVersion", ("path", path)));
     }
@@ -129,13 +131,13 @@ public sealed partial class VersionsViewModel
         if (_restoreCts is not { } cts || cts.IsCancellationRequested)
             return;
         cts.Cancel();
-        // Planning cannot be interrupted (it writes nothing); the copy stops after the current file.
+        // Planning stops at once (it writes nothing); the copy stops after the current file.
         RestoreProgress = _restoreRun is null ? LocText.Of("restore.canceling") : LocText.Of("restore.cancelingAfterFile");
     }
 
     /// <summary>
     /// Cancels a running restore (exit, restart) and returns the copy's task, which ends after the current file once
-    /// the temp file is removed; a completed task when nothing is being copied.
+    /// its unfinished copy is discarded; a completed task when nothing is being copied.
     /// </summary>
     public Task StopRestore()
     {
@@ -167,22 +169,24 @@ public sealed partial class VersionsViewModel
         var whole = node.Path.Length == 0;
         var item = LocText.Of("restore.item", ("path", node.Path));
         var relative = node.Path;
-        var versionFolder = version.Info.Path;
+        var versionPath = version.Info.Path;
+        var versionsLocation = _versionsLocation;
         var versionDate = new LocText(() => version.DateText);
 
         string root;
         if (mode == RestoreMode.Original)
         {
-            // The manifest's source; a version without a (readable) manifest goes back to the plan's source.
+            // The manifest's source (a folder); a version without a (readable) manifest goes back to the plan's source.
             var source = version.Indexed is { Origin: IndexOrigin.Manifest, Source.Length: > 0 } indexed
-                ? indexed.Source
+                ? StorageLocation.FileSystem(indexed.Source)
                 : _savedPlan()?.Source;
-            if (string.IsNullOrWhiteSpace(source) || !Path.IsPathFullyQualified(source))
+            if (source is not { IsFileSystem: true, Path: var sourcePath } || string.IsNullOrWhiteSpace(sourcePath) ||
+                !Path.IsPathFullyQualified(sourcePath))
             {
                 dialogs.ShowError(Loc.T("restore.title"), Loc.T("restore.originUnknown"));
                 return;
             }
-            root = source;
+            root = sourcePath;
             var warning = _isBackupActive()
                 ? Loc.T("restore.backupRunningWarning")
                 : "";
@@ -196,6 +200,12 @@ public sealed partial class VersionsViewModel
         {
             if (dialogs.PickFolder(Loc.T("restore.pickFolder"), null) is not { } folder)
                 return;
+            if (!Path.IsPathFullyQualified(folder))
+            {
+                dialogs.ShowError(Loc.T("restore.title"), Loc.F(whole ? "restore.cannotRestoreVersion" : "restore.cannotRestore",
+                    ("item", item), ("reason", Loc.T("core.restore.destinationNotAbsolute"))));
+                return;
+            }
             root = folder;
         }
 
@@ -215,7 +225,16 @@ public sealed partial class VersionsViewModel
             RestorePlan plan;
             try
             {
-                plan = await Task.Run(() => Restorer.Plan(versionFolder, [relative], root, mode), cts.Token);
+                if (versionsLocation is null)
+                {
+                    _context.ReportStatus(LocText.Of("restore.reindexing"));
+                    return;
+                }
+                var factory = _context.Storages;
+                var versions = factory.Open(versionsLocation);
+                var destination = factory.Open(StorageLocation.FileSystem(root));
+                plan = await Task.Run(() => Restorer.PlanAsync(versions, versionPath, [relative], destination, mode, cts.Token),
+                    cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -258,7 +277,7 @@ public sealed partial class VersionsViewModel
             RestoreResult result;
             try
             {
-                var run = Task.Run(() => Restorer.Run(plan, policy, progress, cts.Token));
+                var run = Task.Run(() => Restorer.RunAsync(plan, policy, progress, cts.Token));
                 _restoreRun = run;
                 result = await run;
             }
@@ -276,7 +295,7 @@ public sealed partial class VersionsViewModel
             {
                 dialogs.ShowFailures(Loc.T("restore.title"),
                     Loc.F("restore.failures", ("summary", summary), ("count", result.Failures.Count), ("root", root)),
-                    Lines(result.Failures));
+                    Lines(result.Failures, plan));
             }
         }
         finally
@@ -300,11 +319,11 @@ public sealed partial class VersionsViewModel
     private ConflictPolicy? Ask(RestorePlan plan, RestoreMode mode, string root)
     {
         var dialogs = _context.Dialogs;
-        var unreadable = Lines(plan.PlanFailures);
+        var unreadable = Lines(plan.PlanFailures, plan);
         if (plan.Conflicts.Count > 0)
         {
             var examples = string.Join("\n", plan.Conflicts.Take(FailuresInMessage)
-                .Select(f => "  " + Path.GetRelativePath(plan.DestinationRoot, f.Destination)));
+                .Select(f => "  " + f.Destination.Replace('/', Path.DirectorySeparatorChar)));
             var more = plan.Conflicts.Count > FailuresInMessage ? "\n  …" : "";
             var message = mode == RestoreMode.Original
                 ? Loc.F("restore.conflictsOriginal", ("count", plan.Conflicts.Count), ("examples", examples), ("more", more))
@@ -316,10 +335,10 @@ public sealed partial class VersionsViewModel
         {
             return dialogs.ConfirmFailures(Loc.T("restore.title"),
                 Loc.F("restore.unreadable", ("count", unreadable.Count)), unreadable, Loc.T("restore.restoreRest"))
-                ? ConflictPolicy.Skip   // there are no conflicts: the policy does not matter
+                ? ConflictPolicy.Skip   // no conflicts: Skip on purpose, so a file appearing after planning is never replaced
                 : null;
         }
-        return ConflictPolicy.Skip;
+        return ConflictPolicy.Skip;   // as above: a file appearing after planning is never replaced
     }
 
     /// <summary>
@@ -328,7 +347,7 @@ public sealed partial class VersionsViewModel
     /// </summary>
     private string? InsideTarget(string root, string relative)
     {
-        if (_savedPlan()?.Target is not { Length: > 0 } target)
+        if (_savedPlan()?.Target.Path is not { Length: > 0 } target)
             return null;
         try
         {
@@ -339,7 +358,7 @@ public sealed partial class VersionsViewModel
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            return null;   // Restorer.Plan rejects such a path with its own message
+            return null;   // Restorer.PlanAsync rejects such a path with its own message
         }
     }
 
@@ -372,8 +391,23 @@ public sealed partial class VersionsViewModel
                                  (unreadable == 0 ? "" : Loc.F("restore.unreadableNote", ("count", unreadable))));
     }
 
-    private static List<string> Lines(IReadOnlyList<RestoreFailure> failures) =>
-        failures.Select(f => $"{f.Path}: {Loc.Known(f.Reason)}").ToList();
+    /// <summary>"path: reason" per failure, with the full path where the storage is a folder (the version's or the destination's).</summary>
+    private static List<string> Lines(IReadOnlyList<RestoreFailure> failures, RestorePlan plan) =>
+        failures.Select(f => $"{FullPath(f.InVersion ? plan.Versions : plan.Destination, f.Path)}: {Loc.Known(f.Reason)}").ToList();
+
+    private static string FullPath(IStorage storage, string path)
+    {
+        if (storage is not FileSystemStorage folder)
+            return path;
+        try
+        {
+            return folder.FullPathOf(path);
+        }
+        catch (ArgumentException)
+        {
+            return path;   // a name the folder cannot hold: shown as it is in the version
+        }
+    }
 
     private static LocText Summary(RestoreResult result) => new(() =>
     {

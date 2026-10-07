@@ -3,9 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:ReBackup.App.Views"
         xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
-        xmlns:theme="clr-namespace:ReBackup.App.Theme"
-        xmlns:controls="clr-namespace:ReBackup.App.Controls"
-        xmlns:l="clr-namespace:ReBackup.App.Localization"
+        xmlns:theme="clr-namespace:ReBackup.Shared.Wpf.Theme;assembly=ReBackup.Shared.Wpf"
+        xmlns:controls="clr-namespace:ReBackup.Shared.Wpf.Controls;assembly=ReBackup.Shared.Wpf"
+        xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf"
+        xmlns:appl="clr-namespace:ReBackup.App.Localization"
         Title="ReBackup" Width="1280" Height="800" MinWidth="960" MinHeight="560"
         Style="{StaticResource {x:Type Window}}">
     <Window.InputBindings>
@@ -278,7 +279,7 @@
             <DockPanel Margin="0,14">
                 <Image DockPanel.Dock="Top" Width="36" Height="36" HorizontalAlignment="Center"
                        Source="pack://application:,,,/Assets/rebackup-256.png" RenderOptions.BitmapScalingMode="HighQuality"
-                       ToolTip="{l:LocVersion}" AutomationProperties.Name="ReBackup" />
+                       ToolTip="{appl:LocVersion}" AutomationProperties.Name="ReBackup" />
                 <!-- The plan's tabs, mirroring the header tabs (same SelectedTab). -->
                 <StackPanel DockPanel.Dock="Top" Margin="0,22,0,0" IsEnabled="{Binding HasSelectedPlan}"
                             KeyboardNavigation.DirectionalNavigation="Cycle">

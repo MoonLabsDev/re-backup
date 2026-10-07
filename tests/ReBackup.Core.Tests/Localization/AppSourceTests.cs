@@ -2,8 +2,8 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using FluentAssertions;
-using ReBackup.Core.Settings;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.Core.Tests.Localization;
 
@@ -47,7 +47,7 @@ public class AppSourceTests
     [Fact]
     public void Every_label_key_used_in_the_sources_exists_in_the_English_file()
     {
-        var english = LocaleFileTests.Load(AppLanguages.English);
+        var english = LocaleFileTests.LoadAll(AppLanguages.English);
         var missing = new List<string>();
 
         foreach (var file in RepoPaths.SourceFiles(RepoPaths.AppDirectory, "*.xaml"))

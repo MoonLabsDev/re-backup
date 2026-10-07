@@ -1,8 +1,9 @@
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -132,8 +133,8 @@ public sealed partial class VersionsViewModel
         IReadOnlyList<VersionDeletion> results;
         try
         {
-            results = await Task.Run(() => VersionDeleter.Delete(plan.Target, plan.Id, names, progress: progress,
-                cancellationToken: cts.Token));
+            results = await Task.Run(() => VersionDeleter.DeleteAsync(_context.Storages.Open(plan.Target), plan.Id, plan.Name,
+                names, progress, cts.Token));
             var gone = results.Where(r => r.Outcome is not (VersionDeletionOutcome.Failed or VersionDeletionOutcome.NotManaged))
                 .Select(r => r.Name)
                 .ToList();

@@ -22,7 +22,7 @@ public class VersionIndexQueryTests : IDisposable
 
     private IReadOnlyList<IndexedVersion> Sync()
     {
-        _index.Sync(List(_target));
+        _index.Sync(ListAsync(_target).GetAwaiter().GetResult(), TargetStorage(_target));
         return _index.Versions();
     }
 

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using ReBackup.Shared.Localization;
 
 namespace ReBackup.Core.Localization;
 
@@ -25,32 +26,11 @@ public static class CoreTexts
         ["core.plan.sourceNotAbsolute"] = "Source must be an absolute path.",
         ["core.plan.targetNotAbsolute"] = "Target must be an absolute path.",
         ["core.plan.sourceMissing"] = "Source folder does not exist.",
+        ["core.plan.unsupportedLocation"] = "This kind of location is not supported yet.",
         ["core.plan.targetInsideSource"] = "Target must not be inside the source.",
         ["core.plan.sourceInsideTarget"] = "Source must not be inside the target.",
         ["core.plan.retentionRule"] = "Retention rule {index}: {problem}",
         ["core.plan.trigger"] = "Trigger {index}: {problem}",
-
-        ["core.trigger.empty"] = "the trigger is empty.",
-        ["core.trigger.unknownType"] = "the type is unknown.",
-        ["core.trigger.time"] = "the time must be written as HH:mm, for example 02:00.",
-        ["core.trigger.noWeekday"] = "choose at least one weekday.",
-        ["core.trigger.notWeekday"] = "\"{day}\" is not a weekday.",
-        ["core.trigger.monthDay"] =
-            "the day must be from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-        ["core.trigger.interval"] = "the interval must be a whole number of hours from 1 to 24.",
-        ["core.trigger.from"] = "the start time must be written as HH:mm, for example 08:00.",
-        ["core.trigger.to"] = "the end time must be written as HH:mm, for example 20:00.",
-        ["core.trigger.fromAfterTo"] = "the start time must not be after the end time.",
-        ["core.trigger.invalid"] = "The trigger is not valid: {problem}",
-
-        ["core.retention.empty"] = "the rule is empty.",
-        ["core.retention.unknownPeriod"] = "the period is unknown.",
-        ["core.retention.keep"] = "keep must be a number from 1 to {max}.",
-        ["core.retention.weekday"] = "the anchor must be a weekday, for example Sunday.",
-        ["core.retention.monthDay"] =
-            "the anchor must be a day from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-        ["core.retention.yearDate"] = "the anchor must be a date written as MM-DD, for example 01-01.",
-        ["core.retention.invalid"] = "The retention rule is not valid: {problem}",
 
         ["core.run.nameUnusable"] = "The plan name \"{name}\" cannot be used: {problem}",
         ["core.run.sourceMissing"] = "Source folder \"{source}\" does not exist.",
@@ -76,16 +56,24 @@ public static class CoreTexts
         ["core.run.remainsFailed"] = "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
         ["core.run.removedRemainsLeft"] =
             "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
+        ["core.run.unfinishedFailed"] = "An unfinished backup could not be deleted (\"{name}\"): {error}",
+        ["core.run.leftoverForeign"] = "\"{name}\" was left alone: it is marked by another plan.",
+        ["core.run.leftoverUnreadable"] = "\"{name}\" was left alone: its marker cannot be read.",
+        ["core.run.leftoverRenamed"] = "\"{name}\" was left alone: it is marked by this plan but was renamed.",
+        ["core.run.leftoverPartialWithManifest"] = "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
 
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
-        ["core.skip.reservedName"] = "the name is reserved for the backup manifest",
+        ["core.skip.reservedName"] = "the name is reserved for ReBackup's own files",
+        // The text runs before the marker files wrote; kept so that their logs are still recognized and translated.
+        ["core.skip.reservedNameLegacy"] = "the name is reserved for the backup manifest",
         ["core.skip.changed"] = "changed while it was copied; the copy may be inconsistent",
 
         ["core.file.noLongerExists"] = "no longer exists",
         ["core.file.accessDenied"] = "access denied",
         ["core.file.locked"] = "locked by another program",
         ["core.file.cannotOpen"] = "cannot be opened: {error}",
+        ["core.file.notAFolder"] = "\"{name}\" is not a folder (or is a link) and is not removed.",
 
         ["core.scan.link"] = "Link is not followed.",
         ["core.scan.tooDeep"] = "Folder nesting too deep.",
@@ -96,12 +84,11 @@ public static class CoreTexts
         ["core.restore.outside"] = "\"{path}\" is outside the version.",
         ["core.restore.throughLink"] = "\"{path}\" goes through the link \"{link}\".",
         ["core.restore.sameName"] = "Two selected items are called \"{name}\"; they would end up in the same place.",
-        ["core.restore.isLink"] = "\"{path}\" is a link.",
         ["core.restore.manifest"] = "The manifest is not part of the backup.",
         ["core.restore.notInVersion"] = "\"{path}\" does not exist in the version.",
         ["core.restore.folderExists"] = "A folder with this name exists.",
         ["core.restore.destinationLink"] = "the destination folder is a link",
-        ["core.restore.outsideDestination"] = "\"{path}\" is outside the destination.",
+        ["core.restore.fileInPlaceOfFolder"] = "a file stands where the folder \"{folder}\" belongs",
         ["core.restore.notAPath"] = "\"{path}\" is not a path inside the version.",
         ["core.restore.accessDenied"] = "access denied (read-only, or in use by another program)",
 

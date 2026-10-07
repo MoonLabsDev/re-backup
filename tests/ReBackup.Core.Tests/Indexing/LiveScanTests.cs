@@ -3,6 +3,9 @@ using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
+using ReBackup.Storage.InMemory;
 
 namespace ReBackup.Core.Tests.Indexing;
 
@@ -17,6 +20,10 @@ public class LiveScanTests : IDisposable
     public void Dispose() => _tmp.Dispose();
 
     private static IgnoreSettings Settings(params string[] patterns) => new() { Patterns = [.. patterns] };
+
+    private LiveScan Start(IgnoreSettings settings, IReadOnlyList<string> globalDefaults, LiveScanOptions? options = null,
+        CancellationToken ct = default) =>
+        LiveScan.Start(new FileSystemStorage(_source), "source", settings, globalDefaults, options, ct);
 
     private void WriteFixture()
     {
@@ -89,9 +96,9 @@ public class LiveScanTests : IDisposable
         Junction.Create(Path.Combine(_source, "link"), Path.Combine(_source, "sub"));
         try
         {
-            var scan = LiveScan.Start(_source, Settings("*.tmp", "!keep.tmp", "build/"), ["Thumbs.db"]);
+            var scan = Start(Settings("*.tmp", "!keep.tmp", "build/"), ["Thumbs.db"]);
             var index = await scan.Completion.WaitAsync(Timeout);
-            var expected = SourceIndexer.Build(_source);
+            var expected = await SourceIndexer.BuildAsync(new FileSystemStorage(_source));
 
             index.Root.Should().Be(expected.Root);
             ShouldEqual(index.RootNode, expected.RootNode);
@@ -117,7 +124,7 @@ public class LiveScanTests : IDisposable
         var settings = Settings("*.tmp", "!keep.tmp", "build/");
         string[] defaults = ["Thumbs.db"];
 
-        var scan = LiveScan.Start(_source, settings, defaults);
+        var scan = Start(settings, defaults);
         var index = await scan.Completion.WaitAsync(Timeout);
         var evaluated = IndexEvaluator.Evaluate(index, IgnoreMatcher.ForPlan(settings, defaults, index.IgnoreFiles));
 
@@ -129,10 +136,10 @@ public class LiveScanTests : IDisposable
     }
 
     [Fact]
-    public void Evaluated_nodes_are_preview_entries_too()
+    public async Task Evaluated_nodes_are_preview_entries_too()
     {
         WriteFixture();
-        var index = SourceIndexer.Build(_source);
+        var index = await SourceIndexer.BuildAsync(new FileSystemStorage(_source));
         IPreviewEntry root = IndexEvaluator.Evaluate(index, IgnoreMatcher.Create([], ["*.tmp"], []));
 
         root.State.Should().Be(ScanState.Done);
@@ -145,7 +152,7 @@ public class LiveScanTests : IDisposable
     public async Task ChildCount_equals_the_number_of_children_for_live_and_evaluated_entries()
     {
         WriteFixture();
-        var scan = LiveScan.Start(_source, Settings("*.tmp"), []);
+        var scan = Start(Settings("*.tmp"), []);
         var index = await scan.Completion.WaitAsync(Timeout);
         IPreviewEntry evaluated = IndexEvaluator.Evaluate(index, IgnoreMatcher.Create([], ["*.tmp"], []));
 
@@ -176,7 +183,7 @@ public class LiveScanTests : IDisposable
             },
         };
 
-        var scan = LiveScan.Start(_source, Settings(), [], options);
+        var scan = Start(Settings(), [], options);
         entered.Wait(Timeout).Should().BeTrue();
 
         var a = Child(scan.Root, "a");
@@ -213,7 +220,7 @@ public class LiveScanTests : IDisposable
             },
         };
 
-        var scan = LiveScan.Start(_source, Settings(), [], options);
+        var scan = Start(Settings(), [], options);
         entered.Wait(Timeout).Should().BeTrue();
 
         Child(scan.Root, "c").State.Should().Be(ScanState.Waiting);
@@ -244,7 +251,7 @@ public class LiveScanTests : IDisposable
             },
         };
 
-        var scan = LiveScan.Start(_source, Settings(), [], options);
+        var scan = Start(Settings(), [], options);
         await scan.Completion.WaitAsync(Timeout);
 
         max.Should().BeInRange(2, LiveScan.DefaultParallelism);
@@ -267,7 +274,7 @@ public class LiveScanTests : IDisposable
             },
         };
 
-        var scan = LiveScan.Start(_source, Settings(), [], options, cts.Token);
+        var scan = Start(Settings(), [], options, cts.Token);
         var act = () => scan.Completion.WaitAsync(Timeout);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -287,7 +294,7 @@ public class LiveScanTests : IDisposable
             },
         };
 
-        var scan = LiveScan.Start(_source, Settings(), [], options);
+        var scan = Start(Settings(), [], options);
         var act = () => scan.Completion.WaitAsync(Timeout);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
@@ -301,7 +308,7 @@ public class LiveScanTests : IDisposable
             for (var j = 0; j < 10; j++)
                 _tmp.WriteFile($@"source\d{i}\e{j}\f.txt", "f");
 
-        var scan = LiveScan.Start(_source, Settings(), []);
+        var scan = Start(Settings(), []);
         await scan.Completion.WaitAsync(Timeout);
 
         scan.Files.Should().Be(100);
@@ -317,7 +324,7 @@ public class LiveScanTests : IDisposable
         _tmp.WriteFile(@"source\sub\secret.txt", "s");
         using (new FileStream(_tmp.PathOf(@"source\sub\.backupignore"), FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            var scan = LiveScan.Start(_source, Settings(), []);
+            var scan = Start(Settings(), []);
             var index = await scan.Completion.WaitAsync(Timeout);
 
             index.UnreadableIgnoreFiles.Should().Equal("sub/.backupignore");
@@ -326,11 +333,91 @@ public class LiveScanTests : IDisposable
     }
 
     [Fact]
-    public void A_missing_source_throws()
+    public async Task A_missing_source_fails_the_scan_with_not_found()
     {
-        var act = () => LiveScan.Start(_tmp.PathOf("nowhere"), Settings(), []);
+        var scan = LiveScan.Start(new FileSystemStorage(_tmp.PathOf("nowhere")), "nowhere", Settings(), []);
 
-        act.Should().Throw<DirectoryNotFoundException>();
+        var act = () => scan.Completion.WaitAsync(Timeout);
+
+        await act.Should().ThrowAsync<StorageNotFoundException>();
+    }
+
+    [Fact]
+    public async Task Scans_an_in_memory_source_with_a_nested_ignore_file()
+    {
+        var memory = new InMemoryStorage();
+        memory.AddFile("a.txt", [1, 2, 3]);
+        memory.AddFile("sub/.backupignore", "secret.txt"u8.ToArray());
+        memory.AddFile("sub/secret.txt", [1]);
+        memory.AddFile("sub/b.bin", [1, 2]);
+
+        var scan = LiveScan.Start(memory, "memory", Settings(), []);
+        var index = await scan.Completion.WaitAsync(Timeout);
+
+        index.Root.Should().Be("memory");
+        scan.Root.Name.Should().Be("memory");
+        index.FileCount.Should().Be(4);
+        Child(Child(scan.Root, "sub"), "secret.txt").Status.Should().Be(IncludeStatus.Ignored);
+        Child(Child(scan.Root, "sub"), "b.bin").Status.Should().Be(IncludeStatus.Included);
+    }
+
+    [Fact]
+    public async Task An_unavailable_source_fails_the_scan()
+    {
+        var memory = new InMemoryStorage();
+        memory.AddFile("a/f.txt", [1]);
+        var storage = new FaultyStorage(memory)
+        {
+            Before = (op, path) =>
+            {
+                if (op == "list" && path == "a")
+                    throw new StorageUnavailableException(path);
+            },
+        };
+
+        var scan = LiveScan.Start(storage, "memory", Settings(), []);
+        var act = () => scan.Completion.WaitAsync(Timeout);
+
+        await act.Should().ThrowAsync<StorageUnavailableException>();
+    }
+
+    [Fact]
+    public async Task A_folder_that_cannot_be_listed_gets_an_error_and_the_scan_goes_on()
+    {
+        var memory = new InMemoryStorage();
+        memory.AddFile("a/f.txt", [1]);
+        memory.AddFile("b/g.txt", [1]);
+        memory.AddFile("odd./h.txt", [1]);
+        var storage = new FaultyStorage(memory)
+        {
+            Before = (op, path) =>
+            {
+                if (op != "list") return;
+                if (path == "a") throw new StorageAccessDeniedException(path, "denied");
+                if (path == "odd.") throw new ArgumentException("not addressable");
+            },
+        };
+
+        var scan = LiveScan.Start(storage, "memory", Settings(), []);
+        await scan.Completion.WaitAsync(Timeout);
+
+        Child(scan.Root, "a").Error.Should().Be("denied");
+        Child(scan.Root, "odd.").Error.Should().NotBeNullOrEmpty();
+        Child(scan.Root, "b").Error.Should().BeNull();
+        scan.Files.Should().Be(1);
+        scan.Root.State.Should().Be(ScanState.Done);
+    }
+
+    [Fact]
+    public async Task Case_sensitive_storage_sorts_ordinal()
+    {
+        var memory = new InMemoryStorage(StorageCapabilities.CaseSensitive);
+        foreach (var name in new[] { "b.txt", "A.txt", "a.txt", "B.txt" })
+            memory.AddFile(name, [1]);
+
+        var index = await LiveScan.Start(memory, "memory", Settings(), []).Completion.WaitAsync(Timeout);
+
+        index.RootNode.Children.Select(c => c.Name).Should().Equal("A.txt", "B.txt", "a.txt", "b.txt");
     }
 
     private (LiveScan Scan, System.Collections.Concurrent.ConcurrentQueue<string> Order, ManualResetEventSlim Entered,
@@ -355,7 +442,7 @@ public class LiveScanTests : IDisposable
                 }
             },
         };
-        return (LiveScan.Start(_source, Settings(), [], options), order, entered, release);
+        return (Start(Settings(), [], options), order, entered, release);
     }
 
     [Fact]
@@ -406,7 +493,7 @@ public class LiveScanTests : IDisposable
     public async Task Prioritising_a_folder_that_is_not_waiting_does_nothing()
     {
         _tmp.WriteFile(@"source\a\f.txt", "f");
-        var scan = LiveScan.Start(_source, Settings(), []);
+        var scan = Start(Settings(), []);
         await scan.Completion.WaitAsync(Timeout);
 
         var act = () => scan.Prioritize(scan.Root);

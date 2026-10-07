@@ -1,6 +1,6 @@
 using System.Globalization;
 using FluentAssertions;
-using ReBackup.Core.Settings;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.Core.Tests.Settings;
 

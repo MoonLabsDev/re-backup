@@ -2,13 +2,14 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -43,8 +44,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _saved = plan.Clone();
         _allPlans = allPlans;
         _folders = folders;
-        Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
-        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders);
+        Run = new PlanRunViewModel(versions.Storages);
+        Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
+        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions);
         Versions.VersionsDeleted += () => RetentionPreview.ReloadIfLoaded();
         Preview.PropertyChanged += (_, e) =>
@@ -66,7 +68,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     public IgnorePreviewViewModel Preview { get; }
 
     /// <summary>Queue state, progress and history of this plan.</summary>
-    public PlanRunViewModel Run { get; } = new();
+    public PlanRunViewModel Run { get; }
 
     /// <summary>What the retention rules do with the versions in the target.</summary>
     public RetentionPreviewViewModel RetentionPreview { get; }
@@ -97,7 +99,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         if (row is not { CanOpenVersion: true })
             return;
         var (target, name) = (row.Target, row.VersionName);
-        if (!await Task.Run(() => _folders.OpenVersionFolder(target, name)))
+        if (!await Task.Run(() => _folders.OpenVersionFolderAsync(target, name)))
             row.MarkVersionMissing();
     }
 
@@ -155,8 +157,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     {
         var plan = _saved.Clone();
         plan.Name = Name;
-        plan.Source = Source;
-        plan.Target = Target;
+        // A location of another kind (only possible by editing the plan file) stays as loaded unless its text was edited.
+        if (Source != _saved.Source.Path)
+            plan.Source = StorageLocation.FileSystem(Source);
+        if (Target != _saved.Target.Path)
+            plan.Target = StorageLocation.FileSystem(Target);
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
         plan.Ignore = CurrentIgnoreSettings();
@@ -385,8 +390,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         try
         {
             Name = plan.Name;
-            Source = plan.Source;
-            Target = plan.Target;
+            Source = plan.Source.Path;
+            Target = plan.Target.Path;
             Enabled = plan.Enabled;
             FreeSpaceByRetention = plan.FreeSpaceByRetention;
             IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);

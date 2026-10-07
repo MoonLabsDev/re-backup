@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
              xmlns:core="clr-namespace:ReBackup.Core.Backup;assembly=ReBackup.Core"
-             xmlns:l="clr-namespace:ReBackup.App.Localization">
+             xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 

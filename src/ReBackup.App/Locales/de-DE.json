@@ -6,14 +6,6 @@
     "toolTip": "Sprache: {language} – zum Ändern klicken",
     "notSaved": "Die Sprache konnte nicht gespeichert werden:\n\n{error}"
   },
-  "format": {
-    "date": "dd.MM.yyyy",
-    "dateTime": "dd.MM.yyyy HH:mm",
-    "dateTimeSeconds": "dd.MM.yyyy HH:mm:ss",
-    "time": "HH:mm",
-    "weekdayTime": "ddd HH:mm",
-    "nextRun": "ddd dd.MM.yyyy HH:mm"
-  },
   "common": {
     "cancel": "Abbrechen",
     "close": "Schließen",
@@ -32,8 +24,6 @@
     "path": "Pfad",
     "version": "Version",
     "unnamed": "(unbenannt)",
-    "fileCount": { "one": "{count} Datei", "other": "{count:N0} Dateien" },
-    "folderCount": { "one": "{count} Ordner", "other": "{count:N0} Ordner" },
     "duration": {
       "hms": "{hours} h {minutes:00} min {seconds:00} s",
       "ms": "{minutes} min {seconds:00} s",
@@ -104,32 +94,11 @@
       "sourceNotAbsolute": "Die Quelle muss ein absoluter Pfad sein.",
       "targetNotAbsolute": "Das Ziel muss ein absoluter Pfad sein.",
       "sourceMissing": "Der Quellordner existiert nicht.",
+      "unsupportedLocation": "Diese Art von Speicherort wird noch nicht unterstützt.",
       "targetInsideSource": "Das Ziel darf nicht in der Quelle liegen.",
       "sourceInsideTarget": "Die Quelle darf nicht im Ziel liegen.",
       "retentionRule": "Aufbewahrungsregel {index}: {problem}",
       "trigger": "Auslöser {index}: {problem}"
-    },
-    "trigger": {
-      "empty": "der Auslöser ist leer.",
-      "unknownType": "der Typ ist unbekannt.",
-      "time": "die Uhrzeit muss als HH:mm geschrieben werden, zum Beispiel 02:00.",
-      "noWeekday": "mindestens einen Wochentag wählen.",
-      "notWeekday": "„{day}“ ist kein Wochentag.",
-      "monthDay": "der Tag muss zwischen 1 und 31 liegen, 0 für den letzten Tag des Monats oder -1 bis -30 für Tage davor.",
-      "interval": "das Intervall muss eine ganze Zahl von Stunden zwischen 1 und 24 sein.",
-      "from": "die Startzeit muss als HH:mm geschrieben werden, zum Beispiel 08:00.",
-      "to": "die Endzeit muss als HH:mm geschrieben werden, zum Beispiel 20:00.",
-      "fromAfterTo": "die Startzeit darf nicht nach der Endzeit liegen.",
-      "invalid": "Der Auslöser ist ungültig: {problem}"
-    },
-    "retention": {
-      "empty": "die Regel ist leer.",
-      "unknownPeriod": "der Zeitraum ist unbekannt.",
-      "keep": "die Anzahl muss eine Zahl von 1 bis {max} sein.",
-      "weekday": "der Anker muss ein Wochentag sein, zum Beispiel „Sunday“ (englischer Name, wie in der Plandatei).",
-      "monthDay": "der Anker muss ein Tag zwischen 1 und 31 sein, 0 für den letzten Tag des Monats oder -1 bis -30 für Tage davor.",
-      "yearDate": "der Anker muss ein Datum im Format MM-TT sein, zum Beispiel 01-01.",
-      "invalid": "Die Aufbewahrungsregel ist ungültig: {problem}"
     },
     "run": {
       "nameUnusable": "Der Planname „{name}“ kann nicht verwendet werden: {problem}",
@@ -154,18 +123,25 @@
       "freeSpaceDeleteFailed": "„{version}“ konnte nicht gelöscht werden, um Platz zu schaffen: {error}",
       "remainsFailed": "Reste einer früheren Löschung konnten nicht gelöscht werden („{name}“): {error}",
       "removedRemainsLeft": "„{version}“ wurde aus den Versionen entfernt, seine Reste konnten aber noch nicht gelöscht werden: {error}",
+      "unfinishedFailed": "Ein unfertiges Backup konnte nicht gelöscht werden („{name}“): {error}",
+      "leftoverForeign": "„{name}“ wurde nicht angetastet: Es ist von einem anderen Plan markiert.",
+      "leftoverUnreadable": "„{name}“ wurde nicht angetastet: Seine Markierung kann nicht gelesen werden.",
+      "leftoverRenamed": "„{name}“ wurde nicht angetastet: Es ist von diesem Plan markiert, wurde aber umbenannt.",
+      "leftoverPartialWithManifest": "„{name}“ wurde nicht angetastet: Es sieht unfertig aus, enthält aber ein Manifest.",
       "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
     },
     "skip": {
       "ignoreFileUnreadable": "Ignorierdatei konnte nicht gelesen werden; ihre Muster wurden nicht angewendet",
-      "reservedName": "der Name ist für das Backup-Manifest reserviert",
+      "reservedName": "der Name ist für ReBackups eigene Dateien reserviert",
+      "reservedNameLegacy": "der Name ist für das Backup-Manifest reserviert",
       "changed": "wurde während des Kopierens geändert; die Kopie ist möglicherweise inkonsistent"
     },
     "file": {
       "noLongerExists": "existiert nicht mehr",
       "accessDenied": "Zugriff verweigert",
       "locked": "von einem anderen Programm gesperrt",
-      "cannotOpen": "kann nicht geöffnet werden: {error}"
+      "cannotOpen": "kann nicht geöffnet werden: {error}",
+      "notAFolder": "„{name}“ ist kein Ordner (oder eine Verknüpfung) und wird nicht entfernt."
     },
     "scan": {
       "link": "Verknüpfung wird nicht verfolgt.",
@@ -178,12 +154,11 @@
       "outside": "„{path}“ liegt außerhalb der Version.",
       "throughLink": "„{path}“ führt über die Verknüpfung „{link}“.",
       "sameName": "Zwei ausgewählte Einträge heißen „{name}“; sie würden am selben Ort landen.",
-      "isLink": "„{path}“ ist eine Verknüpfung.",
       "manifest": "Das Manifest gehört nicht zum Backup.",
       "notInVersion": "„{path}“ existiert nicht in der Version.",
       "folderExists": "Ein Ordner mit diesem Namen existiert bereits.",
       "destinationLink": "der Zielordner ist eine Verknüpfung",
-      "outsideDestination": "„{path}“ liegt außerhalb des Ziels.",
+      "fileInPlaceOfFolder": "an der Stelle des Ordners „{folder}“ steht eine Datei",
       "notAPath": "„{path}“ ist kein Pfad innerhalb der Version.",
       "accessDenied": "Zugriff verweigert (schreibgeschützt oder von einem anderen Programm verwendet)"
     },
@@ -468,8 +443,7 @@
       "hover": "Für Pfad und Größen auf eine Kachel zeigen",
       "byBackup": "Größe nach Backup-Inhalt; ignorierte Einträge fehlen",
       "byTotal": "Größe nach Gesamtgröße; ignorierte Einträge grau",
-      "empty": "Die Treemap erscheint nach dem Scan.",
-      "toolTip": "{path}\n{total}, im Backup {included} – {status}"
+      "empty": "Die Treemap erscheint nach dem Scan."
     },
     "patternNote": "Änderungen an den Mustern gelten, sobald der Scan fertig ist.",
     "sourceMissing": "Der Quellordner existiert nicht.",

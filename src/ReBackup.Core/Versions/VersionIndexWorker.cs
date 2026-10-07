@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ReBackup.Core.Backup;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Versions;
 
@@ -31,14 +32,14 @@ public sealed class VersionIndexWorker : IVersionIndexSink
     /// Queues the version of a finished run for the plan's index and returns at once. Throws only for a plan id that
     /// cannot have an index; failures of the queued work go to the error callback.
     /// </summary>
-    public void Add(string planId, VersionInfo version, BackupManifest manifest)
+    public void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest)
     {
         Indexes.PathFor(planId);
         _ = Chain<object?>(planId, () =>
         {
             try
             {
-                Indexes.For(planId).Add(version, manifest);
+                Indexes.For(planId).Add(version, manifest, target);
             }
             catch (Exception ex)
             {

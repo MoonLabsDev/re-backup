@@ -19,21 +19,25 @@ public static class ManifestStream
     /// <summary>Upper bound of the read window: a single token or entry larger than this is rejected.</summary>
     public const int MaxBufferSize = 64 * 1024 * 1024;
 
-    private enum Phase { Start, Properties, Files, Done }
+    private enum Phase { Start, Properties, Files, Directories, Done }
 
-    /// <exception cref="IOException">The file is missing or cannot be read.</exception>
-    /// <exception cref="UnauthorizedAccessException">Access is denied.</exception>
-    /// <exception cref="JsonException">The file is not a manifest.</exception>
-    public static ManifestSummary Read(string manifestPath, Action<ManifestFile> onFile,
-        CancellationToken cancellationToken = default)
-    {
-        using var stream = new FileStream(manifestPath, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete, bufferSize: 1, FileOptions.SequentialScan);
-        return Read(stream, onFile, cancellationToken);
-    }
-
-    /// <inheritdoc cref="Read(string, Action{ManifestFile}, CancellationToken)"/>
+    /// <summary>
+    /// Reads the manifest in <paramref name="stream"/> forward only (it need not be seekable) and hands every file entry
+    /// to <paramref name="onFile"/>. The directory list of a format 2 manifest is passed over entry by entry.
+    /// </summary>
+    /// <exception cref="IOException">The stream cannot be read (from a storage: a <c>StorageException</c>).</exception>
+    /// <exception cref="JsonException">The content is not a manifest.</exception>
     public static ManifestSummary Read(Stream stream, Action<ManifestFile> onFile,
+        CancellationToken cancellationToken = default) =>
+        Read(stream, onFile, onDirectory: null, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="Read(Stream, Action{ManifestFile}, CancellationToken)"/>, and hands every entry of the directory
+    /// list of a format 2 manifest to <paramref name="onDirectory"/> (null entries are passed over).
+    /// </summary>
+    /// <exception cref="IOException">The stream cannot be read (from a storage: a <c>StorageException</c>).</exception>
+    /// <exception cref="JsonException">The content is not a manifest.</exception>
+    public static ManifestSummary Read(Stream stream, Action<ManifestFile> onFile, Action<string>? onDirectory,
         CancellationToken cancellationToken = default)
     {
         var inCallback = false;
@@ -44,6 +48,11 @@ public static class ManifestStream
                 inCallback = true;
                 onFile(f);
                 inCallback = false;
+            }, onDirectory is null ? null : d =>
+            {
+                inCallback = true;
+                onDirectory(d);
+                inCallback = false;
             }, cancellationToken);
         }
         catch (Exception ex) when (!inCallback && ex is InvalidOperationException or ArgumentException or OverflowException)
@@ -53,7 +62,8 @@ public static class ManifestStream
         }
     }
 
-    private static ManifestSummary ReadCore(Stream stream, Action<ManifestFile> onFile, CancellationToken cancellationToken)
+    private static ManifestSummary ReadCore(Stream stream, Action<ManifestFile> onFile, Action<string>? onDirectory,
+        CancellationToken cancellationToken)
     {
         var buffer = new byte[InitialBufferSize];
         var length = Fill(stream, buffer, 0, out var endOfStream);
@@ -66,7 +76,7 @@ public static class ManifestStream
         {
             cancellationToken.ThrowIfCancellationRequested();
             var reader = new Utf8JsonReader(buffer.AsSpan(start, length - start), endOfStream, state);
-            while (phase != Phase.Done && TryStep(ref reader, ref phase, fields, onFile))
+            while (phase != Phase.Done && TryStep(ref reader, ref phase, fields, onFile, onDirectory))
             {
             }
             if (phase == Phase.Done)
@@ -102,7 +112,8 @@ public static class ManifestStream
     /// Reads one unit (the opening brace, one property, or one file entry) on a copy of the reader and takes it over
     /// only when the unit is complete in the buffer. False: more data is needed.
     /// </summary>
-    private static bool TryStep(ref Utf8JsonReader reader, ref Phase phase, Fields fields, Action<ManifestFile> onFile)
+    private static bool TryStep(ref Utf8JsonReader reader, ref Phase phase, Fields fields, Action<ManifestFile> onFile,
+        Action<string>? onDirectory)
     {
         var probe = reader;
         switch (phase)
@@ -132,6 +143,11 @@ public static class ManifestStream
                     phase = Phase.Files;
                     break;
                 }
+                if (Is(name, "directories") && probe.TokenType == JsonTokenType.StartArray)
+                {
+                    phase = Phase.Directories;   // can be as long as the file list: never skipped as one value
+                    break;
+                }
                 if (probe.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
                 {
                     if (!probe.TrySkip())
@@ -159,6 +175,22 @@ public static class ManifestStream
                 if (!probe.TrySkip())
                     return false;
                 onFile(ReadFile(ref entry));   // the whole entry is in the buffer: reading it cannot run dry
+                break;
+            }
+
+            case Phase.Directories:
+            {
+                if (!probe.Read())
+                    return false;
+                if (probe.TokenType == JsonTokenType.EndArray)
+                {
+                    phase = Phase.Properties;
+                    break;
+                }
+                if (probe.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray && !probe.TrySkip())
+                    return false;
+                if (probe.TokenType == JsonTokenType.String && onDirectory is not null && probe.GetString() is { Length: > 0 } directory)
+                    onDirectory(directory);
                 break;
             }
         }

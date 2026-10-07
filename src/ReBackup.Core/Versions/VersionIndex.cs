@@ -3,6 +3,8 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Versions;
 
@@ -10,10 +12,19 @@ namespace ReBackup.Core.Versions;
 /// A machine-local SQLite cache of the file lists of one plan's versions. The manifests in the version folders stay
 /// the source of truth: the database can be deleted at any time and is rebuilt by <see cref="Sync"/>.
 /// Thread-safe: every call opens its own connection; writes are serialized, reads run beside them (WAL).
+/// The calls that read the target (<see cref="Sync"/>, <see cref="Add"/>) wait for the storage synchronously: run them
+/// on a worker thread (<see cref="VersionIndexWorker"/>), never on the UI thread.
 /// </summary>
 public sealed partial class VersionIndex
 {
     public const int SchemaVersion = 1;
+
+    /// <summary>
+    /// What the stamps in <c>versions.stamp</c> are made of: 2 = <see cref="StampOfAsync"/> (the manifest's storage stamp,
+    /// or a summary of a recursive listing). A database with any other value (or none: file length and time ticks) is
+    /// rebuilt, because its stamps would never match again.
+    /// </summary>
+    public const int StampFormat = 2;
 
     /// <summary>Progress is reported after this many files of a version.</summary>
     public const int ProgressEvery = 4096;
@@ -40,6 +51,7 @@ public sealed partial class VersionIndex
                                              PRIMARY KEY (version_id, path_id)) WITHOUT ROWID;
         CREATE INDEX IF NOT EXISTS dirs_path ON dirs(path_id);
         INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
+        INSERT OR IGNORE INTO meta(key, value) VALUES ('stamp_format', '2');
         """;
 
     private readonly string _connectionString;
@@ -60,7 +72,7 @@ public sealed partial class VersionIndex
 
     /// <summary>
     /// Opens the index at <paramref name="databasePath"/>, creating it when missing. A file that is not a database of
-    /// this schema version is deleted and created anew.
+    /// this schema version and stamp format is deleted and created anew.
     /// </summary>
     public static VersionIndex Open(string databasePath)
     {
@@ -81,19 +93,19 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>
-    /// Brings the index in line with the version folders listed by <see cref="VersionCatalog.List"/>: rows of folders
-    /// that are no longer listed are removed; listed folders that are new or whose stamp changed are imported, each in
-    /// its own transaction. Cancellation throws and leaves every committed version intact.
-    /// When <paramref name="targetFolder"/> is given and does not exist (e.g. a NAS that is offline), nothing is
-    /// removed or imported and an error is reported instead.
+    /// Brings the index in line with the version folders listed by <see cref="VersionCatalog.ListAsync"/> in
+    /// <paramref name="target"/>: rows of folders that are no longer listed are removed; listed folders that are new or
+    /// whose stamp changed are imported, each in its own transaction. Cancellation throws and leaves every committed
+    /// version intact. When the target's root does not exist or cannot be reached (e.g. a NAS that is offline),
+    /// nothing is removed or imported and an error is reported instead.
     /// </summary>
-    public IndexSyncResult Sync(IReadOnlyList<VersionInfo> folders, IProgress<IndexSyncProgress>? progress = null,
-        CancellationToken cancellationToken = default, string? targetFolder = null)
+    public IndexSyncResult Sync(IReadOnlyList<VersionInfo> folders, IStorage target,
+        IProgress<IndexSyncProgress>? progress = null, CancellationToken ct = default)
     {
-        if (targetFolder is not null && !Directory.Exists(targetFolder))
+        if (!IsReachable(target, ct))
         {
             // An offline target lists no versions; that must not wipe the index.
-            return new IndexSyncResult(0, 0, 0, [CoreTexts.English("core.index.targetUnavailable", ("folder", targetFolder))]);
+            return new IndexSyncResult(0, 0, 0, [CoreTexts.English("core.index.targetUnavailable", ("folder", DisplayName(target)))]);
         }
 
         var known = ReadStamps();
@@ -105,15 +117,15 @@ public sealed partial class VersionIndex
         var errors = new List<string>();
         for (var i = 0; i < folders.Count; i++)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            ct.ThrowIfCancellationRequested();
             var folder = folders[i];
             var current = i + 1;
             string stamp;
             try
             {
-                stamp = StampOf(folder.Path);
+                stamp = Wait(StampOfAsync(target, folder.Path, ct));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (StorageException ex)
             {
                 errors.Add($"{folder.Name}: {ex.Message}");
                 continue;
@@ -129,12 +141,12 @@ public sealed partial class VersionIndex
             progress?.Report(new IndexSyncProgress(current, folders.Count, folder.Name, 0, Finished: false));
             try
             {
-                var files = Import(folder, stamp, cancellationToken, count =>
+                var files = Import(target, folder, stamp, ct, count =>
                     progress?.Report(new IndexSyncProgress(current, folders.Count, folder.Name, count, Finished: false)));
                 imported++;
                 progress?.Report(new IndexSyncProgress(current, folders.Count, folder.Name, files, Finished: true));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (StorageException ex)
             {
                 errors.Add($"{folder.Name}: {ex.Message}");
             }
@@ -189,14 +201,15 @@ public sealed partial class VersionIndex
     /// Adds (or replaces) a version from a manifest in memory, e.g. the one a backup run has just written, so that it
     /// does not have to be read again over the network.
     /// </summary>
-    public void Add(VersionInfo version, BackupManifest manifest)
+    /// <param name="target">The target that holds the version; the stamp of the manifest there is recorded.</param>
+    public void Add(VersionInfo version, BackupManifest manifest, IStorage target)
     {
         string stamp;
         try
         {
-            stamp = StampOf(version.Path);
+            stamp = Wait(StampOfAsync(target, version.Path, CancellationToken.None));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (StorageException)
         {
             stamp = "m:unknown";   // the next sync imports it again from the folder
         }
@@ -217,46 +230,61 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>
-    /// The change detector of a version folder: the manifest's length and last write time when there is a manifest,
-    /// otherwise the folder's last write time and the number of entries directly inside it.
+    /// The change detector of a version folder: <c>"m:"</c> and the storage stamp of its manifest when there is one;
+    /// otherwise <c>"s:{count}:{newestModifiedTicks}"</c> over everything below the folder (a recursive listing).
     /// </summary>
-    public static string StampOf(string versionFolder)
+    /// <param name="versionPath">The folder's storage path.</param>
+    /// <exception cref="StorageNotFoundException">The folder does not exist.</exception>
+    /// <exception cref="StorageException">The folder cannot be read.</exception>
+    public static async Task<string> StampOfAsync(IStorage target, string versionPath, CancellationToken ct)
     {
-        var manifest = new FileInfo(Path.Combine(versionFolder, VersionName.ManifestFileName));
-        if (manifest.Exists)
-            return string.Create(CultureInfo.InvariantCulture, $"m:{manifest.Length}:{manifest.LastWriteTimeUtc.Ticks}");
+        var manifest = await target.StatAsync(StoragePath.Combine(versionPath, VersionMarkerNames.Manifest), ct).ConfigureAwait(false);
+        if (manifest is { IsDirectory: false })
+            return "m:" + manifest.Stamp;
 
-        var folder = new DirectoryInfo(versionFolder);
-        if (!folder.Exists)
-            throw new DirectoryNotFoundException(CoreTexts.English("core.restore.versionMissing", ("folder", versionFolder)));
-        var count = folder.EnumerateFileSystemInfos().Count();
-        return string.Create(CultureInfo.InvariantCulture, $"s:{folder.LastWriteTimeUtc.Ticks}:{count}");
+        var count = 0;
+        long newest = 0;
+        await foreach (var entry in target.ListAsync(versionPath, recursive: true, ct).ConfigureAwait(false))
+        {
+            count++;
+            newest = Math.Max(newest, entry.ModifiedUtc.Ticks);
+        }
+        return string.Create(CultureInfo.InvariantCulture, $"s:{count}:{newest}");
     }
 
     /// <summary>Imports one version (manifest when readable, otherwise a scan); returns the number of files.</summary>
-    private int Import(VersionInfo folder, string stamp, CancellationToken cancellationToken, Action<int> onProgress)
+    private int Import(IStorage target, VersionInfo folder, string stamp, CancellationToken ct, Action<int> onProgress)
     {
-        var manifestPath = Path.Combine(folder.Path, VersionName.ManifestFileName);
-        if (File.Exists(manifestPath))
+        Stream? manifest = null;
+        try
         {
-            try
+            manifest = Wait(target.OpenReadAsync(StoragePath.Combine(folder.Path, VersionMarkerNames.Manifest), ct));
+        }
+        catch (StorageNotFoundException)
+        {
+            // No manifest: the files themselves are scanned.
+        }
+
+        if (manifest is not null)
+        {
+            using (manifest)
             {
-                return ImportOnce(folder, stamp, IndexOrigin.Manifest, cancellationToken, onProgress, writer =>
+                try
                 {
-                    var summary = ManifestStream.Read(manifestPath, writer.AddFile, cancellationToken);
-                    return summary.Source;
-                });
-            }
-            catch (JsonException)
-            {
-                // Unparseable manifest: fall back to the files themselves. (A manifest that merely could not be read,
-                // e.g. a network error, is not caught: Sync reports it and the next sync retries.)
+                    return ImportOnce(folder, stamp, IndexOrigin.Manifest, ct, onProgress, writer =>
+                        ManifestStream.Read(manifest, writer.AddFile, ct).Source);
+                }
+                catch (JsonException)
+                {
+                    // Unparseable manifest: fall back to the files themselves. (A manifest that merely could not be read,
+                    // e.g. a network error, is not caught: Sync reports it and the next sync retries.)
+                }
             }
         }
 
-        return ImportOnce(folder, stamp, IndexOrigin.Scan, cancellationToken, onProgress, writer =>
+        return ImportOnce(folder, stamp, IndexOrigin.Scan, ct, onProgress, writer =>
         {
-            foreach (var file in ScanFiles(folder.Path, cancellationToken))
+            foreach (var file in ScanFiles(target, folder.Path, ct))
                 writer.AddFile(file);
             return null;
         });
@@ -280,37 +308,67 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>The files of a version folder without a usable manifest: sizes and times, no hashes, no links.</summary>
-    private static IEnumerable<ManifestFile> ScanFiles(string root, CancellationToken cancellationToken)
+    private static IEnumerable<ManifestFile> ScanFiles(IStorage target, string versionPath, CancellationToken ct)
     {
-        var pending = new Stack<(DirectoryInfo Folder, string Prefix)>();
-        pending.Push((new DirectoryInfo(root), ""));
+        var prefixLength = versionPath.Length + 1;
+        var pending = new Stack<string>();
+        pending.Push(versionPath);
         while (pending.Count > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var (folder, prefix) = pending.Pop();
-            List<FileSystemInfo> entries;
+            ct.ThrowIfCancellationRequested();
+            var folder = pending.Pop();
+            List<StorageEntry> entries;
             try
             {
-                entries = folder.EnumerateFileSystemInfos().ToList();
+                entries = Wait(ListChildrenAsync(target, folder, ct));
             }
-            catch (Exception ex) when (prefix.Length > 0 && ex is IOException or UnauthorizedAccessException)
+            catch (StorageException ex) when (folder != versionPath && ex is not StorageUnavailableException)
             {
                 continue;   // an unreadable subfolder is left out; an unreadable version folder is an error
             }
 
             foreach (var entry in entries)
             {
-                if ((entry.Attributes & FileAttributes.ReparsePoint) != 0)
+                if (entry.IsLink)
                     continue;   // links are not followed
-                var relative = prefix + entry.Name;
-                if (entry is DirectoryInfo directory)
-                    pending.Push((directory, relative + "/"));
-                else if (entry is FileInfo file &&
-                         !(prefix.Length == 0 && file.Name.Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase)))
-                    yield return new ManifestFile(relative, file.Length, file.LastWriteTimeUtc, "");
+                if (entry.IsDirectory)
+                    pending.Push(entry.Path);
+                else if (!(folder == versionPath &&
+                           StoragePath.Name(entry.Path).Equals(VersionMarkerNames.Manifest, StringComparison.OrdinalIgnoreCase)))
+                    yield return new ManifestFile(entry.Path[prefixLength..], entry.Size, entry.ModifiedUtc, "");
             }
         }
     }
+
+    private static async Task<List<StorageEntry>> ListChildrenAsync(IStorage target, string folder, CancellationToken ct)
+    {
+        var entries = new List<StorageEntry>();
+        await foreach (var entry in target.ListAsync(folder, recursive: false, ct).ConfigureAwait(false))
+            entries.Add(entry);
+        return entries;
+    }
+
+    /// <summary>False when the target's root does not exist or cannot be reached: every version would look gone then.</summary>
+    private static bool IsReachable(IStorage target, CancellationToken ct)
+    {
+        try
+        {
+            return Wait(target.StatAsync("", ct)) is { IsDirectory: true };
+        }
+        catch (StorageException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>How a target is named in messages: the folder of a file system target.</summary>
+    private static string DisplayName(IStorage target) => target is FileSystemStorage fs ? fs.RootPath : "";
+
+    /// <summary>
+    /// Waits for a storage call on the calling worker thread; the index runs synchronously by design. Core's storage
+    /// calls never resume on a captured synchronization context, so this cannot deadlock.
+    /// </summary>
+    private static T Wait<T>(Task<T> task) => task.GetAwaiter().GetResult();
 
     private VersionWriter BeginVersion(SqliteConnection connection, SqliteTransaction transaction, VersionInfo version,
         string stamp, IndexOrigin origin)
@@ -379,9 +437,12 @@ public sealed partial class VersionIndex
         try
         {
             using var connection = OpenConnection();
-            using var command = Command(connection, null, "SELECT value FROM meta WHERE key = 'schema_version'");
-            return command.ExecuteScalar() is string value &&
-                   value == SchemaVersion.ToString(CultureInfo.InvariantCulture);
+            using var schema = Command(connection, null, "SELECT value FROM meta WHERE key = 'schema_version'");
+            using var stamps = Command(connection, null, "SELECT value FROM meta WHERE key = 'stamp_format'");
+            return schema.ExecuteScalar() is string schemaVersion &&
+                   schemaVersion == SchemaVersion.ToString(CultureInfo.InvariantCulture) &&
+                   stamps.ExecuteScalar() is string stampFormat &&
+                   stampFormat == StampFormat.ToString(CultureInfo.InvariantCulture);
         }
         catch (SqliteException)
         {

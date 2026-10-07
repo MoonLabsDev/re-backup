@@ -1,7 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -58,10 +59,12 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private bool _schedulerPaused;
     private LocText _nextRun = LocText.Empty;
     private TimeSpan? _remaining;
+    private readonly IStorageFactory _storages;
     private int _historyLoads;   // tells a version check whether its rows are still the shown ones
 
-    public PlanRunViewModel(TimeProvider? timeProvider = null)
+    public PlanRunViewModel(IStorageFactory storages, TimeProvider? timeProvider = null)
     {
+        _storages = storages;
         _time = timeProvider ?? TimeProvider.System;
         UpdateCard();
     }
@@ -230,7 +233,11 @@ public sealed partial class PlanRunViewModel : ObservableObject
         IReadOnlySet<string> names;
         try
         {
-            names = await Task.Run(() => Core.Backup.VersionName.FolderNamesIn(target));
+            // Only a local or network folder is looked at (the run log keeps the target's path).
+            var storage = string.IsNullOrWhiteSpace(target) || !System.IO.Path.IsPathFullyQualified(target)
+                ? null
+                : _storages.Open(StorageLocation.FileSystem(target));
+            names = await Task.Run(() => Core.Backup.VersionName.FolderNamesInAsync(storage));
         }
         catch (Exception)
         {

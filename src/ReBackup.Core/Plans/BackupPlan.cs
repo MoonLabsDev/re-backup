@@ -1,8 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ReBackup.Core.Json;
-using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Plans;
 
@@ -10,8 +11,8 @@ public sealed class BackupPlan
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Name { get; set; } = "";
-    public string Source { get; set; } = "";
-    public string Target { get; set; } = "";
+    public StorageLocation Source { get; set; } = StorageLocation.FileSystem("");
+    public StorageLocation Target { get; set; } = StorageLocation.FileSystem("");
     public bool Enabled { get; set; } = true;
     public bool FreeSpaceByRetention { get; set; }
 

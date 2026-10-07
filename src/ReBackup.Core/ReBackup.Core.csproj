@@ -11,4 +11,9 @@
     <PackageReference Include="System.IO.Hashing" Version="10.0.12" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ReBackup.Shared\ReBackup.Shared.csproj" />
+    <ProjectReference Include="..\ReBackup.Storage\ReBackup.Storage.csproj" />
+  </ItemGroup>
+
 </Project>

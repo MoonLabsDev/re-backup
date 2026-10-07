@@ -5,9 +5,12 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Backup;
 
@@ -35,12 +38,22 @@ public class BackupRunnerTests : IDisposable
     {
         Id = "p1",
         Name = "Projects",
-        Source = _source,
-        Target = _target,
+        Source = StorageLocation.FileSystem(_source),
+        Target = StorageLocation.FileSystem(_target),
         Ignore = new IgnoreSettings { Patterns = [.. patterns] },
     };
 
-    private BackupRunner Runner(ITargetVolume? volume = null) => new(volume ?? new PhysicalTargetVolume(), _time);
+    /// <param name="target">Wraps the target's storage, e.g. in a <see cref="FaultyStorage"/>; the source is never wrapped.</param>
+    private BackupRunner Runner(Func<IStorage, IStorage>? target = null) =>
+        new(target is null ? null : new TestStorageFactory(location =>
+        {
+            var storage = new StorageFactory().Open(location);
+            return location.Path == _target ? target(storage) : storage;
+        }), _time);
+
+    /// <summary>The storage paths of the copied source files (not the markers or the manifest).</summary>
+    private static bool IsDataFile(string path) => path.EndsWith("/a.txt", StringComparison.Ordinal) ||
+                                                   path.EndsWith("/b.bin", StringComparison.Ordinal);
 
     private static BackupRequest Request(BackupPlan plan, params string[] globalDefaults) =>
         new(plan, globalDefaults, RunTrigger.Manual);
@@ -82,18 +95,19 @@ public class BackupRunnerTests : IDisposable
 
         var json = File.ReadAllText(Path.Combine(VersionPath(), "re-manifest.json"));
         var manifest = JsonSerializer.Deserialize<BackupManifest>(json, JsonDefaults.Options)!;
-        manifest.FormatVersion.Should().Be(1);
+        manifest.FormatVersion.Should().Be(2);
         manifest.PlanId.Should().Be("p1");
         manifest.PlanName.Should().Be("Projects");
         manifest.Source.Should().Be(_source);
         manifest.CreatedUtc.Should().Be(_time.GetUtcNow().UtcDateTime);
         manifest.Files.Select(f => f.Path).Should().BeEquivalentTo("a.txt", "sub/b.bin");
+        manifest.Directories.Should().BeEquivalentTo("empty", "sub");
 
         var a = manifest.Files.Single(f => f.Path == "a.txt");
         a.Size.Should().Be(5);
         a.MtimeUtc.Should().Be(File.GetLastWriteTimeUtc(Path.Combine(_source, "a.txt")));
         a.Hash.Should().Be("xxh64:" + Convert.ToHexStringLower(XxHash64.Hash(Encoding.UTF8.GetBytes("alpha"))));
-        json.Should().Contain("\"mtimeUtc\"").And.Contain("\"formatVersion\": 1");
+        json.Should().Contain("\"mtimeUtc\"").And.Contain("\"formatVersion\": 2");
     }
 
     [Fact]
@@ -173,12 +187,12 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task Cancellation_during_the_copy_removes_the_partial_folder()
+    public async Task Cancellation_during_the_copy_removes_the_unfinished_folder()
     {
         using var cts = new CancellationTokenSource();
-        var volume = new FakeVolume { OnCreateFile = _ => cts.Cancel() };
+        var target = CancelOnFirstDataFile(cts);
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()), cancellationToken: cts.Token);
+        var entry = await Runner(target).RunAsync(Request(Plan()), cancellationToken: cts.Token);
 
         entry.Status.Should().Be(RunStatus.Canceled);
         entry.Version.Should().BeNull();
@@ -186,13 +200,13 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task Cancellation_reports_the_cleanup_of_the_partial_folder()
+    public async Task Cancellation_reports_the_cleanup_of_the_unfinished_folder()
     {
         using var cts = new CancellationTokenSource();
-        var volume = new FakeVolume { OnCreateFile = _ => cts.Cancel() };
+        var target = CancelOnFirstDataFile(cts);
         var reports = new List<BackupProgress>();
 
-        await Runner(volume).RunAsync(Request(Plan()), new SyncProgress(reports.Add), cts.Token);
+        await Runner(target).RunAsync(Request(Plan()), new SyncProgress(reports.Add), cts.Token);
 
         reports[^1].Phase.Should().Be(BackupPhase.CleaningUp);
     }
@@ -216,30 +230,31 @@ public class BackupRunnerTests : IDisposable
     [Fact]
     public async Task Too_little_free_space_aborts_as_Full_before_writing()
     {
-        var volume = new FakeVolume { FreeSpace = 16 };   // 16 bytes needed + 5 % does not fit
+        FaultyStorage? faulty = null;
+        var target = (IStorage s) => faulty = new FaultyStorage(s) { FreeSpace = () => 16 };   // 16 bytes needed + 5 % does not fit
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.Reason.Should().Contain("is free on the target");
-        volume.FilesCreated.Should().Be(0);
+        faulty!.Created.Should().BeEmpty();
         TargetEntries().Should().BeEmpty();
     }
 
     [Fact]
     public async Task Just_enough_free_space_passes_the_preflight()
     {
-        var entry = await Runner(new FakeVolume { FreeSpace = 17 }).RunAsync(Request(Plan()));
+        var entry = await Runner(s => new FaultyStorage(s) { FreeSpace = () => 17 }).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.Completed);
     }
 
     [Fact]
-    public async Task Disk_full_during_the_copy_aborts_as_Full_and_removes_the_partial_folder()
+    public async Task Disk_full_during_the_copy_aborts_as_Full_and_removes_the_unfinished_folder()
     {
-        var volume = new FakeVolume { FailWritesWithDiskFull = true };
+        var target = (IStorage s) => new FaultyStorage(s) { DiskFullOnWrite = IsDataFile };
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.Reason.Should().NotBeNullOrEmpty();
@@ -250,7 +265,7 @@ public class BackupRunnerTests : IDisposable
     public async Task Missing_source_aborts_as_Error()
     {
         var plan = Plan();
-        plan.Source = _tmp.PathOf("nope");
+        plan.Source = StorageLocation.FileSystem(_tmp.PathOf("nope"));
 
         var entry = await Runner().RunAsync(Request(plan));
 
@@ -260,11 +275,18 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task Unexpected_write_error_aborts_as_Error_and_removes_the_partial_folder()
+    public async Task Unexpected_write_error_aborts_as_Error_and_removes_the_unfinished_folder()
     {
-        var volume = new FakeVolume { OnCreateFile = _ => throw new IOException("device not ready") };
+        var target = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && IsDataFile(path))
+                    throw new StorageIOException(path, "device not ready");
+            },
+        };
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.Error);
         entry.Reason.Should().Be("device not ready");
@@ -360,7 +382,8 @@ public class BackupRunnerTests : IDisposable
     [Fact]
     public async Task Waits_for_the_next_minute_when_the_version_folder_already_exists()
     {
-        Directory.CreateDirectory(VersionPath());
+        // Not empty: an empty folder named like a version of the plan would be removed as remains of a deletion.
+        _tmp.WriteFile($@"target\{Minute} Projects\notes.txt", "someone's");
 
         var run = Runner().RunAsync(Request(Plan()));
         var waited = Stopwatch.StartNew();
@@ -377,7 +400,7 @@ public class BackupRunnerTests : IDisposable
         VersionName.TryParse(entry.Version!, "Projects", out var versionTime).Should().BeTrue();
         versionTime.Should().BeAfter(new DateTime(2026, 9, 30, 16, 5, 0));
         File.Exists(Path.Combine(_target, entry.Version!, "a.txt")).Should().BeTrue();
-        Directory.GetFileSystemEntries(VersionPath()).Should().BeEmpty("the existing folder is not touched");
+        Directory.GetFileSystemEntries(VersionPath()).Select(Path.GetFileName).Should().Equal(["notes.txt"], "the existing folder is not touched");
     }
 
     [Fact]
@@ -400,9 +423,16 @@ public class BackupRunnerTests : IDisposable
     [Fact]
     public async Task Duration_is_measured_with_the_time_provider()
     {
-        var volume = new FakeVolume { OnCreateFile = _ => _time.Advance(TimeSpan.FromSeconds(2)) };
+        var target = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && IsDataFile(path))
+                    _time.Advance(TimeSpan.FromSeconds(2));
+            },
+        };
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.DurationMs.Should().Be(4000);
         entry.EndUtc.Should().Be(entry.StartUtc.AddSeconds(4));
@@ -411,18 +441,19 @@ public class BackupRunnerTests : IDisposable
     [Fact]
     public async Task File_modified_during_the_copy_is_kept_and_reported_as_changed()
     {
-        var volume = new FakeVolume
+        var indexed = File.GetLastWriteTimeUtc(Path.Combine(_source, "a.txt"));
+        var target = (IStorage s) => new FaultyStorage(s)
         {
-            OnCreateFile = path =>
+            Before = (operation, path) =>
             {
-                if (Path.GetFileName(path) != "a.txt")
+                if (operation != "create" || !path.EndsWith("/a.txt", StringComparison.Ordinal))
                     return;
                 using var append = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
                 append.Write("-more"u8);
             },
         };
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
         entry.Skipped.Should().ContainSingle().Which.Should().Be(
@@ -434,16 +465,24 @@ public class BackupRunnerTests : IDisposable
         var a = manifest.Files.Single(f => f.Path == "a.txt");
         a.Size.Should().Be(copied.Length);
         a.Hash.Should().Be("xxh64:" + Convert.ToHexStringLower(XxHash64.Hash(copied)));
-        a.MtimeUtc.Should().Be(File.GetLastWriteTimeUtc(Path.Combine(_source, "a.txt")));
+        // The copy and its manifest entry agree on the time: the indexed one, fixed when the copy was created.
+        a.MtimeUtc.Should().Be(indexed);
         File.GetLastWriteTimeUtc(Path.Combine(VersionPath(), "a.txt")).Should().Be(a.MtimeUtc);
     }
 
     [Fact]
     public async Task Source_that_disappears_during_the_run_aborts_as_Error()
     {
-        var volume = new FakeVolume { OnFreeSpaceQuery = () => Directory.Move(_source, _source + "-gone") };
+        var target = (IStorage s) => new FaultyStorage(s)
+        {
+            FreeSpace = () =>
+            {
+                Directory.Move(_source, _source + "-gone");
+                return null;
+            },
+        };
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.Error);
         entry.Reason.Should().Be("The source folder is no longer available.");
@@ -452,25 +491,52 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_failing_final_rename_is_retried()
+    public async Task A_failing_removal_of_the_pending_marker_is_retried()
     {
-        var volume = new FakeVolume { MoveFailures = 2 };
+        var failures = 0;
+        var target = (IStorage s) => new FaultyStorage(s)
+        {
+            FailDelete = path => path.EndsWith("/re-pending.json", StringComparison.Ordinal) && failures++ < 2,
+        };
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.Completed);
         TargetEntries().Should().Equal($"{Minute} Projects");
+        File.Exists(Path.Combine(VersionPath(), "re-pending.json")).Should().BeFalse();
     }
 
     [Fact]
-    public async Task A_final_rename_that_keeps_failing_aborts_as_Error_and_removes_the_partial_folder()
+    public async Task A_pending_marker_that_cannot_be_removed_aborts_as_Error_and_leaves_only_the_marker_for_the_next_run()
     {
-        var volume = new FakeVolume { MoveFailures = 99 };
+        var target = (IStorage s) => new FaultyStorage(s) { FailDelete = path => path.EndsWith("/re-pending.json", StringComparison.Ordinal) };
 
-        var entry = await Runner(volume).RunAsync(Request(Plan()));
+        var entry = await Runner(target).RunAsync(Request(Plan()));
 
         entry.Status.Should().Be(RunStatus.Error);
-        TargetEntries().Should().BeEmpty();
+        entry.Version.Should().BeNull();
+        entry.Warnings.Should().ContainSingle().Which.Should().StartWith($"An unfinished backup could not be deleted (\"{Minute} Projects\")");
+        TargetEntries().Should().Equal($"{Minute} Projects");
+        Directory.GetFileSystemEntries(VersionPath()).Select(Path.GetFileName).Should().Equal("re-pending.json");
+
+        _time.Advance(TimeSpan.FromMinutes(1));
+        var next = await Runner().RunAsync(Request(Plan()));
+
+        next.Status.Should().Be(RunStatus.Completed);
+        next.Warnings.Should().BeEmpty();
+        TargetEntries().Should().Equal("2026_09_30-16_06 Projects");
+    }
+
+    [Fact]
+    public async Task A_pending_marker_that_cannot_be_written_leaves_no_folder_behind()
+    {
+        var target = (IStorage s) => new FaultyStorage(s) { FailCommit = path => path.EndsWith("/re-pending.json", StringComparison.Ordinal) };
+
+        var entry = await Runner(target).RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().Be($"Access denied: '{Minute} Projects/re-pending.json'.");
+        TargetEntries().Should().BeEmpty("the folder the marker's creation made is removed again");
     }
 
     [Fact]
@@ -490,23 +556,69 @@ public class BackupRunnerTests : IDisposable
     public async Task Target_inside_the_source_aborts_as_Error()
     {
         var plan = Plan();
-        plan.Target = Path.Combine(_source, "out");
+        plan.Target = StorageLocation.FileSystem(Path.Combine(_source, "out"));
 
         var entry = await Runner().RunAsync(Request(plan));
 
         entry.Status.Should().Be(RunStatus.Error);
-        Directory.Exists(plan.Target).Should().BeFalse();
+        Directory.Exists(plan.Target.Path).Should().BeFalse();
     }
 
     [Fact]
     public async Task Source_inside_the_target_aborts_as_Error()
     {
         var plan = Plan();
-        plan.Target = _tmp.Root;
+        plan.Target = StorageLocation.FileSystem(_tmp.Root);
 
         var entry = await Runner().RunAsync(Request(plan));
 
         entry.Status.Should().Be(RunStatus.Error);
+    }
+
+    [Theory]
+    [InlineData("re-manifest.json", false)]
+    [InlineData("re-manifest.json", true)]
+    [InlineData("re-pending.json", false)]
+    [InlineData("re-pending.json", true)]
+    [InlineData("re-deleting.json", false)]
+    [InlineData("re-deleting.json", true)]
+    public async Task Source_root_entries_named_like_the_version_files_are_skipped_and_the_version_stays_visible(string name, bool folder)
+    {
+        // A marker of this very plan: copied into the version root it would hide the version or have it deleted.
+        const string marker = "{\"formatVersion\":1,\"planId\":\"p1\",\"planName\":\"Projects\",\"host\":\"X\"}";
+        _tmp.WriteFile(folder ? $@"source\{name}\inner.txt" : $@"source\{name}", marker);
+        _tmp.WriteFile($@"source\sub\{name}", marker);   // deeper down it is an ordinary file
+
+        var entry = await Runner().RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings, "a skipped entry is a warning");
+        entry.Skipped.Should().ContainSingle().Which.Should().Be(
+            new SkippedEntry(name, "the name is reserved for ReBackup's own files"));
+        entry.FilesCopied.Should().Be(3);
+        File.ReadAllText(Path.Combine(VersionPath(), "sub", name)).Should().Be(marker);
+        File.Exists(Path.Combine(VersionPath(), "re-pending.json")).Should().BeFalse();
+        File.Exists(Path.Combine(VersionPath(), "re-deleting.json")).Should().BeFalse();
+        Directory.Exists(Path.Combine(VersionPath(), name)).Should().BeFalse();
+        var versions = await VersionCatalog.ListAsync(new FileSystemStorage(_target), "p1", "Projects");
+        versions.Should().ContainSingle().Which.Name.Should().Be($"{Minute} Projects");
+
+        // The next run leaves the version alone.
+        _time.Advance(TimeSpan.FromMinutes(1));
+        (await Runner().RunAsync(Request(Plan()))).Status.Should().Be(RunStatus.CompletedWithWarnings);
+        (await VersionCatalog.ListAsync(new FileSystemStorage(_target), "p1", "Projects")).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Only_the_manifest_is_written_durably()
+    {
+        FaultyStorage? faulty = null;
+
+        var entry = await Runner(s => faulty = new FaultyStorage(s)).RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        faulty!.Creates.Should().Contain(c => c.Path == $"{Minute} Projects/re-manifest.json" && c.Options.Durable);
+        faulty.Creates.Where(c => c.Options.Durable).Should().ContainSingle();
+        faulty.Creates.Where(c => IsDataFile(c.Path)).Should().HaveCount(2).And.OnlyContain(c => !c.Options.Durable);
     }
 
     [Fact]
@@ -532,7 +644,7 @@ public class BackupRunnerTests : IDisposable
         manifest.FileCount.Should().Be(2);
         manifest.TotalBytes.Should().Be(16);
         json.IndexOf("\"totalBytes\"", StringComparison.Ordinal).Should().BeLessThan(json.IndexOf("\"files\"", StringComparison.Ordinal));
-        ManifestReader.ReadHeader(Path.Combine(VersionPath(), "re-manifest.json")).TotalBytes.Should().Be(16);
+        (await ManifestReader.ReadHeaderAsync(new FileSystemStorage(VersionPath()), "re-manifest.json")).TotalBytes.Should().Be(16);
     }
 
     private static void RunMklink(string link, string target)
@@ -553,64 +665,13 @@ public class BackupRunnerTests : IDisposable
         public void Report(BackupProgress value) => onReport(value);
     }
 
-    /// <summary>Writes to the real disk, with switches to simulate a small or full target.</summary>
-    private sealed class FakeVolume : ITargetVolume
+    /// <summary>A target that cancels the run when the first copied file is created.</summary>
+    private static Func<IStorage, IStorage> CancelOnFirstDataFile(CancellationTokenSource cts) => s => new FaultyStorage(s)
     {
-        private readonly PhysicalTargetVolume _inner = new();
-
-        public long? FreeSpace { get; init; }
-        public Action<string>? OnCreateFile { get; init; }
-        public bool FailWritesWithDiskFull { get; init; }
-        public Action? OnFreeSpaceQuery { get; init; }
-        public int MoveFailures { get; init; }
-        public int FilesCreated { get; private set; }
-        private int _moveAttempts;
-
-        public long GetAvailableFreeSpace(string directory)
+        Before = (operation, path) =>
         {
-            OnFreeSpaceQuery?.Invoke();
-            return FreeSpace ?? _inner.GetAvailableFreeSpace(directory);
-        }
-
-        public void MoveDirectory(string source, string destination)
-        {
-            if (_moveAttempts++ < MoveFailures)
-                throw new IOException("directory is in use");
-            _inner.MoveDirectory(source, destination);
-        }
-
-        public void DeleteDirectory(string path) => _inner.DeleteDirectory(path);
-
-        public Stream CreateFile(string path)
-        {
-            OnCreateFile?.Invoke(path);
-            FilesCreated++;
-            var stream = _inner.CreateFile(path);
-            return FailWritesWithDiskFull ? new DiskFullStream(stream) : stream;
-        }
-    }
-
-    private sealed class DiskFullStream(Stream inner) : Stream
-    {
-        private const int ErrorDiskFull = unchecked((int)0x80070070);
-
-        public override bool CanRead => false;
-        public override bool CanSeek => false;
-        public override bool CanWrite => true;
-        public override long Length => inner.Length;
-        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
-        public override void Flush() => inner.Flush();
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) =>
-            throw new IOException("There is not enough space on the disk.", ErrorDiskFull);
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-                inner.Dispose();
-            base.Dispose(disposing);
-        }
-    }
+            if (operation == "create" && IsDataFile(path))
+                cts.Cancel();
+        },
+    };
 }

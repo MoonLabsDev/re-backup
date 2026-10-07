@@ -2,8 +2,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Json;
 
 namespace ReBackup.Core.Tests.Versions;
 
@@ -16,6 +16,22 @@ public class ManifestStreamTests
         var files = new List<ManifestFile>();
         summary = ManifestStream.Read(new MemoryStream(Encoding.UTF8.GetBytes(json)), files.Add);
         return files;
+    }
+
+    [Fact]
+    public void Hands_over_the_directories_of_a_format_2_manifest()
+    {
+        var directories = new List<string>();
+        var files = new List<ManifestFile>();
+
+        ManifestStream.Read(new MemoryStream(Encoding.UTF8.GetBytes("""
+            { "formatVersion": 2, "planId": "p1", "planName": "Projects", "createdUtc": "2026-09-30T12:05:00Z",
+              "files": [ { "path": "sub/b.txt", "size": 2, "mtimeUtc": "2026-01-01T00:00:00Z", "hash": "" } ],
+              "directories": [ "sub", null, "sub/empty" ] }
+            """)), files.Add, directories.Add);
+
+        files.Should().ContainSingle();
+        directories.Should().Equal("sub", "sub/empty");
     }
 
     [Fact]
@@ -115,6 +131,25 @@ public class ManifestStreamTests
         var read = () => ManifestStream.Read(new MemoryStream(bytes), _ => { });
 
         read.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void A_long_directory_list_streams_through_the_window_without_growing_it()
+    {
+        var manifest = new BackupManifest { PlanId = "p1", PlanName = "Projects", Source = @"C:\s" };
+        manifest.Files.Add(new ManifestFile("a.txt", 1, Mtime, ""));
+        for (var i = 0; i < 20_000; i++)
+            manifest.Directories.Add($"folder-{i:D5}/with/a/deeper/path");
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, JsonDefaults.Options);
+        bytes.Length.Should().BeGreaterThan(4 * ManifestStream.InitialBufferSize);
+        var stream = new CountingStream(bytes);
+        var files = new List<ManifestFile>();
+
+        var summary = ManifestStream.Read(stream, files.Add);
+
+        summary.PlanId.Should().Be("p1");
+        files.Should().ContainSingle();
+        stream.LargestRead.Should().BeLessThanOrEqualTo(ManifestStream.InitialBufferSize, "the window never grew");
     }
 
     /// <summary>A forward-only stream over bytes that records how much has been read.</summary>

@@ -11,21 +11,29 @@ using System.Windows.Media.Imaging;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Win32;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
+using ReBackup.Shared.Wpf.Services;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
-using ThemeMode = ReBackup.Core.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Schedule;
+using ReBackup.Shared.Settings;
+using ReBackup.Storage;
+using ThemeMode = ReBackup.Shared.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
 namespace ReBackup.App;
 
 public partial class App : Application
 {
+    /// <summary>Names the single-instance mutex and event (<c>Local\ReBackup.SingleInstance</c>, <c>Local\ReBackup.Activate</c>).</summary>
+    internal const string AppId = "ReBackup";
+
     private readonly IDialogService _dialogs = new WpfDialogService();
     private string _appDataRoot = "";
     private ConfigPaths _paths = null!;
@@ -46,11 +54,20 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // Label files (later sources override earlier ones) and the recognizers of stored English texts.
+        Loc.Configure(
+            [
+                new LabelSource(typeof(SharedTexts).Assembly, "ReBackup.Shared.Locales.shared."),
+                new LabelSource(typeof(Loc).Assembly, "ReBackup.Shared.Wpf.Locales.wpf."),
+                new LabelSource(typeof(App).Assembly, "ReBackup.App.Locales."),
+            ],
+            [CoreTexts.Recognize, SharedTexts.Recognize]);
+
         var restarted = e.Args.Contains("--restarted", StringComparer.OrdinalIgnoreCase);
-        _singleInstance = SingleInstance.TryAcquire(restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
+        _singleInstance = SingleInstance.TryAcquire(AppId, restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
         if (_singleInstance is null)
         {
-            SingleInstance.SignalRunningInstance();
+            SingleInstance.SignalRunningInstance(AppId);
             Shutdown();
             return;
         }
@@ -133,7 +150,9 @@ public partial class App : Application
             var versionIndex = new VersionIndexWorker(new VersionIndexSet(VersionIndexSet.DefaultDirectory),
                 (planId, ex) => Dispatcher.InvokeAsync(() => created?.ReportIndexError(planId, ex.Message)));
             // Versions are deleted by the rules as saved at that moment, not as they were when the run was queued.
-            var runner = new BackupRunner(currentRules: planId => planStore.TryLoad(planId)?.Retention,
+            // One storage factory for everything the app opens (runs, versions, previews, restores, deletions).
+            IStorageFactory storages = new StorageFactory();
+            var runner = new BackupRunner(storages, currentRules: planId => planStore.TryLoad(planId)?.Retention,
                 indexSink: versionIndex);
             var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
             // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
@@ -142,7 +161,7 @@ public partial class App : Application
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var languageToggle = new LanguageToggleViewModel(() => Loc.Instance.Language, ChooseLanguage);
             var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue, scheduler,
-                action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(), versionIndex);
+                action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(), versionIndex, storages);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
@@ -262,7 +281,7 @@ public partial class App : Application
 
     /// <summary>
     /// Stops the scheduler, closes the queue (canceling queued and running backups) and waits briefly for the running
-    /// one to clean up its partial folder. False when it did not stop in time.
+    /// one to clean up its unfinished version folder. False when it did not stop in time.
     /// </summary>
     private bool StopBackups(TimeSpan wait)
     {

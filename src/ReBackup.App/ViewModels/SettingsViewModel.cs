@@ -2,11 +2,13 @@ using System.IO;
 using System.Security;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
+using ReBackup.Shared.Wpf.Services;
 using ReBackup.Core.Config;
-using ReBackup.Core.IO;
 using ReBackup.Core.Settings;
+using ReBackup.Shared.IO;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.App.ViewModels;
 
@@ -183,7 +185,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         try
         {
-            StartupRegistration.Apply(StartWithWindows);
+            StartupRegistration.Apply(App.AppId, StartWithWindows);
             registryChanged = StartWithWindows != oldStartWithWindows;
 
             _settings.DefaultIgnorePatterns = ParsePatterns();
@@ -204,7 +206,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             _settings.Language = oldLanguage;
             if (registryChanged)
             {
-                try { StartupRegistration.Apply(oldStartWithWindows); }
+                try { StartupRegistration.Apply(App.AppId, oldStartWithWindows); }
                 catch (Exception revertEx) when (revertEx is IOException or UnauthorizedAccessException or SecurityException) { }
             }
             _dialogs.ShowError(Loc.T("settings.title"), ex.Message);

@@ -1,8 +1,9 @@
 using System.Text.Json;
 using FluentAssertions;
-using ReBackup.Core.Json;
 using ReBackup.Core.Localization;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Schedule;
 
@@ -11,7 +12,7 @@ public class ScheduleTriggersTests
     private static ScheduleTrigger Daily(string? time) => new() { Type = TriggerType.Daily, Time = time };
 
     /// <summary>The problem as Core renders it in English.</summary>
-    private static string? Problem(ScheduleTrigger? trigger) => ScheduleTriggers.Validate(trigger).ToEnglish();
+    private static string? Problem(ScheduleTrigger? trigger) => ScheduleTriggers.Validate(trigger) is { } problem ? SharedTexts.English(problem) : null;
 
     [Fact]
     public void Valid_triggers_pass()
@@ -125,8 +126,8 @@ public class ScheduleTriggersTests
     public void Problems_are_keys_with_arguments()
     {
         ScheduleTriggers.Validate(new ScheduleTrigger { Type = TriggerType.Weekly, Days = ["Mon", "Mo"], Time = "18:00" })
-            .Should().Be(Message.Of("core.trigger.notWeekday", ("day", "Mo")));
-        ScheduleTriggers.Validate(Daily("25:00")).Should().Be(Message.Of("core.trigger.time"));
+            .Should().Be(Message.Of("shared.trigger.notWeekday", ("day", "Mo")));
+        ScheduleTriggers.Validate(Daily("25:00")).Should().Be(Message.Of("shared.trigger.time"));
         ScheduleTriggers.Validate(Daily("02:00")).Should().BeNull();
     }
 

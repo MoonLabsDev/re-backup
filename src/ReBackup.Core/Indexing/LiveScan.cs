@@ -1,8 +1,8 @@
 using System.Runtime.ExceptionServices;
 using ReBackup.Core.Ignore;
-using ReBackup.Core.IO;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Indexing;
 
@@ -16,7 +16,7 @@ public sealed record LiveScanOptions
 }
 
 /// <summary>
-/// Scans a source folder with several workers into a tree that can be read while it grows. Entries are evaluated
+/// Scans a source with several workers (async tasks) into a tree that can be read while it grows. Entries are evaluated
 /// against the ignore patterns known at the start as they are found. When it is finished, <see cref="Completion"/>
 /// gives the same <see cref="SourceIndex"/> that <see cref="SourceIndexer"/> builds.
 /// </summary>
@@ -27,6 +27,9 @@ public sealed class LiveScan
     private static readonly TimeSpan IdleWait = TimeSpan.FromMilliseconds(100);
 
     private readonly object _gate = new();
+    private readonly IStorage _source;
+    private readonly StringComparer _comparer;
+    private TaskCompletionSource _wake = NewWake();
     private readonly PriorityQueue<LiveNode, (int Rank, int Depth, long Order)> _queue = new();
     private readonly List<NestedIgnoreFile> _ignoreFiles = [];
     private readonly List<string> _unreadableIgnoreFiles = [];
@@ -41,18 +44,19 @@ public sealed class LiveScan
     private int _waiting;
     private Exception? _failure;
 
-    private LiveScan(string rootPath, IgnoreSettings settings, IReadOnlyList<string> globalDefaults,
+    private LiveScan(IStorage source, string rootName, IgnoreSettings settings, IReadOnlyList<string> globalDefaults,
         LiveScanOptions options, CancellationToken cancellationToken)
     {
-        RootPath = rootPath;
+        _source = source;
+        _comparer = SourceIndexer.NameComparer(source);
+        RootName = rootName;
         _settings = settings;
         _globalDefaults = globalDefaults;
         _options = options;
         _cancellationToken = cancellationToken;
 
-        var name = Path.GetFileName(rootPath);
-        Root = new LiveNode(null, name.Length > 0 ? name : rootPath, "", true, 0,
-            new DirectoryInfo(rootPath).LastWriteTimeUtc, 0, false, null, false)
+        // The time of the root is not known yet; the scan sets it as its first step.
+        Root = new LiveNode(null, rootName, "", true, 0, default, 0, false, null, false)
         {
             Matcher = IgnoreMatcher.ForPlan(settings, globalDefaults, []),
         };
@@ -60,7 +64,8 @@ public sealed class LiveScan
         Completion = RunAsync();
     }
 
-    public string RootPath { get; }
+    /// <summary>The display name of the root.</summary>
+    public string RootName { get; }
     public LiveNode Root { get; }
 
     /// <summary>The finished index. Canceled when the scan was canceled; faulted with the error when a worker failed.</summary>
@@ -85,33 +90,44 @@ public sealed class LiveScan
             folder.Wanted = true;
             // The folder's first queue entry stays behind; it is skipped when a worker finds it no longer waiting.
             _queue.Enqueue(folder, Rank(folder));
-            Monitor.PulseAll(_gate);
+            Pulse();
         }
     }
 
-    /// <exception cref="DirectoryNotFoundException">The source folder does not exist.</exception>
-    public static LiveScan Start(string root, IgnoreSettings settings, IReadOnlyList<string> globalDefaults,
-        LiveScanOptions? options = null, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Starts scanning <paramref name="source"/> and returns at once. A source that does not exist or cannot be reached
+    /// shows in <see cref="Completion"/>: <see cref="StorageNotFoundException"/> or <see cref="StorageUnavailableException"/>.
+    /// </summary>
+    public static LiveScan Start(IStorage source, string rootName, IgnoreSettings settings,
+        IReadOnlyList<string> globalDefaults, LiveScanOptions? options = null, CancellationToken ct = default)
     {
-        var fullRoot = PathUtil.Normalize(root);
-        if (!Directory.Exists(fullRoot))
-            throw new DirectoryNotFoundException(CoreTexts.English("core.run.sourceMissing", ("source", fullRoot)));
+        ArgumentNullException.ThrowIfNull(source);
 
-        // A copy: the caller's settings may be edited while the scan runs.
+        // A copy: the caller may edit the settings while the scan runs.
         var snapshot = new IgnoreSettings
         {
             UseGlobalDefaults = settings.UseGlobalDefaults,
             HonorNestedFiles = settings.HonorNestedFiles,
             Patterns = [.. settings.Patterns],
         };
-        return new LiveScan(fullRoot, snapshot, [.. globalDefaults], options ?? new LiveScanOptions(), cancellationToken);
+        return new LiveScan(source, rootName, snapshot, [.. globalDefaults], options ?? new LiveScanOptions(), ct);
     }
 
     private async Task<SourceIndex> RunAsync()
     {
+        try
+        {
+            if ((await _source.StatAsync("", _cancellationToken).ConfigureAwait(false)) is { } rootEntry)
+                Root.SetLastWrite(rootEntry.ModifiedUtc);
+        }
+        catch (StorageException)
+        {
+            // Best effort; listing the root reports the real problem.
+        }
+
         var workers = new Task[Math.Max(1, _options.MaxParallel)];
         for (var i = 0; i < workers.Length; i++)
-            workers[i] = Task.Run(Work);
+            workers[i] = Task.Run(WorkAsync);
         await Task.WhenAll(workers).ConfigureAwait(false);
 
         if (_failure is not null)
@@ -120,46 +136,50 @@ public sealed class LiveScan
         return ToSourceIndex();
     }
 
-    private void Work()
+    private async Task WorkAsync()
     {
         while (true)
         {
-            LiveNode folder;
+            LiveNode? folder = null;
+            Task? wake = null;
             lock (_gate)
             {
-                while (true)
+                if (_failure is not null || _cancellationToken.IsCancellationRequested)
                 {
-                    if (_failure is not null || _cancellationToken.IsCancellationRequested)
-                    {
-                        Monitor.PulseAll(_gate);
-                        return;
-                    }
-                    if (_queue.TryDequeue(out var next, out _))
-                    {
-                        if (next.State != ScanState.Waiting)
-                        {
-                            // A second entry of a prioritised folder that was taken already; skip silently.
-                            continue;
-                        }
-                        folder = next;
-                        break;
-                    }
-                    if (_busy == 0)
-                    {
-                        // Nothing queued and no worker that could still find more: finished.
-                        Monitor.PulseAll(_gate);
-                        return;
-                    }
-                    Monitor.Wait(_gate, IdleWait);
+                    Pulse();
+                    return;
                 }
-                folder.SetState(ScanState.Scanning);
-                Interlocked.Decrement(ref _waiting);
-                _busy++;
+                if (_queue.TryDequeue(out var next, out _))
+                {
+                    // A second entry of a prioritised folder that was taken already is skipped silently.
+                    if (next.State != ScanState.Waiting)
+                        continue;
+                    folder = next;
+                    folder.SetState(ScanState.Scanning);
+                    Interlocked.Decrement(ref _waiting);
+                    _busy++;
+                }
+                else if (_busy == 0)
+                {
+                    // Nothing queued and no worker that could still find more: finished.
+                    Pulse();
+                    return;
+                }
+                else
+                {
+                    wake = _wake.Task;
+                }
+            }
+
+            if (folder is null)
+            {
+                await Task.WhenAny(wake!, Task.Delay(IdleWait)).ConfigureAwait(false);
+                continue;
             }
 
             try
             {
-                List(folder);
+                await ListAsync(folder).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
             {
@@ -174,36 +194,43 @@ public sealed class LiveScan
                 lock (_gate)
                 {
                     _busy--;
-                    Monitor.PulseAll(_gate);
+                    Pulse();
                 }
             }
         }
     }
 
-    private void List(LiveNode folder)
+    private async Task ListAsync(LiveNode folder)
     {
         _options.BeforeListing?.Invoke(folder);
 
-        var entries = new List<FileSystemInfo>();
+        var entries = new List<StorageEntry>();
         try
         {
-            foreach (var entry in new DirectoryInfo(FullPath(folder)).EnumerateFileSystemInfos())
-            {
-                _cancellationToken.ThrowIfCancellationRequested();
+            await foreach (var entry in _source.ListAsync(folder.RelativePath, recursive: false, _cancellationToken).ConfigureAwait(false))
                 entries.Add(entry);
-            }
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        catch (StorageNotFoundException) when (folder.Parent is null)
         {
+            throw;   // the source itself is missing
+        }
+        catch (StorageUnavailableException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            // ArgumentException: a folder name the storage cannot address.
             folder.SetError(ex.Message);   // what was listed so far is kept, as in SourceIndexer
         }
 
         // The folder's own .backupignore applies to its entries, so it is read before they are evaluated.
         var matcher = folder.Matcher!;
         var chain = folder.IgnoreChain;
-        var ignoreFile = entries.OfType<FileInfo>()
-            .FirstOrDefault(f => f.Name.Equals(IgnoreOrigins.NestedFileName, StringComparison.OrdinalIgnoreCase));
-        if (ignoreFile is not null && ReadIgnoreFile(ignoreFile, folder.RelativePath) is { } nested && _settings.HonorNestedFiles)
+        var ignoreFile = entries.FirstOrDefault(e => !e.IsDirectory &&
+            StoragePath.Name(e.Path).Equals(IgnoreOrigins.NestedFileName, StringComparison.OrdinalIgnoreCase));
+        if (ignoreFile is not null && await ReadIgnoreFileAsync(ignoreFile.Path, folder.RelativePath).ConfigureAwait(false) is { } nested
+            && _settings.HonorNestedFiles)
         {
             chain = [.. chain, nested];
             matcher = IgnoreMatcher.ForPlan(_settings, _globalDefaults, chain);
@@ -213,15 +240,16 @@ public sealed class LiveScan
         foreach (var entry in entries)
         {
             _cancellationToken.ThrowIfCancellationRequested();
-            var path = folder.RelativePath.Length == 0 ? entry.Name : folder.RelativePath + "/" + entry.Name;
+            var path = entry.Path;
+            var name = StoragePath.Name(path);
 
-            if (entry is DirectoryInfo subdirectory)
+            if (entry.IsDirectory)
             {
                 Interlocked.Increment(ref _directories);
                 var (ignored, pattern) = Decide(folder, matcher, path, isDirectory: true);
-                var child = new LiveNode(folder, subdirectory.Name, path, true, 0, subdirectory.LastWriteTimeUtc,
+                var child = new LiveNode(folder, name, path, true, 0, entry.ModifiedUtc,
                     folder.Depth + 1, ignored, pattern, folder.IsIgnored);
-                if (subdirectory.LinkTarget is not null)
+                if (entry.IsLink)
                 {
                     Close(child, CoreTexts.English("core.scan.link"));
                 }
@@ -238,11 +266,11 @@ public sealed class LiveScan
                 }
                 folder.Add(child);
             }
-            else if (entry is FileInfo file)
+            else
             {
                 Interlocked.Increment(ref _files);
                 var (ignored, pattern) = Decide(folder, matcher, path, isDirectory: false);
-                folder.Add(new LiveNode(folder, file.Name, path, false, file.Length, file.LastWriteTimeUtc,
+                folder.Add(new LiveNode(folder, name, path, false, entry.Size, entry.ModifiedUtc,
                     folder.Depth + 1, ignored, pattern, folder.IsIgnored));
             }
         }
@@ -289,7 +317,7 @@ public sealed class LiveScan
         {
             _queue.Enqueue(folder, Rank(folder));
             Interlocked.Increment(ref _waiting);
-            Monitor.PulseAll(_gate);
+            Pulse();
         }
     }
 
@@ -297,27 +325,31 @@ public sealed class LiveScan
     private (int Rank, int Depth, long Order) Rank(LiveNode folder) =>
         (folder.Wanted ? 0 : 1, folder.Depth, _order++);
 
-    private NestedIgnoreFile? ReadIgnoreFile(FileInfo file, string directoryRelativePath)
+    private async Task<NestedIgnoreFile?> ReadIgnoreFileAsync(string path, string directoryRelativePath)
     {
-        try
+        var lines = await SourceIndexer.ReadIgnoreLinesAsync(_source, path, _cancellationToken).ConfigureAwait(false);
+        lock (_gate)
         {
-            var nested = new NestedIgnoreFile(directoryRelativePath, File.ReadAllLines(file.FullName));
-            lock (_gate)
-                _ignoreFiles.Add(nested);
-            return nested;
-        }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-        {
-            lock (_gate)
+            if (lines is null)
+            {
                 _unreadableIgnoreFiles.Add(IgnoreOrigins.ForNestedFile(directoryRelativePath));
-            return null;
+                return null;
+            }
+            var nested = new NestedIgnoreFile(directoryRelativePath, lines);
+            _ignoreFiles.Add(nested);
+            return nested;
         }
     }
 
-    private string FullPath(LiveNode folder) =>
-        folder.RelativePath.Length == 0
-            ? RootPath
-            : Path.Combine(RootPath, folder.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+    private static TaskCompletionSource NewWake() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Wakes the workers that wait for work. Call under the lock.</summary>
+    private void Pulse()
+    {
+        var old = _wake;
+        _wake = NewWake();
+        old.TrySetResult();
+    }
 
     private SourceIndex ToSourceIndex()
     {
@@ -329,16 +361,16 @@ public sealed class LiveScan
             ignoreFiles = [.. _ignoreFiles];
             unreadable = [.. _unreadableIgnoreFiles];
         }
-        return new SourceIndex(RootPath, ToIndexNode(Root), ignoreFiles, Files, Directories)
+        return new SourceIndex(RootName, ToIndexNode(Root), ignoreFiles, Files, Directories)
         {
             UnreadableIgnoreFiles = unreadable,
         };
     }
 
-    private static IndexNode ToIndexNode(LiveNode node)
+    private IndexNode ToIndexNode(LiveNode node)
     {
         var children = node.Children.Select(ToIndexNode).ToList();
-        children.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
+        children.Sort((a, b) => _comparer.Compare(a.Name, b.Name));
         return new IndexNode
         {
             Name = node.Name,

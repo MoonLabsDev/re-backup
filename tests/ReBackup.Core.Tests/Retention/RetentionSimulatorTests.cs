@@ -1,5 +1,5 @@
 using FluentAssertions;
-using ReBackup.Core.Retention;
+using ReBackup.Shared.Retention;
 
 namespace ReBackup.Core.Tests.Retention;
 

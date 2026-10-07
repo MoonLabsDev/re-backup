@@ -6,14 +6,6 @@
     "toolTip": "Language: {language} — click to change",
     "notSaved": "The language could not be saved:\n\n{error}"
   },
-  "format": {
-    "date": "yyyy-MM-dd",
-    "dateTime": "yyyy-MM-dd HH:mm",
-    "dateTimeSeconds": "yyyy-MM-dd HH:mm:ss",
-    "time": "HH:mm",
-    "weekdayTime": "ddd HH:mm",
-    "nextRun": "ddd yyyy-MM-dd HH:mm"
-  },
   "common": {
     "cancel": "Cancel",
     "close": "Close",
@@ -32,8 +24,6 @@
     "path": "Path",
     "version": "Version",
     "unnamed": "(unnamed)",
-    "fileCount": { "one": "{count} file", "other": "{count:N0} files" },
-    "folderCount": { "one": "{count} folder", "other": "{count:N0} folders" },
     "duration": {
       "hms": "{hours} h {minutes:00} min {seconds:00} s",
       "ms": "{minutes} min {seconds:00} s",
@@ -104,32 +94,11 @@
       "sourceNotAbsolute": "Source must be an absolute path.",
       "targetNotAbsolute": "Target must be an absolute path.",
       "sourceMissing": "Source folder does not exist.",
+      "unsupportedLocation": "This kind of location is not supported yet.",
       "targetInsideSource": "Target must not be inside the source.",
       "sourceInsideTarget": "Source must not be inside the target.",
       "retentionRule": "Retention rule {index}: {problem}",
       "trigger": "Trigger {index}: {problem}"
-    },
-    "trigger": {
-      "empty": "the trigger is empty.",
-      "unknownType": "the type is unknown.",
-      "time": "the time must be written as HH:mm, for example 02:00.",
-      "noWeekday": "choose at least one weekday.",
-      "notWeekday": "\"{day}\" is not a weekday.",
-      "monthDay": "the day must be from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-      "interval": "the interval must be a whole number of hours from 1 to 24.",
-      "from": "the start time must be written as HH:mm, for example 08:00.",
-      "to": "the end time must be written as HH:mm, for example 20:00.",
-      "fromAfterTo": "the start time must not be after the end time.",
-      "invalid": "The trigger is not valid: {problem}"
-    },
-    "retention": {
-      "empty": "the rule is empty.",
-      "unknownPeriod": "the period is unknown.",
-      "keep": "keep must be a number from 1 to {max}.",
-      "weekday": "the anchor must be a weekday, for example Sunday.",
-      "monthDay": "the anchor must be a day from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-      "yearDate": "the anchor must be a date written as MM-DD, for example 01-01.",
-      "invalid": "The retention rule is not valid: {problem}"
     },
     "run": {
       "nameUnusable": "The plan name \"{name}\" cannot be used: {problem}",
@@ -154,18 +123,25 @@
       "freeSpaceDeleteFailed": "\"{version}\" could not be deleted to free space: {error}",
       "remainsFailed": "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
       "removedRemainsLeft": "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
+      "unfinishedFailed": "An unfinished backup could not be deleted (\"{name}\"): {error}",
+      "leftoverForeign": "\"{name}\" was left alone: it is marked by another plan.",
+      "leftoverUnreadable": "\"{name}\" was left alone: its marker cannot be read.",
+      "leftoverRenamed": "\"{name}\" was left alone: it is marked by this plan but was renamed.",
+      "leftoverPartialWithManifest": "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
       "indexFailed": "The version index could not be updated: {error}"
     },
     "skip": {
       "ignoreFileUnreadable": "ignore file could not be read; its patterns were not applied",
-      "reservedName": "the name is reserved for the backup manifest",
+      "reservedName": "the name is reserved for ReBackup's own files",
+      "reservedNameLegacy": "the name is reserved for the backup manifest",
       "changed": "changed while it was copied; the copy may be inconsistent"
     },
     "file": {
       "noLongerExists": "no longer exists",
       "accessDenied": "access denied",
       "locked": "locked by another program",
-      "cannotOpen": "cannot be opened: {error}"
+      "cannotOpen": "cannot be opened: {error}",
+      "notAFolder": "\"{name}\" is not a folder (or is a link) and is not removed."
     },
     "scan": {
       "link": "Link is not followed.",
@@ -178,12 +154,11 @@
       "outside": "\"{path}\" is outside the version.",
       "throughLink": "\"{path}\" goes through the link \"{link}\".",
       "sameName": "Two selected items are called \"{name}\"; they would end up in the same place.",
-      "isLink": "\"{path}\" is a link.",
       "manifest": "The manifest is not part of the backup.",
       "notInVersion": "\"{path}\" does not exist in the version.",
       "folderExists": "A folder with this name exists.",
       "destinationLink": "the destination folder is a link",
-      "outsideDestination": "\"{path}\" is outside the destination.",
+      "fileInPlaceOfFolder": "a file stands where the folder \"{folder}\" belongs",
       "notAPath": "\"{path}\" is not a path inside the version.",
       "accessDenied": "access denied (read-only, or in use by another program)"
     },
@@ -468,8 +443,7 @@
       "hover": "Hover a tile for its path and sizes",
       "byBackup": "Sized by what is in the backup; ignored entries are left out",
       "byTotal": "Sized by the total; ignored entries in grey",
-      "empty": "The treemap appears after the scan.",
-      "toolTip": "{path}\n{total}, backup {included} — {status}"
+      "empty": "The treemap appears after the scan."
     },
     "patternNote": "Changes to the patterns are applied when the scan is finished.",
     "sourceMissing": "The source folder does not exist.",

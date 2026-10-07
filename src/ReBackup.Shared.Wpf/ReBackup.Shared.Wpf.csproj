@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ReBackup.Shared\ReBackup.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The label files of the controls and formats (WithCulture="false": the culture in the file name must not make satellite assemblies); Loc reads them as ReBackup.Shared.Wpf.Locales.wpf.<language>.json, registered by the app. -->
+    <EmbeddedResource Include="Locales\*.json" WithCulture="false" LogicalName="ReBackup.Shared.Wpf.Locales.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

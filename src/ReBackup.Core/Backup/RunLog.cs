@@ -1,10 +1,9 @@
 using System.Text;
 using System.Text.Json;
-using ReBackup.Core.Json;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Backup;
-
-public enum RunTrigger { Manual, Scheduled, CatchUp }
 
 public enum RunStatus { Completed, CompletedWithWarnings, Full, Error, Canceled }
 

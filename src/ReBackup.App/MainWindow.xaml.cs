@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using ReBackup.App.Services;
+using ReBackup.Shared.Wpf.Services;
 
 namespace ReBackup.App;
 

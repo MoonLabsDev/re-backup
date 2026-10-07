@@ -134,20 +134,22 @@ dotnet run --project src/ReBackup.App         # start the app
 ## How it works
 
 ```
-plan ─► scan source ─► apply ignore patterns ─► copy into "<date> <Plan>.partial" (hashing while copying)
-     ─► write re-manifest.json ─► rename to "YYYY_MM_DD-hh_mm <Plan>" ─► apply retention
+plan ─► scan source ─► apply ignore patterns ─► reserve "YYYY_MM_DD-hh_mm <Plan>" with re-pending.json
+     ─► copy (hashing while copying) ─► write re-manifest.json ─► remove re-pending.json ─► apply retention
 ```
 
 1. **Preflight.** The source must exist. ReBackup scans it, applies the ignore patterns and checks that the target
    has room for the included size plus 5 %. If not, and the plan allows it, it first deletes versions that
    retention would delete anyway; otherwise the run ends as *target full* before anything is written.
-2. **Copy.** Files are copied into `<name>.partial` with their relative paths and modification times; each file is
+2. **Copy.** The version folder is reserved by creating `re-pending.json` in it; while that marker is there, the
+   folder is not a version. Files are copied into it with their relative paths and modification times; each file is
    hashed with xxHash64 while it is read. Files that are locked or cannot be read are **skipped and logged**; the run
    continues and ends as *completed with warnings*.
-3. **Finish.** `re-manifest.json` is written, the folder is renamed to `YYYY_MM_DD-hh_mm <Plan>`, and retention runs.
+3. **Finish.** `re-manifest.json` is written, `re-pending.json` is removed, and retention runs.
    Retention deletes only folders that are versions of this plan (the name and the plan id in the manifest must
    match). Other folders in the target are shown as *not managed* and are never deleted.
-4. **Cancel or error.** The `.partial` folder is removed; the run is logged either way.
+4. **Cancel or error.** What the run wrote is removed, the marker last; whatever cannot be removed keeps the marker
+   and is removed at the plan's next run. The run is logged either way.
 
 A target can look like this:
 

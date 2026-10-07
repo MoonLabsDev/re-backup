@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using FluentAssertions;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Localization;
 
 namespace ReBackup.Core.Tests.Localization;
 
@@ -13,9 +14,9 @@ public class CoreTextsTests
     [Fact]
     public void English_renders_a_message_and_its_nested_messages()
     {
-        CoreTexts.English(Message.Of("core.plan.retentionRule", ("index", 2),
-                ("problem", Message.Of("core.retention.keep", ("max", 9999)))))
-            .Should().Be("Retention rule 2: keep must be a number from 1 to 9999.");
+        CoreTexts.English(Message.Of("core.plan.trigger", ("index", 2),
+                ("problem", Message.Of("core.plan.nameTaken", ("name", "Docs")))))
+            .Should().Be("Trigger 2: Another plan is already named \"Docs\".");
         CoreTexts.English("core.plan.nameTaken", ("name", "Docs")).Should().Be("Another plan is already named \"Docs\".");
     }
 

@@ -3,15 +3,25 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using FluentAssertions;
 using ReBackup.Core.Localization;
-using ReBackup.Core.Settings;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.Core.Tests.Localization;
 
-/// <summary>The App's label files (src/ReBackup.App/Locales), read from the repository.</summary>
+/// <summary>The label files of the App (src/ReBackup.App/Locales) and of the shared library (src/ReBackup.Shared/Locales), read from the repository.</summary>
 public class LocaleFileTests
 {
     internal static LabelSet Load(string language) => LabelSet.Parse(File.ReadAllText(RepoPaths.LocaleFile(language)));
+
+    internal static LabelSet LoadShared(string language) =>
+        LabelSet.Parse(File.ReadAllText(RepoPaths.SharedLocaleFile(language)));
+
+    internal static LabelSet LoadWpf(string language) =>
+        LabelSet.Parse(File.ReadAllText(RepoPaths.SharedWpfLocaleFile(language)));
+
+    /// <summary>The labels as the App sees them: shared, Shared.Wpf and App files merged (the app's last).</summary>
+    internal static LabelSet LoadAll(string language) => LoadShared(language).Merge(LoadWpf(language)).Merge(Load(language));
 
     [Fact]
     public void There_is_one_file_per_supported_language()
@@ -54,7 +64,7 @@ public class LocaleFileTests
     public void Both_files_have_the_same_plural_labels()
     {
         Load(AppLanguages.German).Plurals.Should().BeEquivalentTo(Load(AppLanguages.English).Plurals);
-        Load(AppLanguages.English).Plurals.Should().Contain("common.fileCount");
+        LoadAll(AppLanguages.English).Plurals.Should().Contain("common.fileCount");
     }
 
     [Theory]
@@ -62,7 +72,7 @@ public class LocaleFileTests
     [InlineData(AppLanguages.German)]
     public void The_forms_of_a_plural_label_use_the_same_placeholder_names(string language)
     {
-        var set = Load(language);
+        var set = LoadAll(language);
 
         set.Plurals
             .Where(key => !LabelFormat.Placeholders(set.Entries[key + ".one"]).Order(StringComparer.Ordinal)
@@ -79,12 +89,12 @@ public class LocaleFileTests
     {
         var pattern = new Regex(@"\p{L}\((s|es|en|e|n)\)", RegexOptions.CultureInvariant);
 
-        Load(language).Entries.Where(pair => pattern.IsMatch(pair.Value)).Select(pair => pair.Key)
+        LoadAll(language).Entries.Where(pair => pattern.IsMatch(pair.Value)).Select(pair => pair.Key)
             .Should().BeEmpty("a count text is a plural label with one and other forms");
     }
 
     private static Labels LabelsFor(string language) =>
-        new(Load(AppLanguages.English), Load(language), CultureInfo.GetCultureInfo(language));
+        new(LoadAll(AppLanguages.English), LoadAll(language), CultureInfo.GetCultureInfo(language));
 
     [Theory]
     [InlineData(AppLanguages.English, 1, "1 file")]
@@ -154,10 +164,10 @@ public class LocaleFileTests
         foreach (var language in AppLanguages.Supported)
         {
             var culture = CultureInfo.GetCultureInfo(language);
-            foreach (var pair in Load(language).Entries.Where(pair => pair.Key.StartsWith("format.", StringComparison.Ordinal)))
+            foreach (var pair in LoadWpf(language).Entries.Where(pair => pair.Key.StartsWith("format.", StringComparison.Ordinal)))
                 FluentActions.Invoking(() => date.ToString(pair.Value, culture)).Should().NotThrow(pair.Key);
         }
-        date.ToString(Load(AppLanguages.German).Entries["format.dateTime"], CultureInfo.GetCultureInfo("de-DE"))
+        date.ToString(LoadWpf(AppLanguages.German).Entries["format.dateTime"], CultureInfo.GetCultureInfo("de-DE"))
             .Should().Be("02.10.2026 14:05");
     }
 
@@ -184,6 +194,70 @@ public class LocaleFileTests
     }
 
     [Fact]
+    public void The_shared_library_has_one_file_per_supported_language()
+    {
+        Directory.GetFiles(Path.Combine(RepoPaths.SharedDirectory, "Locales"), "*.json")
+            .Select(path => Path.GetFileNameWithoutExtension(path))
+            .Should().BeEquivalentTo(AppLanguages.Supported.Select(language => "shared." + language));
+        foreach (var language in AppLanguages.Supported)
+            LoadShared(language).Entries.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Both_shared_files_have_the_same_keys()
+    {
+        var english = LoadShared(AppLanguages.English).Entries.Keys.ToList();
+        var german = LoadShared(AppLanguages.German).Entries.Keys.ToList();
+
+        english.Except(german).Should().BeEmpty("every English label needs a German one");
+        german.Except(english).Should().BeEmpty("German must not have labels English lacks");
+    }
+
+    [Fact]
+    public void Both_shared_files_use_the_same_placeholders_per_key()
+    {
+        var english = LoadShared(AppLanguages.English);
+        var german = LoadShared(AppLanguages.German);
+
+        english.Entries
+            .Where(pair => german.Entries.TryGetValue(pair.Key, out var text) &&
+                           !LabelFormat.PlaceholderSpecs(pair.Value).Order(StringComparer.Ordinal)
+                               .SequenceEqual(LabelFormat.PlaceholderSpecs(text).Order(StringComparer.Ordinal)))
+            .Select(pair => pair.Key)
+            .Should().BeEmpty("name and format of every placeholder must match");
+    }
+
+    [Fact]
+    public void Both_shared_files_have_the_same_plural_labels() =>
+        LoadShared(AppLanguages.German).Plurals.Should().BeEquivalentTo(LoadShared(AppLanguages.English).Plurals);
+
+    [Fact]
+    public void Shared_english_file_holds_exactly_the_shared_texts() =>
+        LoadShared(AppLanguages.English).Entries.Should().Equal(SharedTexts.Templates);
+
+    [Theory]
+    [InlineData(AppLanguages.English)]
+    [InlineData(AppLanguages.German)]
+    public void The_shared_keys_are_not_in_the_App_files(string language)
+    {
+        var shared = LoadShared(language).Entries.Keys;
+
+        Load(language).Entries.Keys.Intersect(shared).Should().BeEmpty();
+        shared.Should().OnlyContain(key => key.StartsWith("shared.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_stored_English_retention_text_is_shown_in_German_through_the_shared_file()
+    {
+        var german = LoadShared(AppLanguages.German).Merge(Load(AppLanguages.German));
+        var labels = new Labels(LoadShared(AppLanguages.English).Merge(Load(AppLanguages.English)), german,
+            CultureInfo.GetCultureInfo("de-DE"));
+
+        labels.Format(SharedTexts.Recognize("keep must be a number from 1 to 9999.")!)
+            .Should().Be("die Anzahl muss eine Zahl von 1 bis 9999 sein.");
+    }
+
+    [Fact]
     public void A_stored_English_reason_is_shown_in_German()
     {
         var labels = new Labels(Load(AppLanguages.English), Load(AppLanguages.German), CultureInfo.GetCultureInfo("de-DE"));
@@ -193,15 +267,121 @@ public class LocaleFileTests
             .Should().Be("Der Planname „Projects.“ kann nicht verwendet werden: Der Name darf nicht mit einem Punkt enden.");
     }
 
+    /// <summary>The culture in the file names must not turn them into satellite assemblies (WithCulture="false").</summary>
+    [Fact]
+    public void The_shared_library_embeds_its_label_files_under_the_name_Loc_reads()
+    {
+        typeof(SharedTexts).Assembly.GetManifestResourceNames()
+            .Should().BeEquivalentTo(AppLanguages.Supported.Select(language => $"ReBackup.Shared.Locales.shared.{language}.json"));
+    }
+
     /// <summary>The project file, not a built App: the build in its bin folder may be older than the sources.</summary>
     [Fact]
-    public void The_App_embeds_both_label_files_under_the_name_Loc_reads()
+    public void The_App_embeds_both_label_files_under_the_name_it_registers_with_Loc()
     {
         var project = XDocument.Load(Path.Combine(RepoPaths.AppDirectory, "ReBackup.App.csproj"));
         project.Descendants("EmbeddedResource")
             .Select(item => ((string?)item.Attribute("Include"), (string?)item.Attribute("LogicalName")))
             .Should().Contain((@"Locales\*.json", "ReBackup.App.Locales.%(Filename)%(Extension)"));
-        File.ReadAllText(Path.Combine(RepoPaths.AppDirectory, "Localization", "Loc.cs"))
-            .Should().Contain("ResourcePrefix = \"ReBackup.App.Locales.\"");
+        File.ReadAllText(Path.Combine(RepoPaths.AppDirectory, "App.xaml.cs"))
+            .Should().Contain("new LabelSource(typeof(App).Assembly, \"ReBackup.App.Locales.\")");
+    }
+
+    [Fact]
+    public void The_Shared_Wpf_library_has_one_file_per_supported_language()
+    {
+        Directory.GetFiles(Path.Combine(RepoPaths.SharedWpfDirectory, "Locales"), "*.json")
+            .Select(path => Path.GetFileNameWithoutExtension(path))
+            .Should().BeEquivalentTo(AppLanguages.Supported.Select(language => "wpf." + language));
+        foreach (var language in AppLanguages.Supported)
+            LoadWpf(language).Entries.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Both_wpf_files_have_the_same_keys()
+    {
+        var english = LoadWpf(AppLanguages.English).Entries.Keys.ToList();
+        var german = LoadWpf(AppLanguages.German).Entries.Keys.ToList();
+
+        english.Except(german).Should().BeEmpty("every English label needs a German one");
+        german.Except(english).Should().BeEmpty("German must not have labels English lacks");
+    }
+
+    [Fact]
+    public void Both_wpf_files_use_the_same_placeholders_per_key()
+    {
+        var english = LoadWpf(AppLanguages.English);
+        var german = LoadWpf(AppLanguages.German);
+
+        english.Entries
+            .Where(pair => german.Entries.TryGetValue(pair.Key, out var text) &&
+                           !LabelFormat.PlaceholderSpecs(pair.Value).Order(StringComparer.Ordinal)
+                               .SequenceEqual(LabelFormat.PlaceholderSpecs(text).Order(StringComparer.Ordinal)))
+            .Select(pair => pair.Key)
+            .Should().BeEmpty("name and format of every placeholder must match");
+    }
+
+    [Fact]
+    public void Both_wpf_files_have_the_same_plural_labels() =>
+        LoadWpf(AppLanguages.German).Plurals.Should().BeEquivalentTo(LoadWpf(AppLanguages.English).Plurals);
+
+    [Fact]
+    public void No_wpf_label_is_blank()
+    {
+        foreach (var language in AppLanguages.Supported)
+        {
+            LoadWpf(language).Entries.Where(pair => string.IsNullOrWhiteSpace(pair.Value)).Select(pair => pair.Key)
+                .Should().BeEmpty(language);
+        }
+    }
+
+    [Theory]
+    [InlineData(AppLanguages.English)]
+    [InlineData(AppLanguages.German)]
+    public void No_key_is_in_more_than_one_of_the_three_files(string language)
+    {
+        var keys = new[]
+        {
+            LoadShared(language).Entries.Keys, LoadWpf(language).Entries.Keys, Load(language).Entries.Keys,
+        };
+
+        keys.SelectMany(k => k).GroupBy(key => key).Where(group => group.Count() > 1).Select(group => group.Key)
+            .Should().BeEmpty("a later source overrides an earlier one, so a key belongs to one file only");
+    }
+
+    /// <summary>Static keys: <c>Loc.T("…")</c>, <c>Loc.F("…")</c>, <c>Message.Of("…")</c>, <c>{l:Loc …}</c>, <c>{l:LocBind …}</c>.</summary>
+    [Fact]
+    public void Every_label_the_Shared_Wpf_sources_use_is_in_the_wpf_files()
+    {
+        var code = new Regex(@"(?:Loc\.(?:T|F)|Message\.Of)\(\s*""([^""]+)""", RegexOptions.CultureInvariant);
+        var markup = new Regex(@"\{\w+:Loc(?:Bind)?\s+([A-Za-z][\w.]*)", RegexOptions.CultureInvariant);
+        var used = RepoPaths.SourceFiles(RepoPaths.SharedWpfDirectory, "*.cs")
+            .SelectMany(path => code.Matches(File.ReadAllText(path)).Select(match => (Path: path, Key: match.Groups[1].Value)))
+            .Concat(RepoPaths.SourceFiles(RepoPaths.SharedWpfDirectory, "*.xaml")
+                .SelectMany(path => markup.Matches(File.ReadAllText(path)).Select(match => (Path: path, Key: match.Groups[1].Value))))
+            .ToList();
+
+        used.Should().NotBeEmpty("the scan must find the keys the moved controls use");
+        foreach (var language in AppLanguages.Supported)
+        {
+            var set = LoadWpf(language);
+            used.Where(use => !set.Entries.ContainsKey(use.Key) && !set.Plurals.Contains(use.Key))
+                .Select(use => Path.GetFileName(use.Path) + ": " + use.Key)
+                .Should().BeEmpty(language);
+        }
+    }
+
+    /// <summary>The culture in the file names must not turn them into satellite assemblies (WithCulture="false").</summary>
+    [Fact]
+    public void The_Shared_Wpf_library_embeds_its_label_files_under_the_name_the_App_registers()
+    {
+        var project = XDocument.Load(Path.Combine(RepoPaths.SharedWpfDirectory, "ReBackup.Shared.Wpf.csproj"));
+        var item = project.Descendants("EmbeddedResource").Single();
+
+        ((string?)item.Attribute("Include")).Should().Be(@"Locales\*.json");
+        ((string?)item.Attribute("WithCulture")).Should().Be("false");
+        ((string?)item.Attribute("LogicalName")).Should().Be("ReBackup.Shared.Wpf.Locales.%(Filename)%(Extension)");
+        File.ReadAllText(Path.Combine(RepoPaths.AppDirectory, "App.xaml.cs"))
+            .Should().Contain("\"ReBackup.Shared.Wpf.Locales.wpf.\"");
     }
 }

@@ -1,0 +1,19 @@
+{
+  "format": {
+    "date": "yyyy-MM-dd",
+    "dateTime": "yyyy-MM-dd HH:mm",
+    "dateTimeSeconds": "yyyy-MM-dd HH:mm:ss",
+    "time": "HH:mm",
+    "weekdayTime": "ddd HH:mm",
+    "nextRun": "ddd yyyy-MM-dd HH:mm"
+  },
+  "common": {
+    "fileCount": { "one": "{count} file", "other": "{count:N0} files" },
+    "folderCount": { "one": "{count} folder", "other": "{count:N0} folders" }
+  },
+  "ignore": {
+    "treemap": {
+      "toolTip": "{path}\n{total}, backup {included} — {status}"
+    }
+  }
+}

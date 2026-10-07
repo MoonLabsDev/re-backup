@@ -18,6 +18,7 @@ public sealed class LiveNode : IPreviewEntry
     private int _skippedEntries;
     private int _state;
     private string? _error;
+    private long _lastWriteTicks;
 
     // Folders below this one that are not Done yet, plus one for this folder until it has been listed.
     internal int PendingFolders = 1;
@@ -33,7 +34,7 @@ public sealed class LiveNode : IPreviewEntry
         RelativePath = relativePath;
         IsDirectory = isDirectory;
         _size = isDirectory ? 0 : size;
-        LastWriteUtc = lastWriteUtc;
+        _lastWriteTicks = lastWriteUtc.Ticks;
         Depth = depth;
         IsIgnored = isIgnored;
         Pattern = pattern;
@@ -58,7 +59,7 @@ public sealed class LiveNode : IPreviewEntry
     public string Name { get; }
     public string RelativePath { get; }
     public bool IsDirectory { get; }
-    public DateTime LastWriteUtc { get; }
+    public DateTime LastWriteUtc => new(Volatile.Read(ref _lastWriteTicks), DateTimeKind.Utc);
     public int Depth { get; }
 
     /// <summary>The file size; 0 for folders.</summary>
@@ -104,6 +105,9 @@ public sealed class LiveNode : IPreviewEntry
     public IReadOnlyList<IPreviewEntry> GetChildren() => Children;
 
     internal void SetState(ScanState state) => Volatile.Write(ref _state, (int)state);
+
+    /// <summary>Sets the time of the root, which is only known once the scan has started.</summary>
+    internal void SetLastWrite(DateTime value) => Volatile.Write(ref _lastWriteTicks, value.Ticks);
 
     internal void SetError(string error) => Volatile.Write(ref _error, error);
 

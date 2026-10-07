@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Automation;
-using ReBackup.App.Localization;
-using ReBackup.App.Services;
+using ReBackup.Shared.Wpf.Localization;
+using ReBackup.Shared.Wpf.Services;
 
 namespace ReBackup.App;
 
