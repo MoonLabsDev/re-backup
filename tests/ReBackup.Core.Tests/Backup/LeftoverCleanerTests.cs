@@ -124,6 +124,78 @@ public class LeftoverCleanerTests : IDisposable
             $"\"{unreadableDeleting}\" was left alone: its marker cannot be read.");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_marked_folder_renamed_by_hand_is_left_alone_with_a_warning(bool deleting)
+    {
+        const string rescued = "2026_09_02-02_00 Projects rescued";
+        if (deleting)
+            await BeingDeleted(rescued);
+        else
+            await Unfinished(rescued);
+        var before = _storage.Files.ToList();
+
+        var warnings = await Clean();
+
+        _storage.Files.Should().BeEquivalentTo(before);
+        warnings.Should().Equal($"\"{rescued}\" was left alone: it is marked by this plan but was renamed.");
+    }
+
+    [Fact]
+    public async Task A_marked_folder_named_after_the_plan_name_in_its_marker_is_cleaned()
+    {
+        // Written before the plan was renamed from "Old name" to "Projects".
+        const string older = "2026_09_02-02_00 Old name";
+        _storage.AddFile($"{older}/a.txt", [1]);
+        await VersionMarkers.WriteDeletingAsync(_storage, older, Marker() with { PlanName = "Old name" }, CancellationToken.None);
+
+        (await Clean()).Should().BeEmpty();
+        FilesIn(older).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Folders_not_named_like_a_version_are_not_looked_into()
+    {
+        _storage.AddFile("notes/a.txt", [1]);
+        await VersionMarkers.WritePendingAsync(_storage, "notes", Marker(), CancellationToken.None);
+        var calls = new List<(string Operation, string Path)>();
+        var storage = new FaultyStorage(_storage) { Before = (operation, path) => calls.Add((operation, path)) };
+
+        (await Clean(storage)).Should().BeEmpty();
+
+        calls.Should().Equal(("list", ""));
+        FilesIn("notes").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task The_empty_folder_a_deletion_could_not_remove_goes_at_the_next_run()
+    {
+        await VersionFolder.CreateAsync(_storage, Folder, PlanId);
+        var faulty = new FaultyStorage(_storage) { FailDelete = path => path == Folder };
+
+        var result = (await VersionDeleter.DeleteAsync(faulty, PlanId, PlanName, [Folder])).Single();
+
+        result.Outcome.Should().Be(VersionDeletionOutcome.RemainsLeft);
+        (await _storage.StatAsync(Folder, CancellationToken.None)).Should().NotBeNull("the empty folder is left");
+        FilesIn(Folder).Should().BeEmpty("no marker is left either");
+
+        (await Clean()).Should().BeEmpty();
+        (await _storage.StatAsync(Folder, CancellationToken.None)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_unmarked_folder_without_a_manifest_that_holds_anything_is_left_alone()
+    {
+        _storage.AddFile($"{Folder}/a.txt", [1]);
+        await _storage.EnsureDirectoryAsync("2026_09_03-02_00 Other", CancellationToken.None);   // empty, another plan's name
+
+        (await Clean()).Should().BeEmpty();
+
+        FilesIn(Folder).Should().Equal($"{Folder}/a.txt");
+        (await _storage.StatAsync("2026_09_03-02_00 Other", CancellationToken.None)).Should().NotBeNull();
+    }
+
     [Fact]
     public async Task A_deletion_that_cannot_be_finished_is_a_warning_and_is_retried_next_time()
     {

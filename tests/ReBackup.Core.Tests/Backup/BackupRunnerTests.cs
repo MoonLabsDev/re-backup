@@ -364,7 +364,8 @@ public class BackupRunnerTests : IDisposable
     [Fact]
     public async Task Waits_for_the_next_minute_when_the_version_folder_already_exists()
     {
-        Directory.CreateDirectory(VersionPath());
+        // Not empty: an empty folder named like a version of the plan would be removed as remains of a deletion.
+        _tmp.WriteFile($@"target\{Minute} Projects\notes.txt", "someone's");
 
         var run = Runner().RunAsync(Request(Plan()));
         var waited = Stopwatch.StartNew();
@@ -381,7 +382,7 @@ public class BackupRunnerTests : IDisposable
         VersionName.TryParse(entry.Version!, "Projects", out var versionTime).Should().BeTrue();
         versionTime.Should().BeAfter(new DateTime(2026, 9, 30, 16, 5, 0));
         File.Exists(Path.Combine(_target, entry.Version!, "a.txt")).Should().BeTrue();
-        Directory.GetFileSystemEntries(VersionPath()).Should().BeEmpty("the existing folder is not touched");
+        Directory.GetFileSystemEntries(VersionPath()).Select(Path.GetFileName).Should().Equal(["notes.txt"], "the existing folder is not touched");
     }
 
     [Fact]

@@ -126,6 +126,7 @@
       "unfinishedFailed": "Ein unfertiges Backup konnte nicht gelöscht werden („{name}“): {error}",
       "leftoverForeign": "„{name}“ wurde nicht angetastet: Es ist von einem anderen Plan markiert.",
       "leftoverUnreadable": "„{name}“ wurde nicht angetastet: Seine Markierung kann nicht gelesen werden.",
+      "leftoverRenamed": "„{name}“ wurde nicht angetastet: Es ist von diesem Plan markiert, wurde aber umbenannt.",
       "leftoverPartialWithManifest": "„{name}“ wurde nicht angetastet: Es sieht unfertig aus, enthält aber ein Manifest.",
       "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
     },

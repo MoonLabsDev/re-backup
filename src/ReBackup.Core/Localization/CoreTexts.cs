@@ -59,6 +59,7 @@ public static class CoreTexts
         ["core.run.unfinishedFailed"] = "An unfinished backup could not be deleted (\"{name}\"): {error}",
         ["core.run.leftoverForeign"] = "\"{name}\" was left alone: it is marked by another plan.",
         ["core.run.leftoverUnreadable"] = "\"{name}\" was left alone: its marker cannot be read.",
+        ["core.run.leftoverRenamed"] = "\"{name}\" was left alone: it is marked by this plan but was renamed.",
         ["core.run.leftoverPartialWithManifest"] = "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
 

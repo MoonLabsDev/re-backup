@@ -10,7 +10,8 @@ namespace ReBackup.Core.Backup;
 public static class LeftoverCleaner
 {
     /// <summary>
-    /// Looks at the direct children of the target's root that are folders (never links):
+    /// Looks at the direct children of the target's root that are folders (never links); markers are looked for only in
+    /// folders named like a version:
     /// <list type="bullet">
     /// <item>a folder with <see cref="VersionMarkerNames.Deleting"/> of this plan: the deletion is finished;</item>
     /// <item>a folder with <see cref="VersionMarkerNames.Pending"/> of this plan that is not <paramref name="currentVersionName"/>:
@@ -19,7 +20,9 @@ public static class LeftoverCleaner
     /// deleted; with a manifest it is left alone with a warning, and so is one that cannot be examined (silently, as before);</item>
     /// <item>a ".deleting" folder that is provably the plan's remains (its manifest is <see cref="VersionOwnership.Owned"/>, or it
     /// is empty and named like the plan): it is deleted;</item>
-    /// <item>a marker of another plan or one that cannot be read: the folder is left alone with a warning.</item>
+    /// <item>a marker of another plan or one that cannot be read, or a marker of this plan in a folder that was renamed
+    /// (named after neither <paramref name="planName"/> nor the marker's plan name): the folder is left alone with a warning;</item>
+    /// <item>an empty folder without markers named like a version of the plan (a deletion whose very last step failed): it is deleted.</item>
     /// </list>
     /// A removal that fails is a warning (".partial" folders aside, as before); the next run tries again.
     /// </summary>
@@ -59,16 +62,24 @@ public static class LeftoverCleaner
             else if (name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
                 await CleanLegacyDeletingAsync(target, folder, planId, planName, warnings, onFileDeleted, progress, ct).ConfigureAwait(false);
             else
-                await CleanMarkedAsync(target, folder, planId, currentVersionName, warnings, onFileDeleted, progress, ct).ConfigureAwait(false);
+                await CleanMarkedAsync(target, folder, planId, planName, currentVersionName, warnings, onFileDeleted, progress, ct).ConfigureAwait(false);
         }
         return warnings;
     }
 
-    /// <summary>A folder with a marker: a deletion to finish, or a run that never finished.</summary>
-    private static async Task CleanMarkedAsync(IStorage target, string folder, string planId, string? currentVersionName,
-        List<string> warnings, Action<string, int>? onFileDeleted, Action<int>? progress, CancellationToken ct)
+    /// <summary>
+    /// A folder named like a version: a deletion to finish, a run that never finished, or the empty folder a deletion
+    /// could not remove at its very end. Markers are trusted only in a folder that still carries the name of the plan
+    /// it was written for: a folder renamed by hand is a person's, whatever marker it holds.
+    /// </summary>
+    private static async Task CleanMarkedAsync(IStorage target, string folder, string planId, string planName,
+        string? currentVersionName, List<string> warnings, Action<string, int>? onFileDeleted, Action<int>? progress,
+        CancellationToken ct)
     {
         var name = StoragePath.Name(folder);
+        if (!VersionName.TryParseAny(name, out _, out var folderPlanName))
+            return;   // not named like a version: not ours to look into
+
         var deleting = StoragePath.Combine(folder, VersionMarkerNames.Deleting);
         var pending = StoragePath.Combine(folder, VersionMarkerNames.Pending);
         string markerPath;
@@ -80,8 +91,14 @@ public static class LeftoverCleaner
         }
         else
         {
-            if (await ExistsAsync(target, pending, ct).ConfigureAwait(false) is not true)
-                return;   // no marker (a version, or anything else), or cannot be examined
+            switch (await ExistsAsync(target, pending, ct).ConfigureAwait(false))
+            {
+                case null:
+                    return;   // cannot be examined: left alone
+                case false:
+                    await CleanEmptyRemainsAsync(target, folder, planName, folderPlanName, warnings, ct).ConfigureAwait(false);
+                    return;
+            }
             if (string.Equals(name, currentVersionName, StringComparison.OrdinalIgnoreCase))
                 return;   // the folder the current run is writing
             markerPath = pending;
@@ -97,6 +114,12 @@ public static class LeftoverCleaner
             warnings.Add(CoreTexts.English("core.run.leftoverForeign", ("name", name)));
             return;
         }
+        if (!folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase) &&
+            !folderPlanName.Equals(marker.PlanName, StringComparison.OrdinalIgnoreCase))
+        {
+            warnings.Add(CoreTexts.English("core.run.leftoverRenamed", ("name", name)));
+            return;
+        }
 
         onFileDeleted?.Invoke(name, 0);
         try
@@ -110,6 +133,28 @@ public static class LeftoverCleaner
         {
             warnings.Add(CoreTexts.English(hasDeleting ? "core.run.remainsFailed" : "core.run.unfinishedFailed",
                 ("name", name), ("error", ex.Message)));
+        }
+    }
+
+    /// <summary>
+    /// A folder without markers that is named like a version of the plan and holds nothing at all: what a deletion
+    /// leaves when only the folder itself could not be removed. It is removed, as empty ".deleting" remains of the plan
+    /// are. A folder with any content (a version, or anything a person put there) is left alone.
+    /// </summary>
+    private static async Task CleanEmptyRemainsAsync(IStorage target, string folder, string planName, string folderPlanName,
+        List<string> warnings, CancellationToken ct)
+    {
+        if (!folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase) ||
+            await ExistsAsync(target, StoragePath.Combine(folder, VersionMarkerNames.Manifest), ct).ConfigureAwait(false) is not false ||
+            !await IsEmptyAsync(target, folder, ct).ConfigureAwait(false))
+            return;
+        try
+        {
+            await target.DeleteAsync([folder], CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when ((ex is StorageException or ArgumentException) && ex is not StorageUnavailableException)
+        {
+            warnings.Add(CoreTexts.English("core.run.remainsFailed", ("name", StoragePath.Name(folder)), ("error", ex.Message)));
         }
     }
 

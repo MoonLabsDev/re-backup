@@ -114,31 +114,44 @@ public static class VersionRemover
     /// </summary>
     /// <remarks>
     /// The directories go before <paramref name="last"/>: remains interrupted there still carry the file that tells whose
-    /// they are, so the next run can finish them.
+    /// they are, so the next run can finish them. <paramref name="first"/> and <paramref name="last"/> are matched by the
+    /// storage's case rule, so a manifest written as "RE-MANIFEST.json" by hand still goes last. Cancellation is checked
+    /// between the calls only: a batch that has started is finished, so <c>onFileDeleted</c> always reports what is gone.
     /// </remarks>
     private static async Task DeleteFolderAsync(IStorage target, string folder, string? first, string last,
         Action<int>? onFileDeleted, CancellationToken ct)
     {
+        var comparison = target.Capabilities.HasFlag(StorageCapabilities.CaseSensitive)
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
         var firstPath = first is null ? null : StoragePath.Combine(folder, first);
         var lastPath = StoragePath.Combine(folder, last);
         if (firstPath is not null)
-            await target.DeleteAsync([firstPath], ct).ConfigureAwait(false);
+            await target.DeleteAsync([firstPath], CancellationToken.None).ConfigureAwait(false);
 
+        var firstLeft = new List<string>();
+        var lastFound = new List<string>();
         var leaves = new List<string>();
         var directories = new List<string>();
         await foreach (var entry in target.ListAsync(folder, recursive: true, ct).ConfigureAwait(false))
         {
             if (entry.IsDirectory && !entry.IsLink)
                 directories.Add(entry.Path);
-            else if (entry.Path != firstPath && entry.Path != lastPath)
+            else if (firstPath is not null && string.Equals(entry.Path, firstPath, comparison))
+                firstLeft.Add(entry.Path);   // spelled differently on a storage that tells case apart in its paths
+            else if (string.Equals(entry.Path, lastPath, comparison))
+                lastFound.Add(entry.Path);
+            else
                 leaves.Add(entry.Path);   // a file, or a link: deleted as a link, never entered
         }
+        if (firstLeft.Count > 0)
+            await target.DeleteAsync(firstLeft, CancellationToken.None).ConfigureAwait(false);
 
         for (var start = 0; start < leaves.Count; start += BatchSize)
         {
             ct.ThrowIfCancellationRequested();
             var batch = leaves.GetRange(start, Math.Min(BatchSize, leaves.Count - start));
-            await target.DeleteAsync(batch, ct).ConfigureAwait(false);
+            await target.DeleteAsync(batch, CancellationToken.None).ConfigureAwait(false);
             onFileDeleted?.Invoke(batch.Count);
         }
 
@@ -149,13 +162,14 @@ public static class VersionRemover
             for (var start = 0; start < bottomUp.Count; start += BatchSize)
             {
                 ct.ThrowIfCancellationRequested();
-                await target.DeleteAsync(bottomUp.GetRange(start, Math.Min(BatchSize, bottomUp.Count - start)), ct).ConfigureAwait(false);
+                await target.DeleteAsync(bottomUp.GetRange(start, Math.Min(BatchSize, bottomUp.Count - start)), CancellationToken.None)
+                    .ConfigureAwait(false);
             }
         }
 
         ct.ThrowIfCancellationRequested();
-        await target.DeleteAsync([lastPath], ct).ConfigureAwait(false);
+        await target.DeleteAsync(lastFound.Count > 0 ? lastFound : [lastPath], CancellationToken.None).ConfigureAwait(false);
         if (hasDirectories)
-            await target.DeleteAsync([folder], ct).ConfigureAwait(false);
+            await target.DeleteAsync([folder], CancellationToken.None).ConfigureAwait(false);
     }
 }

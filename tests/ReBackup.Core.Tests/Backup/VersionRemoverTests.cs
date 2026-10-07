@@ -159,6 +159,65 @@ public class VersionRemoverTests : IDisposable
     }
 
     [Fact]
+    public async Task Cancellation_during_a_batch_finishes_the_batch_and_reports_it()
+    {
+        var storage = await MemoryVersion(extraFiles: 1500);
+        using var cts = new CancellationTokenSource();
+        var faulty = new FaultyStorage(storage)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "delete" && path.EndsWith(".txt", StringComparison.Ordinal))
+                    cts.Cancel();   // right at the first file of the first batch
+            },
+        };
+        var reported = new List<int>();
+
+        var act = () => VersionRemover.RemoveAsync(faulty, Name, Marker, reported.Add, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        reported.Should().Equal(1000);
+        storage.Files.Should().HaveCount(502, "exactly the reported files are gone; 501 files and the marker are left");
+    }
+
+    [Fact]
+    public async Task A_manifest_spelled_in_another_case_still_goes_last()
+    {
+        var storage = new InMemoryStorage();   // not CaseSensitive, yet its paths are compared ordinally
+        const string legacy = Name + ".deleting";
+        storage.AddFile($"{legacy}/RE-MANIFEST.json", "{}"u8.ToArray());
+        storage.AddFile($"{legacy}/a.txt", [1]);
+        storage.AddFile($"{legacy}/sub/b.txt", [1]);
+        var faulty = new FaultyStorage(storage) { FailDelete = path => path == $"{legacy}/sub/b.txt" };
+
+        var act = () => VersionRemover.RemoveLegacyFolderAsync(faulty, legacy);
+
+        await act.Should().ThrowAsync<StorageLockedException>();
+        storage.Files.Should().Contain($"{legacy}/RE-MANIFEST.json");
+
+        var reported = new List<int>();
+        await VersionRemover.RemoveLegacyFolderAsync(storage, legacy, reported.Add);
+        reported.Sum().Should().BeInRange(1, 2, "the manifest is not counted");
+        storage.Files.Should().BeEmpty();
+        (await storage.StatAsync(legacy, CancellationToken.None)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_manifest_spelled_in_another_case_is_hidden_first()
+    {
+        var storage = new InMemoryStorage();
+        storage.AddFile($"{Name}/a.txt", [1]);
+        storage.AddFile($"{Name}/RE-MANIFEST.json", "{}"u8.ToArray());
+        var deletes = new List<string>();
+        var faulty = new FaultyStorage(storage) { Before = (operation, path) => { if (operation == "delete") deletes.Add(path); } };
+
+        await VersionRemover.RemoveAsync(faulty, Name, Marker);
+
+        deletes.Take(2).Should().Equal($"{Name}/re-manifest.json", $"{Name}/RE-MANIFEST.json");
+        storage.Files.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Works_on_a_storage_without_directories()
     {
         var storage = await MemoryVersion(extraFiles: 3, capabilities: StorageCapabilities.None);

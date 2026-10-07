@@ -57,6 +57,7 @@ public class VersionMarkersTests
     [InlineData("[]")]
     [InlineData("{ \"formatVersion\": 1 }")]               // no plan id
     [InlineData("{ \"planId\": 5 }")]
+    [InlineData("{ \"formatVersion\": 2, \"planId\": \"p1\", \"planName\": \"Projects\" }")]   // a newer format
     public async Task A_missing_or_unreadable_marker_reads_as_null(string? content)
     {
         if (content is not null)

@@ -29,7 +29,7 @@ public static class VersionMarkers
 
     /// <summary>
     /// The marker at <paramref name="markerPath"/>; <c>null</c> when there is none or it is not a marker this build can
-    /// read (not JSON, no plan id). Other storage errors propagate.
+    /// read (not JSON, no plan id, a format newer than <see cref="FormatVersion"/>). Other storage errors propagate.
     /// </summary>
     public static async Task<MarkerInfo?> TryReadAsync(IStorage target, string markerPath, CancellationToken ct)
     {
@@ -39,7 +39,8 @@ public static class VersionMarkers
             await using (stream.ConfigureAwait(false))
             {
                 var marker = await JsonSerializer.DeserializeAsync<MarkerInfo>(stream, JsonDefaults.Options, ct).ConfigureAwait(false);
-                return string.IsNullOrEmpty(marker?.PlanId) ? null : marker;
+                // A newer format may mean something this build does not know: never act on it.
+                return string.IsNullOrEmpty(marker?.PlanId) || marker.FormatVersion > FormatVersion ? null : marker;
             }
         }
         catch (StorageNotFoundException)
