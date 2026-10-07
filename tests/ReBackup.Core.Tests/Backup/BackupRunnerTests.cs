@@ -575,6 +575,52 @@ public class BackupRunnerTests : IDisposable
         entry.Status.Should().Be(RunStatus.Error);
     }
 
+    [Theory]
+    [InlineData("re-manifest.json", false)]
+    [InlineData("re-manifest.json", true)]
+    [InlineData("re-pending.json", false)]
+    [InlineData("re-pending.json", true)]
+    [InlineData("re-deleting.json", false)]
+    [InlineData("re-deleting.json", true)]
+    public async Task Source_root_entries_named_like_the_version_files_are_skipped_and_the_version_stays_visible(string name, bool folder)
+    {
+        // A marker of this very plan: copied into the version root it would hide the version or have it deleted.
+        const string marker = "{\"formatVersion\":1,\"planId\":\"p1\",\"planName\":\"Projects\",\"host\":\"X\"}";
+        _tmp.WriteFile(folder ? $@"source\{name}\inner.txt" : $@"source\{name}", marker);
+        _tmp.WriteFile($@"source\sub\{name}", marker);   // deeper down it is an ordinary file
+
+        var entry = await Runner().RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings, "a skipped entry is a warning");
+        entry.Skipped.Should().ContainSingle().Which.Should().Be(
+            new SkippedEntry(name, "the name is reserved for ReBackup's own files"));
+        entry.FilesCopied.Should().Be(3);
+        File.ReadAllText(Path.Combine(VersionPath(), "sub", name)).Should().Be(marker);
+        File.Exists(Path.Combine(VersionPath(), "re-pending.json")).Should().BeFalse();
+        File.Exists(Path.Combine(VersionPath(), "re-deleting.json")).Should().BeFalse();
+        Directory.Exists(Path.Combine(VersionPath(), name)).Should().BeFalse();
+        var versions = await VersionCatalog.ListAsync(new FileSystemStorage(_target), "p1", "Projects");
+        versions.Should().ContainSingle().Which.Name.Should().Be($"{Minute} Projects");
+
+        // The next run leaves the version alone.
+        _time.Advance(TimeSpan.FromMinutes(1));
+        (await Runner().RunAsync(Request(Plan()))).Status.Should().Be(RunStatus.CompletedWithWarnings);
+        (await VersionCatalog.ListAsync(new FileSystemStorage(_target), "p1", "Projects")).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Only_the_manifest_is_written_durably()
+    {
+        FaultyStorage? faulty = null;
+
+        var entry = await Runner(s => faulty = new FaultyStorage(s)).RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        faulty!.Creates.Should().Contain(c => c.Path == $"{Minute} Projects/re-manifest.json" && c.Options.Durable);
+        faulty.Creates.Where(c => c.Options.Durable).Should().ContainSingle();
+        faulty.Creates.Where(c => IsDataFile(c.Path)).Should().HaveCount(2).And.OnlyContain(c => !c.Options.Durable);
+    }
+
     [Fact]
     public async Task Root_folder_named_like_the_manifest_is_skipped()
     {

@@ -12,7 +12,7 @@ namespace ReBackup.Core.Tests.TestSupport;
 public sealed class FaultyStorage(IStorage inner) : IStorage
 {
     private readonly object _gate = new();
-    private readonly List<string> _created = [];
+    private readonly List<(string Path, CreateOptions Options)> _created = [];
 
     /// <summary>Free space to report; the inner storage's when null.</summary>
     public Func<long?>? FreeSpace { get; init; }
@@ -34,6 +34,12 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
 
     /// <summary>The paths <see cref="CreateAsync"/> started writing, in order.</summary>
     public IReadOnlyList<string> Created
+    {
+        get { lock (_gate) return _created.Select(created => created.Path).ToList(); }
+    }
+
+    /// <summary>The paths <see cref="CreateAsync"/> started writing with the options they were created with, in order.</summary>
+    public IReadOnlyList<(string Path, CreateOptions Options)> Creates
     {
         get { lock (_gate) return _created.ToList(); }
     }
@@ -65,7 +71,7 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
         if (FailCreate(path))
             throw new StorageAccessDeniedException(path);
         var writer = await inner.CreateAsync(path, options, ct);
-        lock (_gate) _created.Add(path);
+        lock (_gate) _created.Add((path, options));
         return new Writer(this, path, writer);
     }
 

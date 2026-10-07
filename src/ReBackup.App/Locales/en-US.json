@@ -132,7 +132,8 @@
     },
     "skip": {
       "ignoreFileUnreadable": "ignore file could not be read; its patterns were not applied",
-      "reservedName": "the name is reserved for the backup manifest",
+      "reservedName": "the name is reserved for ReBackup's own files",
+      "reservedNameLegacy": "the name is reserved for the backup manifest",
       "changed": "changed while it was copied; the copy may be inconsistent"
     },
     "file": {

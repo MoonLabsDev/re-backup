@@ -64,7 +64,9 @@ public static class CoreTexts
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
 
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
-        ["core.skip.reservedName"] = "the name is reserved for the backup manifest",
+        ["core.skip.reservedName"] = "the name is reserved for ReBackup's own files",
+        // The text runs before the marker files wrote; kept so that their logs are still recognized and translated.
+        ["core.skip.reservedNameLegacy"] = "the name is reserved for the backup manifest",
         ["core.skip.changed"] = "changed while it was copied; the copy may be inconsistent",
 
         ["core.file.noLongerExists"] = "no longer exists",

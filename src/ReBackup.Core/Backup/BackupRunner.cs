@@ -298,21 +298,16 @@ public sealed class BackupRunner : IBackupRunner
             return;
 
         var path = node.Node.RelativePath;
-        if (!node.Node.IsDirectory)
+        if (IsReservedRootName(path))
         {
-            if (path.Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
-            {
-                work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.reservedName")));
-                return;
-            }
-            work.Files.Add(node.Node);
-            work.TotalBytes += node.Node.Size;
+            work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.reservedName")));
             return;
         }
 
-        if (path.Equals(VersionName.ManifestFileName, StringComparison.OrdinalIgnoreCase))
+        if (!node.Node.IsDirectory)
         {
-            work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.reservedName")));
+            work.Files.Add(node.Node);
+            work.TotalBytes += node.Node.Size;
             return;
         }
 
@@ -323,6 +318,16 @@ public sealed class BackupRunner : IBackupRunner
         foreach (var child in node.Children)
             Collect(child, work);
     }
+
+    /// <summary>
+    /// Whether a source path, file or folder, would land on one of the names a version folder uses for itself: the
+    /// manifest and the markers. Copied there, it would hide the version, be taken for its manifest, or clash with the
+    /// run's own marker. Only the root counts: deeper down these names are ordinary files.
+    /// </summary>
+    private static bool IsReservedRootName(string path) =>
+        path.Equals(VersionMarkerNames.Manifest, StringComparison.OrdinalIgnoreCase) ||
+        path.Equals(VersionMarkerNames.Pending, StringComparison.OrdinalIgnoreCase) ||
+        path.Equals(VersionMarkerNames.Deleting, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Removes what earlier runs of this plan left behind (<see cref="LeftoverCleaner"/>): folders of runs that never
@@ -544,7 +549,7 @@ public sealed class BackupRunner : IBackupRunner
         {
             return false;   // the folder is whoever's marker is in it: never touched
         }
-        catch (Exception)
+        catch (Exception)   // deliberately broad: whatever failed (OperationCanceledException too) is rethrown below
         {
             try
             {
@@ -650,8 +655,9 @@ public sealed class BackupRunner : IBackupRunner
         Report(BackupPhase.Finishing, "", force: true);
         manifest.FileCount = manifest.Files.Count;
         manifest.TotalBytes = manifest.Files.Sum(f => f.Size);
-        var writer = await target.CreateAsync(StoragePath.Combine(versionName, VersionMarkerNames.Manifest), new CreateOptions(),
-            cancellationToken).ConfigureAwait(false);
+        // Durable: the manifest is what makes the folder a version, so it must be on disk before the marker goes.
+        var writer = await target.CreateAsync(StoragePath.Combine(versionName, VersionMarkerNames.Manifest),
+            new CreateOptions(Durable: true), cancellationToken).ConfigureAwait(false);
         await using (writer.ConfigureAwait(false))
         {
             await JsonSerializer.SerializeAsync(writer, manifest, JsonDefaults.Options, cancellationToken).ConfigureAwait(false);

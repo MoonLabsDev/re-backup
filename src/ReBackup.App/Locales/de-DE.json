@@ -132,7 +132,8 @@
     },
     "skip": {
       "ignoreFileUnreadable": "Ignorierdatei konnte nicht gelesen werden; ihre Muster wurden nicht angewendet",
-      "reservedName": "der Name ist für das Backup-Manifest reserviert",
+      "reservedName": "der Name ist für ReBackups eigene Dateien reserviert",
+      "reservedNameLegacy": "der Name ist für das Backup-Manifest reserviert",
       "changed": "wurde während des Kopierens geändert; die Kopie ist möglicherweise inkonsistent"
     },
     "file": {
