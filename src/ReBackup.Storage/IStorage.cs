@@ -15,6 +15,7 @@ public interface IStorage
     /// <summary>
     /// The entries below <paramref name="folder"/> (direct children, or everything below when <paramref name="recursive"/>), in no guaranteed order.
     /// Entries carry full storage-relative paths. Throws <see cref="StorageNotFoundException"/> when the folder does not exist (the root always does).
+    /// The folder is validated and the view taken when enumeration starts, so errors surface on the first <c>MoveNextAsync</c>; the results may or may not reflect changes made during the enumeration.
     /// </summary>
     IAsyncEnumerable<StorageEntry> ListAsync(string folder, bool recursive, CancellationToken ct);
 
@@ -30,6 +31,7 @@ public interface IStorage
     /// <summary>
     /// Deletes files and empty directories; never recursively. Missing paths are not an error.
     /// Throws <see cref="StorageConflictException"/> for a directory that is not empty.
+    /// Not atomic across the batch: paths deleted before one that throws stay deleted.
     /// </summary>
     Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct);
 
