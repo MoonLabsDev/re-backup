@@ -702,7 +702,7 @@ public sealed class BackupRunner : IBackupRunner
             await writer.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        // No cancellation from here on: the backup is complete, removing the marker only makes it visible.
         await RemovePendingMarkerAsync(target, versionName).ConfigureAwait(false);
         return manifest;
     }

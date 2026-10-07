@@ -32,6 +32,9 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
     /// <summary>Runs before every call with the operation and the path.</summary>
     public Action<string, string>? Before { get; init; }
 
+    /// <summary>Runs after a commit has succeeded, with <c>commit</c> and the path.</summary>
+    public Action<string, string>? After { get; init; }
+
     /// <summary>The paths <see cref="CreateAsync"/> started writing, in order.</summary>
     public IReadOnlyList<string> Created
     {
@@ -125,12 +128,13 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
 
         public override void Flush() => inner.Flush();
 
-        public override Task CommitAsync(CancellationToken ct)
+        public override async Task CommitAsync(CancellationToken ct)
         {
             owner.Before?.Invoke("commit", path);
             if (owner.FailCommit(path))
                 throw new StorageAccessDeniedException(path);
-            return inner.CommitAsync(ct);
+            await inner.CommitAsync(ct);
+            owner.After?.Invoke("commit", path);
         }
 
         protected override void Dispose(bool disposing)

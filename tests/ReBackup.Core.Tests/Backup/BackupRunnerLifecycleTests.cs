@@ -135,6 +135,27 @@ public class BackupRunnerLifecycleTests
     }
 
     [Fact]
+    public async Task A_cancel_after_the_manifest_is_committed_still_finishes_the_version()
+    {
+        using var cts = new CancellationTokenSource();
+        var faults = (IStorage s) => new FaultyStorage(s)
+        {
+            After = (operation, path) =>
+            {
+                if (operation == "commit" && path == Version + "/re-manifest.json")
+                    cts.Cancel();
+            },
+        };
+
+        var entry = await Run(faults, cancellationToken: cts.Token);
+
+        entry.Status.Should().Be(RunStatus.Completed, "the backup is complete once its manifest is written");
+        entry.Version.Should().Be(Version);
+        _target.Files.Should().NotContain(Pending);
+        (await Versions()).Should().ContainSingle().Which.Name.Should().Be(Version);
+    }
+
+    [Fact]
     public async Task A_failure_after_the_manifest_removes_the_manifest_first_the_files_and_the_marker_last()
     {
         var deleted = new List<string>();
