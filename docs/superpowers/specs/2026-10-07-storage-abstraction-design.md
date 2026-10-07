@@ -92,7 +92,7 @@ public interface IStorage                        // bound to one root location
 public sealed record StorageEntry(string Path, bool IsDirectory, long Size,
                                   DateTime ModifiedUtc, bool IsLink, string? Stamp);
 
-public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null);
+public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null, bool Durable = false);
 
 public abstract class StorageWriter : Stream     // write-only
 {
@@ -109,7 +109,10 @@ Rules:
 - `ListAsync` returns entries in no guaranteed order; callers sort. Directory entries are reported where the storage has real directories; storages without them report implied prefixes as directories.
 - `IsLink` is only ever true on storages with `Links`. `FileSystemStorage` reports junctions/symlinks with `IsLink = true` and never descends into them in recursive listings.
 - `GetFreeSpaceAsync` returns `null` when unknown (UNC paths, storages without `FreeSpace`); the free-space preflight is then skipped, as today.
-- `DeleteAsync` deletes files and empty directories; it never deletes recursively. Missing paths are not an error.
+- `DeleteAsync` deletes files and empty directories; it never deletes recursively. Missing paths are not an error. The root (`""`) is never deleted: `StorageConflictException`, as for a non-empty directory.
+- An address the storage cannot hold throws `ArgumentException` from every member that takes a path: an invalid storage path, and in `FileSystemStorage` also a segment ending in a space or a dot, a character Windows forbids in names (`:` included), or a non-empty path whose full path leaves the root or resolves to the root itself. Containment is checked in `FileSystemStorage`, not in `StoragePath.Validate`, because S3 keys may contain `:`. Callers treat it as an entry they cannot use (a skip), never as an unreachable storage.
+- `FileSystemStorage` requires a fully qualified root (`Path.IsPathFullyQualified`); a relative one (`relative`, `C:relative`) throws `ArgumentException` instead of resolving against the process directory.
+- `CreateOptions.Durable` flushes the content to stable storage before the commit makes the file visible. Only the manifest is written durably (6.1 step 4); storages whose commit is durable anyway ignore it.
 
 ### 5.1 Exceptions
 
@@ -123,6 +126,9 @@ Every implementation maps its native errors to:
 | `StorageUnavailableException` | root unreachable (drive/share offline) | root's drive/share missing |
 | `StorageConflictException` | exclusive create hit an existing path | IOException on CreateNew |
 | `StorageLockedException` | file in use | HResult 32, 33 |
+| `StorageIOException` | any other I/O failure (unclassified) | other IOException while the root's drive/share is reachable |
+
+An unclassified `IOException` while the root's drive or share is gone maps to `StorageUnavailableException`.
 
 All derive from `StorageException : IOException`. Callers in Core only catch these types; the existing HResult checks in `BackupRunner`, `VersionCatalog.Probe` and `Restorer` move into `FileSystemStorage`.
 
@@ -148,22 +154,22 @@ File names: `re-manifest.json` (unchanged), new `re-pending.json`, new `re-delet
 ### 6.1 Backup run
 
 1. **Reserve the name.** Create `<version>/re-pending.json` exclusively. On `StorageConflictException` (or an existing manifest under that name) wait for the next minute, as today.
-2. **Copy.** Files are copied with xxh64 hashing as today, each through a `StorageWriter` with `ModifiedUtc` set when the storage supports it. Empty directories are created only on storages with `EmptyDirectories`.
+2. **Copy.** Files are copied with xxh64 hashing as today, each through a `StorageWriter` with `ModifiedUtc` set when the storage supports it. Empty directories are created only on storages with `EmptyDirectories`. A folder or file whose name the target cannot hold (`ArgumentException`, e.g. a WSL name ending in a dot or a space) is skipped with `core.file.cannotOpen`; a folder goes with everything in it, as one entry, and is left out of `Directories`.
 3. **Manifest.** `BackupManifest` gains `Directories: List<string>` (all included directories, `/`-separated, relative) so empty directories can be restored from storages without them. `FormatVersion` becomes 2; readers accept 1 and 2.
-4. **Commit.** Write and commit `re-manifest.json`, then delete `re-pending.json`. Only now is the version complete.
+4. **Commit.** Write and commit `re-manifest.json` (durably), then delete `re-pending.json`. Only now is the version complete. Once the manifest is committed the run is no longer canceled: removing the marker is the shortest way out.
 5. Index and retention follow as today; the version just created is never deleted.
 
 On failure or cancellation in the same run, the runner deletes what it wrote (files, then marker last). If that fails, the next run cleans up (6.4).
 
 ### 6.2 What counts as a version
 
-`VersionCatalog.ListAsync` lists the direct children of the target root. A child is a version when it contains `re-manifest.json` and neither `re-pending.json` nor `re-deleting.json`, and is not a link. Ownership rules stay as today (manifest `PlanId` matches, folder name matches the manifest's `PlanName`). Transient legacy names (`*.partial`, `*.deleting`) remain excluded.
+`VersionCatalog.ListAsync` lists the direct children of the target root. A child is a version when it contains `re-manifest.json` and neither `re-pending.json` nor `re-deleting.json`, and is not a link. Ownership rules stay as today (manifest `PlanId` matches, folder name matches the manifest's `PlanName`). Transient legacy names (`*.partial`, `*.deleting`) remain excluded, and so are names that are not plain folder names (trailing space or dot): no run writes them, and a storage may not be able to address their content.
 
 ### 6.3 Deleting a version
 
 Used by retention, free-space deletion and manual deletion:
 
-1. Write `re-deleting.json` (overwrite allowed).
+1. Write `re-deleting.json` (overwrite allowed). Its `planName` is the plan name the folder is named after, not the plan's current name: a version made before the plan was renamed must stay cleanable by 6.4.
 2. Delete `re-manifest.json`. The version is now invisible.
 3. Delete all other files in batches, reporting progress per file and honouring cancellation between batches.
 4. Delete directories bottom-up (only where the storage has directories).
@@ -180,6 +186,9 @@ A failure after step 1 raises `VersionRemainsException` → `VersionDeletionOutc
 | Legacy `*.partial` without manifest, name matches the plan | Delete as today, via `IStorage` |
 | Legacy `*.deleting` that is own remains (rules as today) | Delete as today, via `IStorage` |
 | Marker with another plan id, unreadable marker, `.partial` with manifest | Never touched; warning in the run log |
+| Empty folder without markers or manifest, named like a version of this plan | Deleted (a deletion whose final folder removal failed) |
+
+Markers are looked for only in folders whose name parses as a version (`VersionName`). A marker of this plan is acted on only when the folder is named after the plan's current name or the marker's `planName`; otherwise the folder was renamed by a person and is left with a warning. This is stricter than ownership by plan id alone, in the safe direction.
 
 ### 6.5 Restore
 
@@ -197,7 +206,7 @@ A failure after step 1 raises `VersionRemainsException` → `VersionDeletionOutc
 - Nested `.backupignore` files are read through `OpenReadAsync`.
 - `LiveScan` keeps up to 4 parallel workers, now as async tasks; prioritisation and partial results are unchanged.
 - Child sorting uses ordinal-ignore-case unless the storage is `CaseSensitive`.
-- `BackupRunner` opens source files with `OpenReadAsync`. `FileSystemStorage` keeps today's share mode (`ReadWrite | Delete`) and `SequentialScan`. A file whose size or mtime changed during the copy is still marked changed, using `StatAsync` after the copy.
+- `BackupRunner` opens source files with `OpenReadAsync`. `FileSystemStorage` keeps today's share mode (`ReadWrite | Delete`) and `SequentialScan`. A file whose size or mtime changed during the copy is still marked changed, using `StatAsync` after the copy; its copy and manifest entry keep the indexed (pre-copy) mtime, so possibly torn content is never stamped as the newest.
 
 ## 8. App
 
@@ -207,7 +216,8 @@ ViewModels switch to `StorageLocation` and the async Core APIs. The UI looks ide
 
 - Core never catches `System.IO` exceptions from storage calls; only `StorageException` subtypes.
 - `RunStatus.Full` ← `StorageFullException`.
-- Skip reasons in the run log ← `StorageNotFoundException`, `StorageAccessDeniedException`, `StorageLockedException`, and other `StorageException`.
+- Skip reasons in the run log ← `StorageNotFoundException`, `StorageAccessDeniedException`, `StorageLockedException`, and other `StorageException` when a source file is opened; `ArgumentException` for a name the source or the target cannot hold.
+- A read error in the middle of copying a file other than `StorageLockedException` fails the run (`RunStatus.Error`, the unfinished folder is removed); a file that turns out locked while it is read is skipped.
 - Ownership probe: `StorageNotFoundException` → NoManifest; other `StorageException` or `JsonException` → Unreadable.
 
 ## 10. Implementation order
