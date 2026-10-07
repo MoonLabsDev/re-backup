@@ -362,6 +362,8 @@
   },
   "app": {
     "versionLabel": "ReBackup v{version}",
+    "copyright": "© 2026",
+    "company": "Moon Labs UG (haftungsbeschränkt)",
     "config": {
       "title": "Konfigurationsordner",
       "unreachable": "Der Konfigurationsordner {path} ist nicht erreichbar:\n\n{error}\n\nJa = Erneut versuchen, Nein = Für diese Sitzung den Standardort verwenden, Abbrechen = Beenden",

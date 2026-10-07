@@ -362,6 +362,8 @@
   },
   "app": {
     "versionLabel": "ReBackup v{version}",
+    "copyright": "© 2026",
+    "company": "Moon Labs UG (haftungsbeschränkt)",
     "config": {
       "title": "Configuration folder",
       "unreachable": "The configuration folder {path} is not reachable:\n\n{error}\n\nYes = Retry, No = Use the default location for this session, Cancel = Exit",

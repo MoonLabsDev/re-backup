@@ -106,8 +106,18 @@
         </Border>
 
         <DockPanel Grid.Row="5" Margin="0,16,0,0" LastChildFill="False">
-            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Style="{StaticResource TextBlock.Muted}" FontSize="12"
-                       Text="{l:LocVersion}" />
+            <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:LocVersion}" />
+                <!-- Copyright with a link to the company's site. -->
+                <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,2,0,0" FontSize="12">
+                    <Run Text="{l:Loc app.copyright}" />
+                    <Hyperlink NavigateUri="https://moon-labs.io" RequestNavigate="OnCompanyLinkClicked"
+                               Foreground="{DynamicResource Brush.AccentLight}"
+                               ToolTip="{Binding NavigateUri, RelativeSource={RelativeSource Self}}">
+                        <Run Text="{l:Loc app.company}" />
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
             <Button Content="{l:Loc common.cancel}" MinWidth="84" IsCancel="True" Command="{Binding CancelCommand}" />
             <Button Style="{StaticResource Button.Accent}" Content="{l:Loc common.ok}" MinWidth="84" Margin="8,0,0,0" IsDefault="True"
