@@ -109,28 +109,6 @@
       "retentionRule": "Retention rule {index}: {problem}",
       "trigger": "Trigger {index}: {problem}"
     },
-    "trigger": {
-      "empty": "the trigger is empty.",
-      "unknownType": "the type is unknown.",
-      "time": "the time must be written as HH:mm, for example 02:00.",
-      "noWeekday": "choose at least one weekday.",
-      "notWeekday": "\"{day}\" is not a weekday.",
-      "monthDay": "the day must be from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-      "interval": "the interval must be a whole number of hours from 1 to 24.",
-      "from": "the start time must be written as HH:mm, for example 08:00.",
-      "to": "the end time must be written as HH:mm, for example 20:00.",
-      "fromAfterTo": "the start time must not be after the end time.",
-      "invalid": "The trigger is not valid: {problem}"
-    },
-    "retention": {
-      "empty": "the rule is empty.",
-      "unknownPeriod": "the period is unknown.",
-      "keep": "keep must be a number from 1 to {max}.",
-      "weekday": "the anchor must be a weekday, for example Sunday.",
-      "monthDay": "the anchor must be a day from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-      "yearDate": "the anchor must be a date written as MM-DD, for example 01-01.",
-      "invalid": "The retention rule is not valid: {problem}"
-    },
     "run": {
       "nameUnusable": "The plan name \"{name}\" cannot be used: {problem}",
       "sourceMissing": "Source folder \"{source}\" does not exist.",

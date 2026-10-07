@@ -5,7 +5,7 @@ using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.App.Theme;
 using ReBackup.App.ViewModels;
-using ReBackup.Core.Retention;
+using ReBackup.Shared.Retention;
 
 namespace ReBackup.App.Controls;
 

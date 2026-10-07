@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ReBackup.Core.Settings;
+namespace ReBackup.Shared.Settings;
 
 /// <summary>The app's colour theme: dark (the default) or light.</summary>
 public enum ThemeMode { Dark, Light }

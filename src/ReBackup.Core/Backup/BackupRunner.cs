@@ -3,12 +3,14 @@ using System.IO.Hashing;
 using System.Text.Json;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
-using ReBackup.Core.IO;
-using ReBackup.Core.Json;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.IO;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Backup;
 

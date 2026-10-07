@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ReBackup.Core.Json;
+namespace ReBackup.Shared.Json;
 
 public static class JsonDefaults
 {

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ReBackup.Core.IO;
+namespace ReBackup.Shared.IO;
 
 public static class AtomicFile
 {

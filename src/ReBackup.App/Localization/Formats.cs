@@ -1,5 +1,5 @@
-using ReBackup.Core.IO;
-using ReBackup.Core.Localization;
+using ReBackup.Shared.IO;
+using ReBackup.Shared.Localization;
 
 namespace ReBackup.App.Localization;
 

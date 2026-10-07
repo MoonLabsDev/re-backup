@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace ReBackup.Core.Retention;
+namespace ReBackup.Shared.Retention;
 
 /// <summary>A version that is still there at the end of a simulation. No reasons: the next run would delete it.</summary>
 public sealed record SimulatedVersion(DateTime LocalTime, bool Existing, IReadOnlyList<KeepReason> Reasons);

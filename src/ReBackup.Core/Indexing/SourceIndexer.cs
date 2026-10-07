@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using ReBackup.Core.Ignore;
-using ReBackup.Core.IO;
 using ReBackup.Core.Localization;
+using ReBackup.Shared.IO;
 
 namespace ReBackup.Core.Indexing;
 

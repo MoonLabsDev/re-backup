@@ -5,8 +5,9 @@ using CommunityToolkit.Mvvm.Input;
 using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Config;
-using ReBackup.Core.IO;
 using ReBackup.Core.Settings;
+using ReBackup.Shared.IO;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.App.ViewModels;
 

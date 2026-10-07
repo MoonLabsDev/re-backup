@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
-using ReBackup.Core.Backup;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Schedule;
 

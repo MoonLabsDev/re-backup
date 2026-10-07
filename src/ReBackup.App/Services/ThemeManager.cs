@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Interop;
-using ReBackup.Core.Settings;
-using ThemeMode = ReBackup.Core.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
+using ReBackup.Shared.Settings;
+using ThemeMode = ReBackup.Shared.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
 namespace ReBackup.App.Services;
 

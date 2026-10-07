@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ReBackup.Core.Settings;
+namespace ReBackup.Shared.Settings;
 
 /// <summary>The languages of the app and how the one to use is chosen.</summary>
 public static class AppLanguages

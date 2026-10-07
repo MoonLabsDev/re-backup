@@ -4,6 +4,7 @@ using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Backup;
 

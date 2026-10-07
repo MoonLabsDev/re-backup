@@ -1,7 +1,7 @@
-using ReBackup.Core.Localization;
-using ReBackup.Core.Retention;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Retention;
 
-namespace ReBackup.Core.Schedule;
+namespace ReBackup.Shared.Schedule;
 
 /// <summary>
 /// Turns triggers (local wall-clock times) into run instants (UTC). A time that does not exist because the clocks
@@ -17,7 +17,7 @@ public static class ScheduleCalculator
     public static IEnumerable<DateTime> Occurrences(ScheduleTrigger trigger, DateTime afterUtc, TimeZoneInfo zone)
     {
         if (ScheduleTriggers.Validate(trigger) is { } problem)
-            throw new ArgumentException(CoreTexts.English("core.trigger.invalid", ("problem", problem)), nameof(trigger));
+            throw new ArgumentException(SharedTexts.English("shared.trigger.invalid", ("problem", problem)), nameof(trigger));
         return Iterate(trigger, DateTime.SpecifyKind(afterUtc, DateTimeKind.Utc), zone);
     }
 

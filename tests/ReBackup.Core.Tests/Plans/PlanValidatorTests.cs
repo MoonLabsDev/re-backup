@@ -1,9 +1,11 @@
+using System.Globalization;
 using FluentAssertions;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Plans;
 
@@ -20,9 +22,19 @@ public class PlanValidatorTests : IDisposable
         Target = _tmp.PathOf("dst"),
     };
 
+    /// <summary>
+    /// A message in English: its own text from Core, the problems nested in it (retention rule, trigger) from the
+    /// shared library.
+    /// </summary>
+    private static string English(Message message) =>
+        LabelFormat.Format(CoreTexts.Templates.TryGetValue(message.Key, out var template)
+                ? template
+                : SharedTexts.Templates[message.Key],
+            message.Args, CultureInfo.InvariantCulture, English);
+
     /// <summary>The errors as Core renders them in English (the texts did not change, only their form did).</summary>
     private static IReadOnlyList<string> Validate(BackupPlan plan, params BackupPlan[] others) =>
-        PlanValidator.Validate(plan, others.Append(plan)).Select(message => CoreTexts.English(message)).ToList();
+        PlanValidator.Validate(plan, others.Append(plan)).Select(English).ToList();
 
     [Fact]
     public void Valid_plan_has_no_errors()
@@ -167,7 +179,7 @@ public class PlanValidatorTests : IDisposable
 
         PlanValidator.Validate(plan, [plan, other]).Should().Equal(
             Message.Of("core.plan.nameTaken", ("name", "Projects")),
-            Message.Of("core.plan.retentionRule", ("index", 1), ("problem", Message.Of("core.retention.keep", ("max", 9999)))),
-            Message.Of("core.plan.trigger", ("index", 1), ("problem", Message.Of("core.trigger.notWeekday", ("day", "Mo")))));
+            Message.Of("core.plan.retentionRule", ("index", 1), ("problem", Message.Of("shared.retention.keep", ("max", 9999)))),
+            Message.Of("core.plan.trigger", ("index", 1), ("problem", Message.Of("shared.trigger.notWeekday", ("day", "Mo")))));
     }
 }

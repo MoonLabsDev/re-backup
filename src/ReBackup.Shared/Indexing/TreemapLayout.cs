@@ -1,4 +1,4 @@
-namespace ReBackup.Core.Indexing;
+namespace ReBackup.Shared.Indexing;
 
 public readonly record struct TreemapRect(double X, double Y, double Width, double Height)
 {

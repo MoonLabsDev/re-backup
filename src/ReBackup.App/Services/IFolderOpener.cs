@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
+using ReBackup.Shared.IO;
 
 namespace ReBackup.App.Services;
 

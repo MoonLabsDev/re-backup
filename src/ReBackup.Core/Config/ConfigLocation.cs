@@ -1,7 +1,7 @@
 using System.Text.Json;
-using ReBackup.Core.IO;
-using ReBackup.Core.Json;
 using ReBackup.Core.Localization;
+using ReBackup.Shared.IO;
+using ReBackup.Shared.Json;
 
 namespace ReBackup.Core.Config;
 

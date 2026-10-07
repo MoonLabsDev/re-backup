@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace ReBackup.Core.Localization;
+namespace ReBackup.Shared.Localization;
 
 /// <summary>The labels of one language: that language's text, else the English one, else the key itself.</summary>
 public sealed class Labels

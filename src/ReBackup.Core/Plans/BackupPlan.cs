@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ReBackup.Core.Json;
-using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Plans;
 

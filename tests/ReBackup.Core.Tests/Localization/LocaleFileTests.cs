@@ -3,15 +3,19 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using FluentAssertions;
 using ReBackup.Core.Localization;
-using ReBackup.Core.Settings;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.Core.Tests.Localization;
 
-/// <summary>The App's label files (src/ReBackup.App/Locales), read from the repository.</summary>
+/// <summary>The label files of the App (src/ReBackup.App/Locales) and of the shared library (src/ReBackup.Shared/Locales), read from the repository.</summary>
 public class LocaleFileTests
 {
     internal static LabelSet Load(string language) => LabelSet.Parse(File.ReadAllText(RepoPaths.LocaleFile(language)));
+
+    internal static LabelSet LoadShared(string language) =>
+        LabelSet.Parse(File.ReadAllText(RepoPaths.SharedLocaleFile(language)));
 
     [Fact]
     public void There_is_one_file_per_supported_language()
@@ -184,6 +188,70 @@ public class LocaleFileTests
     }
 
     [Fact]
+    public void The_shared_library_has_one_file_per_supported_language()
+    {
+        Directory.GetFiles(Path.Combine(RepoPaths.SharedDirectory, "Locales"), "*.json")
+            .Select(path => Path.GetFileNameWithoutExtension(path))
+            .Should().BeEquivalentTo(AppLanguages.Supported.Select(language => "shared." + language));
+        foreach (var language in AppLanguages.Supported)
+            LoadShared(language).Entries.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Both_shared_files_have_the_same_keys()
+    {
+        var english = LoadShared(AppLanguages.English).Entries.Keys.ToList();
+        var german = LoadShared(AppLanguages.German).Entries.Keys.ToList();
+
+        english.Except(german).Should().BeEmpty("every English label needs a German one");
+        german.Except(english).Should().BeEmpty("German must not have labels English lacks");
+    }
+
+    [Fact]
+    public void Both_shared_files_use_the_same_placeholders_per_key()
+    {
+        var english = LoadShared(AppLanguages.English);
+        var german = LoadShared(AppLanguages.German);
+
+        english.Entries
+            .Where(pair => german.Entries.TryGetValue(pair.Key, out var text) &&
+                           !LabelFormat.PlaceholderSpecs(pair.Value).Order(StringComparer.Ordinal)
+                               .SequenceEqual(LabelFormat.PlaceholderSpecs(text).Order(StringComparer.Ordinal)))
+            .Select(pair => pair.Key)
+            .Should().BeEmpty("name and format of every placeholder must match");
+    }
+
+    [Fact]
+    public void Both_shared_files_have_the_same_plural_labels() =>
+        LoadShared(AppLanguages.German).Plurals.Should().BeEquivalentTo(LoadShared(AppLanguages.English).Plurals);
+
+    [Fact]
+    public void Shared_english_file_holds_exactly_the_shared_texts() =>
+        LoadShared(AppLanguages.English).Entries.Should().Equal(SharedTexts.Templates);
+
+    [Theory]
+    [InlineData(AppLanguages.English)]
+    [InlineData(AppLanguages.German)]
+    public void The_shared_keys_are_not_in_the_App_files(string language)
+    {
+        var shared = LoadShared(language).Entries.Keys;
+
+        Load(language).Entries.Keys.Intersect(shared).Should().BeEmpty();
+        shared.Should().OnlyContain(key => key.StartsWith("shared.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_stored_English_retention_text_is_shown_in_German_through_the_shared_file()
+    {
+        var german = LoadShared(AppLanguages.German).Merge(Load(AppLanguages.German));
+        var labels = new Labels(LoadShared(AppLanguages.English).Merge(Load(AppLanguages.English)), german,
+            CultureInfo.GetCultureInfo("de-DE"));
+
+        labels.Format(SharedTexts.Recognize("keep must be a number from 1 to 9999.")!)
+            .Should().Be("die Anzahl muss eine Zahl von 1 bis 9999 sein.");
+    }
+
+    [Fact]
     public void A_stored_English_reason_is_shown_in_German()
     {
         var labels = new Labels(Load(AppLanguages.English), Load(AppLanguages.German), CultureInfo.GetCultureInfo("de-DE"));
@@ -191,6 +259,14 @@ public class LocaleFileTests
 
         labels.Format(CoreTexts.Recognize(stored)!)
             .Should().Be("Der Planname „Projects.“ kann nicht verwendet werden: Der Name darf nicht mit einem Punkt enden.");
+    }
+
+    /// <summary>The culture in the file names must not turn them into satellite assemblies (WithCulture="false").</summary>
+    [Fact]
+    public void The_shared_library_embeds_its_label_files_under_the_name_Loc_reads()
+    {
+        typeof(SharedTexts).Assembly.GetManifestResourceNames()
+            .Should().BeEquivalentTo(AppLanguages.Supported.Select(language => $"ReBackup.Shared.Locales.shared.{language}.json"));
     }
 
     /// <summary>The project file, not a built App: the build in its bin folder may be older than the sources.</summary>

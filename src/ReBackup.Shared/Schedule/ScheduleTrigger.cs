@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ReBackup.Core.Schedule;
+namespace ReBackup.Shared.Schedule;
 
 public enum TriggerType { Daily, Weekly, Monthly, Interval }
 

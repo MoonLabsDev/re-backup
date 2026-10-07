@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.Core.Settings;
 

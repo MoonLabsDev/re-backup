@@ -1,7 +1,7 @@
-using ReBackup.Core.IO;
-using ReBackup.Core.Localization;
-using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.IO;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Plans;
 

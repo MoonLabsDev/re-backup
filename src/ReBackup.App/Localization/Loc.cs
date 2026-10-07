@@ -6,7 +6,8 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Markup;
 using ReBackup.Core.Localization;
-using ReBackup.Core.Settings;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.App.Localization;
 
@@ -18,6 +19,7 @@ namespace ReBackup.App.Localization;
 public sealed class Loc : INotifyPropertyChanged
 {
     private const string ResourcePrefix = "ReBackup.App.Locales.";
+    private const string SharedResourcePrefix = "ReBackup.Shared.Locales.shared.";
     private static readonly Dictionary<string, LabelSet> Sets = new(StringComparer.Ordinal);
     /// <summary>The English labels; an empty set (every text shows its key) when even they cannot be read.</summary>
     private static readonly LabelSet EnglishSet = TryLoad(AppLanguages.English) ?? LabelSet.Parse("{}");
@@ -60,7 +62,7 @@ public sealed class Loc : INotifyPropertyChanged
     /// the applied language when it is recognized, otherwise as it is (e.g. a message from Windows).
     /// </summary>
     public static string Known(string? text) =>
-        string.IsNullOrEmpty(text) ? "" : CoreTexts.Recognize(text) is { } message ? F(message) : text;
+        string.IsNullOrEmpty(text) ? "" : (CoreTexts.Recognize(text) ?? SharedTexts.Recognize(text)) is { } message ? F(message) : text;
 
     /// <summary>Binds a property of an element made in code (e.g. a tray menu item) to a label.</summary>
     public static void Bind(DependencyObject target, DependencyProperty property, string key) =>
@@ -119,13 +121,20 @@ public sealed class Loc : INotifyPropertyChanged
         return set;
     }
 
-    /// <summary>The embedded label file of <paramref name="language"/>; null when it is missing or cannot be read.</summary>
+    /// <summary>
+    /// The embedded label file of <paramref name="language"/>, merged with the shared library's file of that language;
+    /// null when the App's file is missing or cannot be read.
+    /// </summary>
     private static LabelSet? TryLoad(string language)
     {
         try
         {
             using var stream = typeof(Loc).Assembly.GetManifestResourceStream(ResourcePrefix + language + ".json");
-            return stream is null ? null : LabelSet.Parse(stream);
+            if (stream is null)
+                return null;
+            var set = LabelSet.Parse(stream);
+            using var shared = typeof(SharedTexts).Assembly.GetManifestResourceStream(SharedResourcePrefix + language + ".json");
+            return shared is null ? set : LabelSet.Parse(shared).Merge(set);
         }
         catch (Exception ex) when (ex is FormatException or IOException or DecoderFallbackException)
         {

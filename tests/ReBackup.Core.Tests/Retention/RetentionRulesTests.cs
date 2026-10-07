@@ -1,9 +1,10 @@
 using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
-using ReBackup.Core.Json;
 using ReBackup.Core.Localization;
-using ReBackup.Core.Retention;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Retention;
 
 namespace ReBackup.Core.Tests.Retention;
 
@@ -15,7 +16,7 @@ public class RetentionRulesTests
     private static DateOnly D(string text) => DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     /// <summary>The problem as Core renders it in English.</summary>
-    private static string? Problem(RetentionRule? rule) => RetentionRules.Validate(rule).ToEnglish();
+    private static string? Problem(RetentionRule? rule) => RetentionRules.Validate(rule) is { } problem ? SharedTexts.English(problem) : null;
 
     [Theory]
     [InlineData(RetentionPeriod.Daily, null)]
@@ -170,7 +171,7 @@ public class RetentionRulesTests
     [Fact]
     public void Problems_are_keys_with_arguments()
     {
-        RetentionRules.Validate(Rule(RetentionPeriod.Daily, null, 0)).Should().Be(Message.Of("core.retention.keep", ("max", 9999)));
-        RetentionRules.Validate(Rule(RetentionPeriod.Weekly, "Sonntag")).Should().Be(Message.Of("core.retention.weekday"));
+        RetentionRules.Validate(Rule(RetentionPeriod.Daily, null, 0)).Should().Be(Message.Of("shared.retention.keep", ("max", 9999)));
+        RetentionRules.Validate(Rule(RetentionPeriod.Weekly, "Sonntag")).Should().Be(Message.Of("shared.retention.weekday"));
     }
 }

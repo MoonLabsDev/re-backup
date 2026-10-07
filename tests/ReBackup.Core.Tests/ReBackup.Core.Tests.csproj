@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ReBackup.Core\ReBackup.Core.csproj" />
+    <ProjectReference Include="..\..\src\ReBackup.Shared\ReBackup.Shared.csproj" />
   </ItemGroup>
 
 </Project>

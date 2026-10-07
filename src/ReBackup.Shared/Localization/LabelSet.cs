@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 
-namespace ReBackup.Core.Localization;
+namespace ReBackup.Shared.Localization;
 
 /// <summary>
 /// One label file: nested JSON objects whose leaves are texts. A label's key is its dotted path,
@@ -68,6 +68,17 @@ public sealed class LabelSet
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         return Parse(reader.ReadToEnd());
+    }
+
+    /// <summary>The labels of both sets; on a key in both, <paramref name="other"/> wins.</summary>
+    public LabelSet Merge(LabelSet other)
+    {
+        var entries = new Dictionary<string, string>(_entries, StringComparer.Ordinal);
+        foreach (var (key, value) in other._entries)
+            entries[key] = value;
+        var plurals = new HashSet<string>(_plurals, StringComparer.Ordinal);
+        plurals.UnionWith(other._plurals);
+        return new LabelSet(entries, plurals);
     }
 
     public bool IsPlural(string key) => _plurals.Contains(key);

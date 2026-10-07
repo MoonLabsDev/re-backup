@@ -17,10 +17,11 @@ using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
-using ThemeMode = ReBackup.Core.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
+using ReBackup.Shared.Schedule;
+using ReBackup.Shared.Settings;
+using ThemeMode = ReBackup.Shared.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
 namespace ReBackup.App;
 

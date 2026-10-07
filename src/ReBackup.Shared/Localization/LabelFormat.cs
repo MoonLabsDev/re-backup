@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ReBackup.Core.Localization;
+namespace ReBackup.Shared.Localization;
 
 /// <summary>
 /// Label templates with named placeholders: <c>{name}</c>, or <c>{name:format}</c> for an argument that formats itself

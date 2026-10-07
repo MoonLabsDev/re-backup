@@ -1,4 +1,4 @@
-namespace ReBackup.Core.Localization;
+namespace ReBackup.Shared.Localization;
 
 /// <summary>
 /// A text to be shown in the user's language: the key of a label and its named arguments. Arguments are values that

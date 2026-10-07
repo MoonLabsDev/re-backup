@@ -1,6 +1,6 @@
-using ReBackup.Core.Localization;
+using ReBackup.Shared.Localization;
 
-namespace ReBackup.Core.Retention;
+namespace ReBackup.Shared.Retention;
 
 /// <summary>A version as retention sees it: its folder name and the local time in that name.</summary>
 public sealed record RetentionVersion(string Name, DateTime LocalTime);
@@ -32,7 +32,7 @@ public static class RetentionEngine
         {
             if (RetentionRules.Validate(rules[i]) is { } problem)
                 throw new ArgumentException(
-                    CoreTexts.English("core.plan.retentionRule", ("index", i + 1), ("problem", problem)), nameof(rules));
+                    SharedTexts.English("shared.retention.rule", ("index", i + 1), ("problem", problem)), nameof(rules));
         }
 
         var ordered = versions

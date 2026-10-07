@@ -1,7 +1,7 @@
 using System.Globalization;
-using ReBackup.Core.Localization;
+using ReBackup.Shared.Localization;
 
-namespace ReBackup.Core.Retention;
+namespace ReBackup.Shared.Retention;
 
 /// <summary>Checking, reading and applying the anchors of retention rules.</summary>
 public static class RetentionRules
@@ -10,21 +10,21 @@ public static class RetentionRules
 
     private static readonly string[] ShortDayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    /// <summary>Null when the rule can be used; otherwise what is wrong with it (keys under <c>core.retention</c>).</summary>
+    /// <summary>Null when the rule can be used; otherwise what is wrong with it (keys under <c>shared.retention</c>).</summary>
     public static Message? Validate(RetentionRule? rule)
     {
         if (rule is null)
-            return Message.Of("core.retention.empty");
+            return Message.Of("shared.retention.empty");
         if (!Enum.IsDefined(rule.Period))
-            return Message.Of("core.retention.unknownPeriod");
+            return Message.Of("shared.retention.unknownPeriod");
         if (rule.Keep < 1 || rule.Keep > MaxKeep)
-            return Message.Of("core.retention.keep", ("max", MaxKeep));
+            return Message.Of("shared.retention.keep", ("max", MaxKeep));
 
         return rule.Period switch
         {
-            RetentionPeriod.Weekly when !TryGetWeekday(rule.Anchor, out _) => Message.Of("core.retention.weekday"),
-            RetentionPeriod.Monthly when !TryGetMonthDay(rule.Anchor, out _) => Message.Of("core.retention.monthDay"),
-            RetentionPeriod.Yearly when !TryGetYearDate(rule.Anchor, out _, out _) => Message.Of("core.retention.yearDate"),
+            RetentionPeriod.Weekly when !TryGetWeekday(rule.Anchor, out _) => Message.Of("shared.retention.weekday"),
+            RetentionPeriod.Monthly when !TryGetMonthDay(rule.Anchor, out _) => Message.Of("shared.retention.monthDay"),
+            RetentionPeriod.Yearly when !TryGetYearDate(rule.Anchor, out _, out _) => Message.Of("shared.retention.yearDate"),
             _ => null,
         };
     }
@@ -121,7 +121,7 @@ public static class RetentionRules
                 return date.Year == 1 ? DateOnly.MinValue : YearAnchor(date.Year - 1, month, day);
 
             default:
-                throw new ArgumentException(CoreTexts.English("core.retention.invalid", ("problem", Validate(rule))), nameof(rule));
+                throw new ArgumentException(SharedTexts.English("shared.retention.invalid", ("problem", Validate(rule))), nameof(rule));
         }
     }
 }

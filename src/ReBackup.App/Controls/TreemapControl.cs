@@ -5,7 +5,7 @@ using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.App.Theme;
 using ReBackup.Core.Indexing;
-using ReBackup.Core.IO;
+using ReBackup.Shared.Indexing;
 
 namespace ReBackup.App.Controls;
 

@@ -1,8 +1,8 @@
 using System.Globalization;
-using ReBackup.Core.Localization;
-using ReBackup.Core.Retention;
+using ReBackup.Shared.Localization;
+using ReBackup.Shared.Retention;
 
-namespace ReBackup.Core.Schedule;
+namespace ReBackup.Shared.Schedule;
 
 /// <summary>Checking and reading the fields of schedule triggers.</summary>
 public static class ScheduleTriggers
@@ -12,41 +12,41 @@ public static class ScheduleTriggers
     /// <summary>The weekday names triggers are written with, Monday first.</summary>
     public static IReadOnlyList<string> ShortDayNames { get; } = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-    /// <summary>Null when the trigger can be used; otherwise what is wrong with it (keys under <c>core.trigger</c>).</summary>
+    /// <summary>Null when the trigger can be used; otherwise what is wrong with it (keys under <c>shared.trigger</c>).</summary>
     public static Message? Validate(ScheduleTrigger? trigger)
     {
         if (trigger is null)
-            return Message.Of("core.trigger.empty");
+            return Message.Of("shared.trigger.empty");
         if (!Enum.IsDefined(trigger.Type))
-            return Message.Of("core.trigger.unknownType");
+            return Message.Of("shared.trigger.unknownType");
 
         if (trigger.Type != TriggerType.Interval && !TryParseTime(trigger.Time, out _))
-            return Message.Of("core.trigger.time");
+            return Message.Of("shared.trigger.time");
 
         switch (trigger.Type)
         {
             case TriggerType.Weekly:
                 if (trigger.Days is not { Count: > 0 })
-                    return Message.Of("core.trigger.noWeekday");
+                    return Message.Of("shared.trigger.noWeekday");
                 foreach (var day in trigger.Days)
                 {
                     if (!RetentionRules.TryGetWeekday(day, out _))
-                        return Message.Of("core.trigger.notWeekday", ("day", day));
+                        return Message.Of("shared.trigger.notWeekday", ("day", day));
                 }
                 return null;
 
             case TriggerType.Monthly:
-                return trigger.Day is >= -30 and <= 31 ? null : Message.Of("core.trigger.monthDay");
+                return trigger.Day is >= -30 and <= 31 ? null : Message.Of("shared.trigger.monthDay");
 
             case TriggerType.Interval:
                 if (trigger.EveryHours is not (>= 1 and <= 24))
-                    return Message.Of("core.trigger.interval");
+                    return Message.Of("shared.trigger.interval");
                 if (trigger.From is not null && !TryParseTime(trigger.From, out _))
-                    return Message.Of("core.trigger.from");
+                    return Message.Of("shared.trigger.from");
                 if (trigger.To is not null && !TryParseTime(trigger.To, out _))
-                    return Message.Of("core.trigger.to");
+                    return Message.Of("shared.trigger.to");
                 var (from, to) = IntervalWindow(trigger);
-                return from > to ? Message.Of("core.trigger.fromAfterTo") : null;
+                return from > to ? Message.Of("shared.trigger.fromAfterTo") : null;
 
             default:
                 return null;

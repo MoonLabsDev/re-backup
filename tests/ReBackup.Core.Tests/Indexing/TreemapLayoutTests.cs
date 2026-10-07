@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using FluentAssertions;
-using ReBackup.Core.Indexing;
+using ReBackup.Shared.Indexing;
 
 namespace ReBackup.Core.Tests.Indexing;
 

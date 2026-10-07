@@ -2,8 +2,8 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using FluentAssertions;
-using ReBackup.Core.Settings;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.Core.Tests.Localization;
 

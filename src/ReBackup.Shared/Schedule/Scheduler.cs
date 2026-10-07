@@ -1,8 +1,7 @@
 using System.Text.Json;
-using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
+using ReBackup.Shared.Json;
 
-namespace ReBackup.Core.Schedule;
+namespace ReBackup.Shared.Schedule;
 
 /// <summary>What the scheduler needs to know about a saved plan.</summary>
 public sealed record ScheduledPlan(string Id, bool Enabled, IReadOnlyList<ScheduleTrigger> Triggers);

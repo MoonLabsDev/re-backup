@@ -1,8 +1,8 @@
 using System.Runtime.ExceptionServices;
 using ReBackup.Core.Ignore;
-using ReBackup.Core.IO;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
+using ReBackup.Shared.IO;
 
 namespace ReBackup.Core.Indexing;
 

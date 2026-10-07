@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The label files of the shared texts (WithCulture="false": the culture in the file name must not make satellite assemblies); SharedTexts and the App's Loc read them as ReBackup.Shared.Locales.<name>.json. -->
+    <EmbeddedResource Include="Locales\*.json" WithCulture="false" LogicalName="ReBackup.Shared.Locales.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

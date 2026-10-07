@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using ReBackup.Shared.Localization;
 
 namespace ReBackup.Core.Localization;
 
@@ -29,28 +30,6 @@ public static class CoreTexts
         ["core.plan.sourceInsideTarget"] = "Source must not be inside the target.",
         ["core.plan.retentionRule"] = "Retention rule {index}: {problem}",
         ["core.plan.trigger"] = "Trigger {index}: {problem}",
-
-        ["core.trigger.empty"] = "the trigger is empty.",
-        ["core.trigger.unknownType"] = "the type is unknown.",
-        ["core.trigger.time"] = "the time must be written as HH:mm, for example 02:00.",
-        ["core.trigger.noWeekday"] = "choose at least one weekday.",
-        ["core.trigger.notWeekday"] = "\"{day}\" is not a weekday.",
-        ["core.trigger.monthDay"] =
-            "the day must be from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-        ["core.trigger.interval"] = "the interval must be a whole number of hours from 1 to 24.",
-        ["core.trigger.from"] = "the start time must be written as HH:mm, for example 08:00.",
-        ["core.trigger.to"] = "the end time must be written as HH:mm, for example 20:00.",
-        ["core.trigger.fromAfterTo"] = "the start time must not be after the end time.",
-        ["core.trigger.invalid"] = "The trigger is not valid: {problem}",
-
-        ["core.retention.empty"] = "the rule is empty.",
-        ["core.retention.unknownPeriod"] = "the period is unknown.",
-        ["core.retention.keep"] = "keep must be a number from 1 to {max}.",
-        ["core.retention.weekday"] = "the anchor must be a weekday, for example Sunday.",
-        ["core.retention.monthDay"] =
-            "the anchor must be a day from 1 to 31, 0 for the last day of the month, or -1 to -30 for days before the last day.",
-        ["core.retention.yearDate"] = "the anchor must be a date written as MM-DD, for example 01-01.",
-        ["core.retention.invalid"] = "The retention rule is not valid: {problem}",
 
         ["core.run.nameUnusable"] = "The plan name \"{name}\" cannot be used: {problem}",
         ["core.run.sourceMissing"] = "Source folder \"{source}\" does not exist.",

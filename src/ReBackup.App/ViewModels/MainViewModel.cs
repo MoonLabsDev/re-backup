@@ -7,9 +7,9 @@ using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Schedule;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.App.ViewModels;
 

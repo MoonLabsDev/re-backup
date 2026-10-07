@@ -4,10 +4,10 @@ using CommunityToolkit.Mvvm.Input;
 using ReBackup.App.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
-using ReBackup.Core.IO;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.App.ViewModels;
 

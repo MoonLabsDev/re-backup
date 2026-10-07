@@ -1,6 +1,6 @@
 using System.Text.Json;
 using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
+using ReBackup.Shared.Json;
 
 namespace ReBackup.Core.Tests.TestSupport;
 

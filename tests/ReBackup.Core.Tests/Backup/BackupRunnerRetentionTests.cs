@@ -2,8 +2,9 @@ using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Retention;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Backup;
 

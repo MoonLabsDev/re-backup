@@ -1,4 +1,4 @@
-using ReBackup.Core.Retention;
+using ReBackup.Shared.Retention;
 
 namespace ReBackup.App.ViewModels;
 

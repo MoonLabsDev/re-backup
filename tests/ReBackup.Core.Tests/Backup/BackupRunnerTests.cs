@@ -5,9 +5,10 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Backup;
 

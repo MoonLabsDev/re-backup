@@ -1,7 +1,7 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using ReBackup.App.Localization;
-using ReBackup.Core.Retention;
+using ReBackup.Shared.Retention;
 
 namespace ReBackup.App.ViewModels;
 

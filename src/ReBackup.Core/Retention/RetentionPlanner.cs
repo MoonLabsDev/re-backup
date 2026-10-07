@@ -1,4 +1,5 @@
 using ReBackup.Core.Backup;
+using ReBackup.Shared.Retention;
 
 namespace ReBackup.Core.Retention;
 

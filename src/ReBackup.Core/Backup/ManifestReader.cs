@@ -1,6 +1,6 @@
 using System.Text.Json;
-using ReBackup.Core.Json;
 using ReBackup.Core.Localization;
+using ReBackup.Shared.Json;
 
 namespace ReBackup.Core.Backup;
 

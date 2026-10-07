@@ -2,8 +2,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Json;
 
 namespace ReBackup.Core.Tests.Versions;
 

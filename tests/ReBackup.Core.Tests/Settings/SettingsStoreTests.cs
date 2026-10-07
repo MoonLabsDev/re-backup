@@ -1,6 +1,7 @@
 using FluentAssertions;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Settings;
 
 namespace ReBackup.Core.Tests.Settings;
 

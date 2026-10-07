@@ -1,10 +1,10 @@
 using System.Text.Json;
 using FluentAssertions;
-using ReBackup.Core.Json;
 using ReBackup.Core.Plans;
-using ReBackup.Core.Retention;
-using ReBackup.Core.Schedule;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.Core.Tests.Plans;
 

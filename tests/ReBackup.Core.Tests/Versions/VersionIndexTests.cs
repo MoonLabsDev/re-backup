@@ -2,9 +2,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using ReBackup.Core.Backup;
-using ReBackup.Core.Json;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Json;
 using static ReBackup.Core.Tests.TestSupport.VersionBuilder;
 
 namespace ReBackup.Core.Tests.Versions;

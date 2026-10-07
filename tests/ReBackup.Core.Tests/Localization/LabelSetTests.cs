@@ -1,6 +1,6 @@
 using System.Text;
 using FluentAssertions;
-using ReBackup.Core.Localization;
+using ReBackup.Shared.Localization;
 
 namespace ReBackup.Core.Tests.Localization;
 
