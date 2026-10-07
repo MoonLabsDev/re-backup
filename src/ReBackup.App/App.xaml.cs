@@ -278,7 +278,7 @@ public partial class App : Application
 
     /// <summary>
     /// Stops the scheduler, closes the queue (canceling queued and running backups) and waits briefly for the running
-    /// one to clean up its partial folder. False when it did not stop in time.
+    /// one to clean up its unfinished version folder. False when it did not stop in time.
     /// </summary>
     private bool StopBackups(TimeSpan wait)
     {

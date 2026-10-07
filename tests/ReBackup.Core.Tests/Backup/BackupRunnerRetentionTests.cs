@@ -39,13 +39,25 @@ public class BackupRunnerRetentionTests : IDisposable
         Retention = [.. rules],
     };
 
+    /// <param name="freeSpace">The free space the target reports; the real one when null.</param>
     /// <param name="target">Wraps the target's storage, e.g. in a <see cref="FaultyStorage"/>.</param>
-    private Task<RunLogEntry> Run(BackupPlan plan, ITargetVolume? volume = null, IProgress<BackupProgress>? progress = null,
+    private Task<RunLogEntry> Run(BackupPlan plan, Func<long?>? freeSpace = null, IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default, Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null,
-        Func<IStorage, IStorage>? target = null) =>
-        new BackupRunner(volume ?? new PhysicalTargetVolume(), _time, currentRules,
-                storages: target is null ? null : TestStorageFactory.Wrapping(target))
+        Func<IStorage, IStorage>? target = null)
+    {
+        var storages = target is null && freeSpace is null
+            ? null
+            : new TestStorageFactory(location =>
+            {
+                var storage = new StorageFactory().Open(location);
+                if (location != plan.Target)
+                    return storage;
+                var wrapped = target?.Invoke(storage) ?? storage;
+                return freeSpace is null ? wrapped : new FaultyStorage(wrapped) { FreeSpace = freeSpace };
+            });
+        return new BackupRunner(storages, _time, currentRules)
             .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual), progress, cancellationToken);
+    }
 
     /// <summary>The storage path of the deleting marker of the version of 2026-09-<paramref name="day"/>.</summary>
     private static string DeletingMarker(int day) => $"{OldName(day)}/re-deleting.json";
@@ -196,9 +208,7 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         Old(26);
         Old(27);
-        var volume = new ScriptedVolume { FreeSpace = () => 0 };
-
-        var entry = await Run(Plan(Daily(1)), volume);
+        var entry = await Run(Plan(Daily(1)), freeSpace: () => 0);
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.RetentionDeleted.Should().BeEmpty();
@@ -367,7 +377,7 @@ public class BackupRunnerRetentionTests : IDisposable
     }
 
     /// <summary>Reports 2 free bytes plus 10 for each of the given old versions that is gone.</summary>
-    private Func<long> FreedBy(params int[] days) =>
+    private Func<long?> FreedBy(params int[] days) =>
         () => 2 + 10 * days.Count(day => !Directory.Exists(Path.Combine(_target, OldName(day))));
 
     [Fact]
@@ -375,9 +385,9 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         for (var day = 25; day <= 29; day++)
             Old(day);
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+        Func<long?> freeSpace = FreedBy(25, 26, 27);
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume);
+        var entry = await Run(FreeingPlan(Daily(3)), freeSpace);
 
         entry.Status.Should().Be(RunStatus.Completed);
         // 25 and 26 made room before the run; 27 went in the normal retention pass after it.
@@ -391,9 +401,9 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         for (var day = 25; day <= 29; day++)
             Old(day);
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+        Func<long?> freeSpace = FreedBy(25, 26, 27);
 
-        var entry = await Run(Plan(Daily(3)), volume);
+        var entry = await Run(Plan(Daily(3)), freeSpace);
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.RetentionDeleted.Should().BeEmpty();
@@ -405,9 +415,9 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         for (var day = 25; day <= 29; day++)
             Old(day, bytes: 1);
-        var volume = new ScriptedVolume { FreeSpace = () => 2 };
+        Func<long?> freeSpace = () => 2;
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume);
+        var entry = await Run(FreeingPlan(Daily(3)), freeSpace);
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.RetentionDeleted.Should().BeEmpty();
@@ -418,9 +428,9 @@ public class BackupRunnerRetentionTests : IDisposable
     public async Task Never_deletes_the_newest_existing_version_to_make_room()
     {
         Old(29, bytes: 100);
-        var volume = new ScriptedVolume { FreeSpace = () => 2 };
+        Func<long?> freeSpace = () => 2;
 
-        var entry = await Run(FreeingPlan(Daily(1)), volume);
+        var entry = await Run(FreeingPlan(Daily(1)), freeSpace);
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.RetentionDeleted.Should().BeEmpty();
@@ -432,9 +442,9 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         for (var day = 25; day <= 29; day++)
             Old(day);
-        var volume = new ScriptedVolume { FreeSpace = () => 2 };   // deleting does not help on this volume
+        Func<long?> freeSpace = () => 2;   // deleting does not help on this volume
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume);
+        var entry = await Run(FreeingPlan(Daily(3)), freeSpace);
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.RetentionDeleted.Should().Equal(OldName(25), OldName(26), OldName(27));
@@ -446,9 +456,9 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         Old(28);
         Old(29);
-        var volume = new ScriptedVolume { FreeSpace = () => 2 };
+        Func<long?> freeSpace = () => 2;
 
-        var entry = await Run(FreeingPlan(), volume);
+        var entry = await Run(FreeingPlan(), freeSpace);
 
         entry.Status.Should().Be(RunStatus.Full);
         TargetEntries().Should().HaveCount(2);
@@ -460,9 +470,9 @@ public class BackupRunnerRetentionTests : IDisposable
         for (var day = 25; day <= 29; day++)
             Old(day);
         var stubborn = Path.Combine(_target, OldName(25));
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+        Func<long?> freeSpace = FreedBy(25, 26, 27);
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume,
+        var entry = await Run(FreeingPlan(Daily(3)), freeSpace,
             target: s => new FaultyStorage(s) { FailCreate = path => path == DeletingMarker(25) });
 
         entry.Status.Should().Be(RunStatus.Completed);
@@ -478,7 +488,7 @@ public class BackupRunnerRetentionTests : IDisposable
         for (var day = 25; day <= 29; day++)
             Old(day);
         var vanishing = Path.Combine(_target, OldName(25));
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(26, 27) };
+        Func<long?> freeSpace = FreedBy(26, 27);
         var faults = (IStorage s) => new FaultyStorage(s)
         {
             Before = (operation, path) =>
@@ -488,7 +498,7 @@ public class BackupRunnerRetentionTests : IDisposable
             },
         };
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume, target: faults);
+        var entry = await Run(FreeingPlan(Daily(3)), freeSpace, target: faults);
 
         entry.Status.Should().Be(RunStatus.Completed);
         // 26 and 27 made room before the run; nothing was left to delete after it.
@@ -583,10 +593,10 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         for (var day = 25; day <= 29; day++)
             Old(day);
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+        Func<long?> freeSpace = FreedBy(25, 26, 27);
 
         // The request still says Daily 30, which would free nothing.
-        var entry = await Run(FreeingPlan(Daily(30)), volume, currentRules: _ => [Daily(3)]);
+        var entry = await Run(FreeingPlan(Daily(30)), freeSpace, currentRules: _ => [Daily(3)]);
 
         entry.Status.Should().Be(RunStatus.Completed);
         entry.RetentionDeleted.Should().Equal(OldName(25), OldName(26), OldName(27));
@@ -598,9 +608,9 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         for (var day = 25; day <= 29; day++)
             Old(day);
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+        Func<long?> freeSpace = FreedBy(25, 26, 27);
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume, currentRules: _ => null);
+        var entry = await Run(FreeingPlan(Daily(3)), freeSpace, currentRules: _ => null);
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.RetentionDeleted.Should().BeEmpty();
@@ -613,9 +623,9 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         for (var day = 25; day <= 29; day++)
             Old(day);
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
+        Func<long?> freeSpace = FreedBy(25, 26, 27);
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume, currentRules: _ => throw new IOException("the share is gone"));
+        var entry = await Run(FreeingPlan(Daily(3)), freeSpace, currentRules: _ => throw new IOException("the share is gone"));
 
         entry.Status.Should().Be(RunStatus.Full);
         entry.RetentionDeleted.Should().BeEmpty();

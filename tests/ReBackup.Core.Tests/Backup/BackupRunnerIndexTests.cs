@@ -27,7 +27,7 @@ public class BackupRunnerIndexTests : IDisposable
     public void Dispose() => _tmp.Dispose();
 
     private Task<RunLogEntry> Run(IVersionIndexSink sink) =>
-        new BackupRunner(new PhysicalTargetVolume(), _time, indexSink: sink)
+        new BackupRunner(timeProvider: _time, indexSink: sink)
             .RunAsync(new BackupRequest(_plan, [], RunTrigger.Manual));
 
     [Fact]
