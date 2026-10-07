@@ -44,8 +44,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _saved = plan.Clone();
         _allPlans = allPlans;
         _folders = folders;
-        Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults);
-        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders);
+        Run = new PlanRunViewModel(versions.Storages);
+        Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
+        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions);
         Versions.VersionsDeleted += () => RetentionPreview.ReloadIfLoaded();
         Preview.PropertyChanged += (_, e) =>
@@ -67,7 +68,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     public IgnorePreviewViewModel Preview { get; }
 
     /// <summary>Queue state, progress and history of this plan.</summary>
-    public PlanRunViewModel Run { get; } = new();
+    public PlanRunViewModel Run { get; }
 
     /// <summary>What the retention rules do with the versions in the target.</summary>
     public RetentionPreviewViewModel RetentionPreview { get; }

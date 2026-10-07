@@ -10,6 +10,7 @@ using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
 using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -49,10 +50,11 @@ public sealed partial class MainViewModel : ObservableObject
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
-        LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex)
+        LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
+        IStorageFactory storages)
     {
         _folders = folders;
-        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text));
+        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages);
         Theme = theme;
         Language = language;
         Loc.LanguageChanged += (_, _) => OnLanguageChanged();

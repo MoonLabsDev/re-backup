@@ -7,6 +7,7 @@ using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
+using ReBackup.Core.Versions;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
@@ -32,6 +33,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private readonly Func<BackupPlan> _plan;
     private readonly Func<long?> _fallbackVersionBytes;
     private readonly IFolderOpener _folders;
+    private readonly IStorageFactory _storages;
     private IReadOnlyList<VersionInfo>? _versions;
     private string? _versionsTarget;   // belongs to _versions: the target they were read from
     private bool _targetMissing;   // belongs to _versions: the target folder did not exist when they were read
@@ -93,8 +95,11 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     /// <param name="plan">Gives the plan as currently edited.</param>
     /// <param name="fallbackVersionBytes">Size of one version when the target has none yet; null when unknown.</param>
     /// <param name="folders">Opens a version folder in Explorer.</param>
-    public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes, IFolderOpener folders)
+    /// <param name="storages">Opens the plan's target.</param>
+    public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes, IFolderOpener folders,
+        IStorageFactory storages)
     {
+        _storages = storages;
         _plan = plan;
         _fallbackVersionBytes = fallbackVersionBytes;
         _folders = folders;
@@ -217,10 +222,12 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         {
             var (versions, targetMissing) = await Task.Run(async () =>
             {
-                var missing = string.IsNullOrWhiteSpace(plan.Target.Path) || !Directory.Exists(plan.Target.Path);
-                IReadOnlyList<VersionInfo> list = missing
+                // Only a present target is listed; NotCreatedYet and Unreachable both show as "missing", as before.
+                var (state, storage) = await TargetStates.OpenAndProbeAsync(_storages, plan.Target, cts.Token);
+                var missing = state != TargetState.Present;
+                IReadOnlyList<VersionInfo> list = storage is null
                     ? []
-                    : await VersionCatalog.ListAsync(new StorageFactory().Open(plan.Target), plan.Id, plan.Name, cts.Token);
+                    : await VersionCatalog.ListAsync(storage, plan.Id, plan.Name, cts.Token);
                 return (list, missing);
             }, cts.Token);
             if (!ReferenceEquals(_loadCts, cts))

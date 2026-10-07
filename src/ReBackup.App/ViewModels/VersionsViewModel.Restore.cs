@@ -95,7 +95,7 @@ public sealed partial class VersionsViewModel
     {
         if (Current() is not { Node.IsDirectory: false } selection)
             return;
-        var (folder, path) = (FolderOf(selection.Version), selection.Node.Path);
+        var (folder, path) = (FolderOf(selection.Version) ?? "", selection.Node.Path);
         if (IsRunnable(Path.GetExtension(selection.Node.Name)))
         {
             if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
@@ -114,7 +114,7 @@ public sealed partial class VersionsViewModel
     {
         if (Current() is not { } selection)
             return;
-        var (folder, path) = (FolderOf(selection.Version), selection.Node.Path);
+        var (folder, path) = (FolderOf(selection.Version) ?? "", selection.Node.Path);
         if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
             _context.ReportStatus(LocText.Of("restore.notInVersion", ("path", path)));
     }
@@ -230,7 +230,7 @@ public sealed partial class VersionsViewModel
                     _context.ReportStatus(LocText.Of("restore.reindexing"));
                     return;
                 }
-                var factory = new StorageFactory();
+                var factory = _context.Storages;
                 var versions = factory.Open(versionsLocation);
                 var destination = factory.Open(StorageLocation.FileSystem(root));
                 plan = await Task.Run(() => Restorer.PlanAsync(versions, versionPath, [relative], destination, mode, cts.Token),

@@ -133,7 +133,7 @@ public sealed partial class VersionsViewModel
         IReadOnlyList<VersionDeletion> results;
         try
         {
-            results = await Task.Run(() => VersionDeleter.DeleteAsync(new StorageFactory().Open(plan.Target), plan.Id, plan.Name,
+            results = await Task.Run(() => VersionDeleter.DeleteAsync(_context.Storages.Open(plan.Target), plan.Id, plan.Name,
                 names, progress, cts.Token));
             var gone = results.Where(r => r.Outcome is not (VersionDeletionOutcome.Failed or VersionDeletionOutcome.NotManaged))
                 .Select(r => r.Name)

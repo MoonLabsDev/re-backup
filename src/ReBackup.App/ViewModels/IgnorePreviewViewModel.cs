@@ -21,6 +21,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private readonly Func<string> _source;
     private readonly Func<IgnoreSettings> _ignoreSettings;
     private readonly Func<IReadOnlyList<string>> _globalDefaults;
+    private readonly IStorageFactory _storages;
     private SourceIndex? _index;
     private LiveScan? _scan;
     private CancellationTokenSource? _indexCts;
@@ -80,8 +81,9 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     public long? LastEvaluatedIncludedSize { get; private set; }
 
     public IgnorePreviewViewModel(Func<string> source, Func<IgnoreSettings> ignoreSettings,
-        Func<IReadOnlyList<string>> globalDefaults)
+        Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages)
     {
+        _storages = storages;
         _source = source;
         _ignoreSettings = ignoreSettings;
         _globalDefaults = globalDefaults;
@@ -162,7 +164,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         {
             try
             {
-                var opened = new StorageFactory().Open(StorageLocation.FileSystem(source));
+                var opened = _storages.Open(StorageLocation.FileSystem(source));
                 // Not there, offline or not a folder: all "missing" for the user, as Directory.Exists said before.
                 if (await opened.StatAsync("", CancellationToken.None) is { IsDirectory: true })
                     storage = opened;

@@ -8,14 +8,16 @@ using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Versions;
 using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.App.ViewModels;
 
 /// <summary>
 /// What every plan's Versions tab shares: the index worker (syncs of one plan's index run one at a time, behind the
-/// versions finished runs hand to it), the dialogs and the footer's status line.
+/// versions finished runs hand to it), the dialogs, the footer's status line and the app's one storage factory.
 /// </summary>
-public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<LocText> ReportStatus)
+public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<LocText> ReportStatus,
+    IStorageFactory Storages)
 {
     /// <summary>The plans' indexes; reads (queries) may run beside a sync.</summary>
     public VersionIndexSet Indexes => Worker.Indexes;
@@ -33,8 +35,6 @@ public sealed partial class VersionsViewModel : ObservableObject
     private readonly VersionsContext _context;
     private CancellationTokenSource? _syncCts;
     private VersionIndex? _index;
-    /// <summary>The target folder the shown rows were listed from; their <see cref="VersionInfo.Path"/> is relative to it.</summary>
-    private string? _versionsTarget;
     /// <summary>The location the shown rows were listed from (the restore reads the versions there).</summary>
     private StorageLocation? _versionsLocation;
     private bool _loaded;
@@ -127,7 +127,6 @@ public sealed partial class VersionsViewModel : ObservableObject
         _syncCts?.Cancel();
         _syncCts = null;
         _index = null;
-        _versionsTarget = null;
         _versionsLocation = null;
         _loaded = false;
         _reloadRequested = false;
@@ -162,8 +161,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             var (index, state, target, folders, indexed) = await Task.Run(async () =>
             {
                 var planIndex = _context.Indexes.For(plan.Id);
-                var targetState = TargetStateOf(plan.Target.Path);
-                var storage = targetState == TargetState.Present ? new StorageFactory().Open(plan.Target) : null;
+                var (targetState, storage) = await TargetStates.OpenAndProbeAsync(_context.Storages, plan.Target, cts.Token);
                 IReadOnlyList<VersionInfo> list = storage is null
                     ? []
                     : await VersionCatalog.ListAsync(storage, plan.Id, plan.Name, cts.Token);
@@ -173,7 +171,6 @@ public sealed partial class VersionsViewModel : ObservableObject
                 return;
 
             _index = index;
-            _versionsTarget = plan.Target.Path;
             _versionsLocation = plan.Target;
             if (state == TargetState.Unreachable)
             {
@@ -204,7 +201,9 @@ public sealed partial class VersionsViewModel : ObservableObject
             {
                 var synced = planIndex.Sync(folders, target!, progress, cts.Token);
                 // Errors because the whole target went away (e.g. the NAS went offline mid-sync) are one message.
-                var gone = synced.Errors.Count > 0 && !Directory.Exists(plan.Target.Path);
+                // The worker runs on a pool thread, so waiting for the probe blocks no UI thread.
+                var gone = synced.Errors.Count > 0 &&
+                    TargetStates.ProbeAsync(target!, cts.Token).GetAwaiter().GetResult() != TargetState.Present;
                 return (synced, planIndex.Versions(), gone);
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
@@ -248,32 +247,23 @@ public sealed partial class VersionsViewModel : ObservableObject
         }
     }
 
-    private enum TargetState { Present, NotCreatedYet, Unreachable }
-
     /// <summary>
-    /// Present: the target folder exists. NotCreatedYet: it does not, but its drive or share does (a plan that has not
-    /// run yet). Unreachable: the drive or share itself is missing, e.g. an offline NAS. Touches the disk: call it off
-    /// the UI thread.
+    /// The full path of a listed version's folder for Explorer, which works on local folders only: null for a target
+    /// that is no file system location (or a name that is no path).
     /// </summary>
-    private static TargetState TargetStateOf(string target)
+    private string? FolderOf(VersionRowViewModel row)
     {
-        if (string.IsNullOrWhiteSpace(target))
-            return TargetState.Unreachable;
-        if (Directory.Exists(target))
-            return TargetState.Present;
+        if (_versionsLocation is not { IsFileSystem: true } location)
+            return null;
         try
         {
-            var root = Path.GetPathRoot(Path.GetFullPath(target));
-            return !string.IsNullOrEmpty(root) && Directory.Exists(root) ? TargetState.NotCreatedYet : TargetState.Unreachable;
+            return new FileSystemStorage(location.Path).FullPathOf(row.Info.Path);
         }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (ArgumentException)
         {
-            return TargetState.Unreachable;
+            return null;
         }
     }
-
-    /// <summary>The full path of a listed version's folder (for Explorer and the restore, which work on folders).</summary>
-    private string FolderOf(VersionRowViewModel row) => Path.Combine(_versionsTarget ?? "", row.Info.Path);
 
     private static LocText TargetUnavailable(string target) => LocText.Of("core.index.targetUnavailable", ("folder", target));
 

@@ -24,6 +24,7 @@ using ReBackup.Core.Versions;
 using ReBackup.Shared.Localization;
 using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Settings;
+using ReBackup.Storage;
 using ThemeMode = ReBackup.Shared.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
 namespace ReBackup.App;
@@ -149,7 +150,9 @@ public partial class App : Application
             var versionIndex = new VersionIndexWorker(new VersionIndexSet(VersionIndexSet.DefaultDirectory),
                 (planId, ex) => Dispatcher.InvokeAsync(() => created?.ReportIndexError(planId, ex.Message)));
             // Versions are deleted by the rules as saved at that moment, not as they were when the run was queued.
-            var runner = new BackupRunner(currentRules: planId => planStore.TryLoad(planId)?.Retention,
+            // One storage factory for everything the app opens (runs, versions, previews, restores, deletions).
+            IStorageFactory storages = new StorageFactory();
+            var runner = new BackupRunner(storages, currentRules: planId => planStore.TryLoad(planId)?.Retention,
                 indexSink: versionIndex);
             var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
             // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
@@ -158,7 +161,7 @@ public partial class App : Application
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var languageToggle = new LanguageToggleViewModel(() => Loc.Instance.Language, ChooseLanguage);
             var mainViewModel = new MainViewModel(planStore, paths, settings, _dialogs, ShowSettings, queue, scheduler,
-                action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(), versionIndex);
+                action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(), versionIndex, storages);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
