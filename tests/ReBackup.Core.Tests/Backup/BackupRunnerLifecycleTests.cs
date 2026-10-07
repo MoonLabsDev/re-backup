@@ -9,6 +9,7 @@ using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Json;
 using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 using ReBackup.Storage.InMemory;
 
 namespace ReBackup.Core.Tests.Backup;
@@ -400,6 +401,54 @@ public class BackupRunnerLifecycleTests
         entry.Status.Should().Be(RunStatus.Error);
         entry.Reason.Should().Be("The source folder is no longer available.");
         _target.Files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Names_the_target_cannot_hold_are_skipped_and_the_rest_is_backed_up()
+    {
+        // WSL or a share can create names ending in a dot or a blank; a Windows target cannot hold them (R10).
+        using var tmp = new TempDir();
+        var target = new FileSystemStorage(tmp.Root);
+        _source.AddFile("x./f.txt", "foxtrot"u8.ToArray(), Mtime);
+        _source.AddFile("x./deeper/g.txt", "golf"u8.ToArray(), Mtime);
+        _source.AddFile("y ", "yankee"u8.ToArray(), Mtime);
+
+        var entry = await Run(target: _ => target);
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        entry.Version.Should().Be(Version);
+        entry.Skipped.Select(s => s.Path).Should().BeEquivalentTo("x.", "y ");
+        entry.Skipped.Should().OnlyContain(s => s.Reason.StartsWith("cannot be opened: ", StringComparison.Ordinal));
+        entry.FilesCopied.Should().Be(2);
+        File.ReadAllText(Path.Combine(tmp.Root, Version, "sub", "b.bin")).Should().Be("bravo-bravo");
+        (await VersionCatalog.ListAsync(target, "p1", "Projects")).Should().ContainSingle().Which.Name.Should().Be(Version);
+        var manifest = JsonSerializer.Deserialize<BackupManifest>(
+            File.ReadAllText(Path.Combine(tmp.Root, Version, "re-manifest.json")), JsonDefaults.Options)!;
+        manifest.Directories.Should().BeEquivalentTo("sub", "empty");
+        manifest.Files.Select(f => f.Path).Should().BeEquivalentTo("a.txt", "sub/b.bin");
+    }
+
+    [Fact]
+    public async Task A_folder_the_source_cannot_list_and_the_target_cannot_hold_is_skipped_once()
+    {
+        using var tmp = new TempDir();
+        var target = new FileSystemStorage(tmp.Root);
+        _source.AddFile("x./f.txt", "foxtrot"u8.ToArray(), Mtime);
+        var source = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "list" && path == "x.")
+                    throw new ArgumentException("A path segment must not end with a space or a dot.");
+            },
+        };
+
+        var entry = await Run(target: _ => target, source: source);
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        entry.Skipped.Should().ContainSingle().Which.Path.Should().Be("x.");
+        entry.FilesCopied.Should().Be(2);
+        (await VersionCatalog.ListAsync(target, "p1", "Projects")).Should().ContainSingle();
     }
 
     [Fact]

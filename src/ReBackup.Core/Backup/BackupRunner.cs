@@ -571,22 +571,49 @@ public sealed class BackupRunner : IBackupRunner
     /// Creates the folders (on storages that have them), copies the files, writes the manifest and removes the pending
     /// marker, which makes the folder a version (spec 6.1 steps 2–4).
     /// </summary>
+    /// <remarks>
+    /// A name the target cannot hold (<see cref="ArgumentException"/>, e.g. one ending in a blank or a dot that WSL
+    /// created) is skipped: a folder with everything in it, as one entry, and a file on its own. Such folders are found
+    /// when they are created, so on storages without directories each file in them is skipped by itself.
+    /// </remarks>
     private async Task<BackupManifest> CopyAndFinishAsync(BackupWork work, BackupPlan plan, string versionName,
         RunLogEntry entry, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         var target = work.Target;
+        var directories = work.Directories.Select(d => d.RelativePath).ToList();
+        var unaddressable = new List<string>();
+        bool IsInUnaddressable(string path) =>
+            unaddressable.Any(folder => path.StartsWith(folder + "/", StringComparison.Ordinal));
+
         if (target.Capabilities.HasFlag(StorageCapabilities.EmptyDirectories))
         {
             // Creating many folders on a network share takes a while, so it reports progress of its own.
             var foldersTotal = work.Directories.Count;
             var foldersDone = 0;
             var sinceFolderReport = Stopwatch.StartNew();
+            directories.Clear();
             progress?.Report(new BackupProgress(BackupPhase.CreatingFolders, 0, foldersTotal, 0, 0, ""));
             foreach (var directory in work.Directories)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await target.EnsureDirectoryAsync(StoragePath.Combine(versionName, directory.RelativePath), cancellationToken)
-                    .ConfigureAwait(false);
+                // Parents come before their children, so a folder left out is known before what is in it.
+                if (!IsInUnaddressable(directory.RelativePath))
+                {
+                    try
+                    {
+                        await target.EnsureDirectoryAsync(StoragePath.Combine(versionName, directory.RelativePath), cancellationToken)
+                            .ConfigureAwait(false);
+                        directories.Add(directory.RelativePath);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        unaddressable.Add(directory.RelativePath);
+                        // A folder the source could not list either has been reported already, with that reason.
+                        if (directory.Error is null)
+                            entry.AddSkipped(new SkippedEntry(directory.RelativePath,
+                                CoreTexts.English("core.file.cannotOpen", ("error", ex.Message))));
+                    }
+                }
                 foldersDone++;
                 if (progress is not null && (sinceFolderReport.Elapsed >= ProgressInterval || foldersDone == foldersTotal))
                 {
@@ -603,7 +630,7 @@ public sealed class BackupRunner : IBackupRunner
             PlanName = plan.Name,
             CreatedUtc = _time.GetUtcNow().UtcDateTime,
             Source = work.SourceRoot,
-            Directories = work.Directories.Select(d => d.RelativePath).ToList(),
+            Directories = directories,
         };
 
         var buffer = new byte[BufferSize];
@@ -624,6 +651,14 @@ public sealed class BackupRunner : IBackupRunner
         {
             cancellationToken.ThrowIfCancellationRequested();
             var bytesBefore = bytesDone;
+            if (IsInUnaddressable(file.RelativePath))
+            {
+                // Left out with its folder, which is reported.
+                filesDone++;
+                bytesDone = bytesBefore + file.Size;
+                continue;
+            }
+
             var (copied, skipReason, changed) = await CopyFileAsync(work.Source, target, versionName, file, buffer, count =>
             {
                 bytesDone += count;
@@ -696,8 +731,8 @@ public sealed class BackupRunner : IBackupRunner
 
     /// <summary>
     /// Copies one file while hashing it; the copy gets the indexed time of the source. Returns no copy and a reason
-    /// when the source cannot be read; target errors propagate. <c>Changed</c> tells that the source's size or time
-    /// after the copy differs from what was indexed.
+    /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
+    /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed.
     /// </summary>
     private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed)> CopyFileAsync(IStorage source,
         IStorage target, string versionName, IndexNode node, byte[] buffer, Action<int> onBytes,
@@ -718,8 +753,17 @@ public sealed class BackupRunner : IBackupRunner
         await using (input.ConfigureAwait(false))
         {
             // The time is fixed when the file is created: the copy and its manifest entry carry the indexed one.
-            var writer = await target.CreateAsync(StoragePath.Combine(versionName, node.RelativePath),
-                new CreateOptions(ModifiedUtc: node.LastWriteUtc), cancellationToken).ConfigureAwait(false);
+            StorageWriter writer;
+            try
+            {
+                writer = await target.CreateAsync(StoragePath.Combine(versionName, node.RelativePath),
+                    new CreateOptions(ModifiedUtc: node.LastWriteUtc), cancellationToken).ConfigureAwait(false);
+            }
+            catch (ArgumentException ex)
+            {
+                // A name the target cannot hold, e.g. one ending in a blank or a dot that WSL created.
+                return (null, CoreTexts.English("core.file.cannotOpen", ("error", ex.Message)), false);
+            }
             await using (writer.ConfigureAwait(false))
             {
                 while (true)
