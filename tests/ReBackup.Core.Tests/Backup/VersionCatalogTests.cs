@@ -40,6 +40,28 @@ public class VersionCatalogTests : IDisposable
         versions.Select(v => v.FileCount).Should().Equal(1, 1);
     }
 
+    [Theory]
+    [InlineData("2026_09_29-02_00 Projects.")]
+    [InlineData("2026_09_29-02_00 Projects ")]
+    public async Task A_folder_whose_name_the_storage_cannot_address_is_left_out(string name)
+    {
+        VersionFolder.Create(_target, "2026_09_28-02_00 Projects", "p1");
+        // Windows creates such a name (as WSL or a share might) only through the \\?\ prefix.
+        var odd = @"\\?\" + Path.Combine(_target, name);
+        Directory.CreateDirectory(odd);
+        File.WriteAllText(Path.Combine(odd, "re-manifest.json"), "{}");
+        try
+        {
+            var versions = await List();
+
+            versions.Select(v => v.Name).Should().Equal("2026_09_28-02_00 Projects");
+        }
+        finally
+        {
+            Directory.Delete(odd, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Versions_made_under_an_earlier_plan_name_stay_with_the_plan()
     {

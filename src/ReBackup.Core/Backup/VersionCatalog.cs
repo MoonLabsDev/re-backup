@@ -48,7 +48,8 @@ public static class VersionCatalog
     /// copied or renamed by hand is listed as <see cref="VersionOwnership.Renamed"/> and is not owned. Folders
     /// that only carry the plan's current name are listed as not owned too. Folders that are links are left out, and
     /// so are folders that are being written (<see cref="VersionMarkerNames.Pending"/>) or removed
-    /// (<see cref="VersionMarkerNames.Deleting"/>, or the older ".partial" / ".deleting" names).
+    /// (<see cref="VersionMarkerNames.Deleting"/>, or the older ".partial" / ".deleting" names), and folders whose name
+    /// is not a plain folder name (<see cref="VersionName.IsPlainFolderName"/>).
     /// </summary>
     /// <returns>An empty list when the target's root does not exist (yet).</returns>
     /// <exception cref="StorageUnavailableException">The target cannot be reached.</exception>
@@ -66,7 +67,10 @@ public static class VersionCatalog
                 if (!entry.IsDirectory || entry.IsLink)
                     continue;
                 var name = StoragePath.Name(entry.Path);
-                if (VersionName.IsTransient(name) || !VersionName.TryParseAny(name, out var localTime, out var folderPlanName))
+                // A name with a trailing blank or dot (WSL, a share) is never one a run wrote, and a storage may not
+                // be able to address what is inside it.
+                if (!VersionName.IsPlainFolderName(name) || VersionName.IsTransient(name) ||
+                    !VersionName.TryParseAny(name, out var localTime, out var folderPlanName))
                     continue;
                 candidates.Add((entry.Path, name, localTime, folderPlanName));
             }
