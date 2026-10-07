@@ -123,7 +123,9 @@ internal sealed class FileSystemWriter : StorageWriter
             _stream = null;
             if (stream is not null)
             {
-                // Disposing flushes buffered bytes, which fails again after a full disk: drop them first and never let disposal throw.
+                // Best effort: shrink the partial file. SetLength itself flushes first, so it can fail on a full disk; that is fine.
+                // What guarantees the cleanup is that Dispose is wrapped below (the handle is closed even when its flush throws)
+                // and the temp delete always runs afterwards, so disposal never throws and no temp file stays behind.
                 if (!_committed)
                 {
                     try

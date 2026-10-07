@@ -40,11 +40,14 @@ public sealed class FileSystemStorage : IStorage
         {
             if (segment.IndexOfAny(invalid) >= 0)
                 throw new ArgumentException($"A path segment contains a character that is not allowed in a Windows file name: '{relativePath}'.", nameof(relativePath));
+            // Windows drops trailing spaces and dots when resolving, so "a " would alias "a" and "..." the parent folder itself.
+            if (segment[^1] is ' ' or '.')
+                throw new ArgumentException($"A path segment must not end with a space or a dot: '{relativePath}'.", nameof(relativePath));
         }
 
         var full = Path.GetFullPath(Path.Combine(RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
         var prefix = RootPath.EndsWith(Path.DirectorySeparatorChar) ? RootPath : RootPath + Path.DirectorySeparatorChar;
-        if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        if (full.Length <= prefix.Length || !full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException($"The path leaves the storage root: '{relativePath}'.", nameof(relativePath));
         return full;
     }

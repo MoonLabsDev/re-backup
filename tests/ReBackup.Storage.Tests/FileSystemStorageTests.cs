@@ -214,6 +214,11 @@ public sealed class FileSystemStorageTests : StorageContractTests, IDisposable
     [InlineData("C:")]
     [InlineData("a|b")]
     [InlineData("a<b")]
+    [InlineData(" ")]
+    [InlineData("...")]
+    [InlineData("a ")]
+    [InlineData("x.")]
+    [InlineData("a/b.")]
     public async Task Paths_that_could_leave_the_root_are_rejected_by_every_operation(string path)
     {
         var storage = (FileSystemStorage)CreateEmpty();
