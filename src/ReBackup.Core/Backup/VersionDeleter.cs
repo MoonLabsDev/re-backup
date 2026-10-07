@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Backup;
 
@@ -59,6 +61,8 @@ public static class VersionDeleter
         CancellationToken cancellationToken = default)
     {
         volume ??= new PhysicalTargetVolume();
+        // Manifests are read through the storage; the deletion itself still works on the folder (until it moves there too).
+        IStorage? storage = Path.IsPathFullyQualified(target) ? new FileSystemStorage(target) : null;
         long filesTotal = 0;
         if (progress is not null)
         {
@@ -66,7 +70,7 @@ public static class VersionDeleter
             {
                 progress.Report(new VersionDeletionProgress(VersionDeletionPhase.Preparing, i + 1, versionNames.Count,
                     versionNames[i], 0, filesTotal));
-                filesTotal += FileCountOf(target, versionNames[i]);
+                filesTotal += FileCountOf(storage, versionNames[i]);
             }
         }
         long filesDone = 0;
@@ -79,7 +83,7 @@ public static class VersionDeleter
             var current = i + 1;
             progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
             var sinceReport = Stopwatch.StartNew();
-            results.Add(DeleteOne(target, planId, name, volume, progress is null ? null : count =>
+            results.Add(DeleteOne(target, storage, planId, name, volume, progress is null ? null : count =>
             {
                 filesDone += count;
                 if (sinceReport.Elapsed < ProgressInterval)
@@ -96,28 +100,29 @@ public static class VersionDeleter
     public static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>The number of files the version's manifest lists; 0 when that is not known. Never throws.</summary>
-    private static long FileCountOf(string target, string name)
+    /// <remarks>Runs on the deleting (worker) thread and waits for the storage there.</remarks>
+    private static long FileCountOf(IStorage? storage, string name)
     {
-        if (string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name))
+        if (storage is null || !VersionName.IsPlainFolderName(name))
             return 0;
         try
         {
-            var manifest = Path.Combine(target, name, VersionName.ManifestFileName);
-            return ManifestReader.ReadHeader(manifest).FileCount ?? ManifestReader.ReadTotals(manifest).FileCount;
+            var manifest = StoragePath.Combine(name, VersionMarkerNames.Manifest);
+            return ManifestReader.ReadHeaderAsync(storage, manifest).GetAwaiter().GetResult().FileCount ??
+                   ManifestReader.ReadTotalsAsync(storage, manifest).GetAwaiter().GetResult().FileCount;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException
-                                       or ArgumentException)
+        catch (Exception ex) when (ex is StorageException or JsonException or ArgumentException)
         {
             return 0;
         }
     }
 
-    private static VersionDeletion DeleteOne(string target, string planId, string name, ITargetVolume volume,
+    private static VersionDeletion DeleteOne(string target, IStorage? storage, string planId, string name, ITargetVolume volume,
         Action<int>? onFileDeleted)
     {
         // Only a plain folder name of a version: nothing that leads elsewhere, no ".partial" or ".deleting" folder.
-        if (string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name is "." or ".." ||
-            VersionName.IsTransient(name) || !VersionName.TryParseAny(name, out _, out _))
+        if (!VersionName.IsPlainFolderName(name) || name != Path.GetFileName(name) ||
+            VersionName.IsTransient(name) || !VersionName.TryParseAny(name, out _, out _) || storage is null)
             return new VersionDeletion(name, VersionDeletionOutcome.NotManaged, null);
 
         var path = Path.Combine(target, name);
@@ -126,7 +131,7 @@ public static class VersionDeleter
             if (!Directory.Exists(path))
                 return new VersionDeletion(name, VersionDeletionOutcome.Gone, null);
             if (new DirectoryInfo(path).LinkTarget is not null ||
-                VersionCatalog.Probe(path, planId).Ownership != VersionOwnership.Owned)
+                VersionCatalog.ProbeAsync(storage, name, planId).GetAwaiter().GetResult().Ownership != VersionOwnership.Owned)
                 return new VersionDeletion(name, VersionDeletionOutcome.NotManaged, null);
 
             VersionRemover.Remove(path, volume, onFileDeleted);

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Json;
 using ReBackup.Shared.Schedule;
@@ -84,18 +85,19 @@ public class BackupRunnerTests : IDisposable
 
         var json = File.ReadAllText(Path.Combine(VersionPath(), "re-manifest.json"));
         var manifest = JsonSerializer.Deserialize<BackupManifest>(json, JsonDefaults.Options)!;
-        manifest.FormatVersion.Should().Be(1);
+        manifest.FormatVersion.Should().Be(2);
         manifest.PlanId.Should().Be("p1");
         manifest.PlanName.Should().Be("Projects");
         manifest.Source.Should().Be(_source);
         manifest.CreatedUtc.Should().Be(_time.GetUtcNow().UtcDateTime);
         manifest.Files.Select(f => f.Path).Should().BeEquivalentTo("a.txt", "sub/b.bin");
+        manifest.Directories.Should().BeEquivalentTo("empty", "sub");
 
         var a = manifest.Files.Single(f => f.Path == "a.txt");
         a.Size.Should().Be(5);
         a.MtimeUtc.Should().Be(File.GetLastWriteTimeUtc(Path.Combine(_source, "a.txt")));
         a.Hash.Should().Be("xxh64:" + Convert.ToHexStringLower(XxHash64.Hash(Encoding.UTF8.GetBytes("alpha"))));
-        json.Should().Contain("\"mtimeUtc\"").And.Contain("\"formatVersion\": 1");
+        json.Should().Contain("\"mtimeUtc\"").And.Contain("\"formatVersion\": 2");
     }
 
     [Fact]
@@ -534,7 +536,7 @@ public class BackupRunnerTests : IDisposable
         manifest.FileCount.Should().Be(2);
         manifest.TotalBytes.Should().Be(16);
         json.IndexOf("\"totalBytes\"", StringComparison.Ordinal).Should().BeLessThan(json.IndexOf("\"files\"", StringComparison.Ordinal));
-        ManifestReader.ReadHeader(Path.Combine(VersionPath(), "re-manifest.json")).TotalBytes.Should().Be(16);
+        (await ManifestReader.ReadHeaderAsync(new FileSystemStorage(VersionPath()), "re-manifest.json")).TotalBytes.Should().Be(16);
     }
 
     private static void RunMklink(string link, string target)

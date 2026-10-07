@@ -93,7 +93,7 @@ public sealed partial class VersionsViewModel
     {
         if (Current() is not { Node.IsDirectory: false } selection)
             return;
-        var (folder, path) = (selection.Version.Info.Path, selection.Node.Path);
+        var (folder, path) = (FolderOf(selection.Version), selection.Node.Path);
         if (IsRunnable(Path.GetExtension(selection.Node.Name)))
         {
             if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
@@ -112,7 +112,7 @@ public sealed partial class VersionsViewModel
     {
         if (Current() is not { } selection)
             return;
-        var (folder, path) = (selection.Version.Info.Path, selection.Node.Path);
+        var (folder, path) = (FolderOf(selection.Version), selection.Node.Path);
         if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
             _context.ReportStatus(LocText.Of("restore.notInVersion", ("path", path)));
     }
@@ -167,7 +167,7 @@ public sealed partial class VersionsViewModel
         var whole = node.Path.Length == 0;
         var item = LocText.Of("restore.item", ("path", node.Path));
         var relative = node.Path;
-        var versionFolder = version.Info.Path;
+        var versionFolder = FolderOf(version);
         var versionDate = new LocText(() => version.DateText);
 
         string root;

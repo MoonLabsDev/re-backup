@@ -9,6 +9,7 @@ using ReBackup.Core.Plans;
 using ReBackup.Core.Retention;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -201,7 +202,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         if (row is null || _versionsTarget is not { } target)
             return;
         var name = row.Name;
-        if (!await Task.Run(() => _folders.OpenVersionFolder(target, name)) && ReferenceEquals(target, _versionsTarget))
+        if (!await Task.Run(() => _folders.OpenVersionFolderAsync(target, name)) && ReferenceEquals(target, _versionsTarget))
             _ = LoadAsync();
     }
 
@@ -214,10 +215,13 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         ErrorText = null;
         try
         {
-            var (versions, targetMissing) = await Task.Run(() =>
+            var (versions, targetMissing) = await Task.Run(async () =>
             {
                 var missing = string.IsNullOrWhiteSpace(plan.Target.Path) || !Directory.Exists(plan.Target.Path);
-                return (VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name, cts.Token), missing);
+                IReadOnlyList<VersionInfo> list = missing
+                    ? []
+                    : await VersionCatalog.ListAsync(new StorageFactory().Open(plan.Target), plan.Id, plan.Name, cts.Token);
+                return (list, missing);
             }, cts.Token);
             if (!ReferenceEquals(_loadCts, cts))
                 return;

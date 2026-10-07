@@ -1,4 +1,5 @@
 using ReBackup.Core.Backup;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Versions;
 
@@ -41,5 +42,6 @@ public sealed class VersionIndexSet : IVersionIndexSink
         }
     }
 
-    public void Add(string planId, VersionInfo version, BackupManifest manifest) => For(planId).Add(version, manifest);
+    public void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest) =>
+        For(planId).Add(version, manifest, target);
 }

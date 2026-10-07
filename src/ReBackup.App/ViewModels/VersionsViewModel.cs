@@ -7,6 +7,7 @@ using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Versions;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -32,6 +33,8 @@ public sealed partial class VersionsViewModel : ObservableObject
     private readonly VersionsContext _context;
     private CancellationTokenSource? _syncCts;
     private VersionIndex? _index;
+    /// <summary>The target folder the shown rows were listed from; their <see cref="VersionInfo.Path"/> is relative to it.</summary>
+    private string? _versionsTarget;
     private bool _loaded;
     private bool _reloadRequested;
 
@@ -122,6 +125,7 @@ public sealed partial class VersionsViewModel : ObservableObject
         _syncCts?.Cancel();
         _syncCts = null;
         _index = null;
+        _versionsTarget = null;
         _loaded = false;
         _reloadRequested = false;
         IsSyncing = false;
@@ -152,19 +156,21 @@ public sealed partial class VersionsViewModel : ObservableObject
         try
         {
             // Listing the target and reading the index never wait for a sync (the index allows reads beside writes).
-            var (index, state, folders, indexed) = await Task.Run(() =>
+            var (index, state, target, folders, indexed) = await Task.Run(async () =>
             {
                 var planIndex = _context.Indexes.For(plan.Id);
                 var targetState = TargetStateOf(plan.Target.Path);
-                var list = targetState == TargetState.Present
-                    ? VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name, cts.Token)
-                    : [];
-                return (planIndex, targetState, list, planIndex.Versions());
+                var storage = targetState == TargetState.Present ? new StorageFactory().Open(plan.Target) : null;
+                IReadOnlyList<VersionInfo> list = storage is null
+                    ? []
+                    : await VersionCatalog.ListAsync(storage, plan.Id, plan.Name, cts.Token);
+                return (planIndex, targetState, storage, list, planIndex.Versions());
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
                 return;
 
             _index = index;
+            _versionsTarget = plan.Target.Path;
             if (state == TargetState.Unreachable)
             {
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.
@@ -192,7 +198,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             // read in the same step, after the sync, because a re-import gives a version a new id.
             var (result, versions, targetGone) = await _context.Worker.RunAsync(plan.Id, planIndex =>
             {
-                var synced = planIndex.Sync(folders, progress, cts.Token, targetFolder: plan.Target.Path);
+                var synced = planIndex.Sync(folders, target!, progress, cts.Token);
                 // Errors because the whole target went away (e.g. the NAS went offline mid-sync) are one message.
                 var gone = synced.Errors.Count > 0 && !Directory.Exists(plan.Target.Path);
                 return (synced, planIndex.Versions(), gone);
@@ -261,6 +267,9 @@ public sealed partial class VersionsViewModel : ObservableObject
             return TargetState.Unreachable;
         }
     }
+
+    /// <summary>The full path of a listed version's folder (for Explorer and the restore, which work on folders).</summary>
+    private string FolderOf(VersionRowViewModel row) => Path.Combine(_versionsTarget ?? "", row.Info.Path);
 
     private static LocText TargetUnavailable(string target) => LocText.Of("core.index.targetUnavailable", ("folder", target));
 

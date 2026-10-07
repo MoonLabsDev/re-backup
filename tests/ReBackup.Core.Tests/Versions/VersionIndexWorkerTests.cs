@@ -2,6 +2,7 @@ using FluentAssertions;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Core.Versions;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Tests.Versions;
 
@@ -12,13 +13,16 @@ public class VersionIndexWorkerTests : IDisposable
 
     public void Dispose() => _tmp.Dispose();
 
+    private IStorage Target => VersionBuilder.TargetStorage(_tmp.PathOf("target"));
+
     private VersionIndexWorker Worker(Action<string, Exception>? onError = null) =>
         new(new VersionIndexSet(_tmp.PathOf("indexes")), onError);
 
     private (VersionInfo Version, BackupManifest Manifest) Finished(string minute)
     {
         var folder = VersionBuilder.Write(_tmp.PathOf("target"), minute, [VersionBuilder.File("a.txt", "alpha")]);
-        var version = VersionBuilder.List(_tmp.PathOf("target")).Single(v => v.Path == folder);
+        var version = VersionBuilder.ListAsync(_tmp.PathOf("target")).GetAwaiter().GetResult()
+            .Single(v => v.Path == Path.GetFileName(folder));
         var manifest = new BackupManifest { PlanId = VersionBuilder.PlanId, Source = VersionBuilder.Source };
         manifest.Files.Add(new ManifestFile("a.txt", 5, Mtime, "xxh64:0000000000000001"));
         return (version, manifest);
@@ -33,7 +37,7 @@ public class VersionIndexWorkerTests : IDisposable
         var (version, manifest) = Finished("2026_09_30-16_05");
 
         // An add that blocked would fail here instead of hanging the suite.
-        await Task.Run(() => worker.Add("p1", version, manifest)).WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Run(() => worker.Add("p1", Target, version, manifest)).WaitAsync(TimeSpan.FromSeconds(10));
 
         busy.IsCompleted.Should().BeFalse();
         worker.Indexes.For("p1").Versions().Should().BeEmpty("the add waits behind the work queued before it");
@@ -134,7 +138,7 @@ public class VersionIndexWorkerTests : IDisposable
         var worker = Worker((planId, ex) => { lock (errors) errors.Add((planId, ex)); });
         var (version, manifest) = Finished("2026_09_30-16_05");
 
-        worker.Add("p1", version, manifest);
+        worker.Add("p1", Target, version, manifest);
         await worker.WhenIdle("p1");
 
         errors.Should().ContainSingle().Which.PlanId.Should().Be("p1");
@@ -146,7 +150,7 @@ public class VersionIndexWorkerTests : IDisposable
         var worker = Worker();
         var (version, manifest) = Finished("2026_09_30-16_05");
 
-        worker.Invoking(w => w.Add("a/b", version, manifest)).Should().Throw<ArgumentException>();
+        worker.Invoking(w => w.Add("a/b", Target, version, manifest)).Should().Throw<ArgumentException>();
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ReBackup.Core.Localization;
 using ReBackup.Shared.Json;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Backup;
 
@@ -10,50 +11,83 @@ namespace ReBackup.Core.Backup;
 /// </summary>
 public sealed record ManifestHeader(string PlanId, string PlanName, DateTime CreatedUtc, int? FileCount, long? TotalBytes);
 
-/// <summary>Reads <c>re-manifest.json</c> files, without their (possibly huge) file list where that is possible.</summary>
+/// <summary>
+/// Reads <c>re-manifest.json</c> files from a storage, without their (possibly huge) file list where that is possible.
+/// Read streams are never assumed to be seekable.
+/// </summary>
 public static class ManifestReader
 {
     private const int HeaderBufferSize = 64 * 1024;
 
     private static ReadOnlySpan<byte> Utf8Bom => [0xEF, 0xBB, 0xBF];
 
-    /// <summary>Reads the plan id, the name, the time and the totals of a manifest.</summary>
-    /// <exception cref="IOException">The file is missing or cannot be read.</exception>
-    /// <exception cref="UnauthorizedAccessException">Access is denied.</exception>
+    /// <summary>
+    /// Reads the plan id, the name, the time and the totals of a manifest. The stream is read forward only: a window at
+    /// the start of the file usually holds the header; when it does not, the manifest is opened a second time and read
+    /// in full.
+    /// </summary>
+    /// <exception cref="StorageException">The file is missing (<see cref="StorageNotFoundException"/>) or cannot be read.</exception>
     /// <exception cref="JsonException">The file is not a manifest.</exception>
-    public static ManifestHeader ReadHeader(string manifestPath)
+    public static async Task<ManifestHeader> ReadHeaderAsync(IStorage storage, string manifestPath, CancellationToken ct = default)
     {
-        using var stream = Open(manifestPath);
-        var buffer = new byte[(int)Math.Min(HeaderBufferSize, Math.Max(1L, stream.Length))];
-        var length = stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
-        if (TryReadHeader(buffer.AsSpan(0, length), isFinalBlock: length >= stream.Length) is { } header)
+        byte[] buffer;
+        int length;
+        var stream = await storage.OpenReadAsync(manifestPath, ct).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
+        {
+            buffer = new byte[HeaderBufferSize];
+            length = await stream.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, ct).ConfigureAwait(false);
+        }
+
+        var endOfFile = length < buffer.Length;
+        if (TryReadHeader(buffer.AsSpan(0, length), isFinalBlock: endOfFile) is { } header)
             return header;
 
-        // Unusual layout or a header that does not fit the buffer: read everything.
-        stream.Position = 0;
-        var manifest = ReadManifest(stream);
+        // Unusual layout or a header that does not fit the window: read everything (again, unless the window held it all).
+        BackupManifest manifest;
+        if (endOfFile)
+        {
+            manifest = ReadManifest(new MemoryStream(buffer, 0, length, writable: false));
+        }
+        else
+        {
+            var again = await storage.OpenReadAsync(manifestPath, ct).ConfigureAwait(false);
+            await using (again.ConfigureAwait(false))
+                manifest = await ReadManifestAsync(again, ct).ConfigureAwait(false);
+        }
         return new ManifestHeader(manifest.PlanId, manifest.PlanName, manifest.CreatedUtc,
             manifest.FileCount ?? manifest.Files.Count, manifest.TotalBytes ?? SumSizes(manifest));
     }
 
     /// <summary>Counts and sums the file list; for manifests without totals in their header.</summary>
-    public static (int FileCount, long TotalBytes) ReadTotals(string manifestPath)
+    /// <exception cref="StorageException">The file is missing (<see cref="StorageNotFoundException"/>) or cannot be read.</exception>
+    /// <exception cref="JsonException">The file is not a manifest.</exception>
+    public static async Task<(int FileCount, long TotalBytes)> ReadTotalsAsync(IStorage storage, string manifestPath,
+        CancellationToken ct = default)
     {
-        using var stream = Open(manifestPath);
-        var manifest = ReadManifest(stream);
-        return (manifest.Files.Count, SumSizes(manifest));
+        var stream = await storage.OpenReadAsync(manifestPath, ct).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
+        {
+            var manifest = await ReadManifestAsync(stream, ct).ConfigureAwait(false);
+            return (manifest.Files.Count, SumSizes(manifest));
+        }
     }
 
-    private static FileStream Open(string path) =>
-        new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+    private static async Task<BackupManifest> ReadManifestAsync(Stream stream, CancellationToken ct) =>
+        Normalize(await JsonSerializer.DeserializeAsync<BackupManifest>(stream, JsonDefaults.Options, ct).ConfigureAwait(false));
 
-    private static BackupManifest ReadManifest(Stream stream)
+    private static BackupManifest ReadManifest(Stream stream) =>
+        Normalize(JsonSerializer.Deserialize<BackupManifest>(stream, JsonDefaults.Options));
+
+    /// <summary>Fills what a format 1 manifest (or a damaged one) leaves out.</summary>
+    private static BackupManifest Normalize(BackupManifest? manifest)
     {
-        var manifest = JsonSerializer.Deserialize<BackupManifest>(stream, JsonDefaults.Options)
-                       ?? throw new JsonException(CoreTexts.English("core.manifest.empty"));
+        if (manifest is null)
+            throw new JsonException(CoreTexts.English("core.manifest.empty"));
         manifest.PlanId ??= "";
         manifest.PlanName ??= "";
         manifest.Files ??= [];
+        manifest.Directories ??= [];
         return manifest;
     }
 

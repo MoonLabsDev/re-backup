@@ -373,7 +373,7 @@ public sealed partial class VersionsViewModel
             var entries = await Task.Run(() => index.History(pathId));
             if (generation != _historyGeneration)
                 return;
-            var folders = VersionRows.ToDictionary(r => r.Name, r => r.Info.Path, StringComparer.OrdinalIgnoreCase);
+            var folders = VersionRows.ToDictionary(r => r.Name, FolderOf, StringComparer.OrdinalIgnoreCase);
             HistoryRows.ReplaceAll(entries.Reverse()
                 .Select(entry => new FileHistoryRow(entry, folders.GetValueOrDefault(entry.Version.Name), node.Path)));
         }

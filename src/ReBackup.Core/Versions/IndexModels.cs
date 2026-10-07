@@ -1,4 +1,5 @@
 using ReBackup.Core.Backup;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Versions;
 
@@ -18,8 +19,8 @@ public readonly record struct IndexSyncProgress(int Current, int Total, string V
 /// <summary>What a sync did; <paramref name="Errors"/> names versions that could not be read (they stay out of the index).</summary>
 public sealed record IndexSyncResult(int Imported, int Unchanged, int Removed, IReadOnlyList<string> Errors);
 
-/// <summary>Takes the manifest of a version a backup run has just finished.</summary>
+/// <summary>Takes the manifest of a version a backup run has just finished in <c>target</c>.</summary>
 public interface IVersionIndexSink
 {
-    void Add(string planId, VersionInfo version, BackupManifest manifest);
+    void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest);
 }

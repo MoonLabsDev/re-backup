@@ -19,20 +19,14 @@ public static class ManifestStream
     /// <summary>Upper bound of the read window: a single token or entry larger than this is rejected.</summary>
     public const int MaxBufferSize = 64 * 1024 * 1024;
 
-    private enum Phase { Start, Properties, Files, Done }
+    private enum Phase { Start, Properties, Files, Directories, Done }
 
-    /// <exception cref="IOException">The file is missing or cannot be read.</exception>
-    /// <exception cref="UnauthorizedAccessException">Access is denied.</exception>
-    /// <exception cref="JsonException">The file is not a manifest.</exception>
-    public static ManifestSummary Read(string manifestPath, Action<ManifestFile> onFile,
-        CancellationToken cancellationToken = default)
-    {
-        using var stream = new FileStream(manifestPath, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete, bufferSize: 1, FileOptions.SequentialScan);
-        return Read(stream, onFile, cancellationToken);
-    }
-
-    /// <inheritdoc cref="Read(string, Action{ManifestFile}, CancellationToken)"/>
+    /// <summary>
+    /// Reads the manifest in <paramref name="stream"/> forward only (it need not be seekable) and hands every file entry
+    /// to <paramref name="onFile"/>. The directory list of a format 2 manifest is passed over entry by entry.
+    /// </summary>
+    /// <exception cref="IOException">The stream cannot be read (from a storage: a <c>StorageException</c>).</exception>
+    /// <exception cref="JsonException">The content is not a manifest.</exception>
     public static ManifestSummary Read(Stream stream, Action<ManifestFile> onFile,
         CancellationToken cancellationToken = default)
     {
@@ -132,6 +126,11 @@ public static class ManifestStream
                     phase = Phase.Files;
                     break;
                 }
+                if (Is(name, "directories") && probe.TokenType == JsonTokenType.StartArray)
+                {
+                    phase = Phase.Directories;   // can be as long as the file list: never skipped as one value
+                    break;
+                }
                 if (probe.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
                 {
                     if (!probe.TrySkip())
@@ -159,6 +158,20 @@ public static class ManifestStream
                 if (!probe.TrySkip())
                     return false;
                 onFile(ReadFile(ref entry));   // the whole entry is in the buffer: reading it cannot run dry
+                break;
+            }
+
+            case Phase.Directories:
+            {
+                if (!probe.Read())
+                    return false;
+                if (probe.TokenType == JsonTokenType.EndArray)
+                {
+                    phase = Phase.Properties;
+                    break;
+                }
+                if (probe.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray && !probe.TrySkip())
+                    return false;
                 break;
             }
         }

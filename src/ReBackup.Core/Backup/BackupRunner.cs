@@ -11,6 +11,8 @@ using ReBackup.Shared.IO;
 using ReBackup.Shared.Json;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Backup;
 
@@ -100,7 +102,7 @@ public sealed class BackupRunner : IBackupRunner
         var completed = false;
         try
         {
-            var work = await Task.Run(() => Prepare(request, entry, progress, cancellationToken), cancellationToken);
+            var work = await Task.Run(() => PrepareAsync(request, entry, progress, cancellationToken), cancellationToken);
             foreach (var skipped in work.Skipped)
                 entry.AddSkipped(skipped);
 
@@ -148,7 +150,7 @@ public sealed class BackupRunner : IBackupRunner
         {
             try
             {
-                await Task.Run(() => ApplyRetention(plan, entry, progress, cancellationToken));
+                await Task.Run(() => ApplyRetentionAsync(plan, entry, progress, cancellationToken));
             }
             catch (Exception ex)
             {
@@ -167,7 +169,8 @@ public sealed class BackupRunner : IBackupRunner
     /// removes leftovers of earlier runs and, when the plan allows it and the space is short, deletes old versions
     /// to make room.
     /// </summary>
-    private BackupWork Prepare(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
+    private async Task<BackupWork> PrepareAsync(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress,
+        CancellationToken cancellationToken)
     {
         var plan = request.Plan;
         if (string.IsNullOrWhiteSpace(plan.Source.Path) || !Directory.Exists(plan.Source.Path))
@@ -189,7 +192,7 @@ public sealed class BackupRunner : IBackupRunner
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceInsideTarget"));
 
         Directory.CreateDirectory(plan.Target.Path);
-        DeleteLeftovers(plan, entry, progress, cancellationToken);
+        await DeleteLeftoversAsync(plan, entry, progress, cancellationToken);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
         var index = SourceIndexer.Build(plan.Source.Path, indexProgress, cancellationToken);
@@ -206,7 +209,7 @@ public sealed class BackupRunner : IBackupRunner
         var required = (long)Math.Ceiling(work.TotalBytes * FreeSpaceMargin);
         var free = _volume.GetAvailableFreeSpace(plan.Target.Path);
         if (required > free && plan.FreeSpaceByRetention)
-            free = FreeSpaceByRetention(plan, required, free, entry, cancellationToken);
+            free = await FreeSpaceByRetentionAsync(plan, required, free, entry, cancellationToken);
         if (required > free)
         {
             throw new BackupAbortException(RunStatus.Full,
@@ -219,7 +222,7 @@ public sealed class BackupRunner : IBackupRunner
     /// Makes room by deleting versions that retention would delete after this run anyway, oldest first. Nothing is
     /// deleted unless that can make the run fit, and the newest existing version always stays. Returns the free space.
     /// </summary>
-    private long FreeSpaceByRetention(BackupPlan plan, long required, long free, RunLogEntry entry,
+    private async Task<long> FreeSpaceByRetentionAsync(BackupPlan plan, long required, long free, RunLogEntry entry,
         CancellationToken cancellationToken)
     {
         if (ResolveRules(plan, entry, "core.run.freeSpaceRulesUnreadable", "core.run.freeSpacePlanGone") is not { Count: > 0 } rules)
@@ -228,14 +231,14 @@ public sealed class BackupRunner : IBackupRunner
         List<VersionInfo> candidates;
         try
         {
-            var versions = VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name, cancellationToken);
+            var versions = await VersionCatalog.ListAsync(TargetOf(plan), plan.Id, plan.Name, cancellationToken);
             var newest = versions.LastOrDefault(v => v.IsOwned);
             candidates = RetentionPlanner.Decide(versions, rules, upcomingRun: _time.GetLocalNow().DateTime)
                 .Where(d => d.Delete && !ReferenceEquals(d.Version, newest))
                 .Select(d => d.Version)
                 .ToList();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
             entry.Warnings.Add(CoreTexts.English("core.run.freeSpaceExamineFailed", ("error", ex.Message)));
             return free;
@@ -247,7 +250,7 @@ public sealed class BackupRunner : IBackupRunner
         foreach (var version in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!TryRemoveVersion(version, entry, "core.run.freeSpaceDeleteFailed"))
+            if (!TryRemoveVersion(plan, version, entry, "core.run.freeSpaceDeleteFailed"))
                 continue;
 
             free = _volume.GetAvailableFreeSpace(plan.Target.Path);
@@ -294,7 +297,7 @@ public sealed class BackupRunner : IBackupRunner
     /// On a network target this can take long (a run that was killed leaves a whole copy), so the files removed are
     /// reported, and cancellation stops between files: the rest stays for the next run.
     /// </remarks>
-    private void DeleteLeftovers(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
+    private async Task DeleteLeftoversAsync(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
         var removed = 0;
@@ -343,7 +346,7 @@ public sealed class BackupRunner : IBackupRunner
             else if (name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 if (!VersionName.TryParseAny(name[..^VersionName.DeletingSuffix.Length], out _, out var folderPlanName) ||
-                    !IsOwnRemains(directory, plan, folderPlanName))
+                    !await IsOwnRemainsAsync(directory, plan, folderPlanName, cancellationToken))
                     continue;
                 current = name;
                 Report();
@@ -392,8 +395,9 @@ public sealed class BackupRunner : IBackupRunner
     /// left alone, also remains of a folder that was copied or renamed by hand
     /// (<see cref="VersionOwnership.Renamed"/>): retention never renamed that folder, a person did.
     /// </summary>
-    private static bool IsOwnRemains(string directory, BackupPlan plan, string folderPlanName) =>
-        VersionCatalog.Probe(directory, plan.Id).Ownership switch
+    private static async Task<bool> IsOwnRemainsAsync(string directory, BackupPlan plan, string folderPlanName,
+        CancellationToken cancellationToken) =>
+        (await VersionCatalog.ProbeAsync(TargetOf(plan), Path.GetFileName(directory), plan.Id, cancellationToken)).Ownership switch
         {
             VersionOwnership.Owned => true,
             VersionOwnership.NoManifest =>
@@ -409,9 +413,9 @@ public sealed class BackupRunner : IBackupRunner
         {
             var name = Path.GetFileName(finalPath);
             VersionName.TryParseAny(name, out var localTime, out _);
-            var version = new VersionInfo(name, finalPath, localTime, VersionOwnership.Owned,
+            var version = new VersionInfo(name, name, localTime, VersionOwnership.Owned,
                 manifest.FileCount, manifest.TotalBytes);
-            _indexSink!.Add(plan.Id, version, manifest);
+            _indexSink!.Add(plan.Id, TargetOf(plan), version, manifest);
         }
         catch (Exception ex)
         {
@@ -420,7 +424,7 @@ public sealed class BackupRunner : IBackupRunner
     }
 
     /// <summary>Deletes the versions the plan's rules no longer keep. Problems become warnings; the run stays successful.</summary>
-    private void ApplyRetention(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
+    private async Task ApplyRetentionAsync(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
         if (ResolveRules(plan, entry, "core.run.retentionRulesUnreadable", "core.run.retentionPlanGone") is not { Count: > 0 } rules)
@@ -432,10 +436,10 @@ public sealed class BackupRunner : IBackupRunner
         List<VersionInfo> doomed;
         try
         {
-            var versions = VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name);
+            var versions = await VersionCatalog.ListAsync(TargetOf(plan), plan.Id, plan.Name);
             doomed = RetentionPlanner.Decide(versions, rules).Where(d => d.Delete).Select(d => d.Version).ToList();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
             entry.Warnings.Add(CoreTexts.English("core.run.retentionFailed", ("error", ex.Message)));
             return;
@@ -448,7 +452,7 @@ public sealed class BackupRunner : IBackupRunner
             if (version.Name.Equals(entry.Version, StringComparison.OrdinalIgnoreCase))
                 continue;   // never the version this run just made, whatever the clock or the rules say
 
-            TryRemoveVersion(version, entry, "core.run.retentionDeleteFailed");
+            TryRemoveVersion(plan, version, entry, "core.run.retentionDeleteFailed");
         }
     }
 
@@ -485,11 +489,12 @@ public sealed class BackupRunner : IBackupRunner
     /// its remains are left (the next run of the plan removes them). False when nothing was changed; that is also
     /// the answer when the folder or the whole target has vanished, because nothing was deleted then.
     /// </summary>
-    private bool TryRemoveVersion(VersionInfo version, RunLogEntry entry, string failureKey)
+    private bool TryRemoveVersion(BackupPlan plan, VersionInfo version, RunLogEntry entry, string failureKey)
     {
         try
         {
-            VersionRemover.Remove(version.Path, _volume);
+            // The folder path for the volume until removal goes through the storage, too.
+            VersionRemover.Remove(Path.Combine(plan.Target.Path, version.Path), _volume);
         }
         catch (VersionRemainsException ex)
         {
@@ -503,6 +508,9 @@ public sealed class BackupRunner : IBackupRunner
         entry.RetentionDeleted.Add(version.Name);
         return true;
     }
+
+    /// <summary>The plan's target as a storage; versions are listed and read through it.</summary>
+    private static IStorage TargetOf(BackupPlan plan) => new FileSystemStorage(plan.Target.Path);
 
     /// <summary>Picks the folder name for the current minute; waits for the next minute if that name is taken.</summary>
     private async Task<string> ReserveVersionNameAsync(BackupPlan plan, CancellationToken cancellationToken)
@@ -549,6 +557,7 @@ public sealed class BackupRunner : IBackupRunner
             PlanName = plan.Name,
             CreatedUtc = _time.GetUtcNow().UtcDateTime,
             Source = work.SourceRoot,
+            Directories = work.Directories.Select(d => d.RelativePath).ToList(),
         };
 
         var buffer = new byte[BufferSize];

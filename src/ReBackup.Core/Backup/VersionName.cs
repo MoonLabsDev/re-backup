@@ -1,6 +1,16 @@
 using System.Globalization;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Backup;
+
+/// <summary>
+/// The marker files of a version folder. A folder is a complete version only while it holds the manifest and neither
+/// of the other two: <see cref="Pending"/> while a run is writing it, <see cref="Deleting"/> while it is removed.
+/// </summary>
+public static class VersionMarkerNames
+{
+    public const string Manifest = "re-manifest.json", Pending = "re-pending.json", Deleting = "re-deleting.json";
+}
 
 /// <summary>Names of version folders in a target: <c>YYYY_MM_DD-hh_mm PlanName</c>.</summary>
 public static class VersionName
@@ -8,7 +18,7 @@ public static class VersionName
     public const string PartialSuffix = ".partial";
     /// <summary>Suffix of a version folder that retention is removing.</summary>
     public const string DeletingSuffix = ".deleting";
-    public const string ManifestFileName = "re-manifest.json";
+    public const string ManifestFileName = VersionMarkerNames.Manifest;
     private const string TimestampFormat = "yyyy_MM_dd-HH_mm";
 
     public static string Format(DateTime localTime, string planName) =>
@@ -45,17 +55,12 @@ public static class VersionName
 
     /// <summary>
     /// The full path of the folder <paramref name="versionName"/> directly inside <paramref name="target"/>; null unless
-    /// the target is an absolute path and the name is one plain folder name (no separators, no "." or "..", no
-    /// characters a file name cannot hold, no leading or trailing blanks or dots). Does not touch the disk.
+    /// the target is an absolute path and the name is one plain folder name (see <see cref="IsPlainFolderName"/>). Does
+    /// not touch the disk.
     /// </summary>
     public static string? FolderIn(string? target, string? versionName)
     {
-        if (string.IsNullOrWhiteSpace(target) || !Path.IsPathFullyQualified(target))
-            return null;
-        if (string.IsNullOrWhiteSpace(versionName) || versionName is "." or ".." ||
-            versionName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
-            versionName.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, Path.VolumeSeparatorChar]) >= 0 ||
-            versionName != versionName.Trim() || versionName.EndsWith('.'))
+        if (string.IsNullOrWhiteSpace(target) || !Path.IsPathFullyQualified(target) || !IsPlainFolderName(versionName))
             return null;
 
         var folder = Path.GetFullPath(Path.Combine(target, versionName));
@@ -67,30 +72,58 @@ public static class VersionName
     }
 
     /// <summary>
-    /// The names of the folders directly inside <paramref name="target"/>, read in one listing (case-insensitive set);
-    /// empty when the target is not an absolute path, does not exist or cannot be read. Can block for a long time on an
-    /// unreachable network share: call it off the UI thread.
+    /// True for one plain folder name: no separators, no "." or "..", no characters a file name cannot hold, no leading or
+    /// trailing blanks or dots.
     /// </summary>
-    public static IReadOnlySet<string> FolderNamesIn(string? target)
+    public static bool IsPlainFolderName([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? versionName) =>
+        !string.IsNullOrWhiteSpace(versionName) && versionName is not ("." or "..") &&
+        versionName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
+        versionName.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, Path.VolumeSeparatorChar]) < 0 &&
+        versionName == versionName.Trim() && !versionName.EndsWith('.');
+
+    /// <summary>
+    /// The names of the folders directly under the root of <paramref name="target"/>, read in one listing
+    /// (case-insensitive set); empty when there is no target or it does not exist or cannot be read. Can take long on an
+    /// unreachable network share.
+    /// </summary>
+    public static async Task<IReadOnlySet<string>> FolderNamesInAsync(IStorage? target, CancellationToken ct = default)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(target) || !Path.IsPathFullyQualified(target))
+        if (target is null)
             return names;
         try
         {
-            foreach (var directory in Directory.EnumerateDirectories(target))
-                names.Add(Path.GetFileName(directory));
+            await foreach (var entry in target.ListAsync("", recursive: false, ct).ConfigureAwait(false))
+            {
+                if (entry.IsDirectory)
+                    names.Add(StoragePath.Name(entry.Path));
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        catch (StorageException)
         {
             names.Clear();
         }
         return names;
     }
 
-    /// <summary><see cref="FolderIn"/> when that folder exists right now; otherwise null.</summary>
-    public static string? ExistingFolderIn(string? target, string? versionName) =>
-        FolderIn(target, versionName) is { } folder && Directory.Exists(folder) ? folder : null;
+    /// <summary>
+    /// The storage path of the folder <paramref name="versionName"/> directly under the root of <paramref name="target"/>
+    /// when the name is one plain folder name (<see cref="IsPlainFolderName"/>) and that folder exists right now;
+    /// otherwise (also when the target cannot be read) null.
+    /// </summary>
+    public static async Task<string?> ExistingFolderInAsync(IStorage target, string? versionName, CancellationToken ct = default)
+    {
+        if (!IsPlainFolderName(versionName))
+            return null;
+        try
+        {
+            return await target.StatAsync(versionName, ct).ConfigureAwait(false) is { IsDirectory: true } ? versionName : null;
+        }
+        catch (StorageException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>True for folders that are being written (".partial") or removed (".deleting"); they are never versions.</summary>
     public static bool IsTransient(string folderName) =>

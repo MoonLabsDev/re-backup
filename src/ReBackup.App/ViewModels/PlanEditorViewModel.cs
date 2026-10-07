@@ -98,7 +98,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         if (row is not { CanOpenVersion: true })
             return;
         var (target, name) = (row.Target, row.VersionName);
-        if (!await Task.Run(() => _folders.OpenVersionFolder(target, name)))
+        if (!await Task.Run(() => _folders.OpenVersionFolderAsync(target, name)))
             row.MarkVersionMissing();
     }
 
