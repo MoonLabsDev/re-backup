@@ -101,7 +101,7 @@ public sealed class FileSystemStorage : IStorage
         {
             Stream stream = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
                 BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            return Task.FromResult(stream);
+            return Task.FromResult<Stream>(new FileSystemReadStream(this, path, stream));
         }
         catch (Exception ex) when (IsIo(ex))
         {

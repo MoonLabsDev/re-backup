@@ -323,4 +323,54 @@ public sealed class FileSystemStorageTests : StorageContractTests, IDisposable
             throw Full();
         }
     }
+
+    [Fact]
+    public async Task Read_failures_surface_as_storage_exceptions()
+    {
+        var dir = new TempDir();
+        _dirs.Add(dir);
+        var storage = new FileSystemStorage(dir.Root);
+        await using var read = new FileSystemReadStream(storage, "a.txt", new FailingReadStream(new IOException("lock", unchecked((int)0x80070021))));
+
+        var asyncRead = async () => await read.ReadAsync(new byte[4], Ct);
+        var syncRead = () => read.Read(new byte[4], 0, 4);
+        var length = () => read.Length;
+
+        await asyncRead.Should().ThrowAsync<StorageLockedException>();
+        syncRead.Should().Throw<StorageLockedException>();
+        length.Should().Throw<StorageLockedException>();
+        read.CanWrite.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Opened_file_reads_through_the_wrapper()
+    {
+        var dir = new TempDir();
+        _dirs.Add(dir);
+        dir.WriteFile("a.txt", "abc");
+        var storage = new FileSystemStorage(dir.Root);
+
+        await using var read = await storage.OpenReadAsync("a.txt", Ct);
+
+        read.Should().BeOfType<FileSystemReadStream>();
+        read.Length.Should().Be(3);
+        read.Seek(1, SeekOrigin.Begin);
+        read.ReadByte().Should().Be('b');
+    }
+
+    private sealed class FailingReadStream : Stream
+    {
+        private readonly IOException _error;
+        public FailingReadStream(IOException error) => _error = error;
+        public override bool CanRead => true;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => throw _error;
+        public override long Position { get => throw _error; set => throw _error; }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw _error;
+        public override long Seek(long offset, SeekOrigin origin) => throw _error;
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }
