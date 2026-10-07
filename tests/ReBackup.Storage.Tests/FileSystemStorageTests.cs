@@ -32,6 +32,18 @@ public sealed class FileSystemStorageTests : StorageContractTests, IDisposable
             StorageCapabilities.FreeSpace | StorageCapabilities.Links | StorageCapabilities.EmptyDirectories | StorageCapabilities.SetModifiedTime);
     }
 
+    [Theory]
+    [InlineData("relative")]
+    [InlineData("C:relative")]
+    [InlineData(@"\rooted-no-drive")]
+    public void A_root_that_is_not_fully_qualified_is_rejected(string root)
+    {
+        // Such a root would resolve against the process's (or the drive's) current directory.
+        var act = () => new FileSystemStorage(root);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
     [Fact]
     public void FullPathOf_returns_the_absolute_windows_path_and_validates()
     {

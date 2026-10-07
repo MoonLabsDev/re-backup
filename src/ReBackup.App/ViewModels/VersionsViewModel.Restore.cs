@@ -335,10 +335,10 @@ public sealed partial class VersionsViewModel
         {
             return dialogs.ConfirmFailures(Loc.T("restore.title"),
                 Loc.F("restore.unreadable", ("count", unreadable.Count)), unreadable, Loc.T("restore.restoreRest"))
-                ? ConflictPolicy.Skip   // there are no conflicts: the policy does not matter
+                ? ConflictPolicy.Skip   // no conflicts: Skip on purpose, so a file appearing after planning is never replaced
                 : null;
         }
-        return ConflictPolicy.Skip;
+        return ConflictPolicy.Skip;   // as above: a file appearing after planning is never replaced
     }
 
     /// <summary>

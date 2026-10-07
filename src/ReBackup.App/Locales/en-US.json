@@ -158,6 +158,7 @@
       "notInVersion": "\"{path}\" does not exist in the version.",
       "folderExists": "A folder with this name exists.",
       "destinationLink": "the destination folder is a link",
+      "fileInPlaceOfFolder": "a file stands where the folder \"{folder}\" belongs",
       "outsideDestination": "\"{path}\" is outside the destination.",
       "notAPath": "\"{path}\" is not a path inside the version.",
       "accessDenied": "access denied (read-only, or in use by another program)"

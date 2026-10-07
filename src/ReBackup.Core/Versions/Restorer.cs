@@ -207,11 +207,11 @@ public static class Restorer
         }
 
         var conflicts = new List<RestoreFile>();
-        var linkFree = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var clearWays = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in files)
         {
             ct.ThrowIfCancellationRequested();
-            if (await ExistsOutsideLinksAsync(destination, file.Destination, linkFree, ct).ConfigureAwait(false))
+            if (await ExistsOnClearWayAsync(destination, file.Destination, clearWays, ct).ConfigureAwait(false))
                 conflicts.Add(file);
         }
 
@@ -254,8 +254,8 @@ public static class Restorer
                     return Result(canceled: true);
                 try
                 {
-                    if (await FindLinkAsync(destination, directory, ct).ConfigureAwait(false))
-                        failures.Add(new RestoreFailure(directory, CoreTexts.English("core.restore.destinationLink")));
+                    if (await BlockedWayAsync(destination, directory, ct).ConfigureAwait(false) is { } blocked)
+                        failures.Add(new RestoreFailure(directory, blocked));
                     else
                         await destination.EnsureDirectoryAsync(directory, ct).ConfigureAwait(false);
                 }
@@ -313,10 +313,11 @@ public static class Restorer
 
             async Task<Outcome> RestoreFileAsync()
             {
-                // Checked right before writing, from the root down: a link anywhere on the way is never written through.
+                // Checked right before writing, from the root down: a link anywhere on the way is never written through,
+                // and a file where a folder belongs fails the file (it is no conflict).
                 var target = file.Destination;
-                if (await FindLinkAsync(destination, StoragePath.Parent(target), ct).ConfigureAwait(false))
-                    throw new RefusedException(CoreTexts.English("core.restore.destinationLink"));
+                if (await BlockedWayAsync(destination, StoragePath.Parent(target), ct).ConfigureAwait(false) is { } blocked)
+                    throw new RefusedException(blocked);
 
                 var keepBoth = false;
                 if (await destination.StatAsync(target, ct).ConfigureAwait(false) is { } existing)
@@ -350,12 +351,15 @@ public static class Restorer
                         }, ct).ConfigureAwait(false);
                         return keepBoth ? Outcome.KeptBoth : Outcome.Copied;
                     }
-                    catch (StorageConflictException) when (policy == ConflictPolicy.Skip)
+                    catch (StorageConflictException) when (policy != ConflictPolicy.Overwrite)
                     {
-                        return Outcome.Skipped;   // it appeared after planning: it is someone's file, never replaced
-                    }
-                    catch (StorageConflictException) when (policy == ConflictPolicy.KeepBoth && attempt < KeepBothAttempts)
-                    {
+                        // Only the target itself being taken (it appeared after planning) is a conflict: it is someone's
+                        // file and never replaced. Anything else (e.g. a file where a folder on the way belongs) fails.
+                        if (await destination.StatAsync(target, ct).ConfigureAwait(false) is null ||
+                            (policy == ConflictPolicy.KeepBoth && attempt >= KeepBothAttempts))
+                            throw;
+                        if (policy == ConflictPolicy.Skip)
+                            return Outcome.Skipped;
                         target = await FreeKeepBothNameAsync(destination, file.Destination, plan.VersionTime, ct).ConfigureAwait(false);
                         keepBoth = true;
                     }
@@ -396,8 +400,9 @@ public static class Restorer
     /// <summary>
     /// Copies one file into a new file of the destination and commits it; with <paramref name="overwrite"/> false the
     /// create is exclusive (<see cref="StorageConflictException"/> when the name is taken, also at the commit). Disposing
-    /// the writer without a commit discards what was written. A completely written file is committed even when
-    /// cancellation comes in meanwhile.
+    /// the writer without a commit discards what was written. Cancellation is honoured by every read and between the
+    /// chunks, so it usually discards the file; only once the end of the source has been read does the commit run
+    /// without the token, so a file whose last read already returned is still committed.
     /// </summary>
     private static async Task CopyAsync(IStorage versions, RestoreFile file, IStorage destination, string target, bool overwrite,
         byte[] buffer, Action<int> onBytes, CancellationToken ct)
@@ -444,14 +449,14 @@ public static class Restorer
     }
 
     /// <summary>
-    /// True when an existing part of <paramref name="path"/> (the storage's root, every folder on the way and the path
-    /// itself) is a link: nothing is written there, since it would land wherever the link points. Asks the storage one
-    /// part at a time from the root down, and stops at the first part that does not exist.
+    /// Why nothing may be written at or below the folder <paramref name="path"/>, or null when the way is clear. Every
+    /// existing part (the storage's root, every folder on the way and the folder itself) must be a folder and not a
+    /// link: a link would send the writes wherever it points (<c>core.restore.destinationLink</c>), and a file where a
+    /// folder belongs makes every file below fail (<c>core.restore.fileInPlaceOfFolder</c>). Asks the storage one part
+    /// at a time from the root down, and stops at the first part that does not exist (it is created as a folder).
     /// </summary>
-    private static async Task<bool> FindLinkAsync(IStorage storage, string path, CancellationToken ct)
+    private static async Task<string?> BlockedWayAsync(IStorage storage, string path, CancellationToken ct)
     {
-        if (!storage.Capabilities.HasFlag(StorageCapabilities.Links))
-            return false;
         var current = "";
         var parts = path.Length == 0 ? [] : path.Split('/');
         for (var i = -1; i < parts.Length; i++)
@@ -459,27 +464,29 @@ public static class Restorer
             if (i >= 0)
                 current = StoragePath.Combine(current, parts[i]);
             if (await storage.StatAsync(current, ct).ConfigureAwait(false) is not { } entry)
-                return false;
+                return null;
             if (entry.IsLink)
-                return true;
+                return CoreTexts.English("core.restore.destinationLink");
+            if (!entry.IsDirectory)
+                return CoreTexts.English("core.restore.fileInPlaceOfFolder", ("folder", current));
         }
-        return false;
+        return null;
     }
 
     /// <summary>
-    /// Whether <paramref name="path"/> exists in the destination without a link on the way to it. A file behind a link
-    /// (it fails in the run), or with a name the storage cannot address, is no conflict. The folders on the way are
-    /// checked once per plan.
+    /// Whether <paramref name="path"/> exists in the destination on a clear way (<see cref="BlockedWayAsync"/>). A file
+    /// behind a link or a file in place of a folder (both fail in the run), or with a name the storage cannot address,
+    /// is no conflict. The folders on the way are checked once per plan.
     /// </summary>
-    private static async Task<bool> ExistsOutsideLinksAsync(IStorage storage, string path, Dictionary<string, bool> linkFree,
+    private static async Task<bool> ExistsOnClearWayAsync(IStorage storage, string path, Dictionary<string, bool> clearWays,
         CancellationToken ct)
     {
         try
         {
             var parent = StoragePath.Parent(path);
-            if (!linkFree.TryGetValue(parent, out var free))
-                linkFree[parent] = free = !await FindLinkAsync(storage, parent, ct).ConfigureAwait(false);
-            return free && await storage.StatAsync(path, ct).ConfigureAwait(false) is not null;
+            if (!clearWays.TryGetValue(parent, out var clear))
+                clearWays[parent] = clear = await BlockedWayAsync(storage, parent, ct).ConfigureAwait(false) is null;
+            return clear && await storage.StatAsync(path, ct).ConfigureAwait(false) is not null;
         }
         catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
@@ -594,6 +601,6 @@ public static class Restorer
 
     private enum Outcome { Copied, KeptBoth, Skipped }
 
-    /// <summary>A file the restore does not write, with the reason (a link or a folder in its place).</summary>
+    /// <summary>A file the restore does not write, with the reason (a link on the way or in its place, a file where a folder belongs, a folder in its place).</summary>
     private sealed class RefusedException(string message) : Exception(message);
 }

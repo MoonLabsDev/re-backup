@@ -1,6 +1,7 @@
 using System.Text;
 using FluentAssertions;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Core.Versions;
 using ReBackup.Storage;
@@ -417,6 +418,64 @@ public class RestorerTests : IDisposable
             security.RemoveAccessRule(deny);
             info.SetAccessControl(security);
         }
+    }
+
+    [Fact]
+    public void Requires_an_absolute_destination()
+    {
+        // The destination is a storage now: a folder location that is not fully qualified cannot even be opened.
+        var open = () => new StorageFactory().Open(StorageLocation.FileSystem("relative"));
+
+        open.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(ConflictPolicy.Overwrite)]
+    [InlineData(ConflictPolicy.Skip)]
+    [InlineData(ConflictPolicy.KeepBoth)]
+    public async Task A_file_in_place_of_a_folder_on_the_way_fails_every_file_below(ConflictPolicy policy)
+    {
+        _tmp.WriteFile(@"dest\docs", "a file, not a folder");
+        var destination = new FaultyStorage(_destination);
+
+        var result = await RestoreAsync(["docs"], policy, destination: destination);
+
+        result.Copied.Should().Be(0);
+        result.Skipped.Should().Be(0);
+        result.KeptBoth.Should().Be(0);
+        result.Failures.Select(f => f.Path).Should().Contain(["docs/b.txt", "docs/sub/c.txt"]);
+        var reason = CoreTexts.English("core.restore.fileInPlaceOfFolder", ("folder", "docs"));
+        result.Failures.Should().OnlyContain(f => f.Reason == reason);
+        destination.Creates.Should().BeEmpty("nothing is tried below a file");
+        DestFiles().Should().Equal("docs");
+        System.IO.File.ReadAllText(Dest("docs")).Should().Be("a file, not a folder");
+    }
+
+    [Theory]
+    [InlineData(ConflictPolicy.Skip)]
+    [InlineData(ConflictPolicy.KeepBoth)]
+    public async Task A_file_that_appears_in_place_of_the_folder_after_planning_is_a_failure_not_a_conflict(ConflictPolicy policy)
+    {
+        var creates = 0;
+        var destination = new FaultyStorage(_destination)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation != "create")
+                    return;
+                creates++;
+                if (!System.IO.File.Exists(Dest("docs")))
+                    System.IO.File.WriteAllText(Dest("docs"), "came in between");
+            },
+        };
+        var plan = await PlanAsync(["docs/b.txt"], destination: destination);
+
+        var result = await Restorer.RunAsync(plan, policy);
+
+        result.Should().BeEquivalentTo(new { Copied = 0, Skipped = 0, KeptBoth = 0, Canceled = false });
+        result.Failures.Select(f => f.Path).Should().Equal("docs/b.txt");
+        creates.Should().Be(1, "the target itself does not exist: no further names are tried");
+        DestFiles().Should().Equal("docs");
     }
 
     [Theory]

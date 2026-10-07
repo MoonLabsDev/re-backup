@@ -13,10 +13,16 @@ public sealed class FileSystemStorage : IStorage
 
     private const int BufferSize = 1024 * 1024;
 
-    /// <summary>Creates a storage on the folder <paramref name="rootPath"/> (absolute; it does not need to exist yet).</summary>
+    /// <summary>
+    /// Creates a storage on the folder <paramref name="rootPath"/> (fully qualified; it does not need to exist yet).
+    /// Throws <see cref="ArgumentException"/> for a relative root such as <c>relative</c>, <c>C:relative</c> or
+    /// <c>\folder</c>, which would resolve against a current directory.
+    /// </summary>
     public FileSystemStorage(string rootPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+        if (!Path.IsPathFullyQualified(rootPath))
+            throw new ArgumentException($"The root of a file system storage must be a fully qualified path: '{rootPath}'.", nameof(rootPath));
         var full = Path.GetFullPath(rootPath);
         var driveRoot = Path.GetPathRoot(full);
         RootPath = full == driveRoot ? full : full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

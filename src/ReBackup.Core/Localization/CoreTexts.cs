@@ -88,6 +88,7 @@ public static class CoreTexts
         ["core.restore.notInVersion"] = "\"{path}\" does not exist in the version.",
         ["core.restore.folderExists"] = "A folder with this name exists.",
         ["core.restore.destinationLink"] = "the destination folder is a link",
+        ["core.restore.fileInPlaceOfFolder"] = "a file stands where the folder \"{folder}\" belongs",
         ["core.restore.outsideDestination"] = "\"{path}\" is outside the destination.",
         ["core.restore.notAPath"] = "\"{path}\" is not a path inside the version.",
         ["core.restore.accessDenied"] = "access denied (read-only, or in use by another program)",
