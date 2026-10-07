@@ -1,6 +1,6 @@
 using System.Windows.Markup;
 
-namespace ReBackup.App.Localization;
+namespace ReBackup.Shared.Wpf.Localization;
 
 /// <summary>
 /// <c>{l:Loc shell.tab.plan}</c>: the label in the current language; follows a language switch at once. A binding to

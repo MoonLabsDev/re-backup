@@ -4,34 +4,62 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Data;
+using System.Reflection;
 using System.Windows.Markup;
-using ReBackup.Core.Localization;
 using ReBackup.Shared.Localization;
 using ReBackup.Shared.Settings;
 
-namespace ReBackup.App.Localization;
+namespace ReBackup.Shared.Wpf.Localization;
 
 /// <summary>
-/// The labels of the chosen language (Locales/*.json, embedded). XAML binds to the indexer through
+/// One source of label files: the assembly that embeds them and the resource name prefix; the file of a language is
+/// <c>ResourcePrefix + language + ".json"</c> (e.g. <c>ReBackup.App.Locales.</c> + <c>de-DE</c>).
+/// </summary>
+public sealed record LabelSource(Assembly Assembly, string ResourcePrefix);
+
+/// <summary>
+/// The labels of the chosen language (label files, embedded in the assemblies the app registers with
+/// <see cref="Configure"/>). XAML binds to the indexer through
 /// <see cref="LocExtension"/>; <see cref="Apply"/> raises <c>Item[]</c>, so every bound text follows at once, and then
 /// <see cref="LanguageChanged"/>, after which view models raise the texts they build in code again. UI thread only.
 /// </summary>
 public sealed class Loc : INotifyPropertyChanged
 {
-    private const string ResourcePrefix = "ReBackup.App.Locales.";
-    private const string SharedResourcePrefix = "ReBackup.Shared.Locales.shared.";
     private static readonly Dictionary<string, LabelSet> Sets = new(StringComparer.Ordinal);
-    /// <summary>The English labels; an empty set (every text shows its key) when even they cannot be read.</summary>
-    private static readonly LabelSet EnglishSet = TryLoad(AppLanguages.English) ?? LabelSet.Parse("{}");
+    private static IReadOnlyList<LabelSource> _sources = [];
+    private static IReadOnlyList<Func<string, Message?>> _recognizers = [];
+    private static bool _configured;
+    /// <summary>The English labels; an empty set (every text shows its key) until <see cref="Configure"/> or when even they cannot be read.</summary>
+    private static LabelSet _englishSet = LabelSet.Parse("{}");
     private static bool _windowHookRegistered;
 
-    private Labels _labels = new(EnglishSet, EnglishSet, CultureInfo.GetCultureInfo(AppLanguages.English));
+    private Labels _labels = new(_englishSet, _englishSet, CultureInfo.GetCultureInfo(AppLanguages.English));
 
     private Loc()
     {
     }
 
     public static Loc Instance { get; } = new();
+
+    /// <summary>
+    /// Registers where the label files are and which recognizers turn stored English texts back into messages. Called
+    /// once on startup, before <see cref="Apply"/>. A label of a later source overrides the same key of an earlier one.
+    /// </summary>
+    /// <param name="sources">The label files, shared ones first, the app's last.</param>
+    /// <param name="recognizers">Tried in order by <see cref="Known"/>; a nested text is recognized through all of them.</param>
+    public static void Configure(IReadOnlyList<LabelSource> sources, IReadOnlyList<Func<string, Message?>> recognizers)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        ArgumentNullException.ThrowIfNull(recognizers);
+        if (_configured)
+            throw new InvalidOperationException("Loc is configured once, on startup.");
+
+        _configured = true;
+        _sources = sources.ToArray();
+        _recognizers = recognizers.ToArray();
+        _englishSet = TryLoad(AppLanguages.English) ?? LabelSet.Parse("{}");
+        Instance._labels = new Labels(_englishSet, _englishSet, CultureInfo.GetCultureInfo(AppLanguages.English));
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -62,7 +90,7 @@ public sealed class Loc : INotifyPropertyChanged
     /// the applied language when it is recognized, otherwise as it is (e.g. a message from Windows).
     /// </summary>
     public static string Known(string? text) =>
-        string.IsNullOrEmpty(text) ? "" : (CoreTexts.Recognize(text) ?? SharedTexts.Recognize(text)) is { } message ? F(message) : text;
+        string.IsNullOrEmpty(text) ? "" : MessageRecognizers.Recognize(text, _recognizers) is { } message ? F(message) : text;
 
     /// <summary>Binds a property of an element made in code (e.g. a tray menu item) to a label.</summary>
     public static void Bind(DependencyObject target, DependencyProperty property, string key) =>
@@ -78,7 +106,7 @@ public sealed class Loc : INotifyPropertyChanged
     {
         var tag = AppLanguages.Normalize(language) ?? AppLanguages.English;
         var culture = new CultureInfo(tag);
-        _labels = new Labels(EnglishSet, SetFor(tag), culture);
+        _labels = new Labels(_englishSet, SetFor(tag), culture);
         Language = tag;
 
         CultureInfo.DefaultThreadCurrentCulture = culture;
@@ -113,33 +141,36 @@ public sealed class Loc : INotifyPropertyChanged
     private static LabelSet SetFor(string language)
     {
         if (language == AppLanguages.English)
-            return EnglishSet;
+            return _englishSet;
         if (Sets.TryGetValue(language, out var set))
             return set;
-        set = TryLoad(language) ?? EnglishSet;
+        set = TryLoad(language) ?? _englishSet;
         Sets[language] = set;
         return set;
     }
 
     /// <summary>
-    /// The embedded label file of <paramref name="language"/>, merged with the shared library's file of that language;
-    /// null when the App's file is missing or cannot be read.
+    /// The embedded label files of <paramref name="language"/> from every source, merged (a later source wins on a
+    /// key); null when none of them can be read. A missing or broken file is left out, its labels fall back to English.
     /// </summary>
     private static LabelSet? TryLoad(string language)
     {
-        try
+        LabelSet? merged = null;
+        foreach (var source in _sources)
         {
-            using var stream = typeof(Loc).Assembly.GetManifestResourceStream(ResourcePrefix + language + ".json");
-            if (stream is null)
-                return null;
-            var set = LabelSet.Parse(stream);
-            using var shared = typeof(SharedTexts).Assembly.GetManifestResourceStream(SharedResourcePrefix + language + ".json");
-            return shared is null ? set : LabelSet.Parse(shared).Merge(set);
+            try
+            {
+                using var stream = source.Assembly.GetManifestResourceStream(source.ResourcePrefix + language + ".json");
+                if (stream is null)
+                    continue;
+                var set = LabelSet.Parse(stream);
+                merged = merged is null ? set : merged.Merge(set);
+            }
+            catch (Exception ex) when (ex is FormatException or IOException or DecoderFallbackException)
+            {
+                System.Diagnostics.Debug.WriteLine($"The label file {source.ResourcePrefix}{language}.json cannot be read: {ex.Message}");
+            }
         }
-        catch (Exception ex) when (ex is FormatException or IOException or DecoderFallbackException)
-        {
-            System.Diagnostics.Debug.WriteLine($"The label file {language}.json cannot be read: {ex.Message}");
-            return null;
-        }
+        return merged;
     }
 }

@@ -2,7 +2,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;

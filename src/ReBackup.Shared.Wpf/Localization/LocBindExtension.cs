@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Markup;
 
-namespace ReBackup.App.Localization;
+namespace ReBackup.Shared.Wpf.Localization;
 
 /// <summary>
 /// <c>{l:LocBind Type, Prefix=enum.triggerType.}</c>: the label <c>Prefix + value</c> for a bound value (an enum, a

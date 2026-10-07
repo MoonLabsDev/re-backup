@@ -20,6 +20,9 @@ public static class RepoPaths
     public static string SharedLocaleFile(string language) =>
         Path.Combine(SharedDirectory, "Locales", "shared." + language + ".json");
 
+    public static string SharedWpfLocaleFile(string language) =>
+        Path.Combine(SharedWpfDirectory, "Locales", "wpf." + language + ".json");
+
     /// <summary>The project's files matching <paramref name="pattern"/>, without its bin and obj folders.</summary>
     public static IEnumerable<string> SourceFiles(string projectDirectory, string pattern) =>
         Directory.EnumerateFiles(projectDirectory, pattern, SearchOption.AllDirectories)

@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 
-namespace ReBackup.App.Services;
+namespace ReBackup.Shared.Wpf.Services;
 
 /// <summary>
 /// Switches a window's title bar between the dark (immersive dark mode) and the light look of Windows 10 20H1+ and 11,

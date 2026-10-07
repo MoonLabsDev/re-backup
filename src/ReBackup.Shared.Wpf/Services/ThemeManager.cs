@@ -3,7 +3,7 @@ using System.Windows.Interop;
 using ReBackup.Shared.Settings;
 using ThemeMode = ReBackup.Shared.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
-namespace ReBackup.App.Services;
+namespace ReBackup.Shared.Wpf.Services;
 
 /// <summary>
 /// Switches the app between the dark and the light palette at runtime. The palette is the merged dictionary
@@ -144,5 +144,5 @@ public static class ThemeManager
     }
 
     private static ResourceDictionary Load(string file) =>
-        new() { Source = new Uri($"pack://application:,,,/ReBackup.App;component/Theme/{file}", UriKind.Absolute) };
+        new() { Source = new Uri($"pack://application:,,,/ReBackup.Shared.Wpf;component/Theme/{file}", UriKind.Absolute) };
 }

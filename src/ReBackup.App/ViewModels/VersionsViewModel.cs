@@ -2,7 +2,7 @@ using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;

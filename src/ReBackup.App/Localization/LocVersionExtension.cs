@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Windows.Data;
 using System.Windows.Markup;
+using ReBackup.Shared.Wpf.Localization;
 
 namespace ReBackup.App.Localization;
 

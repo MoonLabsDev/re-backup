@@ -9,7 +9,7 @@ public class ProjectReferenceTests
 {
     [Theory]
     [InlineData("ReBackup.Shared", new string[0])]
-    [InlineData("ReBackup.Shared.Wpf", new[] { "ReBackup.Shared" }, Skip = "Task 2")]
+    [InlineData("ReBackup.Shared.Wpf", new[] { "ReBackup.Shared" })]
     [InlineData("ReBackup.Storage", new string[0], Skip = "Task 3")]
     public void Library_references_only_what_is_allowed(string project, string[] allowed)
     {

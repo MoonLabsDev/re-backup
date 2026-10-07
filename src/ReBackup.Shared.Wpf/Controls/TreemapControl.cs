@@ -1,13 +1,12 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
-using ReBackup.App.Localization;
-using ReBackup.App.Services;
-using ReBackup.App.Theme;
-using ReBackup.Core.Indexing;
+using ReBackup.Shared.Wpf.Localization;
+using ReBackup.Shared.Wpf.Services;
+using ReBackup.Shared.Wpf.Theme;
 using ReBackup.Shared.Indexing;
 
-namespace ReBackup.App.Controls;
+namespace ReBackup.Shared.Wpf.Controls;
 
 /// <summary>
 /// Draws an evaluated source tree as a squarified treemap. Files are coloured by their extension (the same extension
@@ -27,11 +26,11 @@ public sealed class TreemapControl : FrameworkElement
     ];
 
     public static readonly DependencyProperty RootProperty = DependencyProperty.Register(
-        nameof(Root), typeof(EvaluatedNode), typeof(TreemapControl),
+        nameof(Root), typeof(ITreemapEntry), typeof(TreemapControl),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
     public static readonly DependencyProperty SelectedProperty = DependencyProperty.Register(
-        nameof(Selected), typeof(IPreviewEntry), typeof(TreemapControl),
+        nameof(Selected), typeof(ITreemapEntry), typeof(TreemapControl),
         new FrameworkPropertyMetadata(null,
             FrameworkPropertyMetadataOptions.AffectsRender | FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
 
@@ -39,7 +38,7 @@ public sealed class TreemapControl : FrameworkElement
         nameof(HideIgnored), typeof(bool), typeof(TreemapControl),
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    private readonly record struct Tile(EvaluatedNode Node, Rect Rect, Brush Fill, bool IsLeaf);
+    private readonly record struct Tile(ITreemapEntry Node, Rect Rect, Brush Fill, bool IsLeaf);
 
     /// <summary>Brushes and pens resolved from the theme; resolved again after a theme switch.</summary>
     private sealed class Paint
@@ -54,11 +53,11 @@ public sealed class TreemapControl : FrameworkElement
     }
 
     private readonly List<Tile> _tiles = [];
-    private EvaluatedNode? _layoutRoot;
+    private ITreemapEntry? _layoutRoot;
     private Size _layoutSize;
     private bool _hasLayout;
     private bool _layoutHidesIgnored;
-    private EvaluatedNode? _hovered;
+    private ITreemapEntry? _hovered;
     private Paint? _paint;
 
     public TreemapControl()
@@ -79,23 +78,23 @@ public sealed class TreemapControl : FrameworkElement
     }
 
     /// <summary>The tool tip of a tile, in the chosen language.</summary>
-    private static string ToolTipOf(EvaluatedNode node) =>
-        Loc.F("ignore.treemap.toolTip", ("path", node.Node.RelativePath), ("total", Formats.Bytes(node.TotalSize)),
-            ("included", Formats.Bytes(node.IncludedSize)), ("status", Loc.T("enum.includeStatus." + node.Status)));
+    private static string ToolTipOf(ITreemapEntry node) =>
+        Loc.F("ignore.treemap.toolTip", ("path", node.RelativePath), ("total", Formats.Bytes(node.TotalSize)),
+            ("included", Formats.Bytes(node.IncludedSize)), ("status", Loc.T(node.StatusLabelKey)));
 
     /// <summary>The language changed: the tool tip of the tile under the mouse is built again.</summary>
     private void OnLanguageChanged(object? sender, EventArgs e) =>
         ToolTip = _hovered is { } node ? ToolTipOf(node) : null;
 
-    public EvaluatedNode? Root
+    public ITreemapEntry? Root
     {
-        get => (EvaluatedNode?)GetValue(RootProperty);
+        get => (ITreemapEntry?)GetValue(RootProperty);
         set => SetValue(RootProperty, value);
     }
 
-    public IPreviewEntry? Selected
+    public ITreemapEntry? Selected
     {
-        get => (IPreviewEntry?)GetValue(SelectedProperty);
+        get => (ITreemapEntry?)GetValue(SelectedProperty);
         set => SetValue(SelectedProperty, value);
     }
 
@@ -172,13 +171,13 @@ public sealed class TreemapControl : FrameworkElement
     }
 
     /// <param name="depth">0 for the root, 1 for its children, and so on.</param>
-    private void Layout(Paint paint, EvaluatedNode node, Rect rect, int depth)
+    private void Layout(Paint paint, ITreemapEntry node, Rect rect, int depth)
     {
         if (!(rect.Width >= MinTile) || !(rect.Height >= MinTile))
             return;
 
         var weight = WeightOf(node);
-        var split = node.Node.IsDirectory && node.Children.Count > 0 && weight > 0
+        var split = node.IsDirectory && node.GetTreemapChildren().Count > 0 && weight > 0
                     && rect.Width >= MinSplit && rect.Height >= MinSplit;
         if (!split)
         {
@@ -187,14 +186,14 @@ public sealed class TreemapControl : FrameworkElement
         }
 
         // Folder background shows through where children are too small to draw.
-        var folderFill = node.Status == IncludeStatus.Ignored ? paint.Ignored
+        var folderFill = node.IsIgnored ? paint.Ignored
             : depth == 0 ? paint.RootFolder
             : paint.Folder;
         _tiles.Add(new Tile(node, rect, folderFill, false));
 
         // Only children that could fill at least MinTile x MinTile are laid out.
         var minSize = weight * (MinTile * MinTile) / (rect.Width * rect.Height);
-        var drawable = node.Children.Where(child => WeightOf(child) >= minSize && WeightOf(child) > 0).ToList();
+        var drawable = node.GetTreemapChildren().Where(child => WeightOf(child) >= minSize && WeightOf(child) > 0).ToList();
         if (drawable.Count == 0)
             return;
 
@@ -209,13 +208,13 @@ public sealed class TreemapControl : FrameworkElement
     }
 
     /// <summary>Tile area: the whole size, or only the backed-up part when ignored entries are hidden (ignored ones are then 0).</summary>
-    private long WeightOf(EvaluatedNode node) => _layoutHidesIgnored ? node.IncludedSize : node.TotalSize;
+    private long WeightOf(ITreemapEntry node) => _layoutHidesIgnored ? node.IncludedSize : node.TotalSize;
 
     /// <summary>
     /// The deepest tile under the point. Tiles are added parent first, so searching from the end finds a file before
     /// its folders; a folder's own area (where its children are too small to draw) selects that folder.
     /// </summary>
-    private EvaluatedNode? TileAt(Point point)
+    private ITreemapEntry? TileAt(Point point)
     {
         for (var i = _tiles.Count - 1; i >= 0; i--)
         {
@@ -225,14 +224,14 @@ public sealed class TreemapControl : FrameworkElement
         return null;
     }
 
-    private static Brush BrushFor(Paint paint, EvaluatedNode node)
+    private static Brush BrushFor(Paint paint, ITreemapEntry node)
     {
-        if (node.Status == IncludeStatus.Ignored)
+        if (node.IsIgnored)
             return paint.Ignored;
-        if (node.Node.IsDirectory)
+        if (node.IsDirectory)
             return paint.Folder;
 
-        var name = node.Node.Name;
+        var name = node.Name;
         var dot = name.LastIndexOf('.');
         var extension = dot < 0 ? "" : name[dot..].ToLowerInvariant();
         return paint.Extensions[(int)(StableHash(extension) % (uint)paint.Extensions.Length)];

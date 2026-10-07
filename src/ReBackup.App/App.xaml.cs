@@ -11,14 +11,17 @@ using System.Windows.Media.Imaging;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Win32;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
+using ReBackup.Shared.Wpf.Services;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Localization;
 using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Settings;
 using ThemeMode = ReBackup.Shared.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
@@ -27,6 +30,9 @@ namespace ReBackup.App;
 
 public partial class App : Application
 {
+    /// <summary>Names the single-instance mutex and event (<c>Local\ReBackup.SingleInstance</c>, <c>Local\ReBackup.Activate</c>).</summary>
+    internal const string AppId = "ReBackup";
+
     private readonly IDialogService _dialogs = new WpfDialogService();
     private string _appDataRoot = "";
     private ConfigPaths _paths = null!;
@@ -47,11 +53,20 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // Label files (later sources override earlier ones) and the recognizers of stored English texts.
+        Loc.Configure(
+            [
+                new LabelSource(typeof(SharedTexts).Assembly, "ReBackup.Shared.Locales.shared."),
+                new LabelSource(typeof(Loc).Assembly, "ReBackup.Shared.Wpf.Locales.wpf."),
+                new LabelSource(typeof(App).Assembly, "ReBackup.App.Locales."),
+            ],
+            [CoreTexts.Recognize, SharedTexts.Recognize]);
+
         var restarted = e.Args.Contains("--restarted", StringComparer.OrdinalIgnoreCase);
-        _singleInstance = SingleInstance.TryAcquire(restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
+        _singleInstance = SingleInstance.TryAcquire(AppId, restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero);
         if (_singleInstance is null)
         {
-            SingleInstance.SignalRunningInstance();
+            SingleInstance.SignalRunningInstance(AppId);
             Shutdown();
             return;
         }

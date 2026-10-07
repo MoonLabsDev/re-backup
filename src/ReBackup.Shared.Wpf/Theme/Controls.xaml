@@ -11,8 +11,8 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib"
-                    xmlns:theme="clr-namespace:ReBackup.App.Theme"
-                    xmlns:controls="clr-namespace:ReBackup.App.Controls">
+                    xmlns:theme="clr-namespace:ReBackup.Shared.Wpf.Theme"
+                    xmlns:controls="clr-namespace:ReBackup.Shared.Wpf.Controls">
 
     <theme:UpperCaseConverter x:Key="Converter.UpperCase" />
 

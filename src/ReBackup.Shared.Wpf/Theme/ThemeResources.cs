@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 
-namespace ReBackup.App.Theme;
+namespace ReBackup.Shared.Wpf.Theme;
 
 /// <summary>Reads theme colours (Theme/Colors.*.xaml) for code that draws itself, with a fallback outside the app.</summary>
 internal static class ThemeResources

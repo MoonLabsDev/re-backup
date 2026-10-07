@@ -3,7 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 
-namespace ReBackup.App.Controls;
+namespace ReBackup.Shared.Wpf.Controls;
 
 /// <summary>
 /// A round progress indicator with content in its centre (a percentage, a glyph). Draws a full-circle track

@@ -3,7 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Versions;
 using ReBackup.Shared.IO;
 

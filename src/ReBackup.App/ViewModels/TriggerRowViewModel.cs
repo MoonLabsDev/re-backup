@@ -1,6 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Shared.Schedule;
 
 namespace ReBackup.App.ViewModels;

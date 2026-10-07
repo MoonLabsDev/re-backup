@@ -6,14 +6,6 @@
     "toolTip": "Sprache: {language} – zum Ändern klicken",
     "notSaved": "Die Sprache konnte nicht gespeichert werden:\n\n{error}"
   },
-  "format": {
-    "date": "dd.MM.yyyy",
-    "dateTime": "dd.MM.yyyy HH:mm",
-    "dateTimeSeconds": "dd.MM.yyyy HH:mm:ss",
-    "time": "HH:mm",
-    "weekdayTime": "ddd HH:mm",
-    "nextRun": "ddd dd.MM.yyyy HH:mm"
-  },
   "common": {
     "cancel": "Abbrechen",
     "close": "Schließen",
@@ -32,8 +24,6 @@
     "path": "Pfad",
     "version": "Version",
     "unnamed": "(unbenannt)",
-    "fileCount": { "one": "{count} Datei", "other": "{count:N0} Dateien" },
-    "folderCount": { "one": "{count} Ordner", "other": "{count:N0} Ordner" },
     "duration": {
       "hms": "{hours} h {minutes:00} min {seconds:00} s",
       "ms": "{minutes} min {seconds:00} s",
@@ -446,8 +436,7 @@
       "hover": "Für Pfad und Größen auf eine Kachel zeigen",
       "byBackup": "Größe nach Backup-Inhalt; ignorierte Einträge fehlen",
       "byTotal": "Größe nach Gesamtgröße; ignorierte Einträge grau",
-      "empty": "Die Treemap erscheint nach dem Scan.",
-      "toolTip": "{path}\n{total}, im Backup {included} – {status}"
+      "empty": "Die Treemap erscheint nach dem Scan."
     },
     "patternNote": "Änderungen an den Mustern gelten, sobald der Scan fertig ist.",
     "sourceMissing": "Der Quellordner existiert nicht.",

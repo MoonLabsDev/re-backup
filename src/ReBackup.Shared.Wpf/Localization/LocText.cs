@@ -1,4 +1,4 @@
-namespace ReBackup.App.Localization;
+namespace ReBackup.Shared.Wpf.Localization;
 
 /// <summary>
 /// A text built in the current language each time it is read. View models keep these instead of finished strings,

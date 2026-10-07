@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 
-namespace ReBackup.App.Theme;
+namespace ReBackup.Shared.Wpf.Theme;
 
 /// <summary>
 /// True when the value's name equals the parameter (<c>ConverterParameter=Weekly</c>); as Visibility when bound to one

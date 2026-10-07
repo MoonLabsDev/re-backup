@@ -1,7 +1,7 @@
 using ReBackup.Shared.IO;
 using ReBackup.Shared.Localization;
 
-namespace ReBackup.App.Localization;
+namespace ReBackup.Shared.Wpf.Localization;
 
 /// <summary>Dates, numbers and sizes as the applied language writes them (<c>format.*</c> labels, <see cref="Loc.Culture"/>).</summary>
 public static class Formats

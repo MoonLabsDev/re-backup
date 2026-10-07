@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ReBackup.Core\ReBackup.Core.csproj" />
     <ProjectReference Include="..\ReBackup.Shared\ReBackup.Shared.csproj" />
+    <ProjectReference Include="..\ReBackup.Shared.Wpf\ReBackup.Shared.Wpf.csproj" />
   </ItemGroup>
 
   <ItemGroup>

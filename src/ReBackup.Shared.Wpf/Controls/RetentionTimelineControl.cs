@@ -1,13 +1,12 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
-using ReBackup.App.Localization;
-using ReBackup.App.Services;
-using ReBackup.App.Theme;
-using ReBackup.App.ViewModels;
+using ReBackup.Shared.Wpf.Localization;
+using ReBackup.Shared.Wpf.Services;
+using ReBackup.Shared.Wpf.Theme;
 using ReBackup.Shared.Retention;
 
-namespace ReBackup.App.Controls;
+namespace ReBackup.Shared.Wpf.Controls;
 
 /// <summary>Draws the versions that survive retention on a time axis, one lane per rule.</summary>
 public sealed class RetentionTimelineControl : FrameworkElement

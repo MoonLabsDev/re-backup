@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Windows.Data;
 
-namespace ReBackup.App.Theme;
+namespace ReBackup.Shared.Wpf.Theme;
 
 /// <summary>Shows a text in capitals (table column headers); other values pass through unchanged.</summary>
 public sealed class UpperCaseConverter : IValueConverter

@@ -2,9 +2,9 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
-             xmlns:controls="clr-namespace:ReBackup.App.Controls"
-             xmlns:theme="clr-namespace:ReBackup.App.Theme"
-             xmlns:l="clr-namespace:ReBackup.App.Localization">
+             xmlns:controls="clr-namespace:ReBackup.Shared.Wpf.Controls;assembly=ReBackup.Shared.Wpf"
+             xmlns:theme="clr-namespace:ReBackup.Shared.Wpf.Theme;assembly=ReBackup.Shared.Wpf"
+             xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf">
     <UserControl.Resources>
         <Style x:Key="TextBlock.Error" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />

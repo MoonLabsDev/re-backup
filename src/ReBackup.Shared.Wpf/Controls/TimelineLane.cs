@@ -1,6 +1,6 @@
 using ReBackup.Shared.Retention;
 
-namespace ReBackup.App.ViewModels;
+namespace ReBackup.Shared.Wpf.Controls;
 
 /// <summary>
 /// One row of the retention timeline: the versions one rule keeps. <paramref name="Period"/> picks the lane colour

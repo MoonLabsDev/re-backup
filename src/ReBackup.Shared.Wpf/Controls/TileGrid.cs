@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 
-namespace ReBackup.App.Controls;
+namespace ReBackup.Shared.Wpf.Controls;
 
 /// <summary>
 /// Lays its children out in up to <see cref="Columns"/> equal columns, row by row; each row is as tall as its tallest

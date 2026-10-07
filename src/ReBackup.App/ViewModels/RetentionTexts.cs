@@ -1,5 +1,5 @@
 using System.Globalization;
-using ReBackup.App.Localization;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Shared.Retention;
 
 namespace ReBackup.App.ViewModels;

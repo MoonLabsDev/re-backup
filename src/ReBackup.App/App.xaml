@@ -6,11 +6,11 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <!-- The palette is first; ThemeManager replaces it with Colors.Light.xaml for the light theme. -->
-                <ResourceDictionary Source="Theme/Colors.Dark.xaml" />
-                <ResourceDictionary Source="Theme/Fonts.xaml" />
-                <ResourceDictionary Source="Theme/Icons.xaml" />
-                <ResourceDictionary Source="Theme/Flags.xaml" />
-                <ResourceDictionary Source="Theme/Controls.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/ReBackup.Shared.Wpf;component/Theme/Colors.Dark.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/ReBackup.Shared.Wpf;component/Theme/Fonts.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/ReBackup.Shared.Wpf;component/Theme/Icons.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/ReBackup.Shared.Wpf;component/Theme/Flags.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/ReBackup.Shared.Wpf;component/Theme/Controls.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
