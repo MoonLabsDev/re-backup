@@ -3,6 +3,13 @@ namespace ReBackup.Storage.FileSystem;
 /// <summary>Maps System.IO errors to <see cref="StorageException"/> subtypes; the HResult checks the backup code used to do itself.</summary>
 internal static class FileSystemErrors
 {
+    private const int ErrorNotReady = 21;
+    private const int ErrorBadNetPath = 53;
+    private const int ErrorUnexpNetError = 59;
+    private const int ErrorNetNameDeleted = 64;
+    private const int ErrorBadNetName = 67;
+    private const int ErrorSemTimeout = 121;
+    private const int ErrorDeviceNotConnected = 1167;
     private const int ErrorSharingViolation = 32;
     private const int ErrorLockViolation = 33;
     private const int ErrorHandleDiskFull = 39;
@@ -34,7 +41,11 @@ internal static class FileSystemErrors
                     ErrorSharingViolation or ErrorLockViolation => new StorageLockedException(path, inner: io),
                     ErrorFileExists or ErrorAlreadyExists => new StorageConflictException(path, inner: io),
                     ErrorDirNotEmpty => new StorageConflictException(path, $"The directory '{path}' is not empty.", io),
-                    _ => null,
+                    ErrorNotReady or ErrorBadNetPath or ErrorUnexpNetError or ErrorNetNameDeleted or ErrorBadNetName
+                        or ErrorSemTimeout or ErrorDeviceNotConnected => new StorageUnavailableException(path, UnavailableText(rootPath), io),
+                    _ => IsRootReachable(rootPath)
+                        ? new StorageIOException(path, inner: io)
+                        : new StorageUnavailableException(path, UnavailableText(rootPath), io),
                 };
             default:
                 return null;
@@ -56,6 +67,12 @@ internal static class FileSystemErrors
         {
             return false;
         }
+    }
+
+    /// <summary>Throws <see cref="StorageUnavailableException"/> when the drive or share of the root is gone.</summary>
+    public static void ThrowIfRootUnreachable(string path, string rootPath)
+    {
+        if (!IsRootReachable(rootPath)) throw new StorageUnavailableException(path, UnavailableText(rootPath));
     }
 
     private static string UnavailableText(string rootPath) => $"The drive or share of '{rootPath}' is not available.";

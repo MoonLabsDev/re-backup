@@ -207,4 +207,120 @@ public sealed class FileSystemStorageTests : StorageContractTests, IDisposable
 
         await act.Should().ThrowAsync<StorageLockedException>();
     }
+
+    [Theory]
+    [InlineData("C:/x")]
+    [InlineData("a:b")]
+    [InlineData("C:")]
+    [InlineData("a|b")]
+    [InlineData("a<b")]
+    public async Task Paths_that_could_leave_the_root_are_rejected_by_every_operation(string path)
+    {
+        var storage = (FileSystemStorage)CreateEmpty();
+
+        var calls = new List<Func<Task>>
+        {
+            () => storage.StatAsync(path, Ct),
+            async () => await ListAsync(storage, path, true),
+            () => storage.OpenReadAsync(path, Ct),
+            () => storage.CreateAsync(path, new CreateOptions(), Ct),
+            () => storage.DeleteAsync(new[] { path }, Ct),
+            () => storage.EnsureDirectoryAsync(path, Ct),
+            () => { storage.FullPathOf(path); return Task.CompletedTask; },
+        };
+        foreach (var call in calls)
+            await call.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task Stat_on_an_offline_root_throws_unavailable()
+    {
+        var letter = Enumerable.Range('D', 'Z' - 'D' + 1).Reverse().Select(c => (char)c)
+            .FirstOrDefault(c => !Directory.Exists($"{c}:\\"));
+        if (letter == default) return; // every drive letter is in use: nothing to test
+        var storage = new FileSystemStorage($@"{letter}:\nope");
+
+        var act = () => storage.StatAsync("a.txt", Ct);
+
+        await act.Should().ThrowAsync<StorageUnavailableException>();
+    }
+
+    [Fact]
+    public async Task Stat_of_a_missing_file_under_an_existing_root_is_null()
+    {
+        (await CreateEmpty().StatAsync("nope.txt", Ct)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(21)]
+    [InlineData(53)]
+    [InlineData(59)]
+    [InlineData(64)]
+    [InlineData(67)]
+    [InlineData(121)]
+    [InlineData(1167)]
+    public void Network_and_device_errors_map_to_unavailable(int code)
+    {
+        FileSystemErrors.Map(new IOException("x", unchecked((int)0x80070000) | code), "a", Path.GetTempPath())
+            .Should().BeOfType<StorageUnavailableException>();
+        FileSystemErrors.Map(new IOException("x", code), "a", Path.GetTempPath())
+            .Should().BeOfType<StorageUnavailableException>();
+    }
+
+    [Fact]
+    public void Unknown_io_errors_map_to_io_exception_or_unavailable_when_the_root_is_gone()
+    {
+        var other = new IOException("boom", 5555);
+        FileSystemErrors.Map(other, "a", Path.GetTempPath()).Should().BeOfType<StorageIOException>().Which.InnerException.Should().BeSameAs(other);
+        FileSystemErrors.Map(other, "a", @"Z:\x").Should().Match<StorageException>(e => e is StorageIOException || e is StorageUnavailableException);
+        FileSystemErrors.Map(new InvalidOperationException(), "a", Path.GetTempPath()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Disk_full_while_committing_surfaces_full_and_leaves_no_temp_file()
+    {
+        var dir = new TempDir();
+        _dirs.Add(dir);
+        var temp = dir.PathOf("a.txt.00000001.rebackup-tmp");
+        var inner = new FileStream(temp, FileMode.CreateNew, FileAccess.Write);
+        var storage = new FileSystemStorage(dir.Root);
+        var writer = new FileSystemWriter(storage, "a.txt", dir.PathOf("a.txt"), temp, new FullDiskStream(inner), new CreateOptions());
+
+        Func<Task> act = async () =>
+        {
+            await using (writer)
+            {
+                await writer.WriteAsync(new byte[] { 1, 2, 3 }, Ct);
+                await writer.CommitAsync(Ct);
+            }
+        };
+
+        await act.Should().ThrowAsync<StorageFullException>();
+        File.Exists(temp).Should().BeFalse();
+        File.Exists(dir.PathOf("a.txt")).Should().BeFalse();
+    }
+
+    /// <summary>A stream whose flush and dispose fail like a full disk.</summary>
+    private sealed class FullDiskStream : Stream
+    {
+        private readonly FileStream _inner;
+        public FullDiskStream(FileStream inner) => _inner = inner;
+        private static IOException Full() => new("disk full", unchecked((int)0x80070070));
+        public override bool CanRead => false;
+        public override bool CanSeek => true;
+        public override bool CanWrite => true;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => _inner.Position = value; }
+        public override void Flush() => throw Full();
+        public override Task FlushAsync(CancellationToken cancellationToken) => throw Full();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+        public override void SetLength(long value) => throw Full();
+        public override void Write(byte[] buffer, int offset, int count) => _inner.Write(buffer, offset, count);
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _inner.Dispose();
+            throw Full();
+        }
+    }
 }

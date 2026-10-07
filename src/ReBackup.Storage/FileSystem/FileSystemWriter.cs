@@ -8,10 +8,10 @@ internal sealed class FileSystemWriter : StorageWriter
     private readonly string _target;
     private readonly string _temp;
     private readonly CreateOptions _options;
-    private FileStream? _stream;
+    private Stream? _stream;
     private bool _committed;
 
-    public FileSystemWriter(FileSystemStorage storage, string path, string target, string temp, FileStream stream, CreateOptions options)
+    public FileSystemWriter(FileSystemStorage storage, string path, string target, string temp, Stream stream, CreateOptions options)
     {
         _storage = storage;
         _path = path;
@@ -23,7 +23,7 @@ internal sealed class FileSystemWriter : StorageWriter
 
     public override bool CanWrite => _stream is not null;
 
-    private FileStream Open()
+    private Stream Open()
     {
         if (_committed) throw new InvalidOperationException("The file has already been committed.");
         return _stream ?? throw new ObjectDisposedException(nameof(FileSystemWriter));
@@ -119,8 +119,29 @@ internal sealed class FileSystemWriter : StorageWriter
     {
         if (disposing)
         {
-            _stream?.Dispose();
+            var stream = _stream;
             _stream = null;
+            if (stream is not null)
+            {
+                // Disposing flushes buffered bytes, which fails again after a full disk: drop them first and never let disposal throw.
+                if (!_committed)
+                {
+                    try
+                    {
+                        stream.SetLength(0);
+                    }
+                    catch (Exception ex) when (IsIo(ex) || ex is NotSupportedException)
+                    {
+                    }
+                }
+                try
+                {
+                    stream.Dispose();
+                }
+                catch (Exception ex) when (IsIo(ex))
+                {
+                }
+            }
             if (!_committed)
             {
                 try

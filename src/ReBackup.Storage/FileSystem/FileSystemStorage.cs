@@ -32,7 +32,21 @@ public sealed class FileSystemStorage : IStorage
     public string FullPathOf(string relativePath)
     {
         StoragePath.Validate(relativePath);
-        return relativePath.Length == 0 ? RootPath : Path.Combine(RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (relativePath.Length == 0) return RootPath;
+
+        // ':' and the other characters Windows forbids in names would let a path name a drive or a stream outside the root.
+        var invalid = Path.GetInvalidFileNameChars();
+        foreach (var segment in relativePath.Split('/'))
+        {
+            if (segment.IndexOfAny(invalid) >= 0)
+                throw new ArgumentException($"A path segment contains a character that is not allowed in a Windows file name: '{relativePath}'.", nameof(relativePath));
+        }
+
+        var full = Path.GetFullPath(Path.Combine(RootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var prefix = RootPath.EndsWith(Path.DirectorySeparatorChar) ? RootPath : RootPath + Path.DirectorySeparatorChar;
+        if (!full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"The path leaves the storage root: '{relativePath}'.", nameof(relativePath));
+        return full;
     }
 
     public Task<StorageEntry?> StatAsync(string path, CancellationToken ct)
@@ -43,7 +57,10 @@ public sealed class FileSystemStorage : IStorage
             try
             {
                 if (path.EndsWith(TempSuffix, StringComparison.Ordinal)) return null;
-                return Describe(path, GetInfo(full));
+                var entry = Describe(path, GetInfo(full));
+                // "Not there" is only true when the drive or share is: an offline root would otherwise look empty.
+                if (entry is null) FileSystemErrors.ThrowIfRootUnreachable(path, RootPath);
+                return entry;
             }
             catch (Exception ex) when (IsIo(ex))
             {

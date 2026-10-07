@@ -2,7 +2,8 @@ namespace ReBackup.Storage;
 
 /// <summary>
 /// Base of every error a storage reports. Implementations map their native errors (System.IO, HTTP, SDK) to one of the
-/// subtypes, so callers catch only these types and never raw provider exceptions.
+/// subtypes, so callers catch only these types and never raw provider exceptions. <see cref="StorageIOException"/> covers
+/// failures the provider could not classify.
 /// </summary>
 public abstract class StorageException : IOException
 {
@@ -57,4 +58,11 @@ public sealed class StorageLockedException : StorageException
 {
     public StorageLockedException(string path, string? message = null, Exception? inner = null)
         : base(path, message ?? $"'{path}' is in use.", inner) { }
+}
+
+/// <summary>An I/O failure the provider could not classify as one of the other kinds.</summary>
+public sealed class StorageIOException : StorageException
+{
+    public StorageIOException(string path, string? message = null, Exception? inner = null)
+        : base(path, message ?? $"I/O error at '{path}'" + (inner is null ? "." : $": {inner.Message}"), inner) { }
 }

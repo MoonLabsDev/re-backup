@@ -14,7 +14,7 @@ public interface IStorage
 
     /// <summary>
     /// The entries below <paramref name="folder"/> (direct children, or everything below when <paramref name="recursive"/>), in no guaranteed order.
-    /// Entries carry full storage-relative paths. Throws <see cref="StorageNotFoundException"/> when the folder does not exist (the root always does).
+    /// Entries carry full storage-relative paths. Throws <see cref="StorageNotFoundException"/> when the folder does not exist (for the root: it was never created) and <see cref="StorageUnavailableException"/> when the root cannot be reached.
     /// The folder is validated and the view taken when enumeration starts, so errors surface on the first <c>MoveNextAsync</c>; the results may or may not reflect changes made during the enumeration.
     /// </summary>
     IAsyncEnumerable<StorageEntry> ListAsync(string folder, bool recursive, CancellationToken ct);
