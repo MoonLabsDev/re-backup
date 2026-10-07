@@ -230,6 +230,17 @@ public abstract class StorageContractTests
     }
 
     [Fact]
+    public async Task Delete_of_the_root_is_a_conflict_even_when_it_is_empty()
+    {
+        var storage = CreateEmpty();
+        await storage.EnsureDirectoryAsync("", Ct);
+
+        var act = () => storage.DeleteAsync(new[] { "" }, Ct);
+
+        await act.Should().ThrowAsync<StorageConflictException>();
+    }
+
+    [Fact]
     public async Task Delete_removes_an_emptied_directory()
     {
         var storage = CreateEmpty();

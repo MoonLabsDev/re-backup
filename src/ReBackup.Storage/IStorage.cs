@@ -4,6 +4,13 @@ namespace ReBackup.Storage;
 /// A place backups are written to and read from, bound to one root location. All paths are relative to that root,
 /// <c>/</c>-separated, without a leading <c>/</c>; <c>""</c> is the root. Native errors surface as <see cref="StorageException"/> subtypes.
 /// </summary>
+/// <remarks>
+/// Every member that takes a path throws <see cref="ArgumentException"/> for a path that is not a valid storage path
+/// (<see cref="StoragePath.Validate"/>) or that this storage cannot hold: on the file system a segment ending in a space
+/// or a dot, a character Windows does not allow in a name, or a path that leaves the root. Such a path names nothing
+/// the storage could ever have, so callers treat it like an entry they cannot use (e.g. skip the file), not like an
+/// unreachable storage.
+/// </remarks>
 public interface IStorage
 {
     /// <summary>What this storage can do beyond the basics.</summary>
@@ -30,7 +37,7 @@ public interface IStorage
 
     /// <summary>
     /// Deletes files and empty directories; never recursively. Missing paths are not an error.
-    /// Throws <see cref="StorageConflictException"/> for a directory that is not empty.
+    /// Throws <see cref="StorageConflictException"/> for a directory that is not empty, and for the root (<c>""</c>), which is never deleted.
     /// Not atomic across the batch: paths deleted before one that throws stay deleted.
     /// </summary>
     Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct);
