@@ -79,13 +79,12 @@ public static class VersionCatalog
         foreach (var (path, name, localTime, folderPlanName) in candidates)
         {
             ct.ThrowIfCancellationRequested();
-            if (await IsInTransitAsync(target, path, ct).ConfigureAwait(false))
-                continue;
-
-            var (ownership, header) = await ProbeAsync(target, path, planId, ct).ConfigureAwait(false);
+            var (ownership, header) = await ProbeAsync(target, path, planId, rethrowUnavailable: true, ct).ConfigureAwait(false);
             // A folder whose manifest is ours is always listed; any other only when it is named like the plan.
             if (ownership is not (VersionOwnership.Owned or VersionOwnership.Renamed) &&
                 !folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (await IsInTransitAsync(target, path, ct).ConfigureAwait(false))
                 continue;
 
             var fileCount = header?.FileCount;
@@ -120,8 +119,13 @@ public static class VersionCatalog
     /// cancellation. The header is returned for owned folders only.
     /// </summary>
     /// <param name="versionPath">The folder's storage path, relative to the root of <paramref name="target"/>.</param>
-    public static async Task<(VersionOwnership Ownership, ManifestHeader? Header)> ProbeAsync(IStorage target,
-        string versionPath, string planId, CancellationToken ct = default)
+    public static Task<(VersionOwnership Ownership, ManifestHeader? Header)> ProbeAsync(IStorage target,
+        string versionPath, string planId, CancellationToken ct = default) =>
+        ProbeAsync(target, versionPath, planId, rethrowUnavailable: false, ct);
+
+    /// <summary><see cref="ProbeAsync(IStorage, string, string, CancellationToken)"/>; an unreachable target propagates when asked to.</summary>
+    private static async Task<(VersionOwnership Ownership, ManifestHeader? Header)> ProbeAsync(IStorage target,
+        string versionPath, string planId, bool rethrowUnavailable, CancellationToken ct)
     {
         try
         {
@@ -138,31 +142,27 @@ public static class VersionCatalog
         {
             return (VersionOwnership.NoManifest, null);
         }
-        catch (Exception ex) when (ex is StorageException or JsonException)
+        catch (Exception ex) when ((ex is StorageException or JsonException) &&
+                                   !(rethrowUnavailable && ex is StorageUnavailableException))
         {
             return (VersionOwnership.Unreadable, null);
         }
     }
 
     /// <summary>
-    /// True while the folder carries the marker of a run that is writing it or of a deletion in progress. A folder
-    /// that cannot be listed counts as settled: the probe then tells what it is.
+    /// True while the folder carries the marker of a run that is writing it or of a deletion in progress. A marker that
+    /// cannot be looked at counts as absent: the probe has already told what the folder is.
     /// </summary>
     /// <exception cref="StorageUnavailableException">The target cannot be reached.</exception>
-    private static async Task<bool> IsInTransitAsync(IStorage target, string versionPath, CancellationToken ct)
+    private static async Task<bool> IsInTransitAsync(IStorage target, string versionPath, CancellationToken ct) =>
+        await HasMarkerAsync(target, StoragePath.Combine(versionPath, VersionMarkerNames.Pending), ct).ConfigureAwait(false) ||
+        await HasMarkerAsync(target, StoragePath.Combine(versionPath, VersionMarkerNames.Deleting), ct).ConfigureAwait(false);
+
+    private static async Task<bool> HasMarkerAsync(IStorage target, string markerPath, CancellationToken ct)
     {
         try
         {
-            await foreach (var entry in target.ListAsync(versionPath, recursive: false, ct).ConfigureAwait(false))
-            {
-                if (entry.IsDirectory)
-                    continue;
-                var name = StoragePath.Name(entry.Path);
-                if (name.Equals(VersionMarkerNames.Pending, StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals(VersionMarkerNames.Deleting, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            return false;
+            return await target.StatAsync(markerPath, ct).ConfigureAwait(false) is { IsDirectory: false };
         }
         catch (StorageException ex) when (ex is not StorageUnavailableException)
         {

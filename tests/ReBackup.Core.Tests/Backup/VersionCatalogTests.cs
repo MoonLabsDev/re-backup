@@ -277,4 +277,43 @@ public class VersionCatalogTests : IDisposable
         (await VersionCatalog.ProbeAsync(offline, "2026_09_01-02_00 Projects", "p1")).Ownership.Should().Be(VersionOwnership.Unreadable);
         (await VersionCatalog.ProbeAsync(storage, "2026_09_02-02_00 Projects", "p1")).Ownership.Should().Be(VersionOwnership.NoManifest);
     }
+
+    [Fact]
+    public async Task Root_lists_but_child_unavailable_makes_ListAsync_throw_unavailable()
+    {
+        var inner = new InMemoryStorage();
+        await VersionFolder.CreateAsync(inner, "2026_09_01-02_00 Projects", "p1");
+        var storage = new FaultyStorage(inner)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "open")   // the probe reads the manifest: the share drops out right then
+                    throw new StorageUnavailableException(path);
+            },
+        };
+
+        var act = () => VersionCatalog.ListAsync(storage, "p1", "Projects");
+
+        await act.Should().ThrowAsync<StorageUnavailableException>();
+    }
+
+    [Fact]
+    public async Task The_in_transit_check_looks_at_the_two_markers_of_listed_candidates_only()
+    {
+        var inner = new InMemoryStorage();
+        await VersionFolder.CreateAsync(inner, "2026_09_01-02_00 Projects", "p1");
+        await VersionFolder.CreateAsync(inner, "2026_09_02-02_00 Other", "p2");   // another plan's: not a candidate
+        inner.AddFile("notes/a.txt", [1]);
+        var calls = new List<(string Operation, string Path)>();
+        var storage = new FaultyStorage(inner) { Before = (operation, path) => calls.Add((operation, path)) };
+
+        (await VersionCatalog.ListAsync(storage, "p1", "Projects")).Should().ContainSingle();
+
+        calls.Where(c => c.Operation == "list").Should().Equal(("list", ""));
+        calls.Where(c => c.Operation == "stat").Should().BeEquivalentTo(new[]
+        {
+            ("stat", "2026_09_01-02_00 Projects/re-pending.json"),
+            ("stat", "2026_09_01-02_00 Projects/re-deleting.json"),
+        });
+    }
 }
