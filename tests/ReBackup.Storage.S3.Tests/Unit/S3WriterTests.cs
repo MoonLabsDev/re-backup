@@ -1,5 +1,6 @@
 using Amazon.Runtime;
 using Amazon.S3;
+using Amazon.S3.Model;
 using FluentAssertions;
 using ReBackup.Storage.S3.Connections;
 using ReBackup.Storage.S3.Tests.Unit.Fakes;
@@ -448,5 +449,30 @@ public class S3WriterTests
         var act = () => s.DeleteAsync(["a"], Ct);
 
         await act.Should().ThrowAsync<StorageUnavailableException>();
+    }
+
+    [Fact]
+    public async Task Delete_exception_without_a_response_fails()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/a");
+        fake.Failures["DeleteObjectsAsync"] = new DeleteObjectsException(new DeleteObjectsResponse()) { Response = null };
+
+        var act = () => s.DeleteAsync(["a"], Ct);
+
+        (await act.Should().ThrowAsync<StorageIOException>()).Which.Path.Should().Be("a");
+    }
+
+    [Fact]
+    public async Task Delete_exception_with_per_key_errors_is_mapped()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/a");
+        var response = new DeleteObjectsResponse { DeleteErrors = [new DeleteError { Key = "p/a", Code = "AccessDenied" }] };
+        fake.Failures["DeleteObjectsAsync"] = new DeleteObjectsException(response);
+
+        var act = () => s.DeleteAsync(["a"], Ct);
+
+        await act.Should().ThrowAsync<StorageAccessDeniedException>();
     }
 }

@@ -22,6 +22,7 @@ public class S3ErrorsTests
         { "SignatureDoesNotMatch", HttpStatusCode.Forbidden, typeof(StorageAccessDeniedException) },
         { "PreconditionFailed", HttpStatusCode.PreconditionFailed, typeof(StorageConflictException) },
         { null, HttpStatusCode.PreconditionFailed, typeof(StorageConflictException) },
+        { "ConditionalRequestConflict", HttpStatusCode.Conflict, typeof(StorageConflictException) },
         { null, HttpStatusCode.InternalServerError, typeof(StorageUnavailableException) },
         { "SlowDown", HttpStatusCode.ServiceUnavailable, typeof(StorageUnavailableException) },
         { "InvalidObjectState", HttpStatusCode.Forbidden, typeof(StorageIOException) },

@@ -255,9 +255,10 @@ public sealed class S3Storage : IStorage
         {
             response = await _client.DeleteObjectsAsync(request, ct).ConfigureAwait(false);
         }
-        catch (DeleteObjectsException ex)
+        catch (DeleteObjectsException ex) when (ex.Response is not null)
         {
-            // The SDK may raise the per-key errors as an exception instead of returning them.
+            // The SDK may raise the per-key errors as an exception instead of returning them. Without a response nothing says
+            // which keys were deleted, so that case fails below like any other error.
             response = ex.Response;
         }
         catch (Exception ex) when (ex is not StorageException)

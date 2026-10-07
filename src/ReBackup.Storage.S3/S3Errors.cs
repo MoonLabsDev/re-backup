@@ -44,7 +44,8 @@ internal static class S3Errors
             return new StorageNotFoundException(path, $"Not found: '{path}'.", ex);
         if (code is "AccessDenied" or "InvalidAccessKeyId" or "SignatureDoesNotMatch" || status == HttpStatusCode.Forbidden)
             return new StorageAccessDeniedException(path, $"Access denied: '{path}'.", ex);
-        if (code == "PreconditionFailed" || status == HttpStatusCode.PreconditionFailed)
+        // 409 ConditionalRequestConflict: AWS's answer when a conditional write races another write to the same key.
+        if (code is "PreconditionFailed" or "ConditionalRequestConflict" || status == HttpStatusCode.PreconditionFailed)
             return new StorageConflictException(path, $"Conflict at '{path}'.", ex);
         if ((int)status >= 500)
             return Unavailable(path, ex);
