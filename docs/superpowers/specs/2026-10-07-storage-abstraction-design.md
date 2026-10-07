@@ -60,11 +60,11 @@ Dependency rules (enforced by an architecture test that inspects assembly refere
 
 ### 4.1 Decoupling required for extraction
 
-- `RetentionPlanner` depends on `VersionInfo` and stays in Core. Shared gets a generic planner over `RetentionVersion` with an `IsOwned` flag; Core's planner delegates to it.
+- `RetentionPlanner` depends on `VersionInfo` and stays in Core. `RetentionEngine` already works on the generic `RetentionVersion(Name, LocalTime)` and moves to Shared unchanged; consumers filter owned versions themselves, as Core's planner does today.
 - `RunTrigger` moves from `Backup/RunLog.cs` to Shared/Schedule.
-- Retention and schedule texts move out of `CoreTexts.Templates` into embedded `shared.en-US.json` / `shared.de-DE.json` in `ReBackup.Shared`. App-specific `core.*` texts stay in Core.
-- `ThemeManager` takes the consuming app's pack URI as a parameter.
-- `Loc` loads label files from several sources (Shared + the app assembly) instead of the hard-coded `ReBackup.App.Locales.` prefix.
+- Retention and trigger texts (`core.retention.*`, `core.trigger.*`) move out of `CoreTexts.Templates` into `SharedTexts` in `ReBackup.Shared`, renamed `shared.retention.*` / `shared.trigger.*`, with embedded label files `shared.en-US.json` / `shared.de-DE.json`. App-specific `core.*` texts stay in Core.
+- Theme XAML files move into `ReBackup.Shared.Wpf`, so `ThemeManager` loads them from the fixed pack URI `/ReBackup.Shared.Wpf;component/Theme/…`.
+- `Loc` loads label files from several sources (Shared, Shared.Wpf, the app assembly) instead of the hard-coded `ReBackup.App.Locales.` prefix, and recognizes English texts through registered recognizers (`CoreTexts`, `SharedTexts`) instead of calling `CoreTexts` directly.
 - `ThemeMode` and `AppLanguages` move from Core/Settings to Shared.
 
 ### 4.2 Consumption by re-s3
