@@ -201,13 +201,13 @@ public sealed class BackupRunner : IBackupRunner
         await DeleteLeftoversAsync(plan, entry, progress, cancellationToken);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
-        var index = SourceIndexer.Build(plan.Source.Path, indexProgress, cancellationToken);
+        var index = await SourceIndexer.BuildAsync(_storages.Open(plan.Source), indexProgress, cancellationToken);
         var matcher = IgnoreMatcher.ForPlan(plan.Ignore, request.GlobalIgnoreDefaults, index.IgnoreFiles);
         var root = IndexEvaluator.Evaluate(index, matcher, cancellationToken);
         if (root.Node.Error is { } rootError)
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceUnreadable", ("error", rootError)));
 
-        var work = new BackupWork(index.Root);
+        var work = new BackupWork(PathUtil.Normalize(plan.Source.Path));   // index.Root is only a display name
         foreach (var path in index.UnreadableIgnoreFiles)
             work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.ignoreFileUnreadable")));
         Collect(root, work);

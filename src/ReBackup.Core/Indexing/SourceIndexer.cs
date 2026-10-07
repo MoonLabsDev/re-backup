@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Text;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Localization;
-using ReBackup.Shared.IO;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Indexing;
 
@@ -21,7 +23,10 @@ public sealed class IndexNode
     public string? Error { get; init; }
 }
 
-/// <summary>One scan of a source folder. <see cref="DirectoryCount"/> does not include the root.</summary>
+/// <summary>
+/// One scan of a source. <see cref="Root"/> is the display name of the root (the folder name; the full path when it has none), not an address.
+/// <see cref="DirectoryCount"/> does not include the root.
+/// </summary>
 public sealed record SourceIndex(
     string Root,
     IndexNode RootNode,
@@ -42,123 +47,192 @@ public static class SourceIndexer
 
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(200);
 
-    public static Task<SourceIndex> BuildAsync(string root, IProgress<IndexProgress>? progress = null,
-        CancellationToken cancellationToken = default) =>
-        Task.Run(() => Build(root, progress, cancellationToken), cancellationToken);
-
-    public static SourceIndex Build(string root, IProgress<IndexProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Scans <paramref name="source"/> with one non-recursive listing per folder. <paramref name="rootName"/> is the display
+    /// name of the root; it defaults to the folder name for a <see cref="FileSystemStorage"/> and to "" otherwise.
+    /// </summary>
+    /// <exception cref="StorageNotFoundException">The source does not exist.</exception>
+    /// <exception cref="StorageUnavailableException">The source cannot be reached.</exception>
+    public static async Task<SourceIndex> BuildAsync(IStorage source, IProgress<IndexProgress>? progress = null,
+        CancellationToken ct = default, string? rootName = null)
     {
-        var fullRoot = PathUtil.Normalize(root);
-        if (!Directory.Exists(fullRoot))
-            throw new DirectoryNotFoundException(CoreTexts.English("core.run.sourceMissing", ("source", fullRoot)));
-
-        var walk = new Walk(progress, cancellationToken);
-        var name = Path.GetFileName(fullRoot);
-        var rootNode = walk.ScanDirectory(new DirectoryInfo(fullRoot), name.Length > 0 ? name : fullRoot, "", 0);
-        progress?.Report(new IndexProgress(walk.Files, walk.Directories, fullRoot));
-        return new SourceIndex(fullRoot, rootNode, walk.IgnoreFiles, walk.Files, walk.Directories)
+        ArgumentNullException.ThrowIfNull(source);
+        var name = rootName ?? DefaultRootName(source);
+        var walk = new Walk(source, progress, ct);
+        var rootNode = await walk.ScanDirectoryAsync(name, "", 0, isRoot: true, default).ConfigureAwait(false);
+        progress?.Report(new IndexProgress(walk.Files, walk.Directories, DisplayPath(source, "")));
+        return new SourceIndex(name, rootNode, walk.IgnoreFiles, walk.Files, walk.Directories)
         {
             UnreadableIgnoreFiles = walk.UnreadableIgnoreFiles,
         };
     }
 
-    private sealed class Walk(IProgress<IndexProgress>? progress, CancellationToken cancellationToken)
+    /// <summary>The order of children: ignoring case unless the storage tells names apart by case.</summary>
+    internal static StringComparer NameComparer(IStorage source) =>
+        source.Capabilities.HasFlag(StorageCapabilities.CaseSensitive) ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+
+    /// <summary>The folder name for a file system storage (its full path when it has none, e.g. a drive root), "" for others.</summary>
+    public static string DefaultRootName(IStorage source)
+    {
+        if (source is not FileSystemStorage fs)
+            return "";
+        var name = Path.GetFileName(fs.RootPath);
+        return name.Length > 0 ? name : fs.RootPath;
+    }
+
+    /// <summary>What progress shows for a folder: the full path on a file system, else the storage path.</summary>
+    internal static string DisplayPath(IStorage source, string relativePath)
+    {
+        if (source is FileSystemStorage fs)
+        {
+            try
+            {
+                return fs.FullPathOf(relativePath);
+            }
+            catch (ArgumentException)
+            {
+            }
+        }
+        return relativePath;
+    }
+
+    /// <summary>
+    /// Reads a <c>.backupignore</c> file; null when it cannot be read (its patterns are then not applied).
+    /// A source that went away as a whole is an error, not an unreadable file.
+    /// </summary>
+    internal static async Task<string[]?> ReadIgnoreLinesAsync(IStorage source, string path, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = await source.OpenReadAsync(path, ct).ConfigureAwait(false);
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var lines = new List<string>();
+            while (await reader.ReadLineAsync(ct).ConfigureAwait(false) is { } line)
+                lines.Add(line);
+            return [.. lines];
+        }
+        catch (StorageUnavailableException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            // ArgumentException: a path this storage cannot address.
+            return null;
+        }
+    }
+
+    private sealed class Walk(IStorage source, IProgress<IndexProgress>? progress, CancellationToken ct)
     {
         private readonly Stopwatch _sinceReport = Stopwatch.StartNew();
+        private readonly StringComparer _comparer = NameComparer(source);
 
         public List<NestedIgnoreFile> IgnoreFiles { get; } = [];
         public List<string> UnreadableIgnoreFiles { get; } = [];
         public int Files { get; private set; }
         public int Directories { get; private set; }
 
-        public IndexNode ScanDirectory(DirectoryInfo directory, string name, string relativePath, int depth)
+        public async Task<IndexNode> ScanDirectoryAsync(string name, string relativePath, int depth, bool isRoot,
+            DateTime lastWriteUtc)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ReportThrottled(directory.FullName);
+            ct.ThrowIfCancellationRequested();
+            ReportThrottled(relativePath);
 
-            var children = new List<IndexNode>();
+            var entries = new List<StorageEntry>();
             string? error = null;
             try
             {
-                foreach (var entry in directory.EnumerateFileSystemInfos())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var childPath = relativePath.Length == 0 ? entry.Name : relativePath + "/" + entry.Name;
+                await foreach (var entry in source.ListAsync(relativePath, recursive: false, ct).ConfigureAwait(false))
+                    entries.Add(entry);
+            }
+            catch (StorageNotFoundException) when (isRoot)
+            {
+                throw;   // the source itself is missing
+            }
+            catch (StorageUnavailableException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is StorageException or ArgumentException)
+            {
+                error = ex.Message;   // what was listed so far is kept
+            }
 
-                    if (entry is DirectoryInfo subdirectory)
+            if (isRoot)
+                lastWriteUtc = await RootTimeAsync().ConfigureAwait(false);
+
+            var children = new List<IndexNode>();
+            foreach (var entry in entries)
+            {
+                ct.ThrowIfCancellationRequested();
+                var childName = StoragePath.Name(entry.Path);
+
+                if (entry.IsDirectory)
+                {
+                    Directories++;
+                    if (entry.IsLink)
+                        children.Add(Leaf(childName, entry, CoreTexts.English("core.scan.link")));
+                    else if (depth + 1 > SourceIndexer.MaxDepth)
+                        children.Add(Leaf(childName, entry, CoreTexts.English("core.scan.tooDeep")));
+                    else
+                        children.Add(await ScanDirectoryAsync(childName, entry.Path, depth + 1, false, entry.ModifiedUtc).ConfigureAwait(false));
+                }
+                else
+                {
+                    Files++;
+                    children.Add(new IndexNode
                     {
-                        Directories++;
-                        if (subdirectory.LinkTarget is not null)
-                        {
-                            children.Add(new IndexNode
-                            {
-                                Name = subdirectory.Name,
-                                RelativePath = childPath,
-                                IsDirectory = true,
-                                LastWriteUtc = subdirectory.LastWriteTimeUtc,
-                                Error = CoreTexts.English("core.scan.link"),
-                            });
-                        }
-                        else if (depth + 1 > SourceIndexer.MaxDepth)
-                        {
-                            children.Add(new IndexNode
-                            {
-                                Name = subdirectory.Name,
-                                RelativePath = childPath,
-                                IsDirectory = true,
-                                LastWriteUtc = subdirectory.LastWriteTimeUtc,
-                                Error = CoreTexts.English("core.scan.tooDeep"),
-                            });
-                        }
-                        else
-                        {
-                            children.Add(ScanDirectory(subdirectory, subdirectory.Name, childPath, depth + 1));
-                        }
-                    }
-                    else if (entry is FileInfo file)
-                    {
-                        Files++;
-                        children.Add(new IndexNode
-                        {
-                            Name = file.Name,
-                            RelativePath = childPath,
-                            IsDirectory = false,
-                            Size = file.Length,
-                            LastWriteUtc = file.LastWriteTimeUtc,
-                        });
-                        if (file.Name.Equals(IgnoreOrigins.NestedFileName, StringComparison.OrdinalIgnoreCase))
-                            ReadIgnoreFile(file, relativePath);
-                    }
+                        Name = childName,
+                        RelativePath = entry.Path,
+                        IsDirectory = false,
+                        Size = entry.Size,
+                        LastWriteUtc = entry.ModifiedUtc,
+                    });
+                    if (childName.Equals(IgnoreOrigins.NestedFileName, StringComparison.OrdinalIgnoreCase))
+                        await ReadIgnoreFileAsync(entry.Path, relativePath).ConfigureAwait(false);
                 }
             }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-            {
-                error = ex.Message;
-            }
 
-            children.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
+            children.Sort((a, b) => _comparer.Compare(a.Name, b.Name));
             return new IndexNode
             {
                 Name = name,
                 RelativePath = relativePath,
                 IsDirectory = true,
-                LastWriteUtc = directory.LastWriteTimeUtc,
+                LastWriteUtc = lastWriteUtc,
                 Children = children,
                 Error = error,
             };
         }
 
-        private void ReadIgnoreFile(FileInfo file, string directoryRelativePath)
+        private static IndexNode Leaf(string name, StorageEntry entry, string error) => new()
+        {
+            Name = name,
+            RelativePath = entry.Path,
+            IsDirectory = true,
+            LastWriteUtc = entry.ModifiedUtc,
+            Error = error,
+        };
+
+        /// <summary>The time of the root itself (best effort: a root is in no listing).</summary>
+        private async Task<DateTime> RootTimeAsync()
         {
             try
             {
-                IgnoreFiles.Add(new NestedIgnoreFile(directoryRelativePath, File.ReadAllLines(file.FullName)));
+                return (await source.StatAsync("", ct).ConfigureAwait(false))?.ModifiedUtc ?? default;
             }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            catch (StorageException)
             {
-                UnreadableIgnoreFiles.Add(IgnoreOrigins.ForNestedFile(directoryRelativePath));
+                return default;
             }
+        }
+
+        private async Task ReadIgnoreFileAsync(string path, string directoryRelativePath)
+        {
+            if (await ReadIgnoreLinesAsync(source, path, ct).ConfigureAwait(false) is { } lines)
+                IgnoreFiles.Add(new NestedIgnoreFile(directoryRelativePath, lines));
+            else
+                UnreadableIgnoreFiles.Add(IgnoreOrigins.ForNestedFile(directoryRelativePath));
         }
 
         private void ReportThrottled(string currentDirectory)
@@ -166,7 +240,7 @@ public static class SourceIndexer
             if (progress is null || _sinceReport.Elapsed < ProgressInterval)
                 return;
             _sinceReport.Restart();
-            progress.Report(new IndexProgress(Files, Directories, currentDirectory));
+            progress.Report(new IndexProgress(Files, Directories, DisplayPath(source, currentDirectory)));
         }
     }
 }

@@ -5,6 +5,7 @@ using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -156,7 +157,22 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private async Task IndexAsync()
     {
         var source = _source();
-        if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source))
+        IStorage? storage = null;
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            try
+            {
+                var opened = new StorageFactory().Open(StorageLocation.FileSystem(source));
+                // Not there, offline or not a folder: all "missing" for the user, as Directory.Exists said before.
+                if (await opened.StatAsync("", CancellationToken.None) is { IsDirectory: true })
+                    storage = opened;
+            }
+            catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException)
+            {
+                // StorageNotFoundException / StorageUnavailableException (an IOException), or a path that is no path.
+            }
+        }
+        if (storage is null)
         {
             ErrorText = LocText.Of("ignore.sourceMissing");
             return;
@@ -168,16 +184,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         var cts = _indexCts = new CancellationTokenSource();
         ErrorText = null;
 
-        LiveScan scan;
-        try
-        {
-            scan = LiveScan.Start(source, _ignoreSettings(), _globalDefaults().ToList(), cancellationToken: cts.Token);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        {
-            ErrorText = LocText.Known(ex.Message);
-            return;
-        }
+        var scan = LiveScan.Start(storage, SourceIndexer.DefaultRootName(storage), _ignoreSettings(),
+            _globalDefaults().ToList(), ct: cts.Token);
 
         _scan = scan;
         IsIndexing = true;
