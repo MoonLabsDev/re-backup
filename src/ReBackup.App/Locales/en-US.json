@@ -610,6 +610,12 @@
       "more": "… and {count:N0} more",
       "deleted": "Deleted by retention:",
       "warnings": "Warnings:"
+    },
+    "skippedTree": {
+      "name": "Skipped entries",
+      "deleted": "{count:N0} deleted",
+      "changed": "{count:N0} changed",
+      "other": "{count:N0} other"
     }
   },
   "versions": {

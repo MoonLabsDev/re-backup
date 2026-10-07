@@ -90,26 +90,35 @@ public sealed partial class RunHistoryRow : ObservableObject
     public string FilesText => Formats.Count(_entry.FilesCopied);
     public string SizeText => Formats.Bytes(_entry.BytesCopied);
     public string SkippedText => Formats.Count(_entry.SkippedCount);
-    public bool HasDetails => Details.Length > 0;
+    public bool HasDetails => VersionText.Length > 0 || HasSkipped || FooterText.Length > 0;
+
+    /// <summary>"Version: …"; empty when the run produced none.</summary>
+    public string VersionText => _entry.Version is null ? "" : Loc.F("history.details.version", ("version", _entry.Version));
+
+    public bool HasSkipped => _entry.SkippedCount > 0;
+
+    /// <summary>"Skipped (1,234):".</summary>
+    public string SkippedTitle => Loc.F("history.details.skipped", ("count", _entry.SkippedCount));
+
+    /// <summary>"… and 234 more" when the log keeps only the first entries; empty otherwise.</summary>
+    public string SkippedMoreText => _entry.SkippedCount > _entry.Skipped.Count
+        ? Loc.F("history.details.more", ("count", _entry.SkippedCount - _entry.Skipped.Count))
+        : "";
+
+    /// <summary>The skipped entries as a tree, built when the run's details are first shown.</summary>
+    public SkippedTreeViewModel SkippedTree => _skippedTree ??= new SkippedTreeViewModel(_entry.Skipped);
+
+    private SkippedTreeViewModel? _skippedTree;
 
     /// <summary>
-    /// Version, skipped entries, deleted versions and warnings. Reasons and warnings are stored in English; those Core
-    /// wrote are shown in the applied language (<see cref="Loc.Known"/>), messages from Windows as stored.
+    /// Versions deleted by retention and warnings. Warnings are stored in English; those Core wrote are shown in the
+    /// applied language (<see cref="Loc.Known"/>), messages from Windows as stored.
     /// </summary>
-    public string Details
+    public string FooterText
     {
         get
         {
             var lines = new List<string>();
-            if (_entry.Version is not null)
-                lines.Add(Loc.F("history.details.version", ("version", _entry.Version)));
-            if (_entry.SkippedCount > 0)
-            {
-                lines.Add(Loc.F("history.details.skipped", ("count", _entry.SkippedCount)));
-                lines.AddRange(_entry.Skipped.Select(s => $"  {s.Path} — {Loc.Known(s.Reason)}"));
-                if (_entry.SkippedCount > _entry.Skipped.Count)
-                    lines.Add("  " + Loc.F("history.details.more", ("count", _entry.SkippedCount - _entry.Skipped.Count)));
-            }
             if (_entry.RetentionDeleted.Count > 0)
             {
                 lines.Add(Loc.T("history.details.deleted"));
@@ -140,5 +149,9 @@ public sealed partial class RunHistoryRow : ObservableObject
     }
 
     /// <summary>The language changed: every text of the row is read again.</summary>
-    public void Refresh() => OnPropertyChanged(string.Empty);
+    public void Refresh()
+    {
+        OnPropertyChanged(string.Empty);
+        _skippedTree?.RefreshTexts();
+    }
 }
