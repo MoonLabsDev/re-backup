@@ -155,9 +155,9 @@ public sealed partial class VersionsViewModel : ObservableObject
             var (index, state, folders, indexed) = await Task.Run(() =>
             {
                 var planIndex = _context.Indexes.For(plan.Id);
-                var targetState = TargetStateOf(plan.Target);
+                var targetState = TargetStateOf(plan.Target.Path);
                 var list = targetState == TargetState.Present
-                    ? VersionCatalog.List(plan.Target, plan.Id, plan.Name, cts.Token)
+                    ? VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name, cts.Token)
                     : [];
                 return (planIndex, targetState, list, planIndex.Versions());
             }, cts.Token);
@@ -170,7 +170,7 @@ public sealed partial class VersionsViewModel : ObservableObject
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.
                 ShowFolders([], []);
                 Sync = LocText.Empty;
-                ErrorText = TargetUnavailable(plan.Target);
+                ErrorText = TargetUnavailable(plan.Target.Path);
                 return;
             }
             if (state == TargetState.NotCreatedYet)
@@ -192,9 +192,9 @@ public sealed partial class VersionsViewModel : ObservableObject
             // read in the same step, after the sync, because a re-import gives a version a new id.
             var (result, versions, targetGone) = await _context.Worker.RunAsync(plan.Id, planIndex =>
             {
-                var synced = planIndex.Sync(folders, progress, cts.Token, targetFolder: plan.Target);
+                var synced = planIndex.Sync(folders, progress, cts.Token, targetFolder: plan.Target.Path);
                 // Errors because the whole target went away (e.g. the NAS went offline mid-sync) are one message.
-                var gone = synced.Errors.Count > 0 && !Directory.Exists(plan.Target);
+                var gone = synced.Errors.Count > 0 && !Directory.Exists(plan.Target.Path);
                 return (synced, planIndex.Versions(), gone);
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
@@ -204,7 +204,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             {
                 ApplyIndexed(versions, []);
                 Sync = LocText.Empty;
-                ErrorText = TargetUnavailable(plan.Target);
+                ErrorText = TargetUnavailable(plan.Target.Path);
                 return;
             }
 

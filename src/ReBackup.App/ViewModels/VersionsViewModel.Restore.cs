@@ -176,7 +176,7 @@ public sealed partial class VersionsViewModel
             // The manifest's source; a version without a (readable) manifest goes back to the plan's source.
             var source = version.Indexed is { Origin: IndexOrigin.Manifest, Source.Length: > 0 } indexed
                 ? indexed.Source
-                : _savedPlan()?.Source;
+                : _savedPlan()?.Source.Path;
             if (string.IsNullOrWhiteSpace(source) || !Path.IsPathFullyQualified(source))
             {
                 dialogs.ShowError(Loc.T("restore.title"), Loc.T("restore.originUnknown"));
@@ -328,7 +328,7 @@ public sealed partial class VersionsViewModel
     /// </summary>
     private string? InsideTarget(string root, string relative)
     {
-        if (_savedPlan()?.Target is not { Length: > 0 } target)
+        if (_savedPlan()?.Target.Path is not { Length: > 0 } target)
             return null;
         try
         {

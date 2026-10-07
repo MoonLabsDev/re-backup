@@ -105,7 +105,7 @@ public sealed class BackupRunner : IBackupRunner
                 entry.AddSkipped(skipped);
 
             var versionName = await ReserveVersionNameAsync(plan, cancellationToken);
-            var final = finalPath = Path.Combine(plan.Target, versionName);
+            var final = finalPath = Path.Combine(plan.Target.Path, versionName);
             partialPath = finalPath + VersionName.PartialSuffix;
             var partial = partialPath;
             manifest = await Task.Run(() => CopyAndFinish(work, plan, partial, final, entry, progress, cancellationToken),
@@ -170,9 +170,9 @@ public sealed class BackupRunner : IBackupRunner
     private BackupWork Prepare(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         var plan = request.Plan;
-        if (string.IsNullOrWhiteSpace(plan.Source) || !Directory.Exists(plan.Source))
-            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceMissing", ("source", plan.Source)));
-        if (string.IsNullOrWhiteSpace(plan.Target))
+        if (string.IsNullOrWhiteSpace(plan.Source.Path) || !Directory.Exists(plan.Source.Path))
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceMissing", ("source", plan.Source.Path)));
+        if (string.IsNullOrWhiteSpace(plan.Target.Path))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.noTarget"));
         if (string.IsNullOrWhiteSpace(plan.Name) || plan.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.nameNotFolder", ("name", plan.Name)));
@@ -183,16 +183,16 @@ public sealed class BackupRunner : IBackupRunner
         if (PlanValidator.NameErrors(plan.Name) is [var nameProblem, ..])
             throw new BackupAbortException(RunStatus.Error,
                 CoreTexts.English("core.run.nameUnusable", ("name", plan.Name), ("problem", nameProblem)));
-        if (PathUtil.IsSameOrInside(plan.Target, plan.Source))
+        if (PathUtil.IsSameOrInside(plan.Target.Path, plan.Source.Path))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.targetInsideSource"));
-        if (PathUtil.IsSameOrInside(plan.Source, plan.Target))
+        if (PathUtil.IsSameOrInside(plan.Source.Path, plan.Target.Path))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceInsideTarget"));
 
-        Directory.CreateDirectory(plan.Target);
+        Directory.CreateDirectory(plan.Target.Path);
         DeleteLeftovers(plan, entry, progress, cancellationToken);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
-        var index = SourceIndexer.Build(plan.Source, indexProgress, cancellationToken);
+        var index = SourceIndexer.Build(plan.Source.Path, indexProgress, cancellationToken);
         var matcher = IgnoreMatcher.ForPlan(plan.Ignore, request.GlobalIgnoreDefaults, index.IgnoreFiles);
         var root = IndexEvaluator.Evaluate(index, matcher, cancellationToken);
         if (root.Node.Error is { } rootError)
@@ -204,7 +204,7 @@ public sealed class BackupRunner : IBackupRunner
         Collect(root, work);
 
         var required = (long)Math.Ceiling(work.TotalBytes * FreeSpaceMargin);
-        var free = _volume.GetAvailableFreeSpace(plan.Target);
+        var free = _volume.GetAvailableFreeSpace(plan.Target.Path);
         if (required > free && plan.FreeSpaceByRetention)
             free = FreeSpaceByRetention(plan, required, free, entry, cancellationToken);
         if (required > free)
@@ -228,7 +228,7 @@ public sealed class BackupRunner : IBackupRunner
         List<VersionInfo> candidates;
         try
         {
-            var versions = VersionCatalog.List(plan.Target, plan.Id, plan.Name, cancellationToken);
+            var versions = VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name, cancellationToken);
             var newest = versions.LastOrDefault(v => v.IsOwned);
             candidates = RetentionPlanner.Decide(versions, rules, upcomingRun: _time.GetLocalNow().DateTime)
                 .Where(d => d.Delete && !ReferenceEquals(d.Version, newest))
@@ -250,7 +250,7 @@ public sealed class BackupRunner : IBackupRunner
             if (!TryRemoveVersion(version, entry, "core.run.freeSpaceDeleteFailed"))
                 continue;
 
-            free = _volume.GetAvailableFreeSpace(plan.Target);
+            free = _volume.GetAvailableFreeSpace(plan.Target.Path);
             if (required <= free)
                 break;
         }
@@ -311,7 +311,7 @@ public sealed class BackupRunner : IBackupRunner
             Report();
         }
 
-        foreach (var directory in Directory.EnumerateDirectories(plan.Target).ToList())
+        foreach (var directory in Directory.EnumerateDirectories(plan.Target.Path).ToList())
         {
             var name = Path.GetFileName(directory);
             if (!VersionName.IsTransient(name))
@@ -432,7 +432,7 @@ public sealed class BackupRunner : IBackupRunner
         List<VersionInfo> doomed;
         try
         {
-            var versions = VersionCatalog.List(plan.Target, plan.Id, plan.Name);
+            var versions = VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name);
             doomed = RetentionPlanner.Decide(versions, rules).Where(d => d.Delete).Select(d => d.Version).ToList();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
@@ -512,7 +512,7 @@ public sealed class BackupRunner : IBackupRunner
             cancellationToken.ThrowIfCancellationRequested();
             var now = _time.GetLocalNow().DateTime;
             var name = VersionName.Format(now, plan.Name);
-            var path = Path.Combine(plan.Target, name);
+            var path = Path.Combine(plan.Target.Path, name);
             if (!Directory.Exists(path) && !Directory.Exists(path + VersionName.PartialSuffix))
                 return name;
 

@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ReBackup.Shared\ReBackup.Shared.csproj" />
+    <ProjectReference Include="..\ReBackup.Storage\ReBackup.Storage.csproj" />
   </ItemGroup>
 
 </Project>

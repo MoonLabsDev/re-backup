@@ -26,6 +26,7 @@ public static class CoreTexts
         ["core.plan.sourceNotAbsolute"] = "Source must be an absolute path.",
         ["core.plan.targetNotAbsolute"] = "Target must be an absolute path.",
         ["core.plan.sourceMissing"] = "Source folder does not exist.",
+        ["core.plan.unsupportedLocation"] = "This kind of location is not supported yet.",
         ["core.plan.targetInsideSource"] = "Target must not be inside the source.",
         ["core.plan.sourceInsideTarget"] = "Source must not be inside the target.",
         ["core.plan.retentionRule"] = "Retention rule {index}: {problem}",

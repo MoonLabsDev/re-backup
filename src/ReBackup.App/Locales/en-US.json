@@ -94,6 +94,7 @@
       "sourceNotAbsolute": "Source must be an absolute path.",
       "targetNotAbsolute": "Target must be an absolute path.",
       "sourceMissing": "Source folder does not exist.",
+      "unsupportedLocation": "This kind of location is not supported yet.",
       "targetInsideSource": "Target must not be inside the source.",
       "sourceInsideTarget": "Source must not be inside the target.",
       "retentionRule": "Retention rule {index}: {problem}",

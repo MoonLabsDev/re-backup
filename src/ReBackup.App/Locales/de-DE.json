@@ -94,6 +94,7 @@
       "sourceNotAbsolute": "Die Quelle muss ein absoluter Pfad sein.",
       "targetNotAbsolute": "Das Ziel muss ein absoluter Pfad sein.",
       "sourceMissing": "Der Quellordner existiert nicht.",
+      "unsupportedLocation": "Diese Art von Speicherort wird noch nicht unterstützt.",
       "targetInsideSource": "Das Ziel darf nicht in der Quelle liegen.",
       "sourceInsideTarget": "Die Quelle darf nicht im Ziel liegen.",
       "retentionRule": "Aufbewahrungsregel {index}: {problem}",

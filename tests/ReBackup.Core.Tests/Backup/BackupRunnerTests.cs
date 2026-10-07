@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
+using ReBackup.Storage;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Json;
 using ReBackup.Shared.Schedule;
@@ -36,8 +37,8 @@ public class BackupRunnerTests : IDisposable
     {
         Id = "p1",
         Name = "Projects",
-        Source = _source,
-        Target = _target,
+        Source = StorageLocation.FileSystem(_source),
+        Target = StorageLocation.FileSystem(_target),
         Ignore = new IgnoreSettings { Patterns = [.. patterns] },
     };
 
@@ -251,7 +252,7 @@ public class BackupRunnerTests : IDisposable
     public async Task Missing_source_aborts_as_Error()
     {
         var plan = Plan();
-        plan.Source = _tmp.PathOf("nope");
+        plan.Source = StorageLocation.FileSystem(_tmp.PathOf("nope"));
 
         var entry = await Runner().RunAsync(Request(plan));
 
@@ -491,19 +492,19 @@ public class BackupRunnerTests : IDisposable
     public async Task Target_inside_the_source_aborts_as_Error()
     {
         var plan = Plan();
-        plan.Target = Path.Combine(_source, "out");
+        plan.Target = StorageLocation.FileSystem(Path.Combine(_source, "out"));
 
         var entry = await Runner().RunAsync(Request(plan));
 
         entry.Status.Should().Be(RunStatus.Error);
-        Directory.Exists(plan.Target).Should().BeFalse();
+        Directory.Exists(plan.Target.Path).Should().BeFalse();
     }
 
     [Fact]
     public async Task Source_inside_the_target_aborts_as_Error()
     {
         var plan = Plan();
-        plan.Target = _tmp.Root;
+        plan.Target = StorageLocation.FileSystem(_tmp.Root);
 
         var entry = await Runner().RunAsync(Request(plan));
 

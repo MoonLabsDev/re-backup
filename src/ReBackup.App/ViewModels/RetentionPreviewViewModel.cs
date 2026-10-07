@@ -216,13 +216,13 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         {
             var (versions, targetMissing) = await Task.Run(() =>
             {
-                var missing = string.IsNullOrWhiteSpace(plan.Target) || !Directory.Exists(plan.Target);
-                return (VersionCatalog.List(plan.Target, plan.Id, plan.Name, cts.Token), missing);
+                var missing = string.IsNullOrWhiteSpace(plan.Target.Path) || !Directory.Exists(plan.Target.Path);
+                return (VersionCatalog.List(plan.Target.Path, plan.Id, plan.Name, cts.Token), missing);
             }, cts.Token);
             if (!ReferenceEquals(_loadCts, cts))
                 return;
             _versions = versions;
-            _versionsTarget = plan.Target;
+            _versionsTarget = plan.Target.Path;
             _targetMissing = targetMissing;
             OnPropertyChanged(nameof(ShowEmpty));
             OnPropertyChanged(nameof(EmptyText));

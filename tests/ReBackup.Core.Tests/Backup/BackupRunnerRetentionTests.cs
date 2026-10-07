@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
+using ReBackup.Storage;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
@@ -33,8 +34,8 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         Id = "p1",
         Name = "Projects",
-        Source = _source,
-        Target = _target,
+        Source = StorageLocation.FileSystem(_source),
+        Target = StorageLocation.FileSystem(_target),
         Retention = [.. rules],
     };
 

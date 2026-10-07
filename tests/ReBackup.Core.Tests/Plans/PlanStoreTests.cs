@@ -5,6 +5,7 @@ using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Json;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Tests.Plans;
 
@@ -30,7 +31,7 @@ public class PlanStoreTests : IDisposable
         using var store = NewStore();
         var plan = new BackupPlan
         {
-            Name = "Projects", Source = @"D:\Projects", Target = @"F:\Backups",
+            Name = "Projects", Source = StorageLocation.FileSystem(@"D:\Projects"), Target = StorageLocation.FileSystem(@"F:\Backups"),
             Enabled = false, FreeSpaceByRetention = true,
         };
 
@@ -77,6 +78,29 @@ public class PlanStoreTests : IDisposable
         rule.GetProperty("period").GetString().Should().Be("Monthly");
         rule.GetProperty("anchor").GetInt32().Should().Be(0);
         rule.GetProperty("keep").GetInt32().Should().Be(12);
+    }
+
+    [Fact]
+    public void Legacy_plan_round_trip_keeps_extra_sections()
+    {
+        using var store = NewStore();
+        var path = store.PathFor("p1");
+        File.WriteAllText(path, """
+            { "id": "p1", "name": "Keep", "source": "C:\\x", "target": "D:\\y",
+              "futureSection": { "a": 1, "b": [ "x" ] } }
+            """);
+
+        var plan = store.LoadAll().Plans.Single();
+        plan.Source.Should().Be(StorageLocation.FileSystem(@"C:\x"));
+        store.Save(plan);
+
+        using var saved = JsonDocument.Parse(File.ReadAllText(path));
+        saved.RootElement.GetProperty("futureSection").GetProperty("a").GetInt32().Should().Be(1);
+        saved.RootElement.GetProperty("futureSection").GetProperty("b")[0].GetString().Should().Be("x");
+        var source = saved.RootElement.GetProperty("source");
+        source.GetProperty("kind").GetString().Should().Be("fs");
+        source.GetProperty("path").GetString().Should().Be(@"C:\x");
+        saved.RootElement.GetProperty("target").GetProperty("path").GetString().Should().Be(@"D:\y");
     }
 
     [Fact]
@@ -209,7 +233,7 @@ public class PlanStoreTests : IDisposable
     public void TryLoad_returns_the_plan_as_saved()
     {
         using var store = NewStore();
-        var plan = new BackupPlan { Name = "Projects", Source = @"D:\Projects", Target = @"F:\Backups" };
+        var plan = new BackupPlan { Name = "Projects", Source = StorageLocation.FileSystem(@"D:\Projects"), Target = StorageLocation.FileSystem(@"F:\Backups") };
         plan.Retention.Add(new RetentionRule { Period = RetentionPeriod.Daily, Keep = 7 });
         store.Save(plan);
         store.Save(new BackupPlan { Name = "Another" });

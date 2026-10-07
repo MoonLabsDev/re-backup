@@ -9,6 +9,7 @@ using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -155,8 +156,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     {
         var plan = _saved.Clone();
         plan.Name = Name;
-        plan.Source = Source;
-        plan.Target = Target;
+        // A location of another kind (only possible by editing the plan file) stays as loaded unless its text was edited.
+        if (Source != _saved.Source.Path)
+            plan.Source = StorageLocation.FileSystem(Source);
+        if (Target != _saved.Target.Path)
+            plan.Target = StorageLocation.FileSystem(Target);
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
         plan.Ignore = CurrentIgnoreSettings();
@@ -385,8 +389,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         try
         {
             Name = plan.Name;
-            Source = plan.Source;
-            Target = plan.Target;
+            Source = plan.Source.Path;
+            Target = plan.Target.Path;
             Enabled = plan.Enabled;
             FreeSpaceByRetention = plan.FreeSpaceByRetention;
             IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);

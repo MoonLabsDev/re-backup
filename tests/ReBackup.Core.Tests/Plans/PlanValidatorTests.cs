@@ -6,6 +6,7 @@ using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Localization;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
 
 namespace ReBackup.Core.Tests.Plans;
 
@@ -18,8 +19,8 @@ public class PlanValidatorTests : IDisposable
     private BackupPlan ValidPlan() => new()
     {
         Name = "Projects",
-        Source = _tmp.CreateDir("src"),
-        Target = _tmp.PathOf("dst"),
+        Source = StorageLocation.FileSystem(_tmp.CreateDir("src")),
+        Target = StorageLocation.FileSystem(_tmp.PathOf("dst")),
     };
 
     /// <summary>
@@ -84,8 +85,8 @@ public class PlanValidatorTests : IDisposable
     public void Missing_source_and_target_are_reported()
     {
         var plan = ValidPlan();
-        plan.Source = "";
-        plan.Target = "";
+        plan.Source = StorageLocation.FileSystem("");
+        plan.Target = StorageLocation.FileSystem("");
 
         Validate(plan).Should().Contain(["Source folder is required.", "Target folder is required."]);
     }
@@ -94,8 +95,8 @@ public class PlanValidatorTests : IDisposable
     public void Relative_paths_are_reported()
     {
         var plan = ValidPlan();
-        plan.Source = "relative";
-        plan.Target = @"also\relative";
+        plan.Source = StorageLocation.FileSystem("relative");
+        plan.Target = StorageLocation.FileSystem(@"also\relative");
 
         Validate(plan).Should().Contain(["Source must be an absolute path.", "Target must be an absolute path."]);
     }
@@ -104,16 +105,31 @@ public class PlanValidatorTests : IDisposable
     public void Nonexistent_source_is_reported()
     {
         var plan = ValidPlan();
-        plan.Source = _tmp.PathOf("missing");
+        plan.Source = StorageLocation.FileSystem(_tmp.PathOf("missing"));
 
         Validate(plan).Should().Contain("Source folder does not exist.");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Unknown_kind_is_rejected_by_validator(bool onSource)
+    {
+        var plan = ValidPlan();
+        var other = new StorageLocation("s3", "bucket/prefix", "conn");
+        if (onSource)
+            plan.Source = other;
+        else
+            plan.Target = other;
+
+        Validate(plan).Should().Equal("This kind of location is not supported yet.");
     }
 
     [Fact]
     public void Target_inside_source_is_reported()
     {
         var plan = ValidPlan();
-        plan.Target = Path.Combine(plan.Source, "backups");
+        plan.Target = StorageLocation.FileSystem(Path.Combine(plan.Source.Path, "backups"));
 
         Validate(plan).Should().Contain("Target must not be inside the source.");
     }
@@ -122,7 +138,7 @@ public class PlanValidatorTests : IDisposable
     public void Source_inside_target_is_reported()
     {
         var plan = ValidPlan();
-        plan.Target = _tmp.Root;
+        plan.Target = StorageLocation.FileSystem(_tmp.Root);
 
         Validate(plan).Should().Contain("Source must not be inside the target.");
     }
