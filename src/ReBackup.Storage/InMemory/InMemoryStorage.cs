@@ -6,6 +6,7 @@ namespace ReBackup.Storage.InMemory;
 /// A <see cref="IStorage"/> that lives in memory, for tests and as the reference behaviour of the contract. Thread-safe through one lock.
 /// Paths are compared ordinally (case-sensitive) whatever <see cref="StorageCapabilities.CaseSensitive"/> says; the flag is only reported.
 /// Without <see cref="StorageCapabilities.EmptyDirectories"/> directories are the implied prefixes of the file paths and <see cref="EnsureDirectoryAsync"/> does nothing.
+/// <see cref="CreateOptions.Durable"/> is ignored: there is no stable storage to flush to.
 /// <see cref="StorageEntry.Stamp"/> is <c>"{length}:{modifiedTicks}:{version}"</c>; the per-file version counter keeps the stamp different
 /// when two writes share length and tick. Directory entries have size 0 and <see cref="DateTime.UnixEpoch"/> as modified time.
 /// </summary>

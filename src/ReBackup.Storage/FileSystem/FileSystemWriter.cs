@@ -88,6 +88,9 @@ internal sealed class FileSystemWriter : StorageWriter
         try
         {
             await stream.FlushAsync(ct).ConfigureAwait(false);
+            // Durable: the bytes reach the disk before the rename can make the file visible.
+            if (_options.Durable && stream is FileStream file)
+                file.Flush(flushToDisk: true);
             await stream.DisposeAsync().ConfigureAwait(false);
             _stream = null;
 

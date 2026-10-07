@@ -129,6 +129,21 @@ public abstract class StorageContractTests
     }
 
     [Fact]
+    public async Task Durable_create_commits_like_any_other()
+    {
+        var storage = CreateEmpty();
+        var modified = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+
+        await WriteAsync(storage, "sub/manifest.json", "{}", new CreateOptions(ModifiedUtc: modified, Durable: true));
+        await WriteAsync(storage, "sub/manifest.json", "{ }", new CreateOptions(Overwrite: true, Durable: true));
+
+        (await ReadAsync(storage, "sub/manifest.json")).Should().Be("{ }");
+        (await ListAsync(storage, "sub", false)).Should().ContainSingle().Which.Path.Should().Be("sub/manifest.json");
+        var exclusive = () => storage.CreateAsync("sub/manifest.json", new CreateOptions(Durable: true), Ct);
+        await exclusive.Should().ThrowAsync<StorageConflictException>();
+    }
+
+    [Fact]
     public async Task Modified_time_is_kept_when_supported()
     {
         var storage = CreateEmpty();

@@ -61,4 +61,11 @@ public enum StorageCapabilities
 public sealed record StorageEntry(string Path, bool IsDirectory, long Size, DateTime ModifiedUtc, bool IsLink, string? Stamp);
 
 /// <summary>How <see cref="IStorage.CreateAsync"/> creates a file.</summary>
-public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null);
+/// <param name="Overwrite">Replace an existing file on commit; otherwise the create is exclusive.</param>
+/// <param name="ModifiedUtc">The modified time the file gets, on storages with <see cref="StorageCapabilities.SetModifiedTime"/>.</param>
+/// <param name="Durable">
+/// Flush the content to stable storage before the file becomes visible, so that a committed file survives a power
+/// loss or crash. Costs time; meant for the few files that commit something (e.g. a manifest). Storages whose commit is
+/// durable anyway, or that have no stable storage, ignore it.
+/// </param>
+public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null, bool Durable = false);
