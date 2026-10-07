@@ -140,7 +140,8 @@
       "noLongerExists": "no longer exists",
       "accessDenied": "access denied",
       "locked": "locked by another program",
-      "cannotOpen": "cannot be opened: {error}"
+      "cannotOpen": "cannot be opened: {error}",
+      "notAFolder": "\"{name}\" is not a folder (or is a link) and is not removed."
     },
     "scan": {
       "link": "Link is not followed.",
@@ -153,13 +154,11 @@
       "outside": "\"{path}\" is outside the version.",
       "throughLink": "\"{path}\" goes through the link \"{link}\".",
       "sameName": "Two selected items are called \"{name}\"; they would end up in the same place.",
-      "isLink": "\"{path}\" is a link.",
       "manifest": "The manifest is not part of the backup.",
       "notInVersion": "\"{path}\" does not exist in the version.",
       "folderExists": "A folder with this name exists.",
       "destinationLink": "the destination folder is a link",
       "fileInPlaceOfFolder": "a file stands where the folder \"{folder}\" belongs",
-      "outsideDestination": "\"{path}\" is outside the destination.",
       "notAPath": "\"{path}\" is not a path inside the version.",
       "accessDenied": "access denied (read-only, or in use by another program)"
     },

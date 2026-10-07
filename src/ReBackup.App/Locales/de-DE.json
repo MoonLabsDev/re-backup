@@ -140,7 +140,8 @@
       "noLongerExists": "existiert nicht mehr",
       "accessDenied": "Zugriff verweigert",
       "locked": "von einem anderen Programm gesperrt",
-      "cannotOpen": "kann nicht geöffnet werden: {error}"
+      "cannotOpen": "kann nicht geöffnet werden: {error}",
+      "notAFolder": "„{name}“ ist kein Ordner (oder eine Verknüpfung) und wird nicht entfernt."
     },
     "scan": {
       "link": "Verknüpfung wird nicht verfolgt.",
@@ -153,13 +154,11 @@
       "outside": "„{path}“ liegt außerhalb der Version.",
       "throughLink": "„{path}“ führt über die Verknüpfung „{link}“.",
       "sameName": "Zwei ausgewählte Einträge heißen „{name}“; sie würden am selben Ort landen.",
-      "isLink": "„{path}“ ist eine Verknüpfung.",
       "manifest": "Das Manifest gehört nicht zum Backup.",
       "notInVersion": "„{path}“ existiert nicht in der Version.",
       "folderExists": "Ein Ordner mit diesem Namen existiert bereits.",
       "destinationLink": "der Zielordner ist eine Verknüpfung",
       "fileInPlaceOfFolder": "an der Stelle des Ordners „{folder}“ steht eine Datei",
-      "outsideDestination": "„{path}“ liegt außerhalb des Ziels.",
       "notAPath": "„{path}“ ist kein Pfad innerhalb der Version.",
       "accessDenied": "Zugriff verweigert (schreibgeschützt oder von einem anderen Programm verwendet)"
     },

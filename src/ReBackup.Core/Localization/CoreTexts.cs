@@ -73,6 +73,7 @@ public static class CoreTexts
         ["core.file.accessDenied"] = "access denied",
         ["core.file.locked"] = "locked by another program",
         ["core.file.cannotOpen"] = "cannot be opened: {error}",
+        ["core.file.notAFolder"] = "\"{name}\" is not a folder (or is a link) and is not removed.",
 
         ["core.scan.link"] = "Link is not followed.",
         ["core.scan.tooDeep"] = "Folder nesting too deep.",
@@ -83,13 +84,11 @@ public static class CoreTexts
         ["core.restore.outside"] = "\"{path}\" is outside the version.",
         ["core.restore.throughLink"] = "\"{path}\" goes through the link \"{link}\".",
         ["core.restore.sameName"] = "Two selected items are called \"{name}\"; they would end up in the same place.",
-        ["core.restore.isLink"] = "\"{path}\" is a link.",
         ["core.restore.manifest"] = "The manifest is not part of the backup.",
         ["core.restore.notInVersion"] = "\"{path}\" does not exist in the version.",
         ["core.restore.folderExists"] = "A folder with this name exists.",
         ["core.restore.destinationLink"] = "the destination folder is a link",
         ["core.restore.fileInPlaceOfFolder"] = "a file stands where the folder \"{folder}\" belongs",
-        ["core.restore.outsideDestination"] = "\"{path}\" is outside the destination.",
         ["core.restore.notAPath"] = "\"{path}\" is not a path inside the version.",
         ["core.restore.accessDenied"] = "access denied (read-only, or in use by another program)",
 

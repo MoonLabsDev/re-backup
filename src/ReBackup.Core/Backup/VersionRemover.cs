@@ -1,3 +1,4 @@
+using ReBackup.Core.Localization;
 using ReBackup.Storage;
 
 namespace ReBackup.Core.Backup;
@@ -114,7 +115,7 @@ public static class VersionRemover
         if (entry is null)
             throw new StorageNotFoundException(folderPath);
         if (entry.IsLink || !entry.IsDirectory)
-            throw new StorageIOException(folderPath, $"\"{StoragePath.Name(folderPath)}\" is not a folder (or is a link) and is not removed.");
+            throw new StorageIOException(folderPath, CoreTexts.English("core.file.notAFolder", ("name", StoragePath.Name(folderPath))));
     }
 
     /// <summary>

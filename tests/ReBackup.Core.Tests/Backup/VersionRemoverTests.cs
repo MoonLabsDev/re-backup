@@ -1,6 +1,8 @@
 using FluentAssertions;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Shared.Localization;
 using ReBackup.Storage;
 using ReBackup.Storage.FileSystem;
 using ReBackup.Storage.InMemory;
@@ -252,6 +254,19 @@ public class VersionRemoverTests : IDisposable
 
         (await act.Should().ThrowAsync<StorageNotFoundException>()).Which.Should().NotBeAssignableTo<VersionRemainsException>();
         Directory.GetFileSystemEntries(_target).Should().BeEmpty("no marker brings the folder back");
+    }
+
+    [Fact]
+    public async Task A_file_in_place_of_the_folder_is_refused_with_a_translatable_reason()
+    {
+        const string file = "2026_09_03-02_00 Projects";
+        _tmp.WriteFile($@"target\{file}", "a file, not a folder");
+
+        var act = () => VersionRemover.RemoveAsync(Target, file, Marker);
+
+        var thrown = await act.Should().ThrowAsync<StorageIOException>();
+        CoreTexts.Recognize(thrown.Which.Message).Should().Be(Message.Of("core.file.notAFolder", ("name", file)));
+        File.Exists(Path.Combine(_target, file)).Should().BeTrue();
     }
 
     [Fact]
