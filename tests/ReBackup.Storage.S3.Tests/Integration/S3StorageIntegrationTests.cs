@@ -53,8 +53,11 @@ public sealed class S3StorageIntegrationTests(S3ServerFixture server)
     private async Task PutRawAsync(string key, string content = "") =>
         await server.Client.PutObjectAsync(new PutObjectRequest { BucketName = server.Bucket, Key = key, ContentBody = content }, Ct);
 
-    /// <summary>Commits both writers at the same moment; returns how many commits succeeded and the exceptions of the others.</summary>
-    private static async Task<(int Won, List<Exception> Lost)> RaceAsync(StorageWriter first, StorageWriter second)
+    /// <summary>
+    /// Commits both writers at the same moment, asserts that exactly one commit succeeds and the other fails with a conflict, and
+    /// returns the index (0 = <paramref name="first"/>, 1 = <paramref name="second"/>) of the winner.
+    /// </summary>
+    private static async Task<int> RaceAsync(StorageWriter first, StorageWriter second)
     {
         using var start = new Barrier(2);
         async Task<Exception?> CommitAsync(StorageWriter writer)
@@ -73,7 +76,9 @@ public sealed class S3StorageIntegrationTests(S3ServerFixture server)
         }
 
         var results = await Task.WhenAll(Task.Run(() => CommitAsync(first)), Task.Run(() => CommitAsync(second)));
-        return (results.Count(r => r is null), results.OfType<Exception>().ToList());
+        results.Count(r => r is null).Should().Be(1, "exactly one exclusive commit may win");
+        results.OfType<Exception>().Should().ContainSingle().Which.Should().BeOfType<StorageConflictException>();
+        return Array.IndexOf(results, null);
     }
 
     [SkippableFact]
@@ -100,37 +105,42 @@ public sealed class S3StorageIntegrationTests(S3ServerFixture server)
         {
             var path = $"race-{round}.txt";
             // Both writers pass the HeadObject check of CreateAsync; only the conditional PutObject can stop the second one.
+            string[] contents = [$"first {round}", $"second {round}"];
             await using var first = await storage.CreateAsync(path, new CreateOptions(), Ct);
             await using var second = await storage.CreateAsync(path, new CreateOptions(), Ct);
-            await first.WriteAsync(Encoding.UTF8.GetBytes("first"), Ct);
-            await second.WriteAsync(Encoding.UTF8.GetBytes("second"), Ct);
+            await first.WriteAsync(Encoding.UTF8.GetBytes(contents[0]), Ct);
+            await second.WriteAsync(Encoding.UTF8.GetBytes(contents[1]), Ct);
 
-            var (won, lost) = await RaceAsync(first, second);
+            var winner = await RaceAsync(first, second);
 
-            won.Should().Be(1);
-            lost.Should().ContainSingle().Which.Should().BeOfType<StorageConflictException>();
-            Encoding.UTF8.GetString(await ReadAllAsync(storage, path)).Should().BeOneOf("first", "second");
+            Encoding.UTF8.GetString(await ReadAllAsync(storage, path)).Should().Be(contents[winner]);
         }
     }
 
     [SkippableFact]
     public async Task Exclusive_multipart_commit_over_a_key_committed_in_between_is_a_conflict()
     {
-        var storage = server.CreateStorage(NewPrefix());
+        var prefix = NewPrefix();
+        var storage = server.CreateStorage(prefix);
         var firstData = RandomData(20 * MiB, seed: 4);
         var secondData = RandomData(20 * MiB, seed: 5);
 
         // Both writers pass the HeadObject check; the second commit is refused by the conditional CompleteMultipartUpload alone.
-        await using var first = await storage.CreateAsync("big.bin", new CreateOptions(), Ct);
-        await using var second = await storage.CreateAsync("big.bin", new CreateOptions(), Ct);
-        await WriteChunkedAsync(first, firstData);
-        await WriteChunkedAsync(second, secondData);
-        await first.CommitAsync(Ct);
+        await using (var first = await storage.CreateAsync("big.bin", new CreateOptions(), Ct))
+        await using (var second = await storage.CreateAsync("big.bin", new CreateOptions(), Ct))
+        {
+            await WriteChunkedAsync(first, firstData);
+            await WriteChunkedAsync(second, secondData);
+            await first.CommitAsync(Ct);
 
-        var act = () => second.CommitAsync(Ct);
+            var act = () => second.CommitAsync(Ct);
 
-        await act.Should().ThrowAsync<StorageConflictException>();
+            await act.Should().ThrowAsync<StorageConflictException>();
+        }
+
         (await ReadAllAsync(storage, "big.bin")).SequenceEqual(firstData).Should().BeTrue();
+        var uploads = await server.Client.ListMultipartUploadsAsync(new ListMultipartUploadsRequest { BucketName = server.Bucket, Prefix = prefix + "/" }, Ct);
+        (uploads.MultipartUploads ?? []).Should().BeEmpty("the loser's upload is aborted on dispose");
     }
 
     [SkippableFact(Skip = "LocalStack 4.9 does not serialize concurrent conditional CompleteMultipartUpload (observed 4/6 double wins); " +
@@ -142,6 +152,9 @@ public sealed class S3StorageIntegrationTests(S3ServerFixture server)
         var firstData = RandomData(20 * MiB, seed: 2);
         var secondData = RandomData(20 * MiB, seed: 3);
 
+        byte[][] data = [firstData, secondData];
+        int winner;
+
         // Both writers pass the HeadObject check and upload a part; only the conditional CompleteMultipartUpload can stop the second one.
         await using (var first = await storage.CreateAsync("big.bin", new CreateOptions(), Ct))
         await using (var second = await storage.CreateAsync("big.bin", new CreateOptions(), Ct))
@@ -149,14 +162,10 @@ public sealed class S3StorageIntegrationTests(S3ServerFixture server)
             await WriteChunkedAsync(first, firstData);
             await WriteChunkedAsync(second, secondData);
 
-            var (won, lost) = await RaceAsync(first, second);
-
-            won.Should().Be(1);
-            lost.Should().ContainSingle().Which.Should().BeOfType<StorageConflictException>();
+            winner = await RaceAsync(first, second);
         }
 
-        var stored = await ReadAllAsync(storage, "big.bin");
-        (stored.SequenceEqual(firstData) || stored.SequenceEqual(secondData)).Should().BeTrue();
+        (await ReadAllAsync(storage, "big.bin")).SequenceEqual(data[winner]).Should().BeTrue();
         var uploads = await server.Client.ListMultipartUploadsAsync(new ListMultipartUploadsRequest { BucketName = server.Bucket, Prefix = prefix + "/" }, Ct);
         (uploads.MultipartUploads ?? []).Should().BeEmpty("the loser's upload is aborted on dispose");
     }

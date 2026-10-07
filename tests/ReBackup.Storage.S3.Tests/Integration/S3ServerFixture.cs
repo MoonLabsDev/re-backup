@@ -45,28 +45,35 @@ public sealed class S3ServerFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // xUnit does not dispose a fixture whose start failed, so a half-started container and client are cleaned up here.
         try
         {
             _container = new LocalStackBuilder(Image).Build();
             await _container.StartAsync();
+            _client = new AmazonS3Client(
+                new BasicAWSCredentials(AccessKey, SecretKey),
+                new AmazonS3Config { ServiceURL = _container.GetConnectionString(), ForcePathStyle = true, AuthenticationRegion = Region });
+            await _client.PutBucketAsync(new PutBucketRequest { BucketName = Bucket });
+            Available = true;
         }
         catch (DockerUnavailableException ex)
         {
+            await DisposeAsync();
             SkipReason = $"Docker is not available: {ex.Message}";
-            return;
         }
-
-        _client = new AmazonS3Client(
-            new BasicAWSCredentials(AccessKey, SecretKey),
-            new AmazonS3Config { ServiceURL = _container.GetConnectionString(), ForcePathStyle = true, AuthenticationRegion = Region });
-        await _client.PutBucketAsync(new PutBucketRequest { BucketName = Bucket });
-        Available = true;
+        catch
+        {
+            await DisposeAsync();
+            throw;
+        }
     }
 
     public async Task DisposeAsync()
     {
         _client?.Dispose();
+        _client = null;
         if (_container is not null) await _container.DisposeAsync();
+        _container = null;
     }
 
     /// <summary>A storage rooted at <paramref name="prefix"/> in <see cref="Bucket"/>.</summary>
