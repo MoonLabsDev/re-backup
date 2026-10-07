@@ -610,6 +610,12 @@
       "more": "… und {count:N0} weitere",
       "deleted": "Durch die Aufbewahrung gelöscht:",
       "warnings": "Warnungen:"
+    },
+    "skippedTree": {
+      "name": "Übersprungene Einträge",
+      "deleted": "{count:N0} gelöscht",
+      "changed": "{count:N0} geändert",
+      "other": "{count:N0} sonstige"
     }
   },
   "versions": {

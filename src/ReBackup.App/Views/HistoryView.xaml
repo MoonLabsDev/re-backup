@@ -2,9 +2,26 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
+             xmlns:core="clr-namespace:ReBackup.Core.Backup;assembly=ReBackup.Core"
              xmlns:l="clr-namespace:ReBackup.App.Localization">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!-- Read-only, copyable lines of a run's details; takes no room while empty. -->
+        <Style x:Key="TextBox.Details" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MaxHeight" Value="160" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
     <Grid Margin="24,20">
         <Border Style="{StaticResource Border.Card}" Padding="0,18,0,0">
@@ -77,19 +94,113 @@
                     </DataGrid.Columns>
                     <DataGrid.RowDetailsTemplate>
                         <DataTemplate>
-                            <TextBox Margin="12,4" IsReadOnly="True" BorderThickness="0" Background="Transparent"
-                                     FontFamily="{StaticResource Font.Mono}" FontSize="12" MaxHeight="200" VerticalScrollBarVisibility="Auto"
-                                     Text="{Binding Details, Mode=OneWay}">
-                                <TextBox.Style>
-                                    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding HasDetails}" Value="False">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBox.Style>
-                            </TextBox>
+                            <StackPanel Margin="12,4,12,8" Visibility="{Binding HasDetails, Converter={StaticResource BoolToVisibility}}">
+                                <TextBox Style="{StaticResource TextBox.Details}" Text="{Binding VersionText, Mode=OneWay}" />
+
+                                <!-- The skipped entries as a tree: red gone from the source, yellow changed while copied. -->
+                                <StackPanel Visibility="{Binding HasSkipped, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Margin="2,6,0,4" FontSize="12" FontWeight="SemiBold" Text="{Binding SkippedTitle}" />
+                                    <ListView Style="{StaticResource ListView.Table}" MaxHeight="320" SelectionMode="Single"
+                                              AutomationProperties.Name="{l:Loc history.skippedTree.name}"
+                                              ItemsSource="{Binding SkippedTree.Rows}"
+                                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                              ScrollViewer.CanContentScroll="True">
+                                        <ListView.ItemContainerStyle>
+                                            <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="ToolTip" Value="{Binding Path}" />
+                                            </Style>
+                                        </ListView.ItemContainerStyle>
+                                        <ListView.View>
+                                            <GridView>
+                                                <GridViewColumn Header="{l:Loc common.name}" Width="520">
+                                                    <GridViewColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="{Binding Indent}">
+                                                                <ToggleButton Style="{StaticResource ToggleButton.Expander}"
+                                                                              AutomationProperties.Name="{l:Loc common.expand}" IsChecked="{Binding IsExpanded}" />
+                                                                <TextBlock Margin="0,0,6,0" FontSize="12">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
+                                                                            <Setter Property="Text" Value="{StaticResource Icon.Document}" />
+                                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                                                    <Setter Property="Text" Value="{StaticResource Icon.Folder}" />
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </GridViewColumn.CellTemplate>
+                                                </GridViewColumn>
+                                                <GridViewColumn Header="{l:Loc history.column.reason}" Width="420">
+                                                    <GridViewColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                                    <Ellipse.Style>
+                                                                        <Style TargetType="Ellipse">
+                                                                            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static core:SkipKind.Deleted}">
+                                                                                    <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static core:SkipKind.Changed}">
+                                                                                    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Null}">
+                                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Ellipse.Style>
+                                                                </Ellipse>
+                                                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                                           Text="{Binding ReasonText}" ToolTip="{Binding ReasonText}">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static core:SkipKind.Deleted}">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding Kind}" Value="{x:Static core:SkipKind.Changed}">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding IsSummary}" Value="True">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </GridViewColumn.CellTemplate>
+                                                </GridViewColumn>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+                                    <TextBlock Margin="2,4,0,0" FontSize="12" Text="{Binding SkippedMoreText}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <TextBox Style="{StaticResource TextBox.Details}" Margin="0,6,0,0" Text="{Binding FooterText, Mode=OneWay}" />
+                            </StackPanel>
                         </DataTemplate>
                     </DataGrid.RowDetailsTemplate>
                 </DataGrid>
