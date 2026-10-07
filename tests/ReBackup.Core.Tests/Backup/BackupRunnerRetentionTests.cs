@@ -39,10 +39,16 @@ public class BackupRunnerRetentionTests : IDisposable
         Retention = [.. rules],
     };
 
+    /// <param name="target">Wraps the target's storage, e.g. in a <see cref="FaultyStorage"/>.</param>
     private Task<RunLogEntry> Run(BackupPlan plan, ITargetVolume? volume = null, IProgress<BackupProgress>? progress = null,
-        CancellationToken cancellationToken = default, Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null) =>
-        new BackupRunner(volume ?? new PhysicalTargetVolume(), _time, currentRules)
+        CancellationToken cancellationToken = default, Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null,
+        Func<IStorage, IStorage>? target = null) =>
+        new BackupRunner(volume ?? new PhysicalTargetVolume(), _time, currentRules,
+                storages: target is null ? null : TestStorageFactory.Wrapping(target))
             .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual), progress, cancellationToken);
+
+    /// <summary>The storage path of the deleting marker of the version of 2026-09-<paramref name="day"/>.</summary>
+    private static string DeletingMarker(int day) => $"{OldName(day)}/re-deleting.json";
 
     /// <summary>An existing version folder of 2026-09-<paramref name="day"/> 02:00.</summary>
     private string Old(int day, string planId = "p1", string name = "Projects", long bytes = 10) =>
@@ -110,32 +116,31 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         Old(26);
         var stubborn = Old(27);
-        var volume = new ScriptedVolume { FailMove = source => source == stubborn };
 
-        var entry = await Run(Plan(Daily(1)), volume);
+        var entry = await Run(Plan(Daily(1)), target: s => new FaultyStorage(s) { FailCreate = path => path == DeletingMarker(27) });
 
         entry.Status.Should().Be(RunStatus.Completed);
         entry.RetentionDeleted.Should().Equal(OldName(26));
         entry.Warnings.Should().ContainSingle().Which.Should()
-            .Be($"Retention could not delete \"{OldName(27)}\": the folder is in use");
+            .Be($"Retention could not delete \"{OldName(27)}\": Access denied: '{DeletingMarker(27)}'.");
         File.Exists(Path.Combine(stubborn, "data.bin")).Should().BeTrue();
     }
 
     [Fact]
-    public async Task A_version_that_vanishes_before_its_rename_is_not_logged_as_deleted()
+    public async Task A_version_that_vanishes_before_its_removal_is_not_logged_as_deleted()
     {
         Old(26);
         var vanishing = Old(27);
-        var volume = new ScriptedVolume
+        var faults = (IStorage s) => new FaultyStorage(s)
         {
-            BeforeMove = source =>
+            Before = (operation, path) =>
             {
-                if (source == vanishing)
+                if (operation == "stat" && path == OldName(27) && Directory.Exists(vanishing))
                     Directory.Delete(vanishing, recursive: true);   // as if the target dropped out
             },
         };
 
-        var entry = await Run(Plan(Daily(1)), volume);
+        var entry = await Run(Plan(Daily(1)), target: faults);
 
         entry.Status.Should().Be(RunStatus.Completed);
         entry.RetentionDeleted.Should().Equal(OldName(26));
@@ -168,16 +173,16 @@ public class BackupRunnerRetentionTests : IDisposable
         var first = Old(26);
         var second = Old(27);
         using var cts = new CancellationTokenSource();
-        var volume = new ScriptedVolume
+        var faults = (IStorage s) => new FaultyStorage(s)
         {
-            BeforeMove = source =>
+            Before = (operation, path) =>
             {
-                if (source == first)
+                if (operation == "create" && path == DeletingMarker(26))
                     cts.Cancel();
             },
         };
 
-        var entry = await Run(Plan(Daily(1)), volume, cancellationToken: cts.Token);
+        var entry = await Run(Plan(Daily(1)), cancellationToken: cts.Token, target: faults);
 
         entry.Status.Should().Be(RunStatus.Completed);
         entry.RetentionDeleted.Should().Equal(OldName(26));
@@ -273,39 +278,38 @@ public class BackupRunnerRetentionTests : IDisposable
     {
         Old(26);
         var stubborn = Old(27);
-        var doomed = stubborn + ".deleting";
-        var volume = new ScriptedVolume { FailDelete = path => path == doomed };
+        var faults = (IStorage s) => new FaultyStorage(s) { FailDelete = path => path == DeletingMarker(27) };
 
-        var entry = await Run(Plan(Daily(1)), volume);
+        var entry = await Run(Plan(Daily(1)), target: faults);
 
         entry.Status.Should().Be(RunStatus.Completed);
         entry.RetentionDeleted.Should().Contain(OldName(27));
         entry.Warnings.Should().ContainSingle().Which.Should()
             .StartWith($"\"{OldName(27)}\" was removed from the versions, but its remains could not be deleted yet");
-        Directory.Exists(stubborn).Should().BeFalse();
-        Directory.Exists(doomed).Should().BeTrue();
+        File.Exists(Path.Combine(stubborn, "re-manifest.json")).Should().BeFalse("it is no longer a version");
+        File.Exists(Path.Combine(stubborn, "data.bin")).Should().BeFalse();
+        File.Exists(Path.Combine(stubborn, "re-deleting.json")).Should().BeTrue();
 
         // A later run, the delete still failing: reported as a warning. The fake clock does not advance, so
         // the version name of the first run must be free again.
         Directory.Delete(Path.Combine(_target, NewVersion), recursive: true);
-        var still = await Run(Plan(), volume);
+        var still = await Run(Plan(), target: faults);
         still.Warnings.Should().ContainSingle().Which.Should().StartWith("Remains of an earlier removal could not be deleted");
-        Directory.Exists(doomed).Should().BeTrue();
+        File.Exists(Path.Combine(stubborn, "re-deleting.json")).Should().BeTrue();
     }
 
     [Fact]
     public async Task Remains_are_removed_without_a_warning_when_the_volume_works_again()
     {
         var stubborn = Old(27);
-        var doomed = stubborn + ".deleting";
-        await Run(Plan(Daily(1)), new ScriptedVolume { FailDelete = path => path == doomed });
-        Directory.Exists(doomed).Should().BeTrue();
+        await Run(Plan(Daily(1)), target: s => new FaultyStorage(s) { FailDelete = path => path == DeletingMarker(27) });
+        File.Exists(Path.Combine(stubborn, "re-deleting.json")).Should().BeTrue();
         Directory.Delete(Path.Combine(_target, NewVersion), recursive: true);   // the fake clock does not advance
 
         var entry = await Run(Plan());
 
         entry.Warnings.Should().BeEmpty();
-        Directory.Exists(doomed).Should().BeFalse();
+        Directory.Exists(stubborn).Should().BeFalse();
     }
 
     [Fact]
@@ -456,14 +460,15 @@ public class BackupRunnerRetentionTests : IDisposable
         for (var day = 25; day <= 29; day++)
             Old(day);
         var stubborn = Path.Combine(_target, OldName(25));
-        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27), FailMove = source => source == stubborn };
+        var volume = new ScriptedVolume { FreeSpace = FreedBy(25, 26, 27) };
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume);
+        var entry = await Run(FreeingPlan(Daily(3)), volume,
+            target: s => new FaultyStorage(s) { FailCreate = path => path == DeletingMarker(25) });
 
         entry.Status.Should().Be(RunStatus.Completed);
         entry.RetentionDeleted.Should().Equal(OldName(26), OldName(27));
         entry.Warnings.Should().HaveCount(2, "once before the run and once in the retention pass after it");
-        entry.Warnings[0].Should().Be($"\"{OldName(25)}\" could not be deleted to free space: the folder is in use");
+        entry.Warnings[0].Should().Be($"\"{OldName(25)}\" could not be deleted to free space: Access denied: '{DeletingMarker(25)}'.");
         Directory.Exists(stubborn).Should().BeTrue();
     }
 
@@ -473,17 +478,17 @@ public class BackupRunnerRetentionTests : IDisposable
         for (var day = 25; day <= 29; day++)
             Old(day);
         var vanishing = Path.Combine(_target, OldName(25));
-        var volume = new ScriptedVolume
+        var volume = new ScriptedVolume { FreeSpace = FreedBy(26, 27) };
+        var faults = (IStorage s) => new FaultyStorage(s)
         {
-            FreeSpace = FreedBy(26, 27),
-            BeforeMove = source =>
+            Before = (operation, path) =>
             {
-                if (source == vanishing)
+                if (operation == "stat" && path == OldName(25) && Directory.Exists(vanishing))
                     Directory.Delete(vanishing, recursive: true);   // as if the target dropped out
             },
         };
 
-        var entry = await Run(FreeingPlan(Daily(3)), volume);
+        var entry = await Run(FreeingPlan(Daily(3)), volume, target: faults);
 
         entry.Status.Should().Be(RunStatus.Completed);
         // 26 and 27 made room before the run; nothing was left to delete after it.

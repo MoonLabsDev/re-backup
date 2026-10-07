@@ -1,12 +1,16 @@
 using FluentAssertions;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Storage;
+using ReBackup.Storage.FileSystem;
+using ReBackup.Storage.InMemory;
 
 namespace ReBackup.Core.Tests.Backup;
 
 public class VersionRemoverTests : IDisposable
 {
     private const string Name = "2026_09_01-02_00 Projects";
+    private static readonly MarkerInfo Marker = new(1, "p1", "Projects", new DateTime(2026, 9, 30, 14, 5, 0, DateTimeKind.Utc), "HOST");
     private readonly TempDir _tmp = new();
     private readonly string _target;
     private readonly string _version;
@@ -20,76 +24,174 @@ public class VersionRemoverTests : IDisposable
 
     public void Dispose() => _tmp.Dispose();
 
-    [Fact]
-    public void Removes_the_folder_with_everything_in_it()
+    private IStorage Target => new FileSystemStorage(_target);
+
+    private static async Task<InMemoryStorage> MemoryVersion(int extraFiles = 0, StorageCapabilities? capabilities = null)
     {
-        VersionRemover.Remove(_version, new PhysicalTargetVolume());
+        var storage = capabilities is { } caps ? new InMemoryStorage(caps) : new InMemoryStorage();
+        await VersionFolder.CreateAsync(storage, Name, "p1");
+        for (var i = 0; i < extraFiles; i++)
+            storage.AddFile($"{Name}/sub/f{i:0000}.txt", [1]);
+        return storage;
+    }
+
+    [Fact]
+    public async Task Removes_the_folder_with_everything_in_it()
+    {
+        await VersionRemover.RemoveAsync(Target, Name, Marker);
 
         Directory.GetFileSystemEntries(_target).Should().BeEmpty();
     }
 
     [Fact]
-    public void Reports_every_deleted_file_but_not_the_manifest()
+    public async Task Reports_the_deleted_files_but_not_the_manifest_or_the_marker()
     {
         _tmp.WriteFile($@"target\{Name}\sub\b.txt", "b");
         var reported = new List<int>();
 
-        VersionRemover.Remove(_version, new PhysicalTargetVolume(), reported.Add);
+        await VersionRemover.RemoveAsync(Target, Name, Marker, reported.Add);
 
-        // data.bin, sub/b.txt and sub/deep/c.txt, one call per file
-        reported.Should().Equal(1, 1, 1);
+        // data.bin, sub/b.txt and sub/deep/c.txt, in one batch
+        reported.Should().Equal(3);
         Directory.GetFileSystemEntries(_target).Should().BeEmpty();
     }
 
     [Fact]
-    public void A_failing_rename_leaves_the_version_untouched()
+    public async Task Deletes_in_batches_of_1000_and_reports_each_batch()
     {
-        var volume = new ScriptedVolume { FailMove = _ => true };
+        var storage = await MemoryVersion(extraFiles: 2499);   // + data.bin
+        var batches = new List<int>();
 
-        var act = () => VersionRemover.Remove(_version, volume);
+        await VersionRemover.RemoveAsync(storage, Name, Marker, batches.Add);
 
-        act.Should().Throw<IOException>().Which.Should().NotBeOfType<VersionRemainsException>("nothing was renamed");
+        batches.Should().Equal(1000, 1000, 500);
+        storage.Files.Should().BeEmpty();
+        (await storage.StatAsync(Name, CancellationToken.None)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Remove_writes_deleting_marker_then_hides_version_before_deleting_files()
+    {
+        var inner = await MemoryVersion(extraFiles: 2);
+        var calls = new List<(string Operation, string Path)>();
+        var storage = new FaultyStorage(inner) { Before = (operation, path) => calls.Add((operation, path)) };
+
+        await VersionRemover.RemoveAsync(storage, Name, Marker);
+
+        var writes = calls.Where(c => c.Operation is "create" or "commit" or "delete").ToList();
+        writes.Take(3).Should().Equal(
+            ("create", $"{Name}/re-deleting.json"),
+            ("commit", $"{Name}/re-deleting.json"),
+            ("delete", $"{Name}/re-manifest.json"));
+        writes.Skip(3).Take(3).Select(c => c.Path).Should().BeEquivalentTo(
+            $"{Name}/data.bin", $"{Name}/sub/f0000.txt", $"{Name}/sub/f0001.txt");
+        writes.Skip(6).Should().Equal(
+            ("delete", $"{Name}/sub"),
+            ("delete", $"{Name}/re-deleting.json"),
+            ("delete", Name));
+        inner.Files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_failing_marker_write_leaves_the_version_untouched()
+    {
+        var storage = new FaultyStorage(Target) { FailCreate = path => path.EndsWith("re-deleting.json", StringComparison.Ordinal) };
+
+        var act = () => VersionRemover.RemoveAsync(storage, Name, Marker);
+
+        (await act.Should().ThrowAsync<StorageException>()).Which.Should().NotBeAssignableTo<VersionRemainsException>();
         File.Exists(Path.Combine(_version, "data.bin")).Should().BeTrue();
+        File.Exists(Path.Combine(_version, "re-manifest.json")).Should().BeTrue();
         File.Exists(Path.Combine(_version, "sub", "deep", "c.txt")).Should().BeTrue();
-        Directory.Exists(_version + ".deleting").Should().BeFalse();
+        File.Exists(Path.Combine(_version, "re-deleting.json")).Should().BeFalse();
     }
 
     [Fact]
-    public void A_removal_that_fails_half_way_leaves_a_deleting_folder_that_still_has_its_manifest()
+    public async Task Failure_after_marker_leaves_remains_and_throws_VersionRemainsException()
     {
-        var doomed = _version + ".deleting";
-        var volume = new ScriptedVolume { FailDelete = path => path == doomed };
+        var inner = await MemoryVersion(extraFiles: 1);
+        var storage = new FaultyStorage(inner) { FailDelete = path => path == $"{Name}/sub/f0000.txt" };
 
-        var act = () => VersionRemover.Remove(_version, volume);
+        var act = () => VersionRemover.RemoveAsync(storage, Name, Marker);
 
-        var thrown = act.Should().ThrowExactly<VersionRemainsException>().Which;
-        thrown.RemainsPath.Should().Be(doomed);
-        thrown.Message.Should().Be("a file is in use");
-        thrown.InnerException.Should().BeOfType<IOException>();
-        Directory.Exists(_version).Should().BeFalse("it must no longer look like a version");
-        File.Exists(Path.Combine(doomed, "re-manifest.json")).Should().BeTrue("the manifest goes last");
-        File.Exists(Path.Combine(doomed, "data.bin")).Should().BeFalse();
-        Directory.Exists(Path.Combine(doomed, "sub")).Should().BeFalse();
+        var thrown = (await act.Should().ThrowExactlyAsync<VersionRemainsException>()).Which;
+        thrown.RemainsPath.Should().Be(Name);
+        thrown.InnerException.Should().BeOfType<StorageLockedException>();
+        inner.Files.Should().Contain($"{Name}/re-deleting.json").And.NotContain($"{Name}/re-manifest.json");
+        (await VersionCatalog.ListAsync(inner, "p1", "Projects")).Should().BeEmpty("it must no longer look like a version");
 
-        VersionRemover.RemoveRemains(doomed, new PhysicalTargetVolume());
+        await VersionRemover.FinishRemovalAsync(inner, Name);
+        inner.Files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_removal_that_fails_half_way_keeps_its_deleting_marker_for_the_next_run()
+    {
+        var storage = new FaultyStorage(Target) { FailDelete = path => path == $"{Name}/re-deleting.json" };
+
+        var act = () => VersionRemover.RemoveAsync(storage, Name, Marker);
+
+        var thrown = (await act.Should().ThrowExactlyAsync<VersionRemainsException>()).Which;
+        thrown.RemainsPath.Should().Be(Name);
+        thrown.InnerException.Should().BeOfType<StorageLockedException>();
+        File.Exists(Path.Combine(_version, "re-manifest.json")).Should().BeFalse("the manifest goes first");
+        File.Exists(Path.Combine(_version, "data.bin")).Should().BeFalse();
+        Directory.Exists(Path.Combine(_version, "sub")).Should().BeFalse();
+        File.Exists(Path.Combine(_version, "re-deleting.json")).Should().BeTrue("the marker goes last");
+        (await VersionCatalog.ListAsync(Target, "p1", "Projects")).Should().BeEmpty();
+
+        await VersionRemover.FinishRemovalAsync(Target, Name);
         Directory.GetFileSystemEntries(_target).Should().BeEmpty();
     }
 
     [Fact]
-    public void A_version_that_is_gone_is_a_plain_failure_and_not_a_removal()
+    public async Task Cancellation_stops_between_batches_and_the_deleting_marker_stays()
+    {
+        var storage = await MemoryVersion(extraFiles: 1500);
+        using var cts = new CancellationTokenSource();
+
+        var act = () => VersionRemover.RemoveAsync(storage, Name, Marker, _ => cts.Cancel(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        storage.Files.Should().HaveCount(502, "the second batch of 501 files and the marker are left")
+            .And.Contain($"{Name}/re-deleting.json");
+        (await VersionMarkers.TryReadAsync(storage, $"{Name}/re-deleting.json", CancellationToken.None)).Should().Be(Marker);
+    }
+
+    [Fact]
+    public async Task Works_on_a_storage_without_directories()
+    {
+        var storage = await MemoryVersion(extraFiles: 3, capabilities: StorageCapabilities.None);
+
+        await VersionRemover.RemoveAsync(storage, Name, Marker);
+
+        storage.Files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_version_that_is_gone_is_a_plain_failure_and_not_a_removal()
     {
         Directory.Delete(_version, recursive: true);
 
-        var act = () => VersionRemover.Remove(_version, new PhysicalTargetVolume());
+        var act = () => VersionRemover.RemoveAsync(Target, Name, Marker);
 
-        act.Should().Throw<IOException>().Which.Should().NotBeOfType<VersionRemainsException>();
-        Directory.GetFileSystemEntries(_target).Should().BeEmpty();
+        (await act.Should().ThrowAsync<StorageNotFoundException>()).Which.Should().NotBeAssignableTo<VersionRemainsException>();
+        Directory.GetFileSystemEntries(_target).Should().BeEmpty("no marker brings the folder back");
+    }
+
+    [Fact]
+    public async Task The_root_is_never_removed()
+    {
+        var act = () => VersionRemover.RemoveAsync(Target, "", Marker);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        File.Exists(Path.Combine(_version, "data.bin")).Should().BeTrue();
     }
 
     [Theory]
     [InlineData("link")]             // directly in the version folder
     [InlineData(@"sub\deep\link")]   // further down
-    public void A_junction_inside_the_version_is_removed_as_a_link_and_its_target_is_untouched(string relativeLink)
+    public async Task A_junction_inside_the_version_is_removed_as_a_link_and_its_target_is_untouched(string relativeLink)
     {
         var outside = _tmp.CreateDir("outside");
         var foreign = _tmp.WriteFile(@"outside\nested\keep.txt", "not ours");
@@ -98,41 +200,102 @@ public class VersionRemoverTests : IDisposable
 
         try
         {
-            VersionRemover.Remove(_version, new PhysicalTargetVolume());
+            await VersionRemover.RemoveAsync(Target, Name, Marker);
 
             Directory.GetFileSystemEntries(_target).Should().BeEmpty();
             File.ReadAllText(foreign).Should().Be("not ours");
         }
         finally
         {
-            foreach (var leftover in new[] { link, Path.Combine(_version + ".deleting", relativeLink) })
-            {
-                if (Directory.Exists(leftover))
-                    Directory.Delete(leftover);   // removes the junction only
-            }
+            if (Directory.Exists(link))
+                Directory.Delete(link);   // removes the junction only
         }
     }
 
     [Fact]
-    public void A_link_is_refused_and_its_target_is_untouched()
+    public async Task A_link_is_refused_and_its_target_is_untouched()
     {
         var real = VersionFolder.Create(_tmp.CreateDir("elsewhere"), Name, "p1");
-        var link = Path.Combine(_target, "2026_09_02-02_00 Projects");
+        const string linkName = "2026_09_02-02_00 Projects";
+        var link = Path.Combine(_target, linkName);
         Junction.Create(link, real);
 
         try
         {
-            var act = () => VersionRemover.Remove(link, new PhysicalTargetVolume());
+            var act = () => VersionRemover.RemoveAsync(Target, linkName, Marker);
 
-            act.Should().Throw<IOException>().WithMessage("*is a link*")
-                .Which.Should().NotBeOfType<VersionRemainsException>("nothing was renamed");
+            (await act.Should().ThrowAsync<StorageException>()).Which.Should().NotBeAssignableTo<VersionRemainsException>();
             File.Exists(Path.Combine(real, "data.bin")).Should().BeTrue();
             File.Exists(Path.Combine(real, "re-manifest.json")).Should().BeTrue();
-            Directory.Exists(link + ".deleting").Should().BeFalse();
+            File.Exists(Path.Combine(real, "re-deleting.json")).Should().BeFalse("nothing is written through a link");
         }
         finally
         {
             Directory.Delete(link);
+        }
+    }
+
+    [Fact]
+    public async Task Finishing_a_removal_also_refuses_a_link()
+    {
+        var real = VersionFolder.Create(_tmp.CreateDir("elsewhere"), Name, "p1");
+        const string linkName = "2026_09_02-02_00 Projects";
+        var link = Path.Combine(_target, linkName);
+        Junction.Create(link, real);
+
+        try
+        {
+            var act = () => VersionRemover.FinishRemovalAsync(Target, linkName);
+
+            await act.Should().ThrowAsync<StorageException>();
+            File.Exists(Path.Combine(real, "data.bin")).Should().BeTrue();
+            File.Exists(Path.Combine(real, "re-manifest.json")).Should().BeTrue();
+        }
+        finally
+        {
+            Directory.Delete(link);
+        }
+    }
+
+    [Fact]
+    public async Task A_legacy_folder_keeps_its_manifest_until_everything_else_is_gone()
+    {
+        var legacy = Name + ".deleting";
+        Directory.Move(_version, Path.Combine(_target, legacy));
+        var storage = new FaultyStorage(Target) { FailDelete = path => path == $"{legacy}/sub/deep/c.txt" };
+
+        var act = () => VersionRemover.RemoveLegacyFolderAsync(storage, legacy);
+
+        await act.Should().ThrowAsync<StorageLockedException>();
+        File.Exists(Path.Combine(_target, legacy, "re-manifest.json")).Should().BeTrue("the manifest goes last");
+
+        var reported = new List<int>();
+        await VersionRemover.RemoveLegacyFolderAsync(Target, legacy, reported.Add);
+        reported.Sum().Should().BeInRange(1, 2, "c.txt (and maybe data.bin) was left; the manifest is not counted");
+        Directory.GetFileSystemEntries(_target).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_junction_inside_a_legacy_folder_is_removed_as_a_link()
+    {
+        var legacy = Name + ".partial";
+        Directory.Move(_version, Path.Combine(_target, legacy));
+        var outside = _tmp.CreateDir("outside");
+        var foreign = _tmp.WriteFile(@"outside\keep.txt", "not ours");
+        var link = Path.Combine(_target, legacy, "sub", "link");
+        Junction.Create(link, outside);
+
+        try
+        {
+            await VersionRemover.RemoveLegacyFolderAsync(Target, legacy);
+
+            Directory.GetFileSystemEntries(_target).Should().BeEmpty();
+            File.ReadAllText(foreign).Should().Be("not ours");
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+                Directory.Delete(link);
         }
     }
 }

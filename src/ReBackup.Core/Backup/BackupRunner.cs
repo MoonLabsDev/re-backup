@@ -12,7 +12,6 @@ using ReBackup.Shared.Json;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
-using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Backup;
 
@@ -62,6 +61,7 @@ public sealed class BackupRunner : IBackupRunner
     private readonly TimeProvider _time;
     private readonly Func<string, IReadOnlyList<RetentionRule>?>? _currentRules;
     private readonly IVersionIndexSink? _indexSink;
+    private readonly IStorageFactory _storages;
 
     /// <param name="volume">The target's file system; the real one when null.</param>
     /// <param name="timeProvider">The clock; the system clock when null.</param>
@@ -75,13 +75,19 @@ public sealed class BackupRunner : IBackupRunner
     /// It is called on the run's path, so it must return quickly (the app hands the work to a
     /// <see cref="VersionIndexWorker"/>).
     /// </param>
+    /// <param name="storages">
+    /// Opens the plan's target as a storage; versions are listed, removed and cleaned up through it. A
+    /// <see cref="StorageFactory"/> when null.
+    /// </param>
     public BackupRunner(ITargetVolume? volume = null, TimeProvider? timeProvider = null,
-        Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null, IVersionIndexSink? indexSink = null)
+        Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null, IVersionIndexSink? indexSink = null,
+        IStorageFactory? storages = null)
     {
         _volume = volume ?? new PhysicalTargetVolume();
         _time = timeProvider ?? TimeProvider.System;
         _currentRules = currentRules;
         _indexSink = indexSink;
+        _storages = storages ?? new StorageFactory();
     }
 
     public async Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
@@ -250,7 +256,7 @@ public sealed class BackupRunner : IBackupRunner
         foreach (var version in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!TryRemoveVersion(plan, version, entry, "core.run.freeSpaceDeleteFailed"))
+            if (!await TryRemoveVersionAsync(plan, version, entry, "core.run.freeSpaceDeleteFailed"))
                 continue;
 
             free = _volume.GetAvailableFreeSpace(plan.Target.Path);
@@ -292,21 +298,34 @@ public sealed class BackupRunner : IBackupRunner
             Collect(child, work);
     }
 
-    /// <summary>Removes what earlier runs of this plan left behind: unfinished ".partial" folders and ".deleting" remains.</summary>
+    /// <summary>
+    /// Removes what earlier runs of this plan left behind (<see cref="LeftoverCleaner"/>): folders of runs that never
+    /// finished, interrupted deletions, and the ".partial" / ".deleting" folders of older versions. Its warnings go into
+    /// the run log.
+    /// </summary>
     /// <remarks>
     /// On a network target this can take long (a run that was killed leaves a whole copy), so the files removed are
-    /// reported, and cancellation stops between files: the rest stays for the next run.
+    /// reported, and cancellation stops between batches of files: the rest stays for the next run.
     /// </remarks>
     private async Task DeleteLeftoversAsync(BackupPlan plan, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
         var removed = 0;
+        var started = false;
         var sinceReport = Stopwatch.StartNew();
         var current = "";
         void Report() => progress?.Report(new BackupProgress(BackupPhase.RemovingLeftovers, removed, 0, 0, 0, current));
-        void OnFileDeleted(int count)
+        void OnFileDeleted(string name, int count)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (count == 0)
+            {
+                // A folder starts: always reported.
+                started = true;
+                current = name;
+                sinceReport.Restart();
+                Report();
+                return;
+            }
             removed += count;
             if (sinceReport.Elapsed < ProgressInterval)
                 return;
@@ -314,97 +333,13 @@ public sealed class BackupRunner : IBackupRunner
             Report();
         }
 
-        foreach (var directory in Directory.EnumerateDirectories(plan.Target.Path).ToList())
-        {
-            var name = Path.GetFileName(directory);
-            if (!VersionName.IsTransient(name))
-                continue;
-            if (new DirectoryInfo(directory).LinkTarget is not null)
-                continue;   // never follow a link out of the target
-
-            if (name.EndsWith(VersionName.PartialSuffix, StringComparison.OrdinalIgnoreCase))
-            {
-                if (!VersionName.TryParse(name[..^VersionName.PartialSuffix.Length], plan.Name, out _))
-                    continue;
-                // A manifest is written last, right before the rename: such a folder is a finished version of a
-                // plan whose name ends in ".partial" (or a crash just before the rename). Leaving it is the safe
-                // choice, and so is leaving a folder that cannot be examined.
-                if (HasManifest(directory) != false)
-                    continue;
-                current = name;
-                Report();
-                try
-                {
-                    VersionRemover.RemoveFolder(directory, _volume, OnFileDeleted);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    // Best effort; the next run of the plan tries again.
-                }
-                Report();
-            }
-            else if (name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
-            {
-                if (!VersionName.TryParseAny(name[..^VersionName.DeletingSuffix.Length], out _, out var folderPlanName) ||
-                    !await IsOwnRemainsAsync(directory, plan, folderPlanName, cancellationToken))
-                    continue;
-                current = name;
-                Report();
-                try
-                {
-                    VersionRemover.RemoveRemains(directory, _volume, OnFileDeleted);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    entry.Warnings.Add(CoreTexts.English("core.run.remainsFailed", ("name", name), ("error", ex.Message)));
-                }
-                Report();
-            }
-        }
+        // Nothing runs yet whose folder must be spared: the name is reserved after the cleanup.
+        var warnings = await LeftoverCleaner.CleanAsync(TargetOf(plan), plan.Id, plan.Name, currentVersionName: null,
+            cancellationToken, OnFileDeleted);
+        entry.Warnings.AddRange(warnings);
+        if (started)
+            Report();
     }
-
-    /// <summary>True or false when it is known; null when the folder cannot be examined.</summary>
-    private static bool? HasManifest(string directory)
-    {
-        try
-        {
-            return Directory.EnumerateFiles(directory, VersionName.ManifestFileName).Any();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>False when the folder holds anything or cannot be examined.</summary>
-    private static bool IsEmpty(string directory)
-    {
-        try
-        {
-            return !Directory.EnumerateFileSystemEntries(directory).Any();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Remains belong to the plan by their manifest. The manifest is deleted last, so remains without one that still
-    /// hold files are not ours by construction; empty ones are removed when the name matches. Everything else is
-    /// left alone, also remains of a folder that was copied or renamed by hand
-    /// (<see cref="VersionOwnership.Renamed"/>): retention never renamed that folder, a person did.
-    /// </summary>
-    private static async Task<bool> IsOwnRemainsAsync(string directory, BackupPlan plan, string folderPlanName,
-        CancellationToken cancellationToken) =>
-        (await VersionCatalog.ProbeAsync(TargetOf(plan), Path.GetFileName(directory), plan.Id, cancellationToken)).Ownership switch
-        {
-            VersionOwnership.Owned => true,
-            VersionOwnership.NoManifest =>
-                HasManifest(directory) == false && folderPlanName.Equals(plan.Name, StringComparison.OrdinalIgnoreCase) &&
-                IsEmpty(directory),
-            _ => false,
-        };
 
     /// <summary>Hands the finished version to the version index. Whatever goes wrong there is a warning only.</summary>
     private void AddToIndex(BackupPlan plan, RunLogEntry entry, string finalPath, BackupManifest manifest)
@@ -452,7 +387,7 @@ public sealed class BackupRunner : IBackupRunner
             if (version.Name.Equals(entry.Version, StringComparison.OrdinalIgnoreCase))
                 continue;   // never the version this run just made, whatever the clock or the rules say
 
-            TryRemoveVersion(plan, version, entry, "core.run.retentionDeleteFailed");
+            await TryRemoveVersionAsync(plan, version, entry, "core.run.retentionDeleteFailed");
         }
     }
 
@@ -485,22 +420,27 @@ public sealed class BackupRunner : IBackupRunner
     }
 
     /// <summary>
-    /// Removes one version. True when the folder no longer is a version: it is gone, or it was renamed and only
-    /// its remains are left (the next run of the plan removes them). False when nothing was changed; that is also
-    /// the answer when the folder or the whole target has vanished, because nothing was deleted then.
+    /// Removes one version. True when the folder no longer is a version: it is gone, or it was marked as being
+    /// deleted and only its remains are left (the next run of the plan removes them). False when nothing was changed;
+    /// that is also the answer when the folder or the whole target has vanished, because nothing was deleted then.
     /// </summary>
-    private bool TryRemoveVersion(BackupPlan plan, VersionInfo version, RunLogEntry entry, string failureKey)
+    /// <remarks>
+    /// A removal that has started is not canceled: stopping half-way would only leave remains. Cancellation is
+    /// honoured between versions by the callers.
+    /// </remarks>
+    private async Task<bool> TryRemoveVersionAsync(BackupPlan plan, VersionInfo version, RunLogEntry entry, string failureKey)
     {
         try
         {
-            // The folder path for the volume until removal goes through the storage, too.
-            VersionRemover.Remove(Path.Combine(plan.Target.Path, version.Path), _volume);
+            var marker = new MarkerInfo(VersionMarkers.FormatVersion, plan.Id, plan.Name, _time.GetUtcNow().UtcDateTime,
+                Environment.MachineName);
+            await VersionRemover.RemoveAsync(TargetOf(plan), version.Path, marker, ct: CancellationToken.None);
         }
         catch (VersionRemainsException ex)
         {
             entry.Warnings.Add(CoreTexts.English("core.run.removedRemainsLeft", ("version", version.Name), ("error", ex.Message)));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
             entry.Warnings.Add(CoreTexts.English(failureKey, ("version", version.Name), ("error", ex.Message)));
             return false;
@@ -509,8 +449,8 @@ public sealed class BackupRunner : IBackupRunner
         return true;
     }
 
-    /// <summary>The plan's target as a storage; versions are listed and read through it.</summary>
-    private static IStorage TargetOf(BackupPlan plan) => new FileSystemStorage(plan.Target.Path);
+    /// <summary>The plan's target as a storage; versions are listed, read and removed through it.</summary>
+    private IStorage TargetOf(BackupPlan plan) => _storages.Open(plan.Target);
 
     /// <summary>Picks the folder name for the current minute; waits for the next minute if that name is taken.</summary>
     private async Task<string> ReserveVersionNameAsync(BackupPlan plan, CancellationToken cancellationToken)

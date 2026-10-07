@@ -123,6 +123,10 @@
       "freeSpaceDeleteFailed": "\"{version}\" could not be deleted to free space: {error}",
       "remainsFailed": "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
       "removedRemainsLeft": "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
+      "unfinishedFailed": "An unfinished backup could not be deleted (\"{name}\"): {error}",
+      "leftoverForeign": "\"{name}\" was left alone: it is marked by another plan.",
+      "leftoverUnreadable": "\"{name}\" was left alone: its marker cannot be read.",
+      "leftoverPartialWithManifest": "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
       "indexFailed": "The version index could not be updated: {error}"
     },
     "skip": {
