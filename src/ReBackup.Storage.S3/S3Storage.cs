@@ -47,7 +47,7 @@ public sealed class S3Storage : IStorage
             if (path.Length == 0)
             {
                 // The root exists when the bucket does.
-                await _client.ListObjectsV2Async(new ListObjectsV2Request { BucketName = _bucket, MaxKeys = 1 }, ct).ConfigureAwait(false);
+                await _client.ListObjectsV2Async(new ListObjectsV2Request { BucketName = _bucket, Prefix = S3Keys.DirectoryPrefix(_prefix, ""), MaxKeys = 1 }, ct).ConfigureAwait(false);
                 return new StorageEntry(path, true, 0, DirectoryTime, false, null);
             }
 
@@ -183,7 +183,13 @@ public sealed class S3Storage : IStorage
         }
     }
 
-    private static DateTime UtcOf(DateTime? value) => value is { } v ? v.ToUniversalTime() : DirectoryTime;
+    /// <summary>The SDK may hand out <see cref="DateTimeKind.Unspecified"/> times; S3 times are UTC, so those are taken as UTC, not as local time.</summary>
+    internal static DateTime UtcOf(DateTime? value) => value switch
+    {
+        null => DirectoryTime,
+        { Kind: DateTimeKind.Unspecified } v => DateTime.SpecifyKind(v, DateTimeKind.Utc),
+        { } v => v.ToUniversalTime(),
+    };
 
     private static string? Unquote(string? etag) => etag?.Trim('"');
 }

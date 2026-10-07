@@ -82,6 +82,16 @@ public class S3ErrorsTests
     }
 
     [Fact]
+    public void Wrapped_caller_cancellation_returns_the_cancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var inner = new TaskCanceledException("t", null, cts.Token);
+
+        S3Errors.Map(new AmazonClientException("wrapped", inner), "a", cts.Token).Should().BeSameAs(inner);
+    }
+
+    [Fact]
     public void Unknown_exception_becomes_io()
     {
         S3Errors.Map(new AmazonClientException("odd"), "a", CancellationToken.None).Should().BeOfType<StorageIOException>();

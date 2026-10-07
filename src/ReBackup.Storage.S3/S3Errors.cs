@@ -20,7 +20,7 @@ internal static class S3Errors
 
         if (callerToken.IsCancellationRequested)
             for (var e = ex; e is not null; e = e.InnerException)
-                if (e is OperationCanceledException) return ex;
+                if (e is OperationCanceledException cancelled) return cancelled;
 
         if (ex is AmazonServiceException service && (service.StatusCode != 0 || !string.IsNullOrEmpty(service.ErrorCode)))
             return MapService(service, path);
