@@ -175,6 +175,42 @@ uses it. Plan files are plain JSON and are reloaded when they change on disk.
 
 ---
 
+## Amazon S3
+
+The code base contains an Amazon S3 storage provider and a dialog to set up and test an S3 connection. The ReBackup
+app does not offer S3 as a source or target yet; that comes with a later version. What follows is what such a
+connection will need.
+
+A connection is a region, a bucket and an access key (access key ID and secret access key). The connection test
+checks that the bucket can be reached and listed, optionally that a test object can be written and deleted, and
+whether the bucket has the recommended lifecycle rule. If the bucket is in a different region, it offers that region.
+
+**Minimum IAM permissions.** The access key needs these actions on the bucket (`s3:GetLifecycleConfiguration` is
+optional; without it the test reports the lifecycle rule as *cannot be checked*):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetLifecycleConfiguration"],
+      "Resource": "arn:aws:s3:::my-backup-bucket" },
+    { "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::my-backup-bucket/*" }
+  ]
+}
+```
+
+**Recommended lifecycle rule: abort incomplete multipart uploads after 7 days.** Large files are uploaded in parts.
+If an upload is interrupted and cannot be cleaned up (a crash, a lost connection), its parts stay in the bucket: not
+visible in normal listings, but billed. The rule removes them. The connection test warns when the bucket has no such
+rule.
+
+**Secrets stay on your Windows account.** The secret access key is stored encrypted with Windows DPAPI and is bound
+to your Windows account: another account, or a copy of the connection file on another PC, cannot decrypt it, and the
+secret has to be entered again. It is never written in plain text or logged.
+
+---
+
 ## FAQ and limits
 
 **Does it run without the app?**

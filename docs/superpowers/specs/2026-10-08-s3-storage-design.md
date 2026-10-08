@@ -16,7 +16,7 @@ Add an Amazon S3 implementation of `IStorage` (from the storage abstraction, spe
 | Connection scope | Region + bucket + credentials; the location's `Path` is the prefix inside that bucket |
 | Connection storage | Per app (`connections.json` in the app's own config folder); no sharing between apps |
 | Timestamps | `ModifiedUtc` = object `LastModified` (upload time); no custom metadata |
-| Integration tests | MinIO in Docker via Testcontainers; skipped visibly when Docker is unavailable |
+| Integration tests | LocalStack in Docker via Testcontainers (official image `localstack/localstack:4.9`; the official MinIO images can no longer be pulled); skipped visibly when Docker is unavailable |
 | Connection UI | Shared dialog in `ReBackup.Shared.Wpf`; each app builds its own connection list later |
 
 Out of scope: connection lists in the apps, S3 as source/target in ReBackup, re-s3, other S3-compatible providers, IAM roles/profiles/SSO, host-aware marker rules (needed before sub-project 4).
@@ -36,7 +36,7 @@ src/ReBackup.Storage.S3/          net9.0; refs ReBackup.Storage, ReBackup.Shared
   S3StorageFactory.cs
   S3ConnectionTester.cs
 src/ReBackup.Shared.Wpf/          + S3ConnectionDialog (XAML) + S3ConnectionDialogViewModel; new ref ReBackup.Storage.S3
-tests/ReBackup.Storage.S3.Tests/  unit + MinIO integration tests
+tests/ReBackup.Storage.S3.Tests/  unit + LocalStack integration tests
 tests/ReBackup.Shared.Wpf.Tests/  net9.0-windows; view-model tests
 ```
 
@@ -86,7 +86,7 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 
 **S3Writer**
 - Buffers in memory up to 16 MiB. Commit with ≤ 16 MiB written → `PutObject`.
-- Beyond 16 MiB → `InitiateMultipartUpload` and parts of 16 MiB; the part size doubles after every 1000 parts (stays under the 10 000-part limit up to the 5 TiB object limit). At most one part in memory plus the one being uploaded.
+- Beyond 16 MiB → `InitiateMultipartUpload` and parts of 16 MiB; the part size doubles after every 1000 parts up to a cap of 1 GiB, so the 10 000-part limit allows objects up to about 4.87 TiB. At most one part in memory plus the one being uploaded.
 - `CommitAsync`: `PutObject` / `CompleteMultipartUpload`, with `If-None-Match: *` when `Overwrite = false`. HTTP 412 → `StorageConflictException`. The object becomes visible only on success; with `Overwrite` the old object stays until then.
 - Dispose without a successful commit → `AbortMultipartUpload` (best effort, never throws).
 
@@ -97,6 +97,7 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 | `NoSuchKey`, `NoSuchBucket`, HTTP 404 | `StorageNotFoundException` |
 | `AccessDenied`, HTTP 403, `InvalidAccessKeyId`, `SignatureDoesNotMatch` | `StorageAccessDeniedException` |
 | HTTP 412, `PreconditionFailed` | `StorageConflictException` |
+| HTTP 409 `ConditionalRequestConflict` (a concurrent conditional write) | `StorageConflictException` |
 | DNS/socket/timeout (`HttpRequestException`, `TaskCanceledException` without the caller's token), HTTP 5xx after SDK retries | `StorageUnavailableException` |
 | `InvalidObjectState` | `StorageIOException` (archived) |
 | anything else from the SDK | `StorageIOException` |
@@ -105,15 +106,15 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 
 ## 7. S3StorageFactory
 
-`S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections)`: kind `"s3"` → looks up `location.ConnectionId`; missing → `StorageNotFoundException` ("connection not found"); `Secret == null` → `StorageAccessDeniedException` ("secret must be re-entered"); else `new S3Storage(connection, location.Path)`. Other kinds → `inner.Open(location)`.
+`S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections)`: kind `"s3"` → looks up `location.ConnectionId`; missing → `StorageNotFoundException` ("connection not found"); `Secret == null` → `StorageAccessDeniedException` ("secret must be re-entered"); else `new S3Storage(connection, location.Path)`. Other kinds → `inner.Open(location)`. The factory caches one client per connection (keyed by `Id`, `Region`, `AccessKeyId` and `Secret`, so an edited connection gets a new client) and is `IDisposable`; disposing it disposes the cached clients.
 
 ## 8. Connection tester
 
 `S3ConnectionTester.RunAsync(S3Connection, bool checkWrite, CancellationToken) → IReadOnlyList<S3CheckResult>`; `S3CheckResult(S3Check Check, S3CheckState State, string? MessageKey, string? Detail)`, states `Ok | Failed | Warning | Skipped`.
 
-1. **Credentials + bucket:** `HeadBucket`. A region mismatch (bucket region from the response header ≠ connection region) → `Warning` with `Detail` = the bucket's region.
+1. **Credentials + bucket:** `HeadBucket`. A region mismatch (the bucket's region ≠ connection region) → `Warning` with `Detail` = the bucket's region. The region is read from the response's `BucketRegion` or, when the call fails with a wrong-region error, from the `x-amz-bucket-region` header of that error.
 2. **List:** `ListObjectsV2(MaxKeys = 1)`.
-3. **Write + delete** (only when `checkWrite`, else `Skipped`): put `.rebackup-connection-test-<guid>` (empty), then delete it.
+3. **Write + delete** (only when `checkWrite`, else `Skipped`): put `.rebackup-connection-test-<guid>` (empty), then delete it. When the put fails or the test is cancelled, the test object is still deleted best-effort (own short timeout, errors ignored).
 4. **Lifecycle:** `GetLifecycleConfiguration`; no rule with `AbortIncompleteMultipartUpload` → `Warning`; access denied → `Skipped` ("cannot be checked").
 
 A failed check stops the following ones (they become `Skipped`), except that 4 runs whenever 1 succeeded.
@@ -130,7 +131,7 @@ Fields: Name (required, unique among the app's connections — uniqueness check 
 ## 10. Testing
 
 - **Unit (no Docker):** `S3Errors` mapping per row of section 6; `S3Keys` (prefix joining, 1024-byte limit, placeholders); `SecretProtector` round trip and undecryptable blob → `Secret = null`; `S3ConnectionStore` (insert, replace, null secret keeps blob, delete, missing file, corrupt file); writer part sizing; dispose without commit aborts the multipart upload (fake `IAmazonS3`).
-- **Integration (MinIO via Testcontainers, pinned image tag that supports conditional writes):** `S3StorageContractTests : StorageContractTests` with a fresh prefix per test; multipart above 16 MiB round trip; two concurrent exclusive writers → exactly one wins; placeholder `x/` listed as directory and deletable; non-root missing folder → NotFound; tester with and without a lifecycle rule. Without Docker these tests report as skipped (`Xunit.SkippableFact`), never as passed.
+- **Integration (LocalStack via Testcontainers, pinned image `localstack/localstack:4.9`, which supports conditional writes):** `S3StorageContractTests : StorageContractTests` with a fresh prefix per test; multipart above 16 MiB round trip; two concurrent exclusive single-part writers → exactly one wins; a second exclusive multipart write after the first committed → conflict (the simultaneous multipart race is skipped: LocalStack does not serialize conditional `CompleteMultipartUpload`); placeholder `x/` listed as directory and deletable; non-root missing folder → NotFound; tester with and without a lifecycle rule. Without Docker these tests report as skipped (`Xunit.SkippableFact`), never as passed.
 - **View model (`ReBackup.Shared.Wpf.Tests`):** validation rules, "unchanged" secret, re-enter state, "Use <region>" applies the region, Save enablement.
 - **Architecture:** rules of section 3.
 
@@ -145,6 +146,6 @@ Branch `feature/s3-storage`; build and all tests green after each step.
 1. Project, `S3Connection`, `SecretProtector`, `S3ConnectionStore`, architecture test rules.
 2. `S3Errors`, `S3Keys`, read side of `S3Storage` (Stat, List, OpenRead).
 3. `S3Writer` and `DeleteAsync`.
-4. MinIO infrastructure, contract tests, S3-specific integration tests.
+4. LocalStack infrastructure, contract tests, S3-specific integration tests.
 5. `S3StorageFactory`, `S3ConnectionTester`.
 6. Dialog + view model + texts + view-model tests + README section.
