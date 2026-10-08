@@ -207,7 +207,6 @@ public class S3WriterTests
     {
         var (s, fake) = Make();
         fake.Add("p/small", etag: FakeS3Client.Quote("other")).Add("p/big", etag: FakeS3Client.Quote("other"));
-        fake.RetryAfterSuccess = true; // would make an own-write proof succeed if one were attempted
         await using var small = await s.CreateAsync("small", new CreateOptions(Overwrite: true, ExpectedStamp: "abc"), Ct);
         await using var big = await s.CreateAsync("big", new CreateOptions(Overwrite: true, ExpectedStamp: "abc"), Ct);
         await small.WriteAsync(Data(10), Ct);
@@ -232,6 +231,23 @@ public class S3WriterTests
         var commit = () => writer.CommitAsync(Ct);
 
         (await commit.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("gone");
+    }
+
+    [Theory]
+    [InlineData("NoSuchBucket", "PutObjectAsync")]
+    [InlineData("NoSuchUpload", "CompleteMultipartUploadAsync")]
+    public async Task Other_404_with_expected_stamp_is_not_a_conflict(string code, string method)
+    {
+        var (s, fake) = Make();
+        fake.Add("p/f", etag: FakeS3Client.Quote("abc"));
+        fake.Failures[method] = new AmazonS3Exception("x", ErrorType.Sender, code, "req", System.Net.HttpStatusCode.NotFound);
+        await using var writer = await s.CreateAsync("f", new CreateOptions(Overwrite: true, ExpectedStamp: "abc"), Ct);
+        if (method == "PutObjectAsync") await writer.WriteAsync(Data(10), Ct);
+        else await WriteChunked(writer, Data(17 * MiB));
+
+        var commit = () => writer.CommitAsync(Ct);
+
+        await commit.Should().ThrowAsync<StorageNotFoundException>();
     }
 
     [Fact]

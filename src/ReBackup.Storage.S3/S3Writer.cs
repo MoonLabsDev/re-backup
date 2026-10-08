@@ -132,7 +132,7 @@ internal sealed class S3Writer : StorageWriter
         {
             if (!await IsOwnObjectAsync(ct).ConfigureAwait(false)) throw Fail(ex, ct);
         }
-        catch (AmazonS3Exception ex) when (_ifMatch is not null && ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (AmazonS3Exception ex) when (_ifMatch is not null && ex.ErrorCode == "NoSuchKey")
         {
             // If-Match on a missing key answers 404 NoSuchKey (not 412): the file this write expected is gone, which is a conflict.
             var conflict = new StorageConflictException(_path, $"Conflict at '{_path}'.", ex);

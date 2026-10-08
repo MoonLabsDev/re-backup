@@ -132,6 +132,9 @@ public sealed class FileSystemStorage : IStorage
         {
             if (!options.Overwrite && (File.Exists(full) || Directory.Exists(full)))
                 throw new StorageConflictException(path);
+            // Nothing to replace: refuse before any directory or temp file is created.
+            if (options.ExpectedStamp is not null && StampOf(full) is null)
+                throw new StorageConflictException(path);
 
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             var (stream, temp) = CreateTemp(full);
@@ -242,7 +245,9 @@ public sealed class FileSystemStorage : IStorage
 
     /// <summary>The stamp of the file at <paramref name="full"/> as <see cref="StatAsync"/> reports it; <c>null</c> when there is no file.</summary>
     internal static string? StampOf(string full) =>
-        new FileInfo(full) is { Exists: true } file ? $"{file.Length}:{file.LastWriteTimeUtc.Ticks}" : null;
+        new FileInfo(full) is { Exists: true } file ? StampOf(file) : null;
+
+    private static string StampOf(FileInfo file) => $"{file.Length}:{file.LastWriteTimeUtc.Ticks}";
 
     private static FileSystemInfo GetInfo(string full)
     {
@@ -258,7 +263,7 @@ public sealed class FileSystemStorage : IStorage
         {
             if (file.Name.EndsWith(TempSuffix, StringComparison.Ordinal)) return null;
             var modified = file.LastWriteTimeUtc;
-            return new StorageEntry(path, false, file.Length, modified, isLink, $"{file.Length}:{modified.Ticks}");
+            return new StorageEntry(path, false, file.Length, modified, isLink, StampOf(file));
         }
         return new StorageEntry(path, true, 0, info.LastWriteTimeUtc, isLink, null);
     }

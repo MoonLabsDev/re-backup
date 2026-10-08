@@ -58,6 +58,29 @@ public sealed class FileSystemStorageTests : StorageContractTests, IDisposable
     }
 
     [Fact]
+    public async Task Expected_stamp_conflict_leaves_no_temp_file_and_no_new_directory()
+    {
+        var dir = new TempDir();
+        _dirs.Add(dir);
+        dir.WriteFile("a.txt", "old");
+        var storage = new FileSystemStorage(dir.Root);
+        var stamp = (await storage.StatAsync("a.txt", Ct))!.Stamp;
+        await File.WriteAllTextAsync(dir.PathOf("a.txt"), "changed by someone else");
+
+        await using (var writer = await storage.CreateAsync("a.txt", new CreateOptions(Overwrite: true, ExpectedStamp: stamp), Ct))
+        {
+            await writer.WriteAsync(Encoding.UTF8.GetBytes("mine"), Ct);
+            var commit = () => writer.CommitAsync(Ct);
+            await commit.Should().ThrowAsync<StorageConflictException>();
+        }
+        var missing = () => storage.CreateAsync("new/sub/b.txt", new CreateOptions(Overwrite: true, ExpectedStamp: "1:2"), Ct);
+        await missing.Should().ThrowAsync<StorageConflictException>();
+
+        Directory.EnumerateFiles(dir.Root, "*" + FileSystemStorage.TempSuffix, SearchOption.AllDirectories).Should().BeEmpty();
+        Directory.Exists(dir.PathOf("new")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Junction_is_listed_as_link_and_not_descended()
     {
         var dir = new TempDir();

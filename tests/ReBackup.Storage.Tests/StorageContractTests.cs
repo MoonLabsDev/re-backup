@@ -131,11 +131,15 @@ public abstract class StorageContractTests
     {
         var storage = CreateEmpty();
 
-        await using var writer = await storage.CreateAsync("a.txt", new CreateOptions(Overwrite: true, ExpectedStamp: "1:2:3"), Ct);
-        await writer.WriteAsync(Encoding.UTF8.GetBytes("mine"), Ct);
-        var commit = () => writer.CommitAsync(Ct);
+        // A storage may refuse at CreateAsync or at the commit.
+        var act = async () =>
+        {
+            await using var writer = await storage.CreateAsync("a.txt", new CreateOptions(Overwrite: true, ExpectedStamp: "1:2:3"), Ct);
+            await writer.WriteAsync(Encoding.UTF8.GetBytes("mine"), Ct);
+            await writer.CommitAsync(Ct);
+        };
 
-        await commit.Should().ThrowAsync<StorageConflictException>();
+        await act.Should().ThrowAsync<StorageConflictException>();
         (await storage.StatAsync("a.txt", Ct)).Should().BeNull();
     }
 
