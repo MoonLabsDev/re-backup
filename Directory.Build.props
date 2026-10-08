@@ -3,10 +3,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
-    <InformationalVersion>1.1.0</InformationalVersion>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
+    <InformationalVersion>1.2.0</InformationalVersion>
     <Company>Moon Labs UG (haftungsbeschränkt)</Company>
     <Copyright>Copyright © 2026 Moon Labs UG (haftungsbeschränkt)</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
