@@ -10,6 +10,10 @@ namespace ReBackup.Storage.S3;
 /// <see cref="AmazonS3Client"/> is kept per connection state (id, region, access key, secret), so storages opened again reuse its
 /// connection pool and an edited connection gets a fresh client. Disposing the factory disposes those clients, so dispose it
 /// only after the storages it opened are no longer in use.
+/// <para>
+/// With <c>S3ConnectionStore.TryResolve</c> as the lookup, "connection not found" means an unknown connection id: a connection whose
+/// account is missing makes the store's file corrupt, so the lookup throws the store's <c>JsonException</c> instead.
+/// </para>
 /// </summary>
 public sealed class S3StorageFactory : IStorageFactory, IDisposable
 {

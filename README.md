@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.2.1" src="https://img.shields.io/badge/version-1.2.1-2BB3A3">
+  <img alt="Version 1.3.0" src="https://img.shields.io/badge/version-1.3.0-2BB3A3">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0F1216">
   <img alt=".NET 9 WPF" src="https://img.shields.io/badge/.NET%209-WPF-512BD4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-lightgrey">
@@ -123,9 +123,9 @@ dotnet run --project src/ReBackup.App         # start the app
 `publish.ps1` publishes the app in Release as one file and copies it to `dist\`.
 
 ```powershell
-.\publish.ps1                       # dist\ReBackup-1.2.1-win-x64.exe, self-contained (.NET runtime included)
-.\publish.ps1 -Version 1.2.2        # override the version from Directory.Build.props
-.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.2.1-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
+.\publish.ps1                       # dist\ReBackup-1.3.0-win-x64.exe, self-contained (.NET runtime included)
+.\publish.ps1 -Version 1.3.1        # override the version from Directory.Build.props
+.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.3.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
 .\publish.ps1 -Runtime win-arm64    # for Windows on ARM
 ```
 
@@ -177,13 +177,22 @@ uses it. Plan files are plain JSON and are reloaded when they change on disk.
 
 ## Amazon S3
 
-The code base contains an Amazon S3 storage provider and a dialog to set up and test an S3 connection. The ReBackup
-app does not offer S3 as a source or target yet; that comes with a later version. What follows is what such a
+The code base contains an Amazon S3 storage provider and dialogs to set up and test S3 accounts and connections. The
+ReBackup app does not offer S3 as a source or target yet; that comes with a later version. What follows is what such a
 connection will need.
 
-A connection is a region, a bucket and an access key (access key ID and secret access key). The connection test
-checks that the bucket can be reached and listed, optionally that a test object can be written and deleted,
-whether versioning is off, and whether the bucket has the recommended lifecycle rule. If the bucket is in a different region, it offers that region.
+**Accounts and connections.** An *account* is an access key: a name, the access key ID and the secret access key. A
+*connection* is a name, a region, a bucket and the account whose key opens it. Several connections (for example one per
+bucket) can share one account, so a rotated key is entered once. The accounts dialog lists the accounts with the number
+of connections using each; an account still used by a connection cannot be deleted (the dialog names those
+connections). The connection dialog picks an account from a list, or creates one with "New account…". Connection files
+of earlier versions, where every connection had its own key, keep working and are written in the new format by the next
+change: connections with the same access key ID share one account.
+
+The account test checks that the key is valid (it lists the buckets; a key limited to certain buckets gets a warning, not
+an error). The connection test checks that the bucket can be reached and listed, optionally that a test object can be
+written and deleted, whether versioning is off, and whether the bucket has the recommended lifecycle rule. If the bucket
+is in a different region, it offers that region.
 
 **Minimum IAM permissions.** The access key needs these actions on the bucket (`s3:GetBucketVersioning` and
 `s3:GetLifecycleConfiguration` are optional; without them the test reports versioning or the lifecycle rule as
@@ -218,7 +227,7 @@ the connection test warns about it.
 
 **Secrets stay on your Windows account.** The secret access key is stored encrypted with Windows DPAPI and is bound
 to your Windows account: another account, or a copy of the connection file on another PC, cannot decrypt it, and the
-secret has to be entered again. It is never written in plain text or logged.
+secret has to be entered again (the accounts dialog marks such an account; its connections cannot be tested until then). It is never written in plain text or logged.
 
 ---
 

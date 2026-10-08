@@ -7,11 +7,18 @@ using ReBackup.Storage.S3;
 namespace ReBackup.Shared.Wpf.S3;
 
 /// <summary>
-/// The texts <see cref="S3ConnectionDialog"/> builds from view-model values (label keys, check results). The converters
+/// The texts the S3 dialogs build from view-model values (label keys, check results). The converters
 /// take the value and <see cref="Loc.Language"/> in a MultiBinding, so a language switch re-reads them.
 /// </summary>
 public static class S3DialogTexts
 {
+    /// <summary>The plural label "{count} connection(s)" of an account row.</summary>
+    public const string UsedByKey = "s3.accounts.usedBy";
+
+    /// <summary>How many connections use the account of an <see cref="S3AccountRow"/>.</summary>
+    public static IMultiValueConverter UsedBy { get; } = new Converter(value =>
+        value is S3AccountRow row ? Loc.F(UsedByKey, ("count", row.UsedBy)) : "");
+
     /// <summary>The label of a key, or "" for <c>null</c>.</summary>
     public static IMultiValueConverter Label { get; } = new Converter(value => value is string key ? Loc.T(key) : "");
 
@@ -30,6 +37,7 @@ public static class S3DialogTexts
 
     public static string NameOf(S3Check check) => check switch
     {
+        S3Check.Account => Loc.T("s3.test.check.account"),
         S3Check.Bucket => Loc.T("s3.test.check.bucket"),
         S3Check.Versioning => Loc.T("s3.test.check.versioning"),
         S3Check.List => Loc.T("s3.test.check.list"),

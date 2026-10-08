@@ -23,12 +23,42 @@
       "save": "Speichern",
       "cancel": "Abbrechen"
     },
+    "accountDialog": {
+      "titleNew": "S3-Konto hinzufügen",
+      "titleEdit": "S3-Konto bearbeiten"
+    },
+    "account": {
+      "new": "Neues Konto…",
+      "needsSecret": "Der geheime Schlüssel dieses Kontos muss erneut eingegeben werden (S3-Konten), bevor die Verbindung getestet werden kann."
+    },
+    "accountTest": {
+      "run": "Zugriffsschlüssel testen"
+    },
+    "accounts": {
+      "title": "S3-Konten",
+      "add": "Hinzufügen…",
+      "edit": "Bearbeiten…",
+      "delete": "Löschen",
+      "close": "Schließen",
+      "empty": "Noch keine Konten.",
+      "needsSecret": "Geheimer Schlüssel muss neu eingegeben werden",
+      "usedBy": { "one": "{count} Verbindung", "other": "{count:N0} Verbindungen" },
+      "inUse": "Dieses Konto kann nicht gelöscht werden, solange diese Verbindungen es verwenden:",
+      "deleteTitle": "Konto löschen",
+      "deleteConfirm": "Das Konto „{name}“ löschen?",
+      "saveFailed": "Das Konto konnte nicht gespeichert werden.",
+      "loadFailed": "Die S3-Verbindungsdatei kann nicht gelesen werden; sie bleibt unverändert.",
+      "column": {
+        "usedBy": "Verwendet von"
+      }
+    },
     "field": {
       "name": "Name",
       "region": "Region",
       "bucket": "Bucket",
       "accessKeyId": "Zugriffsschlüssel-ID",
-      "secret": "Geheimer Zugriffsschlüssel"
+      "secret": "Geheimer Zugriffsschlüssel",
+      "account": "Konto"
     },
     "secret": {
       "unchanged": "Unverändert",
@@ -36,12 +66,13 @@
     },
     "error": {
       "nameRequired": "Einen Namen eingeben.",
-      "nameTaken": "Eine andere Verbindung hat bereits diesen Namen.",
+      "nameTaken": "Dieser Name ist bereits vergeben.",
       "regionRequired": "Eine Region wählen.",
       "regionInvalid": "Einen AWS-Regionsnamen wie eu-central-1 eingeben.",
       "bucketInvalid": "Ein Bucket-Name hat 3–63 Zeichen: Kleinbuchstaben, Ziffern, Punkte und Bindestriche, am Anfang und Ende ein Buchstabe oder eine Ziffer.",
       "accessKeyRequired": "Die Zugriffsschlüssel-ID eingeben.",
-      "secretRequired": "Den geheimen Zugriffsschlüssel eingeben."
+      "secretRequired": "Den geheimen Zugriffsschlüssel eingeben.",
+      "accountRequired": "Ein Konto wählen."
     },
     "test": {
       "run": "Verbindung testen",
@@ -52,6 +83,7 @@
       "error": "Der Test konnte nicht ausgeführt werden.",
       "useRegion": "{region} verwenden",
       "check": {
+        "account": "Zugriffsschlüssel",
         "bucket": "Bucket",
         "versioning": "Versionierung",
         "list": "Auflisten",
@@ -70,7 +102,8 @@
       "lifecycleMissing": "Keine Lebenszyklusregel räumt unvollständige Multipart-Uploads auf (empfohlen: nach 7 Tagen abbrechen).",
       "versioningEnabled": "Die Versionierung ist an oder ausgesetzt: Löschen alter Sicherungen setzt nur Löschmarker und gibt keinen Platz frei, solange keine Lebenszyklusregel nicht aktuelle Versionen ablaufen lässt.",
       "notCheckable": "Mit diesen Berechtigungen nicht prüfbar.",
-      "skipped": "Nicht geprüft."
+      "skipped": "Nicht geprüft.",
+      "accountNoList": "Der Schlüssel ist gültig, darf aber keine Buckets auflisten (normal für Schlüssel, die auf bestimmte Buckets beschränkt sind)."
     }
   }
 }

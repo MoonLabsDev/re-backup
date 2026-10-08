@@ -8,12 +8,17 @@ namespace ReBackup.Shared.Wpf.Tests;
 
 public class S3ConnectionDialogViewModelTests
 {
-    private static readonly S3Connection Stored = new("id-1", "Backups", "eu-central-1", "my-bucket", "AKIA1", "stored-secret");
+    private static readonly S3Account Main = new("acc-1", "Main", "AKIA1", "stored-secret");
+    private static readonly S3Account Spare = new("acc-2", "Spare", "AKIA2", "spare-secret");
+    private static readonly S3ConnectionInfo Stored = new("id-1", "Backups", "eu-central-1", "my-bucket", "acc-1");
 
-    private static S3ConnectionDialogViewModel Create(S3Connection? existing = null, Func<string, bool>? isNameTaken = null) =>
-        new(existing, isNameTaken ?? (_ => false), new S3ConnectionTester(_ => FakeS3Client.Create().Client));
+    private static S3ConnectionDialogViewModel Create(S3ConnectionInfo? existing = null, Func<string, bool>? isNameTaken = null,
+        IReadOnlyList<S3Account>? accounts = null, Func<S3Account?>? createAccount = null) =>
+        new(existing, isNameTaken ?? (_ => false), new S3ConnectionTester(_ => FakeS3Client.Create().Client),
+            () => accounts ?? [Main, Spare], createAccount ?? (() => null));
 
-    private static (S3ConnectionDialogViewModel Vm, FakeS3Client Fake, List<S3Connection> Tested) CreateWithFake(S3Connection? existing = null)
+    private static (S3ConnectionDialogViewModel Vm, FakeS3Client Fake, List<S3Connection> Tested) CreateWithFake(
+        S3ConnectionInfo? existing = null, IReadOnlyList<S3Account>? accounts = null)
     {
         var (client, fake) = FakeS3Client.Create();
         var tested = new List<S3Connection>();
@@ -22,7 +27,7 @@ public class S3ConnectionDialogViewModelTests
             tested.Add(connection);
             return client;
         });
-        return (new S3ConnectionDialogViewModel(existing, _ => false, tester), fake, tested);
+        return (new S3ConnectionDialogViewModel(existing, _ => false, tester, () => accounts ?? [Main, Spare], () => null), fake, tested);
     }
 
     private static void FillValid(S3ConnectionDialogViewModel vm)
@@ -30,8 +35,7 @@ public class S3ConnectionDialogViewModelTests
         vm.Name = "Backups";
         vm.Region = "eu-central-1";
         vm.Bucket = "my-bucket";
-        vm.AccessKeyId = "AKIA1";
-        vm.Secret = "secret";
+        vm.SelectedAccount = vm.Accounts.Single(a => a.Id == Main.Id);
     }
 
     [Fact]
@@ -40,8 +44,9 @@ public class S3ConnectionDialogViewModelTests
         var vm = Create();
 
         vm.Errors.Should().Equal("s3.error.nameRequired", "s3.error.regionRequired", "s3.error.bucketInvalid",
-            "s3.error.accessKeyRequired", "s3.error.secretRequired");
-        vm.SecretPlaceholderKey.Should().BeNull();
+            "s3.error.accountRequired");
+        vm.Accounts.Should().Equal(Main, Spare);
+        vm.SelectedAccount.Should().BeNull();
         vm.CheckWrite.Should().BeTrue();
         vm.SaveCommand.CanExecute(null).Should().BeFalse();
     }
@@ -53,6 +58,7 @@ public class S3ConnectionDialogViewModelTests
         FillValid(vm);
 
         vm.Errors.Should().BeEmpty();
+        vm.AccountHintKey.Should().BeNull();
         vm.SaveCommand.CanExecute(null).Should().BeTrue();
     }
 
@@ -114,12 +120,9 @@ public class S3ConnectionDialogViewModelTests
         FillValid(vm);
 
         vm.Name = "  ";
-        vm.AccessKeyId = " ";
-        vm.Secret = " ";
         vm.Region = " ";
 
-        vm.Errors.Should().Equal("s3.error.nameRequired", "s3.error.regionRequired", "s3.error.accessKeyRequired",
-            "s3.error.secretRequired");
+        vm.Errors.Should().Equal("s3.error.nameRequired", "s3.error.regionRequired");
     }
 
     [Theory]
@@ -170,95 +173,6 @@ public class S3ConnectionDialogViewModelTests
         AwsRegions.All.Should().OnlyContain(region => S3Regions.IsValid(region));
 
     [Fact]
-    public void Editing_a_connection_with_a_secret_keeps_the_secret_when_the_field_stays_empty()
-    {
-        var vm = Create(Stored);
-
-        vm.Name.Should().Be("Backups");
-        vm.Region.Should().Be("eu-central-1");
-        vm.Bucket.Should().Be("my-bucket");
-        vm.AccessKeyId.Should().Be("AKIA1");
-        vm.Secret.Should().BeEmpty();
-        vm.SecretPlaceholderKey.Should().Be("s3.secret.unchanged");
-        vm.Errors.Should().BeEmpty();
-
-        vm.SaveCommand.Execute(null);
-
-        vm.Result.Should().Be(Stored with { Secret = null });
-    }
-
-    [Fact]
-    public void Has_secret_input_follows_the_secret_field_and_is_raised()
-    {
-        var vm = Create(Stored);
-        var raised = new List<string?>();
-        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
-
-        vm.HasSecretInput.Should().BeFalse();
-        vm.Secret = "typed";
-        vm.HasSecretInput.Should().BeTrue();
-        raised.Should().Contain(nameof(vm.HasSecretInput));
-        vm.Secret = "";
-        vm.HasSecretInput.Should().BeFalse();
-    }
-
-    [Fact]
-    public void A_new_secret_replaces_the_stored_one()
-    {
-        var vm = Create(Stored);
-
-        vm.Secret = "new-secret";
-        vm.SaveCommand.Execute(null);
-
-        vm.Result.Should().Be(Stored with { Secret = "new-secret" });
-    }
-
-    [Fact]
-    public void A_connection_whose_secret_cannot_be_decrypted_needs_it_again()
-    {
-        var vm = Create(Stored with { Secret = null });
-
-        vm.SecretPlaceholderKey.Should().Be("s3.secret.reenter");
-        vm.Errors.Should().Equal("s3.error.secretRequired");
-
-        vm.Secret = "again";
-        vm.Errors.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void A_changed_access_key_needs_its_secret()
-    {
-        var vm = Create(Stored);
-        var raised = new List<string?>();
-        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
-
-        vm.AccessKeyId = "AKIA2";
-
-        vm.Errors.Should().Equal("s3.error.secretRequired");
-        vm.SecretPlaceholderKey.Should().BeNull("the stored secret belongs to the old key");
-        raised.Should().Contain(nameof(vm.SecretPlaceholderKey));
-        vm.SaveCommand.CanExecute(null).Should().BeFalse();
-        vm.TestCommand.CanExecute(null).Should().BeFalse();
-
-        vm.Secret = "secret-2";
-        vm.Errors.Should().BeEmpty();
-        vm.SaveCommand.Execute(null);
-        vm.Result.Should().Be(Stored with { AccessKeyId = "AKIA2", Secret = "secret-2" });
-    }
-
-    [Fact]
-    public void Restoring_the_access_key_keeps_the_stored_secret_again()
-    {
-        var vm = Create(Stored);
-
-        vm.AccessKeyId = "AKIA2";
-        vm.AccessKeyId = " AKIA1 ";
-
-        vm.Errors.Should().BeEmpty();
-        vm.SecretPlaceholderKey.Should().Be("s3.secret.unchanged");
-    }
-
-    [Fact]
     public void Save_trims_the_fields_and_gives_a_new_connection_an_id()
     {
         var vm = Create();
@@ -272,7 +186,7 @@ public class S3ConnectionDialogViewModelTests
 
         saved.Should().BeTrue();
         vm.Result!.Id.Should().NotBeNullOrWhiteSpace();
-        vm.Result.Should().Be(new S3Connection(vm.Result.Id, "Backups", "eu-central-1", "my-bucket", "AKIA1", "secret"));
+        vm.Result.Should().Be(new S3ConnectionInfo(vm.Result.Id, "Backups", "eu-central-1", "my-bucket", "acc-1"));
     }
 
     [Fact]
@@ -322,17 +236,6 @@ public class S3ConnectionDialogViewModelTests
     }
 
     [Fact]
-    public async Task An_unchanged_secret_is_tested_with_the_stored_one()
-    {
-        var (vm, _, tested) = CreateWithFake(Stored);
-
-        await vm.TestCommand.ExecuteAsync(null);
-
-        tested.Should().ContainSingle().Which.Secret.Should().Be("stored-secret");
-        vm.Results.Should().HaveCount(5);
-    }
-
-    [Fact]
     public void Test_needs_the_bucket_fields_but_not_the_name()
     {
         var (vm, _, _) = CreateWithFake();
@@ -340,7 +243,7 @@ public class S3ConnectionDialogViewModelTests
 
         vm.Name = "";
         vm.TestCommand.CanExecute(null).Should().BeTrue();
-        vm.Secret = "";
+        vm.SelectedAccount = null;
         vm.TestCommand.CanExecute(null).Should().BeFalse();
     }
 
@@ -376,6 +279,134 @@ public class S3ConnectionDialogViewModelTests
         await vm.TestCommand.ExecuteAsync(null);
 
         vm.Bucket = "other-bucket";
+
+        vm.Results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Editing_selects_the_connection_account()
+    {
+        var vm = Create(Stored with { AccountId = "ACC-1" });
+
+        vm.Name.Should().Be("Backups");
+        vm.Region.Should().Be("eu-central-1");
+        vm.Bucket.Should().Be("my-bucket");
+        vm.SelectedAccount.Should().BeSameAs(vm.Accounts[0]);
+        vm.Errors.Should().BeEmpty();
+
+        vm.SaveCommand.Execute(null);
+
+        vm.Result.Should().Be(Stored, "the account id is the one of the chosen account");
+    }
+
+    [Fact]
+    public void Choosing_another_account_saves_its_id()
+    {
+        var vm = Create(Stored);
+
+        vm.SelectedAccount = vm.Accounts[1];
+        vm.SaveCommand.Execute(null);
+
+        vm.Result.Should().Be(Stored with { AccountId = "acc-2" });
+    }
+
+    [Fact]
+    public void Missing_account_requires_choosing_one()
+    {
+        // The connection's account was deleted elsewhere (or the list is from another file state).
+        var vm = Create(Stored with { AccountId = "gone" });
+
+        vm.SelectedAccount.Should().BeNull();
+        vm.Errors.Should().Equal("s3.error.accountRequired");
+        vm.AccountHintKey.Should().Be("s3.error.accountRequired");
+        vm.SaveCommand.CanExecute(null).Should().BeFalse();
+        vm.TestCommand.CanExecute(null).Should().BeFalse();
+
+        vm.SelectedAccount = vm.Accounts[1];
+
+        vm.Errors.Should().BeEmpty();
+        vm.AccountHintKey.Should().BeNull();
+    }
+
+    [Fact]
+    public void Account_ids_and_connection_ids_are_separate()
+    {
+        // After a migration an account can have the id of a connection: only the connection's AccountId selects it.
+        var accounts = new[] { new S3Account("id-1", "Same id", "AKIA9", "s"), Main };
+
+        var vm = Create(Stored, accounts: accounts);
+
+        vm.SelectedAccount!.Name.Should().Be("Main");
+    }
+
+    [Fact]
+    public void New_account_selects_the_created_account()
+    {
+        var created = new S3Account("acc-3", "Third", "AKIA3", "s3");
+        var accounts = new List<S3Account> { Main, Spare };
+        var vm = new S3ConnectionDialogViewModel(null, _ => false, new S3ConnectionTester(_ => FakeS3Client.Create().Client),
+            () => accounts.ToList(), () =>
+            {
+                accounts.Add(created);
+                return created;
+            });
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.NewAccountCommand.Execute(null);
+
+        vm.Accounts.Select(a => a.Id).Should().Equal("acc-1", "acc-2", "acc-3");
+        vm.SelectedAccount.Should().Be(created);
+        raised.Should().Contain(nameof(vm.SelectedAccount));
+        vm.Errors.Should().NotContain("s3.error.accountRequired");
+    }
+
+    [Fact]
+    public void A_cancelled_new_account_keeps_the_selection()
+    {
+        var vm = Create(Stored);
+
+        vm.NewAccountCommand.Execute(null);
+
+        vm.SelectedAccount.Should().Be(Main);
+        vm.Accounts.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void An_account_that_needs_its_secret_disables_the_test()
+    {
+        var locked = Main with { Secret = null };
+        var vm = Create(Stored, accounts: [locked]);
+
+        vm.SelectedAccount.Should().Be(locked);
+        vm.AccountHintKey.Should().Be("s3.account.needsSecret");
+        vm.TestCommand.CanExecute(null).Should().BeFalse();
+        vm.Errors.Should().BeEmpty("the connection itself can still be saved");
+        vm.SaveCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Test_resolves_the_chosen_account()
+    {
+        var (vm, _, tested) = CreateWithFake(Stored);
+        vm.SelectedAccount = vm.Accounts[1];
+        vm.Bucket = "other-bucket";
+
+        await vm.TestCommand.ExecuteAsync(null);
+
+        tested.Should().ContainSingle().Which.Should().Be(
+            new S3Connection("id-1", "Backups", "eu-central-1", "other-bucket", "AKIA2", "spare-secret"));
+        vm.Results.Should().HaveCount(5);
+    }
+
+    [Fact]
+    public async Task Choosing_another_account_clears_the_old_results()
+    {
+        var (vm, _, _) = CreateWithFake(Stored);
+        await vm.TestCommand.ExecuteAsync(null);
+        vm.Results.Should().NotBeEmpty();
+
+        vm.SelectedAccount = vm.Accounts[1];
 
         vm.Results.Should().BeEmpty();
     }

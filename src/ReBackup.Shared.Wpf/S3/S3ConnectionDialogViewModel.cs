@@ -8,8 +8,9 @@ using ReBackup.Storage.S3.Connections;
 namespace ReBackup.Shared.Wpf.S3;
 
 /// <summary>
-/// The logic of <see cref="S3ConnectionDialog"/>: fields, validation, the optional connection test and the result.
-/// Holds the secret in memory only and never writes it anywhere; testable without a window.
+/// The logic of <see cref="S3ConnectionDialog"/>: name, region, bucket, the account whose key opens the bucket, validation,
+/// the optional connection test and the result. The secret stays in the chosen <see cref="S3Account"/> (memory only);
+/// testable without a window.
 /// </summary>
 public sealed partial class S3ConnectionDialogViewModel : ObservableObject
 {
@@ -18,37 +19,47 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     public const string RegionRequiredKey = "s3.error.regionRequired";
     public const string RegionInvalidKey = "s3.error.regionInvalid";
     public const string BucketInvalidKey = "s3.error.bucketInvalid";
-    public const string AccessKeyRequiredKey = "s3.error.accessKeyRequired";
-    public const string SecretRequiredKey = "s3.error.secretRequired";
-    public const string SecretUnchangedKey = "s3.secret.unchanged";
-    public const string SecretReenterKey = "s3.secret.reenter";
+    public const string AccountRequiredKey = "s3.error.accountRequired";
+    public const string AccountNeedsSecretKey = "s3.account.needsSecret";
     public const string TestCancelledKey = "s3.test.cancelled";
     public const string TestErrorKey = "s3.test.error";
 
     /// <summary>S3 bucket naming: 3–63 characters, lowercase letters, digits, dots and hyphens, starting and ending with a letter or digit.</summary>
     private static readonly Regex BucketPattern = new("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", RegexOptions.CultureInvariant);
 
-    private readonly S3Connection? _existing;
+    private readonly S3ConnectionInfo? _existing;
     private readonly Func<string, bool> _isNameTaken;
     private readonly S3ConnectionTester _tester;
+    private readonly Func<IReadOnlyList<S3Account>> _accounts;
+    private readonly Func<S3Account?> _createAccount;
     private CancellationTokenSource? _testCts;
 
     /// <param name="existing">The connection to edit; <c>null</c> for a new one.</param>
     /// <param name="isNameTaken">Whether another of the app's connections already has the name (the unchanged name of <paramref name="existing"/> is always allowed).</param>
     /// <param name="tester">Runs "Test connection".</param>
-    public S3ConnectionDialogViewModel(S3Connection? existing, Func<string, bool> isNameTaken, S3ConnectionTester tester)
+    /// <param name="accounts">The stored accounts; read again after "New account…".</param>
+    /// <param name="createAccount">"New account…": opens the account dialog and stores the account; the stored account, or <c>null</c> when cancelled.</param>
+    public S3ConnectionDialogViewModel(S3ConnectionInfo? existing, Func<string, bool> isNameTaken, S3ConnectionTester tester,
+        Func<IReadOnlyList<S3Account>> accounts, Func<S3Account?> createAccount)
     {
         ArgumentNullException.ThrowIfNull(isNameTaken);
         ArgumentNullException.ThrowIfNull(tester);
+        ArgumentNullException.ThrowIfNull(accounts);
+        ArgumentNullException.ThrowIfNull(createAccount);
         _existing = existing;
         _isNameTaken = isNameTaken;
         _tester = tester;
+        _accounts = accounts;
+        _createAccount = createAccount;
+        foreach (var account in accounts())
+            Accounts.Add(account);
         if (existing is not null)
         {
             _name = existing.Name;
             _region = existing.Region;
             _bucket = existing.Bucket;
-            _accessKeyId = existing.AccessKeyId;
+            // Looked up among the accounts only (a connection id may equal an account id after a migration); a missing account selects nothing.
+            _selectedAccount = Accounts.FirstOrDefault(a => SameId(a.Id, existing.AccountId));
         }
     }
 
@@ -67,16 +78,11 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand))]
     private string _bucket = "";
 
+    /// <summary>The account whose key opens the bucket; <c>null</c> until one is chosen, or when the stored one no longer exists.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Errors), nameof(SecretPlaceholderKey))]
+    [NotifyPropertyChangedFor(nameof(Errors), nameof(AccountHintKey))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand))]
-    private string _accessKeyId = "";
-
-    /// <summary>The secret as typed (pushed from the PasswordBox); empty with <see cref="SecretUnchangedKey"/> keeps the stored one.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Errors), nameof(HasSecretInput))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand))]
-    private string _secret = "";
+    private S3Account? _selectedAccount;
 
     /// <summary>Whether the test writes and deletes a test object.</summary>
     [ObservableProperty]
@@ -84,15 +90,15 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEditable))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand), nameof(CancelTestCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand), nameof(CancelTestCommand), nameof(NewAccountCommand))]
     private bool _isTesting;
 
     /// <summary>How the last test ended when it has no results: <see cref="TestCancelledKey"/>, <see cref="TestErrorKey"/> or <c>null</c>.</summary>
     [ObservableProperty]
     private string? _testStatusKey;
 
-    /// <summary>Something is typed in the secret field (hides its placeholder; the dialog binds this, never the secret).</summary>
-    public bool HasSecretInput => Secret.Length > 0;
+    /// <summary>The accounts to choose from, in file order.</summary>
+    public ObservableCollection<S3Account> Accounts { get; } = [];
 
     /// <summary>True for a new connection (the dialog's title).</summary>
     public bool IsNew => _existing is null;
@@ -103,15 +109,8 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     /// <summary>The results of the last test, one per check; cleared when a tested field changes.</summary>
     public ObservableCollection<S3CheckResult> Results { get; } = [];
 
-    /// <summary>
-    /// The hint in the empty secret field: <see cref="SecretUnchangedKey"/>, <see cref="SecretReenterKey"/> (stored secret lost) or
-    /// <c>null</c> (new connection, or the access key was changed: the stored secret belongs to the old one).
-    /// </summary>
-    public string? SecretPlaceholderKey =>
-        _existing is null || !KeepsAccessKey ? null : _existing.NeedsSecret ? SecretReenterKey : SecretUnchangedKey;
-
-    /// <summary>The connection as saved; <c>Secret</c> is <c>null</c> when the stored secret stays unchanged. Set by <see cref="SaveCommand"/>.</summary>
-    public S3Connection? Result { get; private set; }
+    /// <summary>The connection as saved, with the chosen account's id. Set by <see cref="SaveCommand"/>.</summary>
+    public S3ConnectionInfo? Result { get; private set; }
 
     /// <summary>Raised after <see cref="SaveCommand"/> set <see cref="Result"/>; the dialog closes.</summary>
     public event EventHandler? Saved;
@@ -129,8 +128,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
             if (region.Length == 0) errors.Add(RegionRequiredKey);
             else if (!S3Regions.IsValid(region)) errors.Add(RegionInvalidKey);
             if (!BucketPattern.IsMatch(Bucket.Trim())) errors.Add(BucketInvalidKey);
-            if (AccessKeyId.Trim().Length == 0) errors.Add(AccessKeyRequiredKey);
-            if (SecretRequired && Secret.Trim().Length == 0) errors.Add(SecretRequiredKey);
+            if (SelectedAccount is null) errors.Add(AccountRequiredKey);
             return errors;
         }
     }
@@ -144,10 +142,16 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     /// <summary>The error shown below the bucket: only once something is typed.</summary>
     public string? BucketHintKey => Bucket.Trim().Length > 0 && Errors.Contains(BucketInvalidKey) ? BucketInvalidKey : null;
 
-    /// <summary>An empty secret keeps the stored one only for an existing connection that has one and still uses its access key.</summary>
-    private bool SecretRequired => _existing is null || _existing.NeedsSecret || !KeepsAccessKey;
-
-    private bool KeepsAccessKey => _existing is not null && string.Equals(AccessKeyId.Trim(), _existing.AccessKeyId, StringComparison.Ordinal);
+    /// <summary>
+    /// The hint below the account: <see cref="AccountRequiredKey"/> when an edited connection's account no longer exists,
+    /// <see cref="AccountNeedsSecretKey"/> when the chosen account's secret has to be entered again (Test is disabled), else <c>null</c>.
+    /// </summary>
+    public string? AccountHintKey => SelectedAccount switch
+    {
+        null => _existing is not null ? AccountRequiredKey : null,
+        { NeedsSecret: true } => AccountNeedsSecretKey,
+        _ => null,
+    };
 
     private bool IsOwnName(string name) => _existing is not null && string.Equals(name, _existing.Name, StringComparison.OrdinalIgnoreCase);
 
@@ -156,14 +160,14 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSave))]
     private void Save()
     {
-        var secret = Secret.Trim();
-        Result = new S3Connection(_existing?.Id ?? Guid.NewGuid().ToString("N"), Name.Trim(), Region.Trim(), Bucket.Trim(),
-            AccessKeyId.Trim(), secret.Length > 0 ? secret : null);
+        Result = new S3ConnectionInfo(_existing?.Id ?? Guid.NewGuid().ToString("N"), Name.Trim(), Region.Trim(), Bucket.Trim(),
+            SelectedAccount!.Id);
         Saved?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>The test needs everything but the name.</summary>
-    private bool CanTest() => !IsTesting && Errors.All(key => key is NameRequiredKey or NameTakenKey);
+    /// <summary>The test needs everything but the name, and an account with a usable secret.</summary>
+    private bool CanTest() =>
+        !IsTesting && SelectedAccount is { NeedsSecret: false } && Errors.All(key => key is NameRequiredKey or NameTakenKey);
 
     [RelayCommand(CanExecute = nameof(CanTest))]
     private async Task TestAsync()
@@ -175,7 +179,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
         IsTesting = true;
         try
         {
-            var results = await _tester.RunAsync(ConnectionToTest(), CheckWrite, cts.Token);
+            var results = await _tester.RunAsync(ConnectionToTest(SelectedAccount!), CheckWrite, cts.Token);
             foreach (var result in results)
                 Results.Add(result);
         }
@@ -195,16 +199,29 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
         }
     }
 
-    /// <summary>The fields as a connection; an empty secret means the stored one.</summary>
-    private S3Connection ConnectionToTest()
-    {
-        var secret = Secret.Trim();
-        return new S3Connection(_existing?.Id ?? "", Name.Trim(), Region.Trim(), Bucket.Trim(), AccessKeyId.Trim(),
-            secret.Length > 0 ? secret : SecretRequired ? null : _existing?.Secret);
-    }
+    /// <summary>The fields resolved with the chosen account; <see cref="CanTest"/> ensures it has its secret.</summary>
+    private S3Connection ConnectionToTest(S3Account account) =>
+        S3ConnectionResolver.Resolve(new S3ConnectionInfo(_existing?.Id ?? "", Name.Trim(), Region.Trim(), Bucket.Trim(), account.Id), account)!;
 
     [RelayCommand(CanExecute = nameof(IsTesting))]
     private void CancelTest() => _testCts?.Cancel();
+
+    /// <summary>"New account…": the account list is read again and the created account chosen.</summary>
+    [RelayCommand(CanExecute = nameof(IsEditable))]
+    private void NewAccount()
+    {
+        if (_createAccount() is not { } created) return;
+        Accounts.Clear();
+        foreach (var account in _accounts())
+            Accounts.Add(account);
+        var match = Accounts.FirstOrDefault(a => SameId(a.Id, created.Id));
+        if (match is null)
+        {
+            match = created;
+            Accounts.Add(created);
+        }
+        SelectedAccount = match;
+    }
 
     /// <summary>Applies the region a region warning names.</summary>
     [RelayCommand]
@@ -218,9 +235,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
 
     partial void OnBucketChanged(string value) => ClearResults();
 
-    partial void OnAccessKeyIdChanged(string value) => ClearResults();
-
-    partial void OnSecretChanged(string value) => ClearResults();
+    partial void OnSelectedAccountChanged(S3Account? value) => ClearResults();
 
     private void ClearResults()
     {
@@ -228,4 +243,6 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
         Results.Clear();
         TestStatusKey = null;
     }
+
+    private static bool SameId(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

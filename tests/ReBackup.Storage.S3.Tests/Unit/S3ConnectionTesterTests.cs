@@ -365,6 +365,79 @@ public class S3ConnectionTesterTests
         results.Should().OnlyContain(r => !(r.MessageKey ?? "").Contains("super-secret") && !(r.Detail ?? "").Contains("super-secret"));
     }
 
+    // ---- account check ----
+
+    private static readonly S3Account Acc = new("acc", "Account", "AKIA", "super-secret");
+
+    [Fact]
+    public async Task Account_whose_keys_list_buckets_is_ok_and_uses_us_east_1()
+    {
+        var (client, fake) = FakeS3Client.Create();
+        S3Connection? used = null;
+        var tester = new S3ConnectionTester(c =>
+        {
+            used = c;
+            return client;
+        });
+
+        var result = await tester.RunAccountAsync(Acc, Ct);
+
+        result.Should().Be(new S3CheckResult(S3Check.Account, S3CheckState.Ok, S3MessageKeys.Ok, null));
+        fake.ListBucketsCalls.Should().Be(1);
+        used!.Region.Should().Be("us-east-1");
+        used.AccessKeyId.Should().Be("AKIA");
+        used.Secret.Should().Be("super-secret");
+        fake.Disposed.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("AccessDenied", HttpStatusCode.Forbidden, S3CheckState.Warning, S3MessageKeys.AccountNoList)]
+    [InlineData("InvalidAccessKeyId", HttpStatusCode.Forbidden, S3CheckState.Failed, S3MessageKeys.AccessDenied)]
+    [InlineData("SignatureDoesNotMatch", HttpStatusCode.Forbidden, S3CheckState.Failed, S3MessageKeys.AccessDenied)]
+    [InlineData("InternalError", HttpStatusCode.InternalServerError, S3CheckState.Failed, S3MessageKeys.Unavailable)]
+    public async Task Account_errors_are_classified(string code, HttpStatusCode status, S3CheckState state, string key)
+    {
+        var (client, fake) = FakeS3Client.Create();
+        fake.Failures["ListBucketsAsync"] = S3(code, status);
+
+        var result = await new S3ConnectionTester(_ => client).RunAccountAsync(Acc, Ct);
+
+        result.Should().Be(new S3CheckResult(S3Check.Account, state, key, null));
+    }
+
+    [Fact]
+    public async Task Account_network_failure_is_unavailable()
+    {
+        var (client, fake) = FakeS3Client.Create();
+        fake.Failures["ListBucketsAsync"] = new HttpRequestException("no route super-secret");
+
+        var result = await new S3ConnectionTester(_ => client).RunAccountAsync(Acc, Ct);
+
+        result.Should().Be(new S3CheckResult(S3Check.Account, S3CheckState.Failed, S3MessageKeys.Unavailable, null));
+    }
+
+    [Fact]
+    public async Task Account_check_cancellation_propagates()
+    {
+        var (client, fake) = FakeS3Client.Create();
+        using var cts = new CancellationTokenSource();
+        fake.Failures["ListBucketsAsync"] = new OperationCanceledException(cts.Token);
+        await cts.CancelAsync();
+
+        var act = () => new S3ConnectionTester(_ => client).RunAccountAsync(Acc, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        fake.Disposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Account_without_secret_is_rejected()
+    {
+        var (tester, _) = Create();
+        var act = () => tester.RunAccountAsync(Acc with { Secret = null }, Ct);
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
     [Fact]
     public async Task Cancellation_propagates()
     {
@@ -426,7 +499,7 @@ public class S3ConnectionTesterTests
         // The default client factory: the SDK would throw its own exception or build a bogus endpoint.
         var results = await new S3ConnectionTester().RunAsync(Conn with { Region = region }, checkWrite: true, Ct);
 
-        results.Select(r => r.Check).Should().Equal(Enum.GetValues<S3Check>());
+        results.Select(r => r.Check).Should().Equal(S3Check.Bucket, S3Check.Versioning, S3Check.List, S3Check.WriteDelete, S3Check.Lifecycle);
         Of(results, S3Check.Bucket).Should().Be(new S3CheckResult(S3Check.Bucket, S3CheckState.Failed, S3MessageKeys.RegionInvalid, null));
         results.Where(r => r.Check != S3Check.Bucket).Should().OnlyContain(r => r.State == S3CheckState.Skipped && r.MessageKey == S3MessageKeys.Skipped);
     }

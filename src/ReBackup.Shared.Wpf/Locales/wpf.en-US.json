@@ -23,12 +23,42 @@
       "save": "Save",
       "cancel": "Cancel"
     },
+    "accountDialog": {
+      "titleNew": "Add S3 account",
+      "titleEdit": "Edit S3 account"
+    },
+    "account": {
+      "new": "New account…",
+      "needsSecret": "The secret of this account must be entered again (S3 accounts) before the connection can be tested."
+    },
+    "accountTest": {
+      "run": "Test access key"
+    },
+    "accounts": {
+      "title": "S3 accounts",
+      "add": "Add…",
+      "edit": "Edit…",
+      "delete": "Delete",
+      "close": "Close",
+      "empty": "No accounts yet.",
+      "needsSecret": "Secret must be entered again",
+      "usedBy": { "one": "{count} connection", "other": "{count:N0} connections" },
+      "inUse": "This account cannot be deleted while these connections use it:",
+      "deleteTitle": "Delete account",
+      "deleteConfirm": "Delete the account “{name}”?",
+      "saveFailed": "The account could not be saved.",
+      "loadFailed": "The S3 connection file cannot be read; it is left unchanged.",
+      "column": {
+        "usedBy": "Used by"
+      }
+    },
     "field": {
       "name": "Name",
       "region": "Region",
       "bucket": "Bucket",
       "accessKeyId": "Access key ID",
-      "secret": "Secret access key"
+      "secret": "Secret access key",
+      "account": "Account"
     },
     "secret": {
       "unchanged": "Unchanged",
@@ -36,12 +66,13 @@
     },
     "error": {
       "nameRequired": "Enter a name.",
-      "nameTaken": "Another connection already has this name.",
+      "nameTaken": "This name is already taken.",
       "regionRequired": "Choose a region.",
       "regionInvalid": "Enter an AWS region name such as eu-central-1.",
       "bucketInvalid": "A bucket name has 3–63 characters: lowercase letters, digits, dots and hyphens, starting and ending with a letter or digit.",
       "accessKeyRequired": "Enter the access key ID.",
-      "secretRequired": "Enter the secret access key."
+      "secretRequired": "Enter the secret access key.",
+      "accountRequired": "Choose an account."
     },
     "test": {
       "run": "Test connection",
@@ -52,6 +83,7 @@
       "error": "The test could not run.",
       "useRegion": "Use {region}",
       "check": {
+        "account": "Access key",
         "bucket": "Bucket",
         "versioning": "Versioning",
         "list": "List",
@@ -70,7 +102,8 @@
       "lifecycleMissing": "No lifecycle rule cleans up incomplete multipart uploads (recommended: abort them after 7 days).",
       "versioningEnabled": "Versioning is on or suspended: deleting old backups adds delete markers and frees no space, unless a lifecycle rule expires noncurrent versions.",
       "notCheckable": "Cannot be checked with these permissions.",
-      "skipped": "Not checked."
+      "skipped": "Not checked.",
+      "accountNoList": "The key is valid but may not list buckets (normal for keys limited to certain buckets)."
     }
   }
 }
