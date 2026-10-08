@@ -1,7 +1,7 @@
 # S3 Storage Provider — Design
 
 Date: 2026-10-08
-Status: Approved (brainstorming), pending spec review
+Status: Approved; amended during implementation (2026-10-08)
 
 ## 1. Purpose
 
@@ -68,7 +68,7 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 
 ## 5. S3Storage
 
-`S3Storage(S3Connection connection, string prefix, IAmazonS3? client = null)` — the client is created from region + credentials when not given (tests inject one). The prefix is validated with `StoragePath.Validate` (`""` = whole bucket).
+`S3Storage(S3Connection connection, string prefix, IAmazonS3 client)` — the client is required and not owned by the storage (it is never disposed there); `S3StorageFactory` creates, caches and disposes the clients, tests inject a fake. The prefix is validated with `StoragePath.Validate` (`""` = whole bucket).
 
 **Capabilities:** `CaseSensitive` only.
 
@@ -79,7 +79,7 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 | `StatAsync` | `HeadObject` → file entry (`Size`, `ModifiedUtc` = `LastModified` UTC, `Stamp` = ETag). Not found → `ListObjectsV2(prefix = key + "/", MaxKeys = 1)`: any result → directory entry, else `null`. `""` → directory entry (bucket verified by a `ListObjectsV2` with `MaxKeys = 1`). |
 | `ListAsync` | Paged `ListObjectsV2`. Non-recursive: `Delimiter = "/"`, `CommonPrefixes` → directories. Recursive: no delimiter, each distinct parent prefix emitted once as a directory. Paths are relative to the storage prefix. A non-root folder with no objects → `StorageNotFoundException`; the root prefix with no objects is an existing empty folder. Results reflect the listing pages as fetched (may or may not include concurrent changes). |
 | `OpenReadAsync` | `GetObject` response stream wrapped so read errors map through `S3Errors`. Not seekable. `InvalidObjectState` (Glacier/Deep Archive) → `StorageIOException` whose message says the object is archived and must be restored first. |
-| `CreateAsync` | `Overwrite = false`: `HeadObject` first; existing → `StorageConflictException`. Returns an `S3Writer`. `ModifiedUtc` and `Durable` are ignored. |
+| `CreateAsync` | `Overwrite = false`: `HeadObject` first; existing → `StorageConflictException`; 403 → existence unknown, go ahead (without an effective `s3:ListBucket` S3 answers a missing key with 403, not 404) — the conditional commit (`If-None-Match: *`) is the authority. Returns an `S3Writer`. `ModifiedUtc` and `Durable` are ignored. |
 | `DeleteAsync` | `DeleteObjects` in batches of 1000; missing keys are not errors. A path that is a directory with objects under it → `StorageConflictException`; a lone placeholder `x/` is deleted. `""` → `StorageConflictException`. Never recursive. |
 | `EnsureDirectoryAsync` | No-op. |
 | `GetFreeSpaceAsync` | `null`. |
@@ -106,15 +106,15 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 
 ## 7. S3StorageFactory
 
-`S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections)`: kind `"s3"` → looks up `location.ConnectionId`; missing → `StorageNotFoundException` ("connection not found"); `Secret == null` → `StorageAccessDeniedException` ("secret must be re-entered"); else `new S3Storage(connection, location.Path)`. Other kinds → `inner.Open(location)`. The factory caches one client per connection (keyed by `Id`, `Region`, `AccessKeyId` and `Secret`, so an edited connection gets a new client) and is `IDisposable`; disposing it disposes the cached clients.
+`S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections)`: kind `"s3"` → looks up `location.ConnectionId`; missing → `StorageNotFoundException` ("connection not found"); `Secret == null` → `StorageAccessDeniedException` ("secret must be re-entered"); a region that is no AWS region name (hand-edited `connections.json`) → `StorageIOException` ("region is invalid"); else `new S3Storage(connection, location.Path, cachedClient)`. Other kinds → `inner.Open(location)`. The factory caches one client per connection (keyed by `Id`, `Region`, `AccessKeyId` and `Secret`, so an edited connection gets a new client) and is `IDisposable`; disposing it disposes the cached clients.
 
 ## 8. Connection tester
 
-`S3ConnectionTester.RunAsync(S3Connection, bool checkWrite, CancellationToken) → IReadOnlyList<S3CheckResult>`; `S3CheckResult(S3Check Check, S3CheckState State, string? MessageKey, string? Detail)`, states `Ok | Failed | Warning | Skipped`.
+`S3ConnectionTester.RunAsync(S3Connection, bool checkWrite, CancellationToken) → IReadOnlyList<S3CheckResult>`, and an overload `RunAsync(S3Connection, string prefix, bool checkWrite, CancellationToken)` that scopes List and Write + delete to a prefix (validated as a storage path; `""` = whole bucket) for access keys limited to one prefix — connections hold no prefix, so the dialog tests the whole bucket; `S3CheckResult(S3Check Check, S3CheckState State, string? MessageKey, string? Detail)`, states `Ok | Failed | Warning | Skipped`.
 
 1. **Credentials + bucket:** `HeadBucket`. A region mismatch (the bucket's region ≠ connection region) → `Warning` with `Detail` = the bucket's region. The region is read from the response's `BucketRegion` or, when the call fails with a wrong-region error, from the `x-amz-bucket-region` header of that error.
-2. **List:** `ListObjectsV2(MaxKeys = 1)`.
-3. **Write + delete** (only when `checkWrite`, else `Skipped`): put `.rebackup-connection-test-<guid>` (empty), then delete it. When the put fails or the test is cancelled, the test object is still deleted best-effort (own short timeout, errors ignored).
+2. **List:** `ListObjectsV2(MaxKeys = 1)`, with `Prefix = prefix + "/"` when a prefix is given.
+3. **Write + delete** (only when `checkWrite`, else `Skipped`): put `[prefix/].rebackup-connection-test-<guid>` (empty), then delete it. When the put fails or the test is cancelled, the test object is still deleted best-effort (own short timeout, errors ignored).
 4. **Lifecycle:** `GetLifecycleConfiguration`; no rule with `AbortIncompleteMultipartUpload` → `Warning`; access denied → `Skipped` ("cannot be checked").
 
 A failed check stops the following ones (they become `Skipped`), except that 4 runs whenever 1 succeeded.
@@ -123,7 +123,7 @@ A failed check stops the following ones (they become `Skipped`), except that 4 r
 
 Fields: Name (required, unique among the app's connections — uniqueness check supplied by the caller), Region (editable combo of AWS regions), Bucket (required, S3 naming rules: 3–63 chars, lowercase letters, digits, `.`, `-`, starts/ends with letter or digit), Access key ID (required), Secret (`PasswordBox`).
 
-- Editing: Secret empty with placeholder "unchanged" keeps the stored secret; when the stored secret is not decryptable the placeholder says "re-enter secret" and the field is required.
+- Editing: Secret empty with placeholder "unchanged" keeps the stored secret; when the stored secret is not decryptable the placeholder says "re-enter secret" and the field is required. When the access key ID is changed, the stored secret no longer applies: the secret is required and the placeholder is empty.
 - "Test connection": runs the tester asynchronously with a Cancel button, checkbox "Check write and delete permission" (default on), shows one row per check with ✓ / ✗ / ! / – and the translated reason; a region warning offers "Use <region>".
 - Save is enabled when all required fields are valid; testing is optional.
 - All texts in `wpf.en-US.json` / `wpf.de-DE.json`. The view model holds the logic and is testable without a window.
@@ -137,7 +137,7 @@ Fields: Name (required, unique among the app's connections — uniqueness check 
 
 ## 11. Documentation
 
-README section "Amazon S3": minimum IAM permissions (`s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload` (the writer aborts an unfinished multipart upload; AWS checks it separately from `s3:PutObject`), optional `s3:GetLifecycleConfiguration`), the recommended lifecycle rule "abort incomplete multipart uploads after 7 days", and that secrets are bound to the Windows account (DPAPI).
+README section "Amazon S3": minimum IAM permissions (`s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload` (the writer aborts an unfinished multipart upload; AWS checks it separately from `s3:PutObject`), optional `s3:GetLifecycleConfiguration`; `s3:ListBucket` must be granted on the whole bucket without an `s3:prefix` condition, otherwise "not found" turns into "access denied"), the recommended lifecycle rule "abort incomplete multipart uploads after 7 days", and that secrets are bound to the Windows account (DPAPI).
 
 ## 12. Implementation order
 

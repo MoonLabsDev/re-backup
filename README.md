@@ -187,7 +187,11 @@ whether the bucket has the recommended lifecycle rule. If the bucket is in a dif
 
 **Minimum IAM permissions.** The access key needs these actions on the bucket (`s3:GetLifecycleConfiguration` is
 optional; without it the test reports the lifecycle rule as *cannot be checked*). `s3:AbortMultipartUpload` lets an
-interrupted upload of a large file clean up its parts; AWS checks it separately from `s3:PutObject`:
+interrupted upload of a large file clean up its parts; AWS checks it separately from `s3:PutObject`.
+Grant `s3:ListBucket` on the whole bucket, without an `s3:prefix` condition, even when the access key should only use
+one folder (prefix) of a shared bucket; limit the object actions to that prefix instead (for example
+`arn:aws:s3:::my-backup-bucket/wp/elvora/*`). Without an effective `s3:ListBucket`, S3 answers a request for a missing
+file with "access denied" instead of "not found":
 
 ```json
 {
