@@ -119,7 +119,7 @@ public class S3WriterTests
         fake.Parts.Should().OnlyContain(p => p.PartSize == p.Body.Length);
         var complete = fake.Completes.Should().ContainSingle().Subject;
         complete.UploadId.Should().Be("upload-1");
-        complete.PartETags.Select(p => (p.PartNumber, p.ETag)).Should().Equal((1, "\"part1\""), (2, "\"part2\""), (3, "\"part3\""));
+        complete.PartETags.Select(p => (p.PartNumber, p.ETag)).Should().Equal(fake.Parts.Select(p => ((int?)p.PartNumber, FakeS3Client.Quote(FakeS3Client.Md5Hex(p.Body)))));
         fake.Objects.Single(o => o.Key == "p/big.bin").Body.Should().Equal(data);
         fake.Aborts.Should().BeEmpty();
     }
@@ -194,6 +194,180 @@ public class S3WriterTests
         (await commitBig.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("big");
         await big.DisposeAsync();
         fake.Aborts.Should().ContainSingle().Which.UploadId.Should().Be("upload-1");
+    }
+
+    [Fact]
+    public async Task Exclusive_put_whose_retry_meets_its_own_object_succeeds()
+    {
+        // The SDK retried a PutObject whose first attempt had succeeded: the retry gets 412 for our own object.
+        var (s, fake) = Make();
+        fake.RetryAfterSuccess = true;
+        var data = Data(1000);
+
+        await using (var writer = await s.CreateAsync("small", new CreateOptions(), Ct))
+        {
+            await writer.WriteAsync(data, Ct);
+            await writer.CommitAsync(Ct);
+            writer.CanWrite.Should().BeFalse("the commit counts as done");
+        }
+
+        fake.HeadRequests.Should().HaveCount(2).And.OnlyContain(h => h.Key == "p/small"); // create check + proof
+        fake.Objects.Single().Body.Should().Equal(data);
+    }
+
+    [Fact]
+    public async Task Exclusive_multipart_whose_retry_meets_its_own_object_succeeds()
+    {
+        var (s, fake) = Make();
+        fake.RetryAfterSuccess = true;
+
+        await using (var writer = await s.CreateAsync("big", new CreateOptions(), Ct))
+        {
+            await WriteChunked(writer, Data(17 * MiB));
+            await writer.CommitAsync(Ct);
+        }
+
+        fake.Aborts.Should().BeEmpty();
+        fake.Objects.Single().Key.Should().Be("p/big");
+    }
+
+    [Fact]
+    public async Task Exclusive_commit_over_a_foreign_object_with_other_content_is_a_conflict()
+    {
+        var (s, fake) = Make();
+        await using var small = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await using var big = await s.CreateAsync("big", new CreateOptions(), Ct);
+        await small.WriteAsync(Data(10), Ct);
+        await WriteChunked(big, Data(17 * MiB));
+        var other = Data(11);
+        fake.Add("p/small", etag: FakeS3Client.Quote(FakeS3Client.Md5Hex(other)), body: other);
+        fake.Add("p/big", etag: FakeS3Client.Quote(FakeS3Client.MultipartETag([other])), body: other);
+
+        var commitSmall = () => small.CommitAsync(Ct);
+        var commitBig = () => big.CommitAsync(Ct);
+
+        await commitSmall.Should().ThrowAsync<StorageConflictException>();
+        await commitBig.Should().ThrowAsync<StorageConflictException>();
+        fake.HeadRequests.Should().HaveCount(4, "a create check and a proof check each");
+    }
+
+    [Fact]
+    public async Task Exclusive_commit_conflict_stays_a_conflict_when_the_proof_check_fails()
+    {
+        var (s, fake) = Make();
+        fake.RetryAfterSuccess = true;
+        await using var writer = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await writer.WriteAsync(Data(10), Ct);
+        fake.Failures["GetObjectMetadataAsync"] = new HttpRequestException("down");
+
+        var commit = () => writer.CommitAsync(Ct);
+
+        (await commit.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("small");
+        var again = () => writer.CommitAsync(Ct);
+        await again.Should().ThrowAsync<StorageConflictException>();
+    }
+
+    [Fact]
+    public async Task Exclusive_commit_answered_with_a_conditional_request_conflict_checks_too()
+    {
+        // 409 ConditionalRequestConflict: AWS's answer while another conditional write to the key is in flight, e.g. our own first attempt.
+        var (s, fake) = Make();
+        var data = Data(10);
+        await using var writer = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await writer.WriteAsync(data, Ct);
+        fake.Add("p/small", etag: FakeS3Client.Quote(FakeS3Client.Md5Hex(data)), body: data);
+        fake.Failures["PutObjectAsync"] = new AmazonS3Exception("x", ErrorType.Sender, "ConditionalRequestConflict", "r", System.Net.HttpStatusCode.Conflict);
+
+        await writer.CommitAsync(Ct);
+    }
+
+    [Fact]
+    public async Task Exclusive_commit_proof_needs_a_matching_etag_not_just_an_object()
+    {
+        // An ETag that is no MD5 of our bytes (e.g. under SSE-KMS) proves nothing: conflict.
+        var (s, fake) = Make();
+        var data = Data(10);
+        await using var writer = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await writer.WriteAsync(data, Ct);
+        fake.Add("p/small", etag: "\"not-an-md5\"", body: data);
+
+        var commit = () => writer.CommitAsync(Ct);
+
+        await commit.Should().ThrowAsync<StorageConflictException>();
+    }
+
+    [Fact]
+    public async Task Cancellation_during_the_proof_check_is_cancellation_not_a_remembered_conflict()
+    {
+        var (s, fake) = Make();
+        fake.RetryAfterSuccess = true;
+        using var cts = new CancellationTokenSource();
+        await using var writer = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await writer.WriteAsync(Data(10), Ct);
+        fake.BeforeHead = () =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        };
+
+        var commit = () => writer.CommitAsync(cts.Token);
+
+        await commit.Should().ThrowAsync<OperationCanceledException>();
+        fake.BeforeHead = null;
+        await writer.CommitAsync(Ct); // not stuck on a conflict: the retry finds its own object
+    }
+
+    [Fact]
+    public async Task The_proof_accepts_an_uppercase_quoted_object_etag()
+    {
+        var (s, fake) = Make();
+        var data = Data(10);
+        await using var writer = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await writer.WriteAsync(data, Ct);
+        fake.Add("p/small", etag: FakeS3Client.Quote(FakeS3Client.Md5Hex(data).ToUpperInvariant()), body: data);
+
+        await writer.CommitAsync(Ct);
+    }
+
+    [Fact]
+    public void Multipart_etag_is_the_md5_of_the_part_md5s_and_null_without_md5_part_etags()
+    {
+        byte[][] parts = [Data(5), Data(7)];
+        var etags = parts.Select((p, i) => new PartETag(i + 1, FakeS3Client.Quote(FakeS3Client.Md5Hex(p)))).ToList();
+
+        S3Writer.MultipartETag(etags).Should().Be(FakeS3Client.MultipartETag(parts));
+        S3Writer.MultipartETag([etags[0], new PartETag(2, "\"" + new string('z', 32) + "\"")]).Should().BeNull("not hex");
+        S3Writer.MultipartETag([etags[0], new PartETag(2, "\"abc123\"")]).Should().BeNull("too short");
+        S3Writer.MultipartETag([etags[0], new PartETag(2, (string?)null)]).Should().BeNull("missing");
+    }
+
+    [Fact]
+    public async Task A_truncated_listing_page_without_continuation_token_fails_closed()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/d/").Add("p/d/f").Add("p/x");
+        fake.TruncatedWithoutToken = true;
+
+        var delete = () => s.DeleteAsync(["d", "x"], Ct);
+        var list = async () => { await foreach (var _ in s.ListAsync("", recursive: true, Ct)) { } };
+
+        await delete.Should().ThrowAsync<StorageIOException>();
+        await list.Should().ThrowAsync<StorageIOException>();
+        fake.DeleteBatches.Should().BeEmpty();
+        fake.Objects.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task Overwrite_commit_never_checks_after_the_write()
+    {
+        var (s, fake) = Make();
+        await using (var writer = await s.CreateAsync("small", new CreateOptions(Overwrite: true), Ct))
+        {
+            await writer.WriteAsync(Data(10), Ct);
+            await writer.CommitAsync(Ct);
+        }
+
+        fake.HeadRequests.Should().BeEmpty();
     }
 
     [Fact]
@@ -448,6 +622,97 @@ public class S3WriterTests
         await s.DeleteAsync(["d/f.txt", "d"], Ct);
 
         fake.Objects.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Delete_of_2500_files_under_one_folder_lists_by_page_not_by_path()
+    {
+        var (s, fake) = Make();
+        var paths = Enumerable.Range(0, 2500).Select(i => $"d/f{i:D4}").ToList();
+        foreach (var p in paths) fake.Add("p/" + p);
+
+        await s.DeleteAsync(paths, Ct);
+
+        fake.ListRequests.Should().HaveCountLessThanOrEqualTo(4);
+        fake.DeleteBatches.Select(b => b.Count).Should().Equal(1000, 1000, 500);
+        fake.Objects.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Delete_of_a_top_level_file_lists_only_the_top_level()
+    {
+        // A recursive listing of the parent would walk the whole storage for one file.
+        var (s, fake) = Make();
+        foreach (var i in Enumerable.Range(0, 50)) fake.Add($"p/big/f{i}");
+        fake.Add("p/x");
+
+        await s.DeleteAsync(["x"], Ct);
+
+        var list = fake.ListRequests.Should().ContainSingle().Subject;
+        (list.Prefix, list.Delimiter).Should().Be(("p/", "/"));
+        fake.Objects.Should().HaveCount(50);
+    }
+
+    [Fact]
+    public async Task Delete_of_a_directory_and_its_tree_lists_the_tree_once()
+    {
+        var (s, fake) = Make();
+        fake.PageSize = 2;
+        fake.Add("p/v/").Add("p/v/a/").Add("p/v/a/x").Add("p/v/a/y").Add("p/v/b/z").Add("p/w/keep");
+
+        // Bottom-up, as the version remover sends it.
+        await s.DeleteAsync(["v/a/x", "v/a/y", "v/b/z", "v/a", "v/b", "v"], Ct);
+
+        fake.Objects.Select(o => o.Key).Should().Equal("p/w/keep");
+        fake.ListRequests.Where(r => r.Delimiter is null).Select(r => r.Prefix).Distinct().Should().Equal("p/v/");
+        fake.ListRequests.Where(r => r.Delimiter is not null).Select(r => r.Prefix).Distinct().Should().Equal("p/");
+    }
+
+    [Fact]
+    public async Task Delete_of_a_directory_whose_content_follows_in_the_same_call_succeeds()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/d/").Add("p/d/f.txt");
+
+        await s.DeleteAsync(["d", "d/f.txt"], Ct);
+
+        fake.Objects.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Delete_of_a_directory_with_a_non_empty_subdirectory_conflicts_and_keeps_its_content()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/d/").Add("p/d/e/").Add("p/d/e/f").Add("p/x");
+
+        var act = () => s.DeleteAsync(["x", "d", "d/e"], Ct);
+
+        (await act.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("d");
+        fake.Objects.Select(o => o.Key).Should().BeEquivalentTo(["p/d/", "p/d/e/", "p/d/e/f"]);
+    }
+
+    [Fact]
+    public async Task Delete_of_a_file_that_also_has_keys_below_it_conflicts()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/a").Add("p/a/b");
+
+        var act = () => s.DeleteAsync(["a"], Ct);
+
+        (await act.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("a");
+        fake.Objects.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Delete_maps_listing_failures_to_the_path()
+    {
+        var (s, fake) = Make();
+        fake.Failures["ListObjectsV2Async"] = new HttpRequestException("down");
+
+        var act = () => s.DeleteAsync(["d/a"], Ct);
+
+        (await act.Should().ThrowAsync<StorageUnavailableException>()).Which.Path.Should().Be("d/a");
+        fake.DeleteBatches.Should().BeEmpty();
     }
 
     [Fact]

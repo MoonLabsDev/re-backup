@@ -15,6 +15,9 @@ public class FakeS3Client : DispatchProxy
 
     public List<Obj> Objects { get; } = [];
     public int PageSize { get; set; } = 1000;
+
+    /// <summary>Every listing page says it is truncated but carries no continuation token (a broken server answer).</summary>
+    public bool TruncatedWithoutToken { get; set; }
     public List<ListObjectsV2Request> ListRequests { get; } = [];
     public List<GetObjectMetadataRequest> HeadRequests { get; } = [];
 
@@ -43,14 +46,26 @@ public class FakeS3Client : DispatchProxy
     /// <summary>The lifecycle rules <c>GetLifecycleConfiguration</c> returns.</summary>
     public List<LifecycleRule> Lifecycle { get; set; } = [];
 
+    /// <summary>The status <c>GetBucketVersioning</c> reports (<c>null</c>: never versioned, as AWS answers then).</summary>
+    public VersionStatus? Versioning { get; set; }
+
     /// <summary>The region <c>HeadBucket</c> reports (<c>BucketRegion</c>); <c>null</c> = not reported.</summary>
     public string? BucketRegion { get; set; }
 
     /// <summary>The keys <c>DeleteObject</c> was called for.</summary>
     public List<string> DeleteRequests { get; } = [];
 
+    /// <summary>Runs at the start of every <c>HeadObject</c> (to cancel or fail while one is in flight).</summary>
+    public Action? BeforeHead { get; set; }
+
     /// <summary>Runs after every successful <c>PutObject</c>.</summary>
     public Action? AfterPut { get; set; }
+
+    /// <summary>
+    /// An exclusive <c>PutObject</c> / <c>CompleteMultipartUpload</c> stores the object and then fails with 412, as the SDK's retry of a
+    /// first attempt that succeeded unseen does.
+    /// </summary>
+    public bool RetryAfterSuccess { get; set; }
 
     public bool Disposed { get; private set; }
 
@@ -99,6 +114,8 @@ public class FakeS3Client : DispatchProxy
                     return Task.FromResult(Delete((DeleteObjectsRequest)args![0]!));
                 case "HeadBucketAsync":
                     return Task.FromResult(new HeadBucketResponse { BucketRegion = BucketRegion });
+                case "GetBucketVersioningAsync":
+                    return Task.FromResult(new GetBucketVersioningResponse { VersioningConfig = new S3BucketVersioningConfig { Status = Versioning } });
                 case "GetLifecycleConfigurationAsync":
                     return Task.FromResult(new GetLifecycleConfigurationResponse { Configuration = new LifecycleConfiguration { Rules = Lifecycle } });
                 case "DeleteObjectAsync":
@@ -158,8 +175,8 @@ public class FakeS3Client : DispatchProxy
         var more = start + size < entries.Count;
         return new ListObjectsV2Response
         {
-            IsTruncated = more,
-            NextContinuationToken = more ? (start + size).ToString() : null,
+            IsTruncated = more || TruncatedWithoutToken,
+            NextContinuationToken = more && !TruncatedWithoutToken ? (start + size).ToString() : null,
             S3Objects = page.Where(e => e.Object is not null)
                 .Select(e => new S3Object { Key = e.Object!.Key, Size = e.Object.Size, ETag = e.Object.ETag, LastModified = e.Object.LastModified }).ToList(),
             CommonPrefixes = page.Where(e => e.Common is not null).Select(e => e.Common!).ToList(),
@@ -169,6 +186,7 @@ public class FakeS3Client : DispatchProxy
     private GetObjectMetadataResponse Head(GetObjectMetadataRequest request)
     {
         HeadRequests.Add(request);
+        BeforeHead?.Invoke();
         var o = Objects.FirstOrDefault(x => x.Key == request.Key)
             ?? throw new AmazonS3Exception("not found", ErrorType.Unknown, "NotFound", "req", System.Net.HttpStatusCode.NotFound);
         return new GetObjectMetadataResponse { ContentLength = o.Size, ETag = o.ETag, LastModified = o.LastModified };
@@ -184,6 +202,19 @@ public class FakeS3Client : DispatchProxy
     private static AmazonS3Exception PreconditionFailed() =>
         new("At least one of the pre-conditions you specified did not hold", ErrorType.Sender, "PreconditionFailed", "req", System.Net.HttpStatusCode.PreconditionFailed);
 
+    /// <summary>The ETag S3 gives a single-part object: the lowercase hex MD5 of its body.</summary>
+    public static string Md5Hex(byte[] body) => Convert.ToHexStringLower(System.Security.Cryptography.MD5.HashData(body));
+
+    /// <summary>The ETag S3 gives a multipart object: the MD5 of the concatenated binary part MD5s, "-", the part count.</summary>
+    public static string MultipartETag(IEnumerable<byte[]> parts)
+    {
+        var list = parts.ToList();
+        var md5s = list.SelectMany(p => System.Security.Cryptography.MD5.HashData(p)).ToArray();
+        return Md5Hex(md5s) + "-" + list.Count;
+    }
+
+    public static string Quote(string etag) => "\"" + etag + "\"";
+
     private static byte[] ReadAll(Stream stream)
     {
         using var copy = new MemoryStream();
@@ -196,10 +227,12 @@ public class FakeS3Client : DispatchProxy
         var body = ReadAll(request.InputStream);
         Puts.Add(new Upload(request.Key, body, request.IfNoneMatch, request.Headers.ContentLength));
         if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
+        var etag = Quote(Md5Hex(body));
         Objects.RemoveAll(o => o.Key == request.Key);
-        Objects.Add(new Obj(request.Key, body.Length, Body: body));
+        Objects.Add(new Obj(request.Key, body.Length, etag, Body: body));
+        if (RetryAfterSuccess && request.IfNoneMatch == "*") throw PreconditionFailed();
         AfterPut?.Invoke();
-        return new PutObjectResponse { ETag = "\"put\"" };
+        return new PutObjectResponse { ETag = etag };
     }
 
     private InitiateMultipartUploadResponse Initiate(InitiateMultipartUploadRequest request)
@@ -219,7 +252,7 @@ public class FakeS3Client : DispatchProxy
             var body = ReadAll(request.InputStream);
             if (UploadPartHook is { } hook) await hook(request, ct);
             lock (Parts) Parts.Add((request.PartNumber ?? 0, body, request.PartSize));
-            return new UploadPartResponse { PartNumber = request.PartNumber, ETag = $"\"part{request.PartNumber}\"" };
+            return new UploadPartResponse { PartNumber = request.PartNumber, ETag = Quote(Md5Hex(body)) };
         }
         finally
         {
@@ -231,10 +264,13 @@ public class FakeS3Client : DispatchProxy
     {
         Completes.Add(request);
         if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
-        var body = Parts.OrderBy(p => p.PartNumber).SelectMany(p => p.Body).ToArray();
+        var parts = Parts.OrderBy(p => p.PartNumber).ToList();
+        var body = parts.SelectMany(p => p.Body).ToArray();
+        var etag = Quote(MultipartETag(parts.Select(p => p.Body)));
         Objects.RemoveAll(o => o.Key == request.Key);
-        Objects.Add(new Obj(request.Key, body.Length, Body: body));
-        return new CompleteMultipartUploadResponse { Key = request.Key, ETag = "\"multi\"" };
+        Objects.Add(new Obj(request.Key, body.Length, etag, Body: body));
+        if (RetryAfterSuccess && request.IfNoneMatch == "*") throw PreconditionFailed();
+        return new CompleteMultipartUploadResponse { Key = request.Key, ETag = etag };
     }
 
     private AbortMultipartUploadResponse Abort(AbortMultipartUploadRequest request)

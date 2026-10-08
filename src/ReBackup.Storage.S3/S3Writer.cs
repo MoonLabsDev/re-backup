@@ -1,4 +1,5 @@
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
 using Amazon.S3;
 using Amazon.S3.Model;
 
@@ -121,14 +122,58 @@ internal sealed class S3Writer : StorageWriter
                     IfNoneMatch = _overwrite ? null : "*",
                 }, ct).ConfigureAwait(false);
             }
-            _committed = true;
-            _buffer = [];
-            _uploadingBuffer = null;
+        }
+        catch (Exception ex) when (!_overwrite && S3Errors.IsConditionalConflict(ex))
+        {
+            if (!await IsOwnObjectAsync(ct).ConfigureAwait(false)) throw Fail(ex, ct);
         }
         catch (Exception ex)
         {
             throw Fail(ex, ct);
         }
+        _committed = true;
+        _buffer = [];
+        _uploadingBuffer = null;
+    }
+
+    /// <summary>
+    /// After an exclusive commit was refused (412, or 409 <c>ConditionalRequestConflict</c>): whether the object now at the key is
+    /// provably this writer's, i.e. the SDK retried a first attempt that had succeeded unseen. The proof is the object's ETag: for a
+    /// single put the MD5 of the buffer, for multipart the MD5 of the binary part MD5s (the ETags S3 returned for our parts) + "-" +
+    /// part count. Any doubt is no proof and the conflict stands: an ETag that is no MD5 (e.g. under SSE-KMS), a failed HEAD.
+    /// Cancellation by <paramref name="ct"/> during the HEAD throws <see cref="OperationCanceledException"/>.
+    /// </summary>
+    private async Task<bool> IsOwnObjectAsync(CancellationToken ct)
+    {
+        var expected = _uploadId is null ? Md5Hex(_buffer.AsSpan(0, _filled)) : MultipartETag(_parts);
+        if (expected is null) return false;
+        try
+        {
+            var head = await _client.GetObjectMetadataAsync(new GetObjectMetadataRequest { BucketName = _bucket, Key = _key }, ct).ConfigureAwait(false);
+            return string.Equals(head.ETag?.Trim('"'), expected, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            // Cancelled by the caller: cancellation, not a conflict to remember (a later commit may still find its object).
+            ct.ThrowIfCancellationRequested();
+            return false;
+        }
+    }
+
+    private static string Md5Hex(ReadOnlySpan<byte> data) => Convert.ToHexStringLower(MD5.HashData(data));
+
+    /// <summary>The ETag S3 gives a multipart object made of <paramref name="parts"/>; <c>null</c> when a part's ETag is no MD5.</summary>
+    internal static string? MultipartETag(IEnumerable<PartETag> parts)
+    {
+        var ordered = parts.OrderBy(p => p.PartNumber).ToList();
+        var md5s = new byte[ordered.Count * 16];
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var hex = ordered[i].ETag?.Trim('"');
+            if (hex is not { Length: 32 } || !hex.All(char.IsAsciiHexDigit)) return null;
+            Convert.FromHexString(hex).CopyTo(md5s, i * 16);
+        }
+        return Md5Hex(md5s) + "-" + ordered.Count;
     }
 
     public override async ValueTask DisposeAsync()

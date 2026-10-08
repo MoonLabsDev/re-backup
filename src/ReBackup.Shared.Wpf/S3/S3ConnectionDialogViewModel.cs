@@ -16,6 +16,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     public const string NameRequiredKey = "s3.error.nameRequired";
     public const string NameTakenKey = "s3.error.nameTaken";
     public const string RegionRequiredKey = "s3.error.regionRequired";
+    public const string RegionInvalidKey = "s3.error.regionInvalid";
     public const string BucketInvalidKey = "s3.error.bucketInvalid";
     public const string AccessKeyRequiredKey = "s3.error.accessKeyRequired";
     public const string SecretRequiredKey = "s3.error.secretRequired";
@@ -57,7 +58,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     private string _name = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Errors))]
+    [NotifyPropertyChangedFor(nameof(Errors), nameof(RegionHintKey))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand))]
     private string _region = "";
 
@@ -124,7 +125,9 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
             var name = Name.Trim();
             if (name.Length == 0) errors.Add(NameRequiredKey);
             else if (!IsOwnName(name) && _isNameTaken(name)) errors.Add(NameTakenKey);
-            if (Region.Trim().Length == 0) errors.Add(RegionRequiredKey);
+            var region = Region.Trim();
+            if (region.Length == 0) errors.Add(RegionRequiredKey);
+            else if (!S3Regions.IsValid(region)) errors.Add(RegionInvalidKey);
             if (!BucketPattern.IsMatch(Bucket.Trim())) errors.Add(BucketInvalidKey);
             if (AccessKeyId.Trim().Length == 0) errors.Add(AccessKeyRequiredKey);
             if (SecretRequired && Secret.Trim().Length == 0) errors.Add(SecretRequiredKey);
@@ -134,6 +137,9 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
 
     /// <summary>The error shown below the name: only "taken" (a missing name just keeps Save disabled).</summary>
     public string? NameHintKey => Errors.Contains(NameTakenKey) ? NameTakenKey : null;
+
+    /// <summary>The error shown below the region: only "invalid" (a missing region just keeps Save disabled).</summary>
+    public string? RegionHintKey => Errors.Contains(RegionInvalidKey) ? RegionInvalidKey : null;
 
     /// <summary>The error shown below the bucket: only once something is typed.</summary>
     public string? BucketHintKey => Bucket.Trim().Length > 0 && Errors.Contains(BucketInvalidKey) ? BucketInvalidKey : null;

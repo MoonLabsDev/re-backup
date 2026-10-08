@@ -38,6 +38,7 @@
       "nameRequired": "Einen Namen eingeben.",
       "nameTaken": "Eine andere Verbindung hat bereits diesen Namen.",
       "regionRequired": "Eine Region wählen.",
+      "regionInvalid": "Einen AWS-Regionsnamen wie eu-central-1 eingeben.",
       "bucketInvalid": "Ein Bucket-Name hat 3–63 Zeichen: Kleinbuchstaben, Ziffern, Punkte und Bindestriche, am Anfang und Ende ein Buchstabe oder eine Ziffer.",
       "accessKeyRequired": "Die Zugriffsschlüssel-ID eingeben.",
       "secretRequired": "Den geheimen Zugriffsschlüssel eingeben."
@@ -52,6 +53,7 @@
       "useRegion": "{region} verwenden",
       "check": {
         "bucket": "Bucket",
+        "versioning": "Versionierung",
         "list": "Auflisten",
         "writeDelete": "Schreiben und löschen",
         "lifecycle": "Lebenszyklusregel"
@@ -60,11 +62,13 @@
     "check": {
       "ok": "OK",
       "regionMismatch": "Der Bucket liegt in {region}.",
+      "regionInvalid": "Das ist kein AWS-Regionsname.",
       "accessDenied": "Zugriff verweigert: Zugriffsschlüssel und Berechtigungen prüfen.",
       "notFound": "Nicht gefunden: den Bucket-Namen prüfen.",
       "unavailable": "S3 ist nicht erreichbar: die Netzwerkverbindung prüfen.",
       "failed": "Die Prüfung ist fehlgeschlagen.",
       "lifecycleMissing": "Keine Lebenszyklusregel räumt unvollständige Multipart-Uploads auf (empfohlen: nach 7 Tagen abbrechen).",
+      "versioningEnabled": "Die Versionierung ist an oder ausgesetzt: Löschen alter Sicherungen setzt nur Löschmarker und gibt keinen Platz frei, solange keine Lebenszyklusregel nicht aktuelle Versionen ablaufen lässt.",
       "notCheckable": "Mit diesen Berechtigungen nicht prüfbar.",
       "skipped": "Nicht geprüft."
     }

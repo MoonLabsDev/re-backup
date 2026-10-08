@@ -37,7 +37,7 @@ public class S3ConnectionDialogSmokeTests
             content.Arrange(new Rect(content.DesiredSize));
             content.UpdateLayout();
 
-            vm.Results.Should().HaveCount(4);
+            vm.Results.Should().HaveCount(5);
             content.DesiredSize.Height.Should().BeGreaterThan(0);
             FindAll<PasswordBox>(content).Should().ContainSingle();
             FindAll<Button>(content).Where(button => button.Visibility == Visibility.Visible && ReferenceEquals(button.Command, vm.UseRegionCommand))

@@ -33,6 +33,11 @@ internal static class S3Errors
         return new StorageIOException(path, $"I/O error at '{path}'.", ex);
     }
 
+    /// <summary>Whether <paramref name="ex"/> is S3 refusing a conditional write: 412 <c>PreconditionFailed</c> or 409 <c>ConditionalRequestConflict</c>.</summary>
+    public static bool IsConditionalConflict(Exception ex) =>
+        ex is AmazonServiceException service
+        && (service.ErrorCode is "PreconditionFailed" or "ConditionalRequestConflict" || service.StatusCode == HttpStatusCode.PreconditionFailed);
+
     private static Exception MapService(AmazonServiceException ex, string path)
     {
         var code = ex.ErrorCode;
