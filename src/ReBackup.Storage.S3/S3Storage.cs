@@ -141,12 +141,15 @@ public sealed class S3Storage : IStorage
     /// (<c>If-None-Match</c>) and is the authority. A check answered with 403 leaves existence unknown and goes ahead: without an
     /// effective <c>s3:ListBucket</c> (e.g. one limited by an <c>s3:prefix</c> condition) S3 answers a missing key with 403 instead
     /// of 404. <see cref="CreateOptions.ModifiedUtc"/> and <see cref="CreateOptions.Durable"/> are ignored.
+    /// With <see cref="CreateOptions.ExpectedStamp"/> the commit sends <c>If-Match</c> and a 412 is a conflict (no own-write proof).
     /// </summary>
     public async Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(options);
         var key = S3Keys.ToKey(_prefix, path);
         if (path.Length == 0) throw new ArgumentException("A file path is required.", nameof(path));
+        if (options.ExpectedStamp is not null && !options.Overwrite)
+            throw new ArgumentException("An expected stamp needs Overwrite.", nameof(options));
         if (!options.Overwrite)
         {
             bool exists;
@@ -170,7 +173,7 @@ public sealed class S3Storage : IStorage
             }
             if (exists) throw new StorageConflictException(path);
         }
-        return new S3Writer(_client, _bucket, key, path, options.Overwrite);
+        return new S3Writer(_client, _bucket, key, path, options.Overwrite, options.ExpectedStamp);
     }
 
     /// <summary>

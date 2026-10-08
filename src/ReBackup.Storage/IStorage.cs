@@ -32,6 +32,7 @@ public interface IStorage
     /// <summary>
     /// Starts writing a file. With <see cref="CreateOptions.Overwrite"/> false the call throws <see cref="StorageConflictException"/> when the path exists,
     /// and the commit throws it too when someone committed the path meanwhile. With overwrite, the old content stays visible until the commit.
+    /// With <see cref="CreateOptions.ExpectedStamp"/> the overwrite is conditional on the file being unchanged since that stamp was read.
     /// </summary>
     Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct);
 
@@ -75,4 +76,11 @@ public sealed record StorageEntry(string Path, bool IsDirectory, long Size, Date
 /// loss or crash. Costs time; meant for the few files that commit something (e.g. a manifest). Storages whose commit is
 /// durable anyway, or that have no stable storage, ignore it.
 /// </param>
-public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null, bool Durable = false);
+/// <param name="ExpectedStamp">
+/// Conditional overwrite: the commit succeeds only if the file exists and its <see cref="StorageEntry.Stamp"/> still equals this value;
+/// otherwise it throws <see cref="StorageConflictException"/> (also when the file is missing) and the old content stays. Requires
+/// <see cref="Overwrite"/> (else <see cref="IStorage.CreateAsync"/> throws <see cref="ArgumentException"/>). On S3 this is an atomic
+/// <c>If-Match</c>; on the file system and in memory the stamp is compared right before the final replace, which is not atomic against
+/// a writer in that same instant.
+/// </param>
+public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null, bool Durable = false, string? ExpectedStamp = null);

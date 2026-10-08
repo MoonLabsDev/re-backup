@@ -92,7 +92,7 @@ public interface IStorage                        // bound to one root location
 public sealed record StorageEntry(string Path, bool IsDirectory, long Size,
                                   DateTime ModifiedUtc, bool IsLink, string? Stamp);
 
-public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null, bool Durable = false);
+public sealed record CreateOptions(bool Overwrite = false, DateTime? ModifiedUtc = null, bool Durable = false, string? ExpectedStamp = null);
 
 public abstract class StorageWriter : Stream     // write-only
 {
@@ -113,6 +113,7 @@ Rules:
 - An address the storage cannot hold throws `ArgumentException` from every member that takes a path: an invalid storage path, and in `FileSystemStorage` also a segment ending in a space or a dot, a character Windows forbids in names (`:` included), or a non-empty path whose full path leaves the root or resolves to the root itself. Containment is checked in `FileSystemStorage`, not in `StoragePath.Validate`, because S3 keys may contain `:`. Callers treat it as an entry they cannot use (a skip), never as an unreachable storage.
 - `FileSystemStorage` requires a fully qualified root (`Path.IsPathFullyQualified`); a relative one (`relative`, `C:relative`) throws `ArgumentException` instead of resolving against the process directory.
 - `CreateOptions.Durable` flushes the content to stable storage before the commit makes the file visible. Only the manifest is written durably (6.1 step 4); storages whose commit is durable anyway ignore it.
+- `CreateOptions.ExpectedStamp` makes an overwrite conditional: the commit succeeds only if the file exists and its `Stamp` still equals the value, else `StorageConflictException` (also for a missing file) and the old content stays. It requires `Overwrite` (else `ArgumentException` from `CreateAsync`). FileSystem and InMemory compare the stamp right before the final replace (not atomic against a writer in that instant; InMemory is atomic under its lock); S3 uses `If-Match`.
 
 ### 5.1 Exceptions
 
