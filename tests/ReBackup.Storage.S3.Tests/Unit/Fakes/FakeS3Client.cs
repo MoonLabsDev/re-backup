@@ -52,6 +52,12 @@ public class FakeS3Client : DispatchProxy
     /// <summary>Runs after every successful <c>PutObject</c>.</summary>
     public Action? AfterPut { get; set; }
 
+    /// <summary>
+    /// An exclusive <c>PutObject</c> / <c>CompleteMultipartUpload</c> stores the object and then fails with 412, as the SDK's retry of a
+    /// first attempt that succeeded unseen does.
+    /// </summary>
+    public bool RetryAfterSuccess { get; set; }
+
     public bool Disposed { get; private set; }
 
     public int UploadsInFlight => _uploadsInFlight;
@@ -184,6 +190,19 @@ public class FakeS3Client : DispatchProxy
     private static AmazonS3Exception PreconditionFailed() =>
         new("At least one of the pre-conditions you specified did not hold", ErrorType.Sender, "PreconditionFailed", "req", System.Net.HttpStatusCode.PreconditionFailed);
 
+    /// <summary>The ETag S3 gives a single-part object: the lowercase hex MD5 of its body.</summary>
+    public static string Md5Hex(byte[] body) => Convert.ToHexStringLower(System.Security.Cryptography.MD5.HashData(body));
+
+    /// <summary>The ETag S3 gives a multipart object: the MD5 of the concatenated binary part MD5s, "-", the part count.</summary>
+    public static string MultipartETag(IEnumerable<byte[]> parts)
+    {
+        var list = parts.ToList();
+        var md5s = list.SelectMany(p => System.Security.Cryptography.MD5.HashData(p)).ToArray();
+        return Md5Hex(md5s) + "-" + list.Count;
+    }
+
+    public static string Quote(string etag) => "\"" + etag + "\"";
+
     private static byte[] ReadAll(Stream stream)
     {
         using var copy = new MemoryStream();
@@ -196,10 +215,12 @@ public class FakeS3Client : DispatchProxy
         var body = ReadAll(request.InputStream);
         Puts.Add(new Upload(request.Key, body, request.IfNoneMatch, request.Headers.ContentLength));
         if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
+        var etag = Quote(Md5Hex(body));
         Objects.RemoveAll(o => o.Key == request.Key);
-        Objects.Add(new Obj(request.Key, body.Length, Body: body));
+        Objects.Add(new Obj(request.Key, body.Length, etag, Body: body));
+        if (RetryAfterSuccess && request.IfNoneMatch == "*") throw PreconditionFailed();
         AfterPut?.Invoke();
-        return new PutObjectResponse { ETag = "\"put\"" };
+        return new PutObjectResponse { ETag = etag };
     }
 
     private InitiateMultipartUploadResponse Initiate(InitiateMultipartUploadRequest request)
@@ -219,7 +240,7 @@ public class FakeS3Client : DispatchProxy
             var body = ReadAll(request.InputStream);
             if (UploadPartHook is { } hook) await hook(request, ct);
             lock (Parts) Parts.Add((request.PartNumber ?? 0, body, request.PartSize));
-            return new UploadPartResponse { PartNumber = request.PartNumber, ETag = $"\"part{request.PartNumber}\"" };
+            return new UploadPartResponse { PartNumber = request.PartNumber, ETag = Quote(Md5Hex(body)) };
         }
         finally
         {
@@ -231,10 +252,13 @@ public class FakeS3Client : DispatchProxy
     {
         Completes.Add(request);
         if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
-        var body = Parts.OrderBy(p => p.PartNumber).SelectMany(p => p.Body).ToArray();
+        var parts = Parts.OrderBy(p => p.PartNumber).ToList();
+        var body = parts.SelectMany(p => p.Body).ToArray();
+        var etag = Quote(MultipartETag(parts.Select(p => p.Body)));
         Objects.RemoveAll(o => o.Key == request.Key);
-        Objects.Add(new Obj(request.Key, body.Length, Body: body));
-        return new CompleteMultipartUploadResponse { Key = request.Key, ETag = "\"multi\"" };
+        Objects.Add(new Obj(request.Key, body.Length, etag, Body: body));
+        if (RetryAfterSuccess && request.IfNoneMatch == "*") throw PreconditionFailed();
+        return new CompleteMultipartUploadResponse { Key = request.Key, ETag = etag };
     }
 
     private AbortMultipartUploadResponse Abort(AbortMultipartUploadRequest request)

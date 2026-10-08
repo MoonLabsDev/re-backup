@@ -87,7 +87,7 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 **S3Writer**
 - Buffers in memory up to 16 MiB. Commit with ≤ 16 MiB written → `PutObject`.
 - Beyond 16 MiB → `InitiateMultipartUpload` and parts of 16 MiB; the part size doubles after every 1000 parts up to a cap of 1 GiB, so the 10 000-part limit allows objects up to about 4.87 TiB. At most one part in memory plus the one being uploaded.
-- `CommitAsync`: `PutObject` / `CompleteMultipartUpload`, with `If-None-Match: *` when `Overwrite = false`. HTTP 412 → `StorageConflictException`. The object becomes visible only on success; with `Overwrite` the old object stays until then.
+- `CommitAsync`: `PutObject` / `CompleteMultipartUpload`, with `If-None-Match: *` when `Overwrite = false`. HTTP 412 (or 409 `ConditionalRequestConflict`) on an exclusive commit → `HeadObject` on the key: when its ETag proves the object is ours (an SDK retry of a first attempt that succeeded unseen) the commit counts as successful, otherwise `StorageConflictException`. Proof = for a single put the lowercase hex MD5 of the buffer, for multipart `md5(concat(binary part MD5s)) + "-" + partCount` built from the ETags S3 returned for our parts. A failed HEAD, or an ETag that is no MD5 (SSE-KMS), is no proof → conflict. Limit: a byte-identical object written by someone else (for multipart: with the same part boundaries) also counts as ours. The object becomes visible only on success; with `Overwrite` the old object stays until then.
 - Dispose without a successful commit → `AbortMultipartUpload` (best effort, never throws).
 
 ## 6. Errors (`S3Errors`)

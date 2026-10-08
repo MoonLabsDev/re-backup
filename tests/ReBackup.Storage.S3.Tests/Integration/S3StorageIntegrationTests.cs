@@ -143,7 +143,32 @@ public sealed class S3StorageIntegrationTests(S3ServerFixture server)
         (uploads.MultipartUploads ?? []).Should().BeEmpty("the loser's upload is aborted on dispose");
     }
 
-    [SkippableFact(Skip = "LocalStack 4.9 does not serialize concurrent conditional CompleteMultipartUpload (observed 4/6 double wins); " +
+    [SkippableFact]
+    public async Task Exclusive_commit_meeting_an_object_with_its_own_bytes_counts_as_its_own_write()
+    {
+        // What an SDK retry of a succeeded first attempt sees. The ETag proof cannot tell it from a byte-identical object written
+        // by someone else; this checks the single-part and multipart ETag computation against the server's.
+        var storage = server.CreateStorage(NewPrefix());
+        var small = RandomData(1000, seed: 6);
+        var big = RandomData(20 * MiB, seed: 7);
+
+        foreach (var (path, data) in new[] { ("small.bin", small), ("big.bin", big) })
+        {
+            await using var first = await storage.CreateAsync(path, new CreateOptions(), Ct);
+            await using var second = await storage.CreateAsync(path, new CreateOptions(), Ct);
+            await WriteChunkedAsync(first, data);
+            await WriteChunkedAsync(second, data);
+            await first.CommitAsync(Ct);
+
+            await second.CommitAsync(Ct);
+
+            (await ReadAllAsync(storage, path)).SequenceEqual(data).Should().BeTrue();
+        }
+        // Different bytes still conflict: Two_concurrent_exclusive_writers_exactly_one_wins and
+        // Exclusive_multipart_commit_over_a_key_committed_in_between_is_a_conflict.
+    }
+
+    [SkippableFact(Skip ="LocalStack 4.9 does not serialize concurrent conditional CompleteMultipartUpload (observed 4/6 double wins); " +
         "AWS S3 does — the client sends If-None-Match=* (see unit test S3WriterTests.Exclusive_commit_sends_if_none_match).")]
     public async Task Two_concurrent_exclusive_multipart_writers_exactly_one_wins()
     {
