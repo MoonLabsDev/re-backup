@@ -1,5 +1,8 @@
 using System.Net;
+using System.Reflection;
 using Amazon.Runtime;
+using Amazon.Runtime.Internal;
+using Amazon.Runtime.Internal.Transform;
 using Amazon.S3;
 using Amazon.S3.Model;
 using FluentAssertions;
@@ -13,14 +16,30 @@ public class S3ConnectionTesterTests
     private static readonly CancellationToken Ct = CancellationToken.None;
     private static readonly S3Connection Conn = new("c1", "n", "eu-central-1", "bucket", "AKIA", "super-secret");
 
+    /// <summary>A response that only knows its headers, as the SDK keeps it on the inner exception of a bodyless HEAD error.</summary>
+    private class HeaderResponse : DispatchProxy
+    {
+        public Dictionary<string, string> Headers { get; } = [];
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
+        {
+            "IsHeaderPresent" => Headers.ContainsKey((string)args![0]!),
+            "GetHeaderValue" => Headers.GetValueOrDefault((string)args![0]!),
+            "get_StatusCode" => HttpStatusCode.MovedPermanently,
+            _ => method.ReturnType.IsValueType ? Activator.CreateInstance(method.ReturnType) : null,
+        };
+    }
+
     private static AmazonS3Exception S3(string code, HttpStatusCode status, string? region = null)
     {
-        var ex = new AmazonS3Exception("boom super-secret", ErrorType.Unknown, code, "req", status);
-        // The SDK fills the body when it parses an error response; its setter is not public.
+        Exception? inner = null;
         if (region is not null)
-            typeof(AmazonS3Exception).GetProperty(nameof(AmazonS3Exception.ResponseBody))!
-                .SetValue(ex, $"<Error><Code>{code}</Code><Region>{region}</Region></Error>");
-        return ex;
+        {
+            var response = DispatchProxy.Create<IWebResponseData, HeaderResponse>();
+            ((HeaderResponse)(object)response).Headers["x-amz-bucket-region"] = region;
+            inner = new HttpErrorResponseException(response);
+        }
+        return new AmazonS3Exception("boom super-secret", inner, ErrorType.Unknown, code, "req", status);
     }
 
     private static (S3ConnectionTester Tester, FakeS3Client Fake) Create()
@@ -249,6 +268,45 @@ public class S3ConnectionTesterTests
         var act = () => tester.RunAsync(Conn, true, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Cancellation_during_the_bucket_check_propagates()
+    {
+        var (tester, fake) = Create();
+        using var cts = new CancellationTokenSource();
+        fake.Failures["HeadBucketAsync"] = new OperationCanceledException(cts.Token);
+        await cts.CancelAsync();
+
+        var act = () => tester.RunAsync(Conn, true, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Cancellation_after_the_put_still_deletes_the_test_object()
+    {
+        var (tester, fake) = Create();
+        using var cts = new CancellationTokenSource();
+        fake.AfterPut = () => cts.Cancel();
+
+        var act = () => tester.RunAsync(Conn, true, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        fake.Puts.Should().ContainSingle();
+        fake.Objects.Should().BeEmpty("the test object is removed although the run was cancelled");
+    }
+
+    [Fact]
+    public async Task A_failed_put_still_tries_to_delete_the_test_object()
+    {
+        var (tester, fake) = Create();
+        fake.Failures["PutObjectAsync"] = new HttpRequestException("timeout after the object was stored");
+
+        var write = Of(await tester.RunAsync(Conn, true, Ct), S3Check.WriteDelete);
+
+        write.State.Should().Be(S3CheckState.Failed);
+        fake.DeleteRequests.Should().ContainSingle().Which.Should().StartWith(".rebackup-connection-test-");
     }
 
     [Fact]

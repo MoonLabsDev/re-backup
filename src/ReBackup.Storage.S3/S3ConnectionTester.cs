@@ -1,6 +1,7 @@
-using System.Text.RegularExpressions;
+using System.Runtime.ExceptionServices;
 using Amazon;
 using Amazon.Runtime;
+using Amazon.Runtime.Internal;
 using Amazon.S3;
 using Amazon.S3.Model;
 using ReBackup.Storage.S3.Connections;
@@ -17,7 +18,7 @@ public enum S3CheckState { Ok, Failed, Warning, Skipped }
 public sealed record S3CheckResult(S3Check Check, S3CheckState State, string? MessageKey, string? Detail);
 
 /// <summary>Probes an S3 connection: bucket reachable, listing, writing and deleting, and the lifecycle rule that cleans up abandoned multipart uploads.</summary>
-public sealed partial class S3ConnectionTester
+public sealed class S3ConnectionTester
 {
     private readonly Func<S3Connection, IAmazonS3> _clientFactory;
 
@@ -77,12 +78,17 @@ public sealed partial class S3ConnectionTester
         }
     }
 
-    /// <summary>The bucket's real region as an error response names it (<c>&lt;Region&gt;</c> in the body); the SDK does not expose the <c>x-amz-bucket-region</c> header.</summary>
+    /// <summary>
+    /// The bucket's real region as a wrong-region error names it: the <c>x-amz-bucket-region</c> header of the HTTP response, which the
+    /// SDK keeps on the inner <see cref="HttpErrorResponseException"/> (a HEAD response has no body to read it from).
+    /// </summary>
     private static string? RegionOf(AmazonS3Exception ex) =>
-        ex.ResponseBody is { Length: > 0 } body && RegionElement().Match(body) is { Success: true } match ? match.Groups[1].Value : null;
+        ex.InnerException is HttpErrorResponseException { Response: { } response } && response.IsHeaderPresent(RegionHeader)
+            && response.GetHeaderValue(RegionHeader) is { Length: > 0 } header
+            ? header.Trim()
+            : null;
 
-    [GeneratedRegex(@"<Region>\s*([a-z0-9-]+)\s*</Region>", RegexOptions.IgnoreCase)]
-    private static partial Regex RegionElement();
+    private const string RegionHeader = "x-amz-bucket-region";
 
     private static S3CheckResult BucketResult(S3Connection connection, string? bucketRegion) =>
         !string.IsNullOrEmpty(bucketRegion) && !string.Equals(bucketRegion, connection.Region, StringComparison.OrdinalIgnoreCase)
@@ -105,15 +111,33 @@ public sealed partial class S3ConnectionTester
     private static async Task<S3CheckResult> CheckWriteAsync(IAmazonS3 client, S3Connection connection, CancellationToken ct)
     {
         var key = ".rebackup-connection-test-" + Guid.NewGuid().ToString("N");
+        var putDone = false;
         try
         {
             await client.PutObjectAsync(new PutObjectRequest { BucketName = connection.Bucket, Key = key, InputStream = new MemoryStream() }, ct).ConfigureAwait(false);
+            putDone = true;
             await client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = connection.Bucket, Key = key }, ct).ConfigureAwait(false);
             return Ok(S3Check.WriteDelete);
         }
         catch (Exception ex)
         {
+            // A failed or cancelled put may still have created the object (timeout, cancel after the response): remove it, whatever the token says.
+            if (!putDone || ct.IsCancellationRequested) await TryDeleteAsync(client, connection.Bucket, key).ConfigureAwait(false);
             return Failure(S3Check.WriteDelete, ex, key, ct);
+        }
+    }
+
+    /// <summary>Best-effort cleanup: a short timeout of its own, errors swallowed.</summary>
+    private static async Task TryDeleteAsync(IAmazonS3 client, string bucket, string key)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = bucket, Key = key }, timeout.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Nothing more can be done; the leftover is an empty object.
         }
     }
 
@@ -145,7 +169,7 @@ public sealed partial class S3ConnectionTester
     private static S3CheckResult Failure(S3Check check, Exception ex, string path, CancellationToken ct)
     {
         var mapped = S3Errors.Map(ex, path, ct);
-        if (mapped is OperationCanceledException cancelled) throw cancelled;
+        if (mapped is OperationCanceledException cancelled) ExceptionDispatchInfo.Throw(cancelled);
         var key = mapped switch
         {
             StorageAccessDeniedException => S3MessageKeys.AccessDenied,

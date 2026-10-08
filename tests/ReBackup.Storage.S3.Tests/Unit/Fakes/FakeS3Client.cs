@@ -46,6 +46,12 @@ public class FakeS3Client : DispatchProxy
     /// <summary>The region <c>HeadBucket</c> reports (<c>BucketRegion</c>); <c>null</c> = not reported.</summary>
     public string? BucketRegion { get; set; }
 
+    /// <summary>The keys <c>DeleteObject</c> was called for.</summary>
+    public List<string> DeleteRequests { get; } = [];
+
+    /// <summary>Runs after every successful <c>PutObject</c>.</summary>
+    public Action? AfterPut { get; set; }
+
     public bool Disposed { get; private set; }
 
     public int UploadsInFlight => _uploadsInFlight;
@@ -96,7 +102,10 @@ public class FakeS3Client : DispatchProxy
                 case "GetLifecycleConfigurationAsync":
                     return Task.FromResult(new GetLifecycleConfigurationResponse { Configuration = new LifecycleConfiguration { Rules = Lifecycle } });
                 case "DeleteObjectAsync":
-                    var deleteKey = ((DeleteObjectRequest)args![0]!).Key;
+                    if (((CancellationToken)args![1]!).IsCancellationRequested)
+                        return Fail(targetMethod, new OperationCanceledException((CancellationToken)args[1]!));
+                    var deleteKey = ((DeleteObjectRequest)args[0]!).Key;
+                    DeleteRequests.Add(deleteKey);
                     Objects.RemoveAll(o => o.Key == deleteKey);
                     return Task.FromResult(new DeleteObjectResponse());
                 case "Dispose":
@@ -189,6 +198,7 @@ public class FakeS3Client : DispatchProxy
         if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
         Objects.RemoveAll(o => o.Key == request.Key);
         Objects.Add(new Obj(request.Key, body.Length, Body: body));
+        AfterPut?.Invoke();
         return new PutObjectResponse { ETag = "\"put\"" };
     }
 
