@@ -83,6 +83,18 @@ public sealed class S3ServerFixture : IAsyncLifetime
     public S3Storage CreateStorage(string bucket, string prefix) =>
         new(new S3Connection("it", "integration", Region, bucket, AccessKey, SecretKey), prefix, Client);
 
+    /// <summary>A connection to <paramref name="bucket"/> on this server.</summary>
+    public S3Connection CreateConnection(string bucket) => new("it", "integration", Region, bucket, AccessKey, SecretKey);
+
+    /// <summary>A tester whose clients talk to this server (the tester disposes each client it creates, so every call builds a new one).</summary>
+    public S3ConnectionTester CreateTester()
+    {
+        var endpoint = _container?.GetConnectionString() ?? throw new InvalidOperationException(SkipReason ?? "The S3 server is not running.");
+        return new S3ConnectionTester(c => new AmazonS3Client(
+            new BasicAWSCredentials(c.AccessKeyId, c.Secret),
+            new AmazonS3Config { ServiceURL = endpoint, ForcePathStyle = true, AuthenticationRegion = c.Region }));
+    }
+
     /// <summary>Creates a fresh, empty bucket (for tests that use the whole bucket as the storage root).</summary>
     public async Task<string> CreateBucketAsync()
     {

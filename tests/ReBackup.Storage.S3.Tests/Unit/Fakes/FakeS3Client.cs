@@ -40,6 +40,14 @@ public class FakeS3Client : DispatchProxy
     /// <summary>Runs inside every <c>UploadPart</c> before it completes (to hold an upload in flight).</summary>
     public Func<UploadPartRequest, CancellationToken, Task>? UploadPartHook { get; set; }
 
+    /// <summary>The lifecycle rules <c>GetLifecycleConfiguration</c> returns.</summary>
+    public List<LifecycleRule> Lifecycle { get; set; } = [];
+
+    /// <summary>The region <c>HeadBucket</c> reports (<c>BucketRegion</c>); <c>null</c> = not reported.</summary>
+    public string? BucketRegion { get; set; }
+
+    public bool Disposed { get; private set; }
+
     public int UploadsInFlight => _uploadsInFlight;
     public int MaxUploadsInFlight { get; private set; }
     private int _uploadsInFlight;
@@ -83,7 +91,16 @@ public class FakeS3Client : DispatchProxy
                     return Task.FromResult(Abort((AbortMultipartUploadRequest)args![0]!));
                 case "DeleteObjectsAsync":
                     return Task.FromResult(Delete((DeleteObjectsRequest)args![0]!));
+                case "HeadBucketAsync":
+                    return Task.FromResult(new HeadBucketResponse { BucketRegion = BucketRegion });
+                case "GetLifecycleConfigurationAsync":
+                    return Task.FromResult(new GetLifecycleConfigurationResponse { Configuration = new LifecycleConfiguration { Rules = Lifecycle } });
+                case "DeleteObjectAsync":
+                    var deleteKey = ((DeleteObjectRequest)args![0]!).Key;
+                    Objects.RemoveAll(o => o.Key == deleteKey);
+                    return Task.FromResult(new DeleteObjectResponse());
                 case "Dispose":
+                    Disposed = true;
                     return null;
                 default:
                     throw new NotImplementedException(name);
