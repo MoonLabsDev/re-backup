@@ -106,7 +106,7 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 
 ## 7. S3StorageFactory
 
-`S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections)`: kind `"s3"` → looks up `location.ConnectionId`; missing → `StorageNotFoundException` ("connection not found"); `Secret == null` → `StorageAccessDeniedException` ("secret must be re-entered"); a region that is no AWS region name (hand-edited `connections.json`) → `StorageIOException` ("region is invalid"); else `new S3Storage(connection, location.Path, cachedClient)`. Other kinds → `inner.Open(location)`. The factory caches one client per connection (keyed by `Id`, `Region`, `AccessKeyId` and `Secret`, so an edited connection gets a new client) and is `IDisposable`; disposing it disposes the cached clients.
+`S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections)`: kind `"s3"` → looks up `location.ConnectionId`; missing → `StorageNotFoundException` ("connection not found"); `Secret == null` → `StorageAccessDeniedException` ("secret must be re-entered"); a region that is no AWS region name (hand-edited `connections.json`; `S3Regions.IsValid`, see section 8) → `StorageIOException` ("region is invalid"); else `new S3Storage(connection, location.Path, cachedClient)`. Other kinds → `inner.Open(location)`. The factory caches one client per connection (keyed by `Id`, `Region`, `AccessKeyId` and `Secret`, so an edited connection gets a new client) and is `IDisposable`; disposing it disposes the cached clients.
 
 ## 8. Connection tester
 
@@ -119,9 +119,11 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 
 A failed check stops the following ones (they become `Skipped`), except that 4 runs whenever 1 succeeded.
 
+Region names are checked in one place, `S3Regions.IsValid(string?)` (`\A[a-z]{2}(-[a-z]+)+-[0-9]{1,2}\z`), used by the factory, the tester and the dialog. The tester checks the region before it builds a client: an invalid one → Bucket `Failed` with `s3.check.regionInvalid`, all other checks `Skipped`, never a raw SDK exception.
+
 ## 9. Connection dialog (`ReBackup.Shared.Wpf`)
 
-Fields: Name (required, unique among the app's connections — uniqueness check supplied by the caller), Region (editable combo of AWS regions), Bucket (required, S3 naming rules: 3–63 chars, lowercase letters, digits, `.`, `-`, starts/ends with letter or digit), Access key ID (required), Secret (`PasswordBox`).
+Fields: Name (required, unique among the app's connections — uniqueness check supplied by the caller), Region (editable combo of AWS regions; a typed value that is no region name per `S3Regions.IsValid` → `s3.error.regionInvalid`, shown below the field, Save and Test disabled), Bucket (required, S3 naming rules: 3–63 chars, lowercase letters, digits, `.`, `-`, starts/ends with letter or digit), Access key ID (required), Secret (`PasswordBox`).
 
 - Editing: Secret empty with placeholder "unchanged" keeps the stored secret; when the stored secret is not decryptable the placeholder says "re-enter secret" and the field is required. When the access key ID is changed, the stored secret no longer applies: the secret is required and the placeholder is empty.
 - "Test connection": runs the tester asynchronously with a Cancel button, checkbox "Check write and delete permission" (default on), shows one row per check with ✓ / ✗ / ! / – and the translated reason; a region warning offers "Use <region>".

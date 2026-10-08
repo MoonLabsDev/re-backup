@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
@@ -16,9 +15,6 @@ public sealed class S3StorageFactory : IStorageFactory, IDisposable
 {
     /// <summary>The kind of a location on an S3 connection.</summary>
     public const string Kind = "s3";
-
-    /// <summary>AWS region names: <c>eu-central-1</c>, <c>us-gov-west-1</c>, <c>ap-southeast-2</c>.</summary>
-    private static readonly Regex RegionPattern = new(@"\A[a-z]{2}(-[a-z]+)+-[0-9]{1,2}\z", RegexOptions.CultureInvariant);
 
     private readonly IStorageFactory _inner;
     private readonly Func<string, S3Connection?> _connections;
@@ -56,17 +52,11 @@ public sealed class S3StorageFactory : IStorageFactory, IDisposable
             throw new StorageNotFoundException(location.Path, $"The S3 connection '{location.ConnectionId}' was not found.");
         if (connection.NeedsSecret)
             throw new StorageAccessDeniedException(location.Path, $"The secret of the S3 connection '{connection.Name}' must be re-entered.");
-        if (!IsRegionName(connection.Region))
+        if (!S3Regions.IsValid(connection.Region))
             throw new StorageIOException(location.Path, $"The region of the S3 connection '{connection.Name}' is invalid.");
 
         return new S3Storage(connection, location.Path, ClientFor(connection));
     }
-
-    /// <summary>
-    /// Whether <paramref name="region"/> looks like an AWS region name (<c>eu-central-1</c>, <c>us-gov-west-1</c>). A hand-edited
-    /// connections file may hold anything, and the SDK either rejects that with its own exception or builds a bogus endpoint.
-    /// </summary>
-    private static bool IsRegionName(string? region) => region is not null && RegionPattern.IsMatch(region);
 
     private AmazonS3Client ClientFor(S3Connection connection)
     {

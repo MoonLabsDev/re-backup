@@ -122,6 +122,53 @@ public class S3ConnectionDialogViewModelTests
             "s3.error.secretRequired");
     }
 
+    [Theory]
+    [InlineData("eu-central")]
+    [InlineData("EU-CENTRAL-1")]
+    [InlineData("frankfurt")]
+    public void A_typed_region_that_is_no_region_name_blocks_save_and_test(string region)
+    {
+        var vm = Create();
+        FillValid(vm);
+        vm.RegionHintKey.Should().BeNull();
+
+        vm.Region = region;
+
+        vm.Errors.Should().Equal("s3.error.regionInvalid");
+        vm.RegionHintKey.Should().Be("s3.error.regionInvalid");
+        vm.SaveCommand.CanExecute(null).Should().BeFalse();
+        vm.TestCommand.CanExecute(null).Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_region_with_surrounding_blanks_is_trimmed_and_valid()
+    {
+        var vm = Create();
+        FillValid(vm);
+
+        vm.Region = " eu-west-1 ";
+
+        vm.Errors.Should().BeEmpty();
+        vm.SaveCommand.Execute(null);
+        vm.Result!.Region.Should().Be("eu-west-1");
+    }
+
+    [Fact]
+    public void The_region_hint_is_raised_with_the_region()
+    {
+        var vm = Create();
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.Region = "x";
+
+        raised.Should().Contain(nameof(vm.RegionHintKey));
+    }
+
+    [Fact]
+    public void Every_offered_region_is_valid() =>
+        AwsRegions.All.Should().OnlyContain(region => S3Regions.IsValid(region));
+
     [Fact]
     public void Editing_a_connection_with_a_secret_keeps_the_secret_when_the_field_stays_empty()
     {

@@ -356,6 +356,36 @@ public class S3ConnectionTesterTests
         fake.DeleteRequests.Should().ContainSingle().Which.Should().StartWith(".rebackup-connection-test-");
     }
 
+    [Theory]
+    [InlineData("eu-central")]
+    [InlineData("not a region!")]
+    [InlineData("EU-CENTRAL-1")]
+    public async Task An_invalid_region_fails_the_bucket_check_without_a_client(string region)
+    {
+        // The default client factory: the SDK would throw its own exception or build a bogus endpoint.
+        var results = await new S3ConnectionTester().RunAsync(Conn with { Region = region }, checkWrite: true, Ct);
+
+        results.Select(r => r.Check).Should().Equal(Enum.GetValues<S3Check>());
+        Of(results, S3Check.Bucket).Should().Be(new S3CheckResult(S3Check.Bucket, S3CheckState.Failed, S3MessageKeys.RegionInvalid, null));
+        results.Where(r => r.Check != S3Check.Bucket).Should().OnlyContain(r => r.State == S3CheckState.Skipped && r.MessageKey == S3MessageKeys.Skipped);
+    }
+
+    [Fact]
+    public async Task An_invalid_region_never_reaches_an_injected_client_factory_either()
+    {
+        var created = false;
+        var tester = new S3ConnectionTester(_ =>
+        {
+            created = true;
+            return FakeS3Client.Create().Client;
+        });
+
+        var results = await tester.RunAsync(Conn with { Region = "eu-central" }, checkWrite: true, Ct);
+
+        created.Should().BeFalse();
+        Of(results, S3Check.Bucket).MessageKey.Should().Be(S3MessageKeys.RegionInvalid);
+    }
+
     [Fact]
     public async Task Connection_without_secret_is_rejected()
     {

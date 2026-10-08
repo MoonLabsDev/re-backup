@@ -32,7 +32,8 @@ public sealed class S3ConnectionTester
 
     /// <summary>
     /// Runs the checks on the whole bucket and returns one result per <see cref="S3Check"/>, in order. A failed check skips the ones
-    /// after it, except Lifecycle, which runs whenever Bucket did not fail. With <paramref name="checkWrite"/> false, WriteDelete is
+    /// after it, except Lifecycle, which runs whenever Bucket did not fail. A region that is no AWS region name fails Bucket with
+    /// <see cref="S3MessageKeys.RegionInvalid"/> before any client is built. With <paramref name="checkWrite"/> false, WriteDelete is
     /// skipped. Throws <see cref="OperationCanceledException"/> when <paramref name="ct"/> is cancelled.
     /// </summary>
     public Task<IReadOnlyList<S3CheckResult>> RunAsync(S3Connection connection, bool checkWrite, CancellationToken ct) =>
@@ -50,6 +51,11 @@ public sealed class S3ConnectionTester
         ArgumentNullException.ThrowIfNull(prefix);
         if (connection.NeedsSecret) throw new ArgumentException("The connection has no secret.", nameof(connection));
         prefix = S3Keys.NormalizePrefix(prefix);
+
+        // No client for a region that is no region name: the SDK would throw its own exception or build a bogus endpoint.
+        if (!S3Regions.IsValid(connection.Region))
+            return [new S3CheckResult(S3Check.Bucket, S3CheckState.Failed, S3MessageKeys.RegionInvalid, null),
+                ..Enum.GetValues<S3Check>().Where(c => c != S3Check.Bucket).Select(Skipped)];
 
         var client = _clientFactory(connection);
         try

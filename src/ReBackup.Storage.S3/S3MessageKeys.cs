@@ -5,6 +5,7 @@ public static class S3MessageKeys
 {
     public const string Ok = "s3.check.ok";
     public const string RegionMismatch = "s3.check.regionMismatch";
+    public const string RegionInvalid = "s3.check.regionInvalid";
     public const string AccessDenied = "s3.check.accessDenied";
     public const string NotFound = "s3.check.notFound";
     public const string Unavailable = "s3.check.unavailable";

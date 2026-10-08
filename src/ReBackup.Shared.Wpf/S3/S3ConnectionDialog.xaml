@@ -36,6 +36,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- Name -->
@@ -65,12 +66,29 @@
             <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,10,0,0" IsEditable="True" IsTextSearchEnabled="True"
                       ItemsSource="{x:Static s3:AwsRegions.All}" Text="{Binding Region, UpdateSourceTrigger=PropertyChanged}"
                       IsEnabled="{Binding IsEditable}" AutomationProperties.Name="{l:Loc s3.field.region}" />
+            <TextBlock Grid.Row="3" Grid.Column="1">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource FieldHint}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding RegionHintKey}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+                <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static s3:S3DialogTexts.Label}">
+                        <Binding Path="RegionHintKey" />
+                        <Binding Path="Language" Source="{x:Static l:Loc.Instance}" />
+                    </MultiBinding>
+                </TextBlock.Text>
+            </TextBlock>
 
             <!-- Bucket -->
-            <TextBlock Grid.Row="3" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.bucket}" />
-            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,10,0,0" Text="{Binding Bucket, UpdateSourceTrigger=PropertyChanged}"
+            <TextBlock Grid.Row="4" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.bucket}" />
+            <TextBox Grid.Row="4" Grid.Column="1" Margin="0,10,0,0" Text="{Binding Bucket, UpdateSourceTrigger=PropertyChanged}"
                      IsEnabled="{Binding IsEditable}" AutomationProperties.Name="{l:Loc s3.field.bucket}" />
-            <TextBlock Grid.Row="4" Grid.Column="1">
+            <TextBlock Grid.Row="5" Grid.Column="1">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock" BasedOn="{StaticResource FieldHint}">
                         <Style.Triggers>
@@ -89,14 +107,14 @@
             </TextBlock>
 
             <!-- Access key ID -->
-            <TextBlock Grid.Row="5" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.accessKeyId}" />
-            <TextBox Grid.Row="5" Grid.Column="1" Margin="0,10,0,0" Text="{Binding AccessKeyId, UpdateSourceTrigger=PropertyChanged}"
+            <TextBlock Grid.Row="6" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.accessKeyId}" />
+            <TextBox Grid.Row="6" Grid.Column="1" Margin="0,10,0,0" Text="{Binding AccessKeyId, UpdateSourceTrigger=PropertyChanged}"
                      FontFamily="{StaticResource Font.Mono}" IsEnabled="{Binding IsEditable}"
                      AutomationProperties.Name="{l:Loc s3.field.accessKeyId}" />
 
             <!-- Secret: placeholder "unchanged" / "re-enter" while empty -->
-            <TextBlock Grid.Row="6" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.secret}" />
-            <Grid Grid.Row="6" Grid.Column="1" Margin="0,10,0,0">
+            <TextBlock Grid.Row="7" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.secret}" />
+            <Grid Grid.Row="7" Grid.Column="1" Margin="0,10,0,0">
                 <PasswordBox x:Name="SecretBox" PasswordChanged="OnSecretChanged" IsEnabled="{Binding IsEditable}"
                              AutomationProperties.Name="{l:Loc s3.field.secret}" />
                 <TextBlock Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{DynamicResource Brush.TextFaint}">
