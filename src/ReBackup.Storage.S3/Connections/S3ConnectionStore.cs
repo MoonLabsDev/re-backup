@@ -14,7 +14,8 @@ namespace ReBackup.Storage.S3.Connections;
 /// <para>
 /// A format 1 file (connections with their own access key) is migrated in memory on every load and written as format 2 by the
 /// next save: each entry becomes a connection, entries with the same access key ID share one account that takes the first
-/// entry's id, name and secret blob. Names that collide case-insensitively get a " (2)", " (3)", … suffix.
+/// entry's id and name, and the first secret blob of the group that decrypts on this account (else the first entry's blob).
+/// Names that collide case-insensitively get a " (2)", " (3)", … suffix.
 /// </para>
 /// An account whose secret cannot be decrypted is kept (loaded with <c>Secret = null</c>) so it survives later saves.
 /// </summary>
@@ -123,7 +124,8 @@ public sealed class S3ConnectionStore
 
     /// <summary>
     /// The connection with <paramref name="connectionId"/> resolved with its account (see <see cref="S3ConnectionResolver"/>), or
-    /// <c>null</c> when there is none. The lookup apps pass to <see cref="S3StorageFactory"/>.
+    /// <c>null</c> when there is none. The lookup apps pass to <see cref="S3StorageFactory"/>. A connection whose account is missing
+    /// never resolves to <c>null</c>: it makes the file corrupt, so this throws <see cref="JsonException"/> like every member.
     /// </summary>
     public S3Connection? TryResolve(string connectionId)
     {
@@ -174,7 +176,7 @@ public sealed class S3ConnectionStore
         return new Document(accounts, connections);
     }
 
-    /// <summary>Format 1 → format 2 in memory; see the class remarks. The secret blobs are carried over unchanged, never decrypted.</summary>
+    /// <summary>Format 1 → format 2 in memory; see the class remarks. The secret blobs are carried over unchanged; they are only test-decrypted to pick each account's blob.</summary>
     private static Document Migrate(FileDto file)
     {
         var entries = file.Connections ?? throw Corrupt("it has no connection list");
@@ -189,18 +191,26 @@ public sealed class S3ConnectionStore
 
         var accounts = new List<AccountEntry>();
         var connections = new List<ConnectionEntry>();
-        var accountByKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        var accountByKey = new Dictionary<string, int>(StringComparer.Ordinal);
+        var decryptable = new List<bool>();
         var accountNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var connectionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in entries)
         {
-            if (!accountByKey.TryGetValue(e!.AccessKeyId!, out var accountId))
+            if (!accountByKey.TryGetValue(e!.AccessKeyId!, out var index))
             {
-                accountId = e.Id!;
-                accountByKey.Add(e.AccessKeyId!, accountId);
-                accounts.Add(new AccountEntry(accountId, UniqueName(e.Name!, accountNames), e.AccessKeyId!, e.SecretProtected));
+                index = accounts.Count;
+                accountByKey.Add(e.AccessKeyId!, index);
+                accounts.Add(new AccountEntry(e.Id!, UniqueName(e.Name!, accountNames), e.AccessKeyId!, e.SecretProtected));
+                decryptable.Add(SecretProtector.TryUnprotect(e.SecretProtected) is not null);
             }
-            connections.Add(new ConnectionEntry(e.Id!, UniqueName(e.Name!, connectionNames), e.Region!, e.Bucket!, accountId));
+            else if (!decryptable[index] && SecretProtector.TryUnprotect(e.SecretProtected) is not null)
+            {
+                // The first blob of the group that decrypts wins; the account keeps the first entry's id and name.
+                accounts[index] = accounts[index] with { SecretProtected = e.SecretProtected };
+                decryptable[index] = true;
+            }
+            connections.Add(new ConnectionEntry(e.Id!, UniqueName(e.Name!, connectionNames), e.Region!, e.Bucket!, accounts[index].Id));
         }
         return new Document(accounts, connections);
     }

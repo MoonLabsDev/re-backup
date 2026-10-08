@@ -57,7 +57,7 @@ CurrentUser with entropy "ReBackup.S3.v1", a rejected file is never overwritten,
   (case-insensitive), every `accountId` exists, regions valid (`S3Regions.IsValid`). Any violation → `JsonException`.
 - **Migration from `formatVersion: 1`** on load: every v1 entry becomes an account (name = connection name, same
   access key id and blob) plus a connection referring to it; entries with the same access key id share one account
-  (the first entry's name and blob). The file is rewritten as v2 on the next `Save*`, not on load. `formatVersion > 2`
+  (the first entry's id and name; the first decryptable blob, else the first). The file is rewritten as v2 on the next `Save*`, not on load. `formatVersion > 2`
   → `JsonException` ("newer version"), never overwritten.
 
 ## 4. Factory and tester

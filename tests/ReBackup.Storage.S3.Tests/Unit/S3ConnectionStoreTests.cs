@@ -236,6 +236,36 @@ public sealed class S3ConnectionStoreTests : IDisposable
         reloaded.TryResolve("c")!.NeedsSecret.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("AAAA")]
+    [InlineData(null)]
+    public void Migration_takes_the_first_decryptable_blob(string? firstBlob)
+    {
+        var blobY = SecretProtector.Protect("secret-y");
+        WriteFile(V1(V1Entry("a", "Alpha", "AKIAK", firstBlob), V1Entry("b", "Beta", "AKIAK", blobY)));
+        var store = new S3ConnectionStore(FilePath);
+
+        var account = store.LoadAccounts().Should().ContainSingle().Which;
+        account.Id.Should().Be("a");
+        account.Name.Should().Be("Alpha");
+        account.Secret.Should().Be("secret-y");
+
+        store.SaveAccount(account with { Secret = null });
+
+        JsonNode.Parse(File.ReadAllText(FilePath))!["accounts"]![0]!["secretProtected"]!.GetValue<string>().Should().Be(blobY);
+    }
+
+    [Fact]
+    public void Migration_without_any_decryptable_blob_keeps_the_first_one()
+    {
+        WriteFile(V1(V1Entry("a", "Alpha", "AKIAK", "AAAA"), V1Entry("b", "Beta", "AKIAK", "BBBB")));
+        var store = new S3ConnectionStore(FilePath);
+
+        store.SaveAccount(store.LoadAccounts().Single() with { Secret = null, Name = "Renamed" });
+
+        JsonNode.Parse(File.ReadAllText(FilePath))!["accounts"]![0]!["secretProtected"]!.GetValue<string>().Should().Be("AAAA");
+    }
+
     [Fact]
     public void Migration_keeps_an_entry_without_a_secret_as_an_account_that_needs_one()
     {
