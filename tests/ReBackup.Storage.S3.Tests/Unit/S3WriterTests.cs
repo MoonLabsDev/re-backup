@@ -297,6 +297,67 @@ public class S3WriterTests
     }
 
     [Fact]
+    public async Task Cancellation_during_the_proof_check_is_cancellation_not_a_remembered_conflict()
+    {
+        var (s, fake) = Make();
+        fake.RetryAfterSuccess = true;
+        using var cts = new CancellationTokenSource();
+        await using var writer = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await writer.WriteAsync(Data(10), Ct);
+        fake.BeforeHead = () =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        };
+
+        var commit = () => writer.CommitAsync(cts.Token);
+
+        await commit.Should().ThrowAsync<OperationCanceledException>();
+        fake.BeforeHead = null;
+        await writer.CommitAsync(Ct); // not stuck on a conflict: the retry finds its own object
+    }
+
+    [Fact]
+    public async Task The_proof_accepts_an_uppercase_quoted_object_etag()
+    {
+        var (s, fake) = Make();
+        var data = Data(10);
+        await using var writer = await s.CreateAsync("small", new CreateOptions(), Ct);
+        await writer.WriteAsync(data, Ct);
+        fake.Add("p/small", etag: FakeS3Client.Quote(FakeS3Client.Md5Hex(data).ToUpperInvariant()), body: data);
+
+        await writer.CommitAsync(Ct);
+    }
+
+    [Fact]
+    public void Multipart_etag_is_the_md5_of_the_part_md5s_and_null_without_md5_part_etags()
+    {
+        byte[][] parts = [Data(5), Data(7)];
+        var etags = parts.Select((p, i) => new PartETag(i + 1, FakeS3Client.Quote(FakeS3Client.Md5Hex(p)))).ToList();
+
+        S3Writer.MultipartETag(etags).Should().Be(FakeS3Client.MultipartETag(parts));
+        S3Writer.MultipartETag([etags[0], new PartETag(2, "\"" + new string('z', 32) + "\"")]).Should().BeNull("not hex");
+        S3Writer.MultipartETag([etags[0], new PartETag(2, "\"abc123\"")]).Should().BeNull("too short");
+        S3Writer.MultipartETag([etags[0], new PartETag(2, (string?)null)]).Should().BeNull("missing");
+    }
+
+    [Fact]
+    public async Task A_truncated_listing_page_without_continuation_token_fails_closed()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/d/").Add("p/d/f").Add("p/x");
+        fake.TruncatedWithoutToken = true;
+
+        var delete = () => s.DeleteAsync(["d", "x"], Ct);
+        var list = async () => { await foreach (var _ in s.ListAsync("", recursive: true, Ct)) { } };
+
+        await delete.Should().ThrowAsync<StorageIOException>();
+        await list.Should().ThrowAsync<StorageIOException>();
+        fake.DeleteBatches.Should().BeEmpty();
+        fake.Objects.Should().HaveCount(3);
+    }
+
+    [Fact]
     public async Task Overwrite_commit_never_checks_after_the_write()
     {
         var (s, fake) = Make();

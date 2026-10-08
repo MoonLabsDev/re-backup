@@ -15,6 +15,9 @@ public class FakeS3Client : DispatchProxy
 
     public List<Obj> Objects { get; } = [];
     public int PageSize { get; set; } = 1000;
+
+    /// <summary>Every listing page says it is truncated but carries no continuation token (a broken server answer).</summary>
+    public bool TruncatedWithoutToken { get; set; }
     public List<ListObjectsV2Request> ListRequests { get; } = [];
     public List<GetObjectMetadataRequest> HeadRequests { get; } = [];
 
@@ -51,6 +54,9 @@ public class FakeS3Client : DispatchProxy
 
     /// <summary>The keys <c>DeleteObject</c> was called for.</summary>
     public List<string> DeleteRequests { get; } = [];
+
+    /// <summary>Runs at the start of every <c>HeadObject</c> (to cancel or fail while one is in flight).</summary>
+    public Action? BeforeHead { get; set; }
 
     /// <summary>Runs after every successful <c>PutObject</c>.</summary>
     public Action? AfterPut { get; set; }
@@ -169,8 +175,8 @@ public class FakeS3Client : DispatchProxy
         var more = start + size < entries.Count;
         return new ListObjectsV2Response
         {
-            IsTruncated = more,
-            NextContinuationToken = more ? (start + size).ToString() : null,
+            IsTruncated = more || TruncatedWithoutToken,
+            NextContinuationToken = more && !TruncatedWithoutToken ? (start + size).ToString() : null,
             S3Objects = page.Where(e => e.Object is not null)
                 .Select(e => new S3Object { Key = e.Object!.Key, Size = e.Object.Size, ETag = e.Object.ETag, LastModified = e.Object.LastModified }).ToList(),
             CommonPrefixes = page.Where(e => e.Common is not null).Select(e => e.Common!).ToList(),
@@ -180,6 +186,7 @@ public class FakeS3Client : DispatchProxy
     private GetObjectMetadataResponse Head(GetObjectMetadataRequest request)
     {
         HeadRequests.Add(request);
+        BeforeHead?.Invoke();
         var o = Objects.FirstOrDefault(x => x.Key == request.Key)
             ?? throw new AmazonS3Exception("not found", ErrorType.Unknown, "NotFound", "req", System.Net.HttpStatusCode.NotFound);
         return new GetObjectMetadataResponse { ContentLength = o.Size, ETag = o.ETag, LastModified = o.LastModified };

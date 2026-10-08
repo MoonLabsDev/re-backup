@@ -141,6 +141,7 @@ internal sealed class S3Writer : StorageWriter
     /// provably this writer's, i.e. the SDK retried a first attempt that had succeeded unseen. The proof is the object's ETag: for a
     /// single put the MD5 of the buffer, for multipart the MD5 of the binary part MD5s (the ETags S3 returned for our parts) + "-" +
     /// part count. Any doubt is no proof and the conflict stands: an ETag that is no MD5 (e.g. under SSE-KMS), a failed HEAD.
+    /// Cancellation by <paramref name="ct"/> during the HEAD throws <see cref="OperationCanceledException"/>.
     /// </summary>
     private async Task<bool> IsOwnObjectAsync(CancellationToken ct)
     {
@@ -153,6 +154,8 @@ internal sealed class S3Writer : StorageWriter
         }
         catch (Exception)
         {
+            // Cancelled by the caller: cancellation, not a conflict to remember (a later commit may still find its object).
+            ct.ThrowIfCancellationRequested();
             return false;
         }
     }

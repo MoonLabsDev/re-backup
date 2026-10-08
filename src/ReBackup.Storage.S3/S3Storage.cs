@@ -81,7 +81,7 @@ public sealed class S3Storage : IStorage
         {
             ct.ThrowIfCancellationRequested();
             var page = await ListPageAsync(folder, keyPrefix, recursive, token, ct).ConfigureAwait(false);
-            token = page.IsTruncated == true ? page.NextContinuationToken : null;
+            token = NextToken(page, folder);
 
             foreach (var commonPrefix in page.CommonPrefixes ?? [])
             {
@@ -307,7 +307,7 @@ public sealed class S3Storage : IStorage
                     Delimiter = delimiter,
                     ContinuationToken = token,
                 }, ct).ConfigureAwait(false);
-                token = page.IsTruncated == true ? page.NextContinuationToken : null;
+                token = NextToken(page, path);
                 keys.AddRange((page.S3Objects ?? []).Select(o => o.Key));
                 commonPrefixes.UnionWith(page.CommonPrefixes ?? []);
             }
@@ -368,6 +368,15 @@ public sealed class S3Storage : IStorage
             throw S3Errors.Map(new AmazonS3Exception($"DeleteObjects failed for a key ({error.Code}).", ErrorType.Unknown, error.Code, null, status), path, ct);
         }
         batch.Clear();
+    }
+
+    /// <summary>The token for the next page; a truncated page without one fails closed instead of ending the listing early.</summary>
+    private static string? NextToken(ListObjectsV2Response page, string path)
+    {
+        if (page.IsTruncated != true) return null;
+        return string.IsNullOrEmpty(page.NextContinuationToken)
+            ? throw new StorageIOException(path, $"The listing at '{path}' is truncated but has no continuation token.")
+            : page.NextContinuationToken;
     }
 
     private static StorageEntry Directory(string path) => new(path, true, 0, DirectoryTime, false, null);

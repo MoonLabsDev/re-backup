@@ -6,7 +6,7 @@ namespace ReBackup.Storage.S3.Connections;
 
 /// <summary>
 /// The connections of one app in a JSON file; secrets are stored DPAPI-protected and the plain secret is never written.
-/// A missing file is an empty list. A corrupt file (invalid JSON, no format version, an entry without id, name, region, bucket or
+/// A missing file is an empty list. A corrupt file (invalid JSON, no format version, no connection list, an entry without id, name, region, bucket or
 /// access key ID, an id used twice) or one of a newer format throws <see cref="JsonException"/> and is never overwritten.
 /// An entry whose secret cannot be decrypted is kept (loaded with <c>Secret = null</c>) so it survives later saves.
 /// </summary>
@@ -32,10 +32,18 @@ public sealed class S3ConnectionStore
     public S3Connection? TryGet(string id) =>
         LoadAll().FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Inserts the connection or replaces the one with the same id; a <c>null</c> secret keeps the stored one.</summary>
+    /// <summary>
+    /// Inserts the connection or replaces the one with the same id; a <c>null</c> secret keeps the stored one. Throws
+    /// <see cref="ArgumentException"/>, before touching the file, for a connection that loading would reject (an empty id, name,
+    /// region, bucket or access key ID) or whose region is no AWS region name.
+    /// </summary>
     public void Save(S3Connection connection)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        if (IsBlank(connection.Id) || IsBlank(connection.Name) || IsBlank(connection.Region) || IsBlank(connection.Bucket) || IsBlank(connection.AccessKeyId))
+            throw new ArgumentException("A connection needs an id, a name, a region, a bucket and an access key ID.", nameof(connection));
+        if (!S3Regions.IsValid(connection.Region))
+            throw new ArgumentException("The region is no AWS region name.", nameof(connection));
         var entries = ReadEntries();
         var index = entries.FindIndex(e => SameId(e.Id, connection.Id));
         var secretProtected = connection.Secret is not null
@@ -65,7 +73,7 @@ public sealed class S3ConnectionStore
             throw new JsonException($"The connections file was written by a newer version (format {file.FormatVersion}); this version reads format {FormatVersion} and leaves the file unchanged.");
         if (file.FormatVersion < 1) throw new JsonException("The connections file is corrupt: it has no format version.");
 
-        var entries = file.Connections?.ToList() ?? [];
+        var entries = file.Connections?.ToList() ?? throw new JsonException("The connections file is corrupt: it has no connection list.");
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < entries.Count; i++)
         {
@@ -75,9 +83,9 @@ public sealed class S3ConnectionStore
             if (!ids.Add(e.Id)) throw new JsonException($"The connections file is corrupt: the id of connection {i + 1} is used twice.");
         }
         return entries;
-
-        static bool IsBlank(string? value) => string.IsNullOrWhiteSpace(value);
     }
+
+    private static bool IsBlank(string? value) => string.IsNullOrWhiteSpace(value);
 
     private void Write(List<Entry> entries) =>
         AtomicFile.WriteAllText(_filePath,

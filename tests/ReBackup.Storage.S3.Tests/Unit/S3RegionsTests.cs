@@ -11,6 +11,7 @@ public class S3RegionsTests
     [InlineData("ap-southeast-2")]
     [InlineData("cn-northwest-1")]
     [InlineData("ap-southeast-12")]
+    [InlineData("eusc-de-east-1")] // AWS European Sovereign Cloud
     public void Region_names_are_valid(string region) => S3Regions.IsValid(region).Should().BeTrue();
 
     [Theory]
@@ -22,6 +23,8 @@ public class S3RegionsTests
     [InlineData(" eu-central-1")]
     [InlineData("eu-central-1\n")]
     [InlineData("EU-CENTRAL-1")]
+    [InlineData("EU-central-1")]
+    [InlineData("abcde-x-1")]
     [InlineData("eu-central-123")]
     [InlineData("e-central-1")]
     [InlineData("eu--1")]

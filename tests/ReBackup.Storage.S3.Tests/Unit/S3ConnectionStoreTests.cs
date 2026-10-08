@@ -144,6 +144,45 @@ public sealed class S3ConnectionStoreTests : IDisposable
     }
 
     [Fact]
+    public void Null_connections_are_corrupt() => AssertRejected("""{ "formatVersion": 1, "connections": null }""");
+
+    public static TheoryData<S3Connection> InvalidConnections => new()
+    {
+        Connection("a") with { Id = "" },
+        Connection("a") with { Id = " " },
+        Connection("a") with { Name = "" },
+        Connection("a") with { Region = "" },
+        Connection("a") with { Region = "eu-central" },
+        Connection("a") with { Region = "EU-CENTRAL-1" },
+        Connection("a") with { Bucket = " " },
+        Connection("a") with { AccessKeyId = "" },
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidConnections))]
+    public void Save_rejects_a_connection_that_load_would_reject_and_leaves_the_file(S3Connection invalid)
+    {
+        var store = new S3ConnectionStore(FilePath);
+        store.Save(Connection("keep"));
+        var before = File.ReadAllText(FilePath);
+
+        store.Invoking(s => s.Save(invalid)).Should().Throw<ArgumentException>();
+
+        File.ReadAllText(FilePath).Should().Be(before);
+        store.LoadAll().Select(c => c.Id).Should().Equal("keep");
+    }
+
+    [Fact]
+    public void Save_of_an_invalid_connection_creates_no_file()
+    {
+        var store = new S3ConnectionStore(FilePath);
+
+        store.Invoking(s => s.Save(Connection("a") with { Name = "" })).Should().Throw<ArgumentException>();
+
+        File.Exists(FilePath).Should().BeFalse();
+    }
+
+    [Fact]
     public void A_null_entry_is_corrupt() => AssertRejected("""{ "formatVersion": 1, "connections": [ null ] }""");
 
     [Fact]
