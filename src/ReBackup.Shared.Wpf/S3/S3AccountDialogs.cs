@@ -31,14 +31,24 @@ public sealed class S3AccountDialogs(S3ConnectionTester tester, Func<Window?> ow
 
     /// <summary>
     /// "New account…" of <see cref="S3ConnectionDialogViewModel"/>: opens the account dialog, stores the account in
-    /// <paramref name="store"/> and returns it as stored (with its secret), or <c>null</c> when cancelled or not saved.
+    /// <paramref name="store"/> and returns it as stored (with its secret), or <c>null</c> when cancelled or not saved. A file the
+    /// store cannot read shows the load error before any dialog opens.
     /// </summary>
     public S3Account? CreateIn(S3ConnectionStore store)
     {
         ArgumentNullException.ThrowIfNull(store);
+        List<string> names;
         try
         {
-            var names = store.LoadAccounts().Select(a => a.Name).ToList();
+            names = store.LoadAccounts().Select(a => a.Name).ToList();
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            ShowError(Loc.T(S3AccountsViewModel.LoadFailedKey));
+            return null;
+        }
+        try
+        {
             var created = EditAccount(null, name => names.Exists(n => string.Equals(n, name.Trim(), StringComparison.OrdinalIgnoreCase)));
             if (created is null) return null;
             store.SaveAccount(created);

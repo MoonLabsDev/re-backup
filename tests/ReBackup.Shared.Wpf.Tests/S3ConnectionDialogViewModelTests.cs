@@ -52,6 +52,42 @@ public class S3ConnectionDialogViewModelTests
     }
 
     [Fact]
+    public void A_new_connection_with_one_account_preselects_it()
+    {
+        var vm = Create(accounts: [Main]);
+
+        vm.SelectedAccount.Should().Be(Main);
+        vm.Errors.Should().NotContain("s3.error.accountRequired");
+        vm.AccountHintKey.Should().BeNull();
+
+        vm.Name = "Backups";
+        vm.Region = "eu-central-1";
+        vm.Bucket = "my-bucket";
+
+        vm.SaveCommand.CanExecute(null).Should().BeTrue();
+        vm.SaveCommand.Execute(null);
+        vm.Result!.AccountId.Should().Be("acc-1");
+    }
+
+    [Fact]
+    public void A_new_connection_with_two_accounts_preselects_none()
+    {
+        var vm = Create(accounts: [Main, Spare]);
+
+        vm.SelectedAccount.Should().BeNull();
+        vm.Errors.Should().Contain("s3.error.accountRequired");
+    }
+
+    [Fact]
+    public void An_edited_connection_whose_account_is_missing_does_not_take_the_only_account()
+    {
+        var vm = Create(Stored with { AccountId = "gone" }, accounts: [Spare]);
+
+        vm.SelectedAccount.Should().BeNull("the user must choose consciously");
+        vm.AccountHintKey.Should().Be("s3.error.accountRequired");
+    }
+
+    [Fact]
     public void Filled_fields_are_valid()
     {
         var vm = Create();

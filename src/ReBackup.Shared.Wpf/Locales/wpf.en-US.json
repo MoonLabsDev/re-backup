@@ -29,7 +29,7 @@
     },
     "account": {
       "new": "New account…",
-      "needsSecret": "The secret of this account must be entered again (S3 accounts) before the connection can be tested."
+      "needsSecret": "Enter this account's secret again under “S3 accounts” to test the connection."
     },
     "accountTest": {
       "run": "Test access key"

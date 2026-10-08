@@ -4,7 +4,6 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
-using ReBackup.Storage.S3;
 using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.Shared.Wpf.S3;
@@ -44,12 +43,10 @@ public sealed partial class S3AccountsViewModel : ObservableObject
     private readonly IS3AccountDialogs _dialogs;
 
     /// <param name="store">The accounts and connections file of the app.</param>
-    /// <param name="tester">Kept for the app's account dialogs; the list itself runs no test.</param>
     /// <param name="dialogs">Opens the account dialog and the message boxes.</param>
-    public S3AccountsViewModel(S3ConnectionStore store, S3ConnectionTester tester, IS3AccountDialogs dialogs)
+    public S3AccountsViewModel(S3ConnectionStore store, IS3AccountDialogs dialogs)
     {
         ArgumentNullException.ThrowIfNull(store);
-        ArgumentNullException.ThrowIfNull(tester);
         ArgumentNullException.ThrowIfNull(dialogs);
         _store = store;
         _dialogs = dialogs;

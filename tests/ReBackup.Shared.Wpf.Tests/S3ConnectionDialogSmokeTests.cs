@@ -75,7 +75,7 @@ public class S3ConnectionDialogSmokeTests
                 var store = new S3ConnectionStore(Path.Combine(dir, "connections.json"));
                 store.SaveAccount(new S3Account("a", "Main", "AKIA1", "s1"));
                 store.Save(new S3ConnectionInfo("c", "Backups", "eu-central-1", "my-bucket", "a"));
-                var vm = new S3AccountsViewModel(store, new S3ConnectionTester(_ => FakeS3Client.Create().Client), new FakeAccountDialogs());
+                var vm = new S3AccountsViewModel(store, new FakeAccountDialogs());
 
                 var content = Layout(new S3AccountsDialog(vm));
 

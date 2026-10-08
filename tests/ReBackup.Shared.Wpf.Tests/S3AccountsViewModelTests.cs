@@ -26,7 +26,7 @@ public sealed class S3AccountsViewModelTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
-    private S3AccountsViewModel Create() => new(_store, new S3ConnectionTester(_ => FakeS3Client.Create().Client), _dialogs);
+    private S3AccountsViewModel Create() => new(_store, _dialogs);
 
     private void Seed()
     {

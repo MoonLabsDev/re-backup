@@ -29,7 +29,7 @@
     },
     "account": {
       "new": "Neues Konto…",
-      "needsSecret": "Der geheime Schlüssel dieses Kontos muss erneut eingegeben werden (S3-Konten), bevor die Verbindung getestet werden kann."
+      "needsSecret": "Den geheimen Schlüssel dieses Kontos unter „S3-Konten“ erneut eingeben, um die Verbindung zu testen."
     },
     "accountTest": {
       "run": "Zugriffsschlüssel testen"
@@ -41,7 +41,7 @@
       "delete": "Löschen",
       "close": "Schließen",
       "empty": "Noch keine Konten.",
-      "needsSecret": "Geheimer Schlüssel muss neu eingegeben werden",
+      "needsSecret": "Geheimer Schlüssel muss erneut eingegeben werden",
       "usedBy": { "one": "{count} Verbindung", "other": "{count:N0} Verbindungen" },
       "inUse": "Dieses Konto kann nicht gelöscht werden, solange diese Verbindungen es verwenden:",
       "deleteTitle": "Konto löschen",

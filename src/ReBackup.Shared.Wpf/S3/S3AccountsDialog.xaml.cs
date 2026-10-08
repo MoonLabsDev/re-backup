@@ -21,7 +21,7 @@ public partial class S3AccountsDialog : Window
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(tester);
-        _viewModel = new S3AccountsViewModel(store, tester, new S3AccountDialogs(tester, () => this));
+        _viewModel = new S3AccountsViewModel(store, new S3AccountDialogs(tester, () => this));
         Initialize();
     }
 

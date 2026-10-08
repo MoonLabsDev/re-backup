@@ -61,6 +61,11 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
             // Looked up among the accounts only (a connection id may equal an account id after a migration); a missing account selects nothing.
             _selectedAccount = Accounts.FirstOrDefault(a => SameId(a.Id, existing.AccountId));
         }
+        else if (Accounts.Count == 1)
+        {
+            // A new connection with a single account to choose from takes it; an edited one never gets another account silently.
+            _selectedAccount = Accounts[0];
+        }
     }
 
     [ObservableProperty]

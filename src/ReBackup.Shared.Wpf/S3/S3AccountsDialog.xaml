@@ -101,7 +101,7 @@
                     AutomationProperties.Name="{l:Loc s3.accounts.edit}" />
             <Button DockPanel.Dock="Left" Content="{l:Loc s3.accounts.delete}" MinWidth="96" Margin="8,0,0,0" Command="{Binding DeleteCommand}"
                     AutomationProperties.Name="{l:Loc s3.accounts.delete}" />
-            <Button DockPanel.Dock="Right" Content="{l:Loc s3.accounts.close}" MinWidth="80" IsCancel="True" IsDefault="True"
+            <Button DockPanel.Dock="Right" Content="{l:Loc s3.accounts.close}" MinWidth="80" IsCancel="True"
                     AutomationProperties.Name="{l:Loc s3.accounts.close}" />
         </DockPanel>
     </StackPanel>
