@@ -30,6 +30,7 @@ internal sealed class S3Writer : StorageWriter
     private readonly string _key;
     private readonly string _path;
     private readonly bool _overwrite;
+    private readonly string? _ifMatch;
     private readonly CancellationTokenSource _disposeCts = new();
     private readonly List<PartETag> _parts = [];
 
@@ -43,13 +44,15 @@ internal sealed class S3Writer : StorageWriter
     private bool _committed;
     private bool _disposed;
 
-    public S3Writer(IAmazonS3 client, string bucket, string key, string path, bool overwrite)
+    public S3Writer(IAmazonS3 client, string bucket, string key, string path, bool overwrite, string? expectedStamp = null)
     {
         _client = client;
         _bucket = bucket;
         _key = key;
         _path = path;
         _overwrite = overwrite;
+        // The stamp is an unquoted ETag; If-Match wants it quoted.
+        _ifMatch = expectedStamp is null ? null : "\"" + expectedStamp.Trim('"') + "\"";
     }
 
     /// <summary>The size of part <paramref name="partNumber"/> (1-based): 16 MiB for parts 1–1000, doubling after every 1000 parts, at most 1 GiB.</summary>
@@ -107,6 +110,7 @@ internal sealed class S3Writer : StorageWriter
                     InputStream = new MemoryStream(_buffer, 0, _filled, writable: false),
                     Headers = { ContentLength = _filled },
                     IfNoneMatch = _overwrite ? null : "*",
+                    IfMatch = _ifMatch,
                 }, ct).ConfigureAwait(false);
             }
             else
@@ -120,12 +124,20 @@ internal sealed class S3Writer : StorageWriter
                     UploadId = _uploadId,
                     PartETags = _parts,
                     IfNoneMatch = _overwrite ? null : "*",
+                    IfMatch = _ifMatch,
                 }, ct).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (!_overwrite && S3Errors.IsConditionalConflict(ex))
         {
             if (!await IsOwnObjectAsync(ct).ConfigureAwait(false)) throw Fail(ex, ct);
+        }
+        catch (AmazonS3Exception ex) when (_ifMatch is not null && ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // If-Match on a missing key answers 404 NoSuchKey (not 412): the file this write expected is gone, which is a conflict.
+            var conflict = new StorageConflictException(_path, $"Conflict at '{_path}'.", ex);
+            _failure ??= ExceptionDispatchInfo.Capture(conflict);
+            throw conflict;
         }
         catch (Exception ex)
         {

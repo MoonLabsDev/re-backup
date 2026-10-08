@@ -101,6 +101,8 @@ public sealed class InMemoryStorage : IStorage
     {
         StoragePath.Validate(path);
         if (path.Length == 0) throw new ArgumentException("A file needs a path.", nameof(path));
+        if (options.ExpectedStamp is not null && !options.Overwrite)
+            throw new ArgumentException("An expected stamp needs Overwrite.", nameof(options));
         ct.ThrowIfCancellationRequested();
         lock (_gate)
         {
@@ -164,8 +166,10 @@ public sealed class InMemoryStorage : IStorage
         }
     }
 
-    private void Commit(string path, byte[] content, DateTime modifiedUtc, bool overwrite)
+    private void Commit(string path, byte[] content, DateTime modifiedUtc, bool overwrite, string? expectedStamp = null)
     {
+        if (expectedStamp is not null && !(_files.TryGetValue(path, out var current) && FileEntry(path, current).Stamp == expectedStamp))
+            throw new StorageConflictException(path, $"'{path}' changed or is missing.");
         if (_files.ContainsKey(path))
         {
             if (!overwrite) throw new StorageConflictException(path, $"'{path}' already exists.");
@@ -260,7 +264,7 @@ public sealed class InMemoryStorage : IStorage
                 var modified = _options.ModifiedUtc is { } requested && _owner.Capabilities.HasFlag(StorageCapabilities.SetModifiedTime)
                     ? requested.ToUniversalTime()
                     : _owner._time.GetUtcNow().UtcDateTime;
-                _owner.Commit(_path, content, modified, _options.Overwrite);
+                _owner.Commit(_path, content, modified, _options.Overwrite, _options.ExpectedStamp);
             }
             _committed = true;
             _buffer?.Dispose();

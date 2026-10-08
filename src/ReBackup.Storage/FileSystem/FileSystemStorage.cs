@@ -125,6 +125,8 @@ public sealed class FileSystemStorage : IStorage
         ArgumentNullException.ThrowIfNull(options);
         var full = FullPathOf(path);
         if (path.Length == 0) throw new ArgumentException("A file path is required.", nameof(path));
+        if (options.ExpectedStamp is not null && !options.Overwrite)
+            throw new ArgumentException("An expected stamp needs Overwrite.", nameof(options));
         ct.ThrowIfCancellationRequested();
         try
         {
@@ -237,6 +239,10 @@ public sealed class FileSystemStorage : IStorage
             throw mapped;
         }
     }
+
+    /// <summary>The stamp of the file at <paramref name="full"/> as <see cref="StatAsync"/> reports it; <c>null</c> when there is no file.</summary>
+    internal static string? StampOf(string full) =>
+        new FileInfo(full) is { Exists: true } file ? $"{file.Length}:{file.LastWriteTimeUtc.Ticks}" : null;
 
     private static FileSystemInfo GetInfo(string full)
     {

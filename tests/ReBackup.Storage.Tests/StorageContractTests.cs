@@ -98,6 +98,58 @@ public abstract class StorageContractTests
     }
 
     [SkippableFact]
+    public async Task Expected_stamp_matching_overwrites()
+    {
+        var storage = CreateEmpty();
+        await WriteAsync(storage, "a.txt", "old");
+        var stamp = (await storage.StatAsync("a.txt", Ct))!.Stamp;
+        stamp.Should().NotBeNull();
+
+        await WriteAsync(storage, "a.txt", "new", new CreateOptions(Overwrite: true, ExpectedStamp: stamp));
+
+        (await ReadAsync(storage, "a.txt")).Should().Be("new");
+    }
+
+    [SkippableFact]
+    public async Task Expected_stamp_mismatch_throws_conflict_and_keeps_old_content()
+    {
+        var storage = CreateEmpty();
+        await WriteAsync(storage, "a.txt", "old");
+        var stamp = (await storage.StatAsync("a.txt", Ct))!.Stamp;
+        await WriteAsync(storage, "a.txt", "changed by someone else", new CreateOptions(Overwrite: true));
+
+        await using var writer = await storage.CreateAsync("a.txt", new CreateOptions(Overwrite: true, ExpectedStamp: stamp), Ct);
+        await writer.WriteAsync(Encoding.UTF8.GetBytes("mine"), Ct);
+        var commit = () => writer.CommitAsync(Ct);
+
+        await commit.Should().ThrowAsync<StorageConflictException>();
+        (await ReadAsync(storage, "a.txt")).Should().Be("changed by someone else");
+    }
+
+    [SkippableFact]
+    public async Task Expected_stamp_on_missing_file_throws_conflict()
+    {
+        var storage = CreateEmpty();
+
+        await using var writer = await storage.CreateAsync("a.txt", new CreateOptions(Overwrite: true, ExpectedStamp: "1:2:3"), Ct);
+        await writer.WriteAsync(Encoding.UTF8.GetBytes("mine"), Ct);
+        var commit = () => writer.CommitAsync(Ct);
+
+        await commit.Should().ThrowAsync<StorageConflictException>();
+        (await storage.StatAsync("a.txt", Ct)).Should().BeNull();
+    }
+
+    [SkippableFact]
+    public async Task Expected_stamp_without_overwrite_throws_argument()
+    {
+        var storage = CreateEmpty();
+
+        var act = () => storage.CreateAsync("a.txt", new CreateOptions(Overwrite: false, ExpectedStamp: "x"), Ct);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [SkippableFact]
     public async Task Overwrite_replaces_content_on_commit_and_keeps_old_content_until_then()
     {
         var storage = CreateEmpty();

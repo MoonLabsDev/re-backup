@@ -178,6 +178,63 @@ public class S3WriterTests
     }
 
     [Fact]
+    public async Task If_match_is_sent_with_expected_stamp()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/small", etag: FakeS3Client.Quote("abc")).Add("p/big", etag: FakeS3Client.Quote("def"));
+
+        await using (var small = await s.CreateAsync("small", new CreateOptions(Overwrite: true, ExpectedStamp: "abc"), Ct))
+        {
+            await small.WriteAsync(Data(10), Ct);
+            await small.CommitAsync(Ct);
+        }
+        await using (var big = await s.CreateAsync("big", new CreateOptions(Overwrite: true, ExpectedStamp: "def"), Ct))
+        {
+            await WriteChunked(big, Data(17 * MiB));
+            await big.CommitAsync(Ct);
+        }
+
+        var put = fake.Puts.Should().ContainSingle().Which;
+        put.IfMatch.Should().Be("\"abc\"");
+        put.IfNoneMatch.Should().BeNull();
+        var complete = fake.Completes.Should().ContainSingle().Which;
+        complete.IfMatch.Should().Be("\"def\"");
+        complete.IfNoneMatch.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Precondition_failed_with_expected_stamp_is_conflict_without_head()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/small", etag: FakeS3Client.Quote("other")).Add("p/big", etag: FakeS3Client.Quote("other"));
+        fake.RetryAfterSuccess = true; // would make an own-write proof succeed if one were attempted
+        await using var small = await s.CreateAsync("small", new CreateOptions(Overwrite: true, ExpectedStamp: "abc"), Ct);
+        await using var big = await s.CreateAsync("big", new CreateOptions(Overwrite: true, ExpectedStamp: "abc"), Ct);
+        await small.WriteAsync(Data(10), Ct);
+        await WriteChunked(big, Data(17 * MiB));
+
+        var commitSmall = () => small.CommitAsync(Ct);
+        var commitBig = () => big.CommitAsync(Ct);
+
+        (await commitSmall.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("small");
+        (await commitBig.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("big");
+        fake.HeadRequests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Expected_stamp_on_missing_key_is_conflict()
+    {
+        // S3 answers If-Match on a missing key with 404 NoSuchKey, not 412.
+        var (s, _) = Make();
+        await using var writer = await s.CreateAsync("gone", new CreateOptions(Overwrite: true, ExpectedStamp: "abc"), Ct);
+        await writer.WriteAsync(Data(10), Ct);
+
+        var commit = () => writer.CommitAsync(Ct);
+
+        (await commit.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("gone");
+    }
+
+    [Fact]
     public async Task Precondition_failed_on_commit_throws_conflict()
     {
         var (s, fake) = Make();

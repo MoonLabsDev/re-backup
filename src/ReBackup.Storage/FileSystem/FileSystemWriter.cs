@@ -106,6 +106,10 @@ internal sealed class FileSystemWriter : StorageWriter
                 }
             }
 
+            // Not atomic: a writer replacing the file between this check and the move still gets overwritten.
+            if (_options.ExpectedStamp is { } expected && FileSystemStorage.StampOf(_target) != expected)
+                throw new StorageConflictException(_path);
+
             // overwrite:false makes the rename itself exclusive: a path taken in the meantime surfaces as "exists".
             File.Move(_temp, _target, _options.Overwrite);
             _committed = true;

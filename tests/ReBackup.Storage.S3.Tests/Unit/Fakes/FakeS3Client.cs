@@ -28,7 +28,7 @@ public class FakeS3Client : DispatchProxy
     public Dictionary<string, Exception> Failures { get; } = [];
 
     /// <summary>A write request as received: the key, the body bytes (copied when the call came in) and the <c>If-None-Match</c> value.</summary>
-    public sealed record Upload(string Key, byte[] Body, string? IfNoneMatch, long? ContentLength);
+    public sealed record Upload(string Key, byte[] Body, string? IfNoneMatch, long? ContentLength, string? IfMatch = null);
 
     public List<Upload> Puts { get; } = [];
     public List<InitiateMultipartUploadRequest> Initiates { get; } = [];
@@ -222,11 +222,22 @@ public class FakeS3Client : DispatchProxy
         return copy.ToArray();
     }
 
+    /// <summary><c>If-Match</c>: the object must exist (else 404) and carry exactly this ETag (quotes ignored), else 412.</summary>
+    private void CheckIfMatch(string key, string? ifMatch)
+    {
+        if (ifMatch is null) return;
+        var current = Objects.FirstOrDefault(o => o.Key == key);
+        // Like S3: a missing key answers 404 NoSuchKey, a different ETag 412.
+        if (current is null) throw new AmazonS3Exception("The specified key does not exist.", ErrorType.Sender, "NoSuchKey", "req", System.Net.HttpStatusCode.NotFound);
+        if (current.ETag?.Trim('"') != ifMatch.Trim('"')) throw PreconditionFailed();
+    }
+
     private PutObjectResponse Put(PutObjectRequest request)
     {
         var body = ReadAll(request.InputStream);
-        Puts.Add(new Upload(request.Key, body, request.IfNoneMatch, request.Headers.ContentLength));
+        Puts.Add(new Upload(request.Key, body, request.IfNoneMatch, request.Headers.ContentLength, request.IfMatch));
         if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
+        CheckIfMatch(request.Key, request.IfMatch);
         var etag = Quote(Md5Hex(body));
         Objects.RemoveAll(o => o.Key == request.Key);
         Objects.Add(new Obj(request.Key, body.Length, etag, Body: body));
@@ -264,6 +275,7 @@ public class FakeS3Client : DispatchProxy
     {
         Completes.Add(request);
         if (request.IfNoneMatch == "*" && Objects.Any(o => o.Key == request.Key)) throw PreconditionFailed();
+        CheckIfMatch(request.Key, request.IfMatch);
         var parts = Parts.OrderBy(p => p.PartNumber).ToList();
         var body = parts.SelectMany(p => p.Body).ToArray();
         var etag = Quote(MultipartETag(parts.Select(p => p.Body)));
