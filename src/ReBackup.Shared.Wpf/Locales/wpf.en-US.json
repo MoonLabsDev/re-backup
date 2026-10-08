@@ -52,6 +52,7 @@
       "error": "The test could not run.",
       "useRegion": "Use {region}",
       "check": {
+        "account": "Access key",
         "bucket": "Bucket",
         "versioning": "Versioning",
         "list": "List",
@@ -70,7 +71,8 @@
       "lifecycleMissing": "No lifecycle rule cleans up incomplete multipart uploads (recommended: abort them after 7 days).",
       "versioningEnabled": "Versioning is on or suspended: deleting old backups adds delete markers and frees no space, unless a lifecycle rule expires noncurrent versions.",
       "notCheckable": "Cannot be checked with these permissions.",
-      "skipped": "Not checked."
+      "skipped": "Not checked.",
+      "accountNoList": "The key is valid but may not list buckets (normal for keys limited to certain buckets)."
     }
   }
 }

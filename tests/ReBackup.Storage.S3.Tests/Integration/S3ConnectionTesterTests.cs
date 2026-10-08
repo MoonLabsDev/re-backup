@@ -1,6 +1,7 @@
 using Amazon.S3;
 using Amazon.S3.Model;
 using FluentAssertions;
+using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.Storage.S3.Tests.Integration;
 
@@ -83,5 +84,17 @@ public sealed class S3ConnectionTesterIntegrationTests(S3ServerFixture server)
 
         Of(results, S3Check.Bucket).Should().Be(new S3CheckResult(S3Check.Bucket, S3CheckState.Failed, S3MessageKeys.NotFound, null));
         results.Where(r => r.Check != S3Check.Bucket).Should().OnlyContain(r => r.State == S3CheckState.Skipped);
+    }
+
+    [SkippableFact]
+    public async Task Account_with_valid_keys_is_ok()
+    {
+        Skip.IfNot(server.Available, server.SkipReason);
+        var connection = server.CreateConnection("unused");
+
+        var result = await server.CreateTester().RunAccountAsync(
+            new S3Account("acc", "Account", connection.AccessKeyId, connection.Secret), Ct);
+
+        result.Should().Be(new S3CheckResult(S3Check.Account, S3CheckState.Ok, S3MessageKeys.Ok, null));
     }
 }

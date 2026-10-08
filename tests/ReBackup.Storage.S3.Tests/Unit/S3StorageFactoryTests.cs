@@ -125,6 +125,88 @@ public class S3StorageFactoryTests
         factory.CachedClientCount.Should().Be(1);
     }
 
+    /// <summary>A store in a temp folder with account "acc" (secret <paramref name="secret"/>) and connection "c1" on it.</summary>
+    private static (S3ConnectionStore Store, string Dir) StoreWithConnection(string secret = "secret-1")
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "rebackup-s3-factory-" + Guid.NewGuid().ToString("N"));
+        var store = new S3ConnectionStore(Path.Combine(dir, "connections.json"));
+        store.SaveAccount(new S3Account("acc", "Account", "AKIA", secret));
+        store.Save(new S3ConnectionInfo("c1", "Conn", "eu-central-1", "bucket", "acc"));
+        return (store, dir);
+    }
+
+    [Fact]
+    public void Store_TryResolve_opens_a_saved_connection()
+    {
+        var (store, dir) = StoreWithConnection();
+        try
+        {
+            using var factory = new S3StorageFactory(new RecordingFactory(), store.TryResolve);
+            factory.Open(new StorageLocation("s3", "a", "c1")).Should().BeOfType<S3Storage>();
+            factory.Invoking(f => f.Open(new StorageLocation("s3", "a", "other"))).Should().Throw<StorageNotFoundException>();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Missing_account_is_not_found()
+    {
+        var info = new S3ConnectionInfo("c1", "Conn", "eu-central-1", "bucket", "gone");
+        using var factory = new S3StorageFactory(new RecordingFactory(), id => id == "c1" ? S3ConnectionResolver.Resolve(info, null) : null);
+
+        factory.Invoking(f => f.Open(new StorageLocation("s3", "a", "c1"))).Should().Throw<StorageNotFoundException>().WithMessage("*not found*");
+    }
+
+    [Fact]
+    public void Account_whose_secret_cannot_be_decrypted_is_access_denied()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "rebackup-s3-factory-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "connections.json");
+        File.WriteAllText(path, """
+            { "formatVersion": 2,
+              "accounts": [ { "id": "acc", "name": "Account", "accessKeyId": "AKIA", "secretProtected": "AAAA" } ],
+              "connections": [ { "id": "c1", "name": "Conn", "region": "eu-central-1", "bucket": "bucket", "accountId": "acc" } ] }
+            """);
+        try
+        {
+            using var factory = new S3StorageFactory(new RecordingFactory(), new S3ConnectionStore(path).TryResolve);
+            factory.Invoking(f => f.Open(new StorageLocation("s3", "a", "c1"))).Should().Throw<StorageAccessDeniedException>().WithMessage("*re-entered*");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Changed_account_secret_gives_a_new_client()
+    {
+        var (store, dir) = StoreWithConnection("secret-1");
+        try
+        {
+            using var factory = new S3StorageFactory(new RecordingFactory(), store.TryResolve);
+            var location = new StorageLocation("s3", "a", "c1");
+            var before = (S3Storage)factory.Open(location);
+
+            store.SaveAccount(new S3Account("acc", "Account", "AKIA", "secret-2"));
+            var after = (S3Storage)factory.Open(location);
+
+            factory.CachedClientCount.Should().Be(2);
+            ClientOf(after).Should().NotBeSameAs(ClientOf(before));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private static object? ClientOf(S3Storage storage) =>
+        typeof(S3Storage).GetField("_client", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(storage);
+
     [Fact]
     public void Dispose_clears_the_cache()
     {

@@ -8,8 +8,11 @@ using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.Storage.S3;
 
-/// <summary>What <see cref="S3ConnectionTester"/> checks, in the order it checks.</summary>
-public enum S3Check { Bucket, Versioning, List, WriteDelete, Lifecycle }
+/// <summary>
+/// What <see cref="S3ConnectionTester"/> checks: <c>Account</c> alone for an account (<see cref="S3ConnectionTester.RunAccountAsync"/>),
+/// the others in this order for a connection.
+/// </summary>
+public enum S3Check { Account, Bucket, Versioning, List, WriteDelete, Lifecycle }
 
 /// <summary>How a check ended. <c>Warning</c> works but needs attention, <c>Skipped</c> was not run or cannot be judged.</summary>
 public enum S3CheckState { Ok, Failed, Warning, Skipped }
@@ -58,7 +61,7 @@ public sealed class S3ConnectionTester
         // No client for a region that is no region name: the SDK would throw its own exception or build a bogus endpoint.
         if (!S3Regions.IsValid(connection.Region))
             return [new S3CheckResult(S3Check.Bucket, S3CheckState.Failed, S3MessageKeys.RegionInvalid, null),
-                ..Enum.GetValues<S3Check>().Where(c => c != S3Check.Bucket).Select(Skipped)];
+                ..ConnectionChecks.Where(c => c != S3Check.Bucket).Select(Skipped)];
 
         var client = _clientFactory(connection);
         try
@@ -74,6 +77,46 @@ public sealed class S3ConnectionTester
             var lifecycle = bucketUsable ? await CheckLifecycleAsync(client, connection, ct).ConfigureAwait(false) : Skipped(S3Check.Lifecycle);
 
             return [bucket, versioning, list, write, lifecycle];
+        }
+        finally
+        {
+            client.Dispose();
+        }
+    }
+
+    /// <summary>The checks <see cref="RunAsync(S3Connection, string, bool, CancellationToken)"/> returns, in order.</summary>
+    private static readonly S3Check[] ConnectionChecks = [S3Check.Bucket, S3Check.Versioning, S3Check.List, S3Check.WriteDelete, S3Check.Lifecycle];
+
+    /// <summary>The region an account is checked in: <c>ListBuckets</c> works from any region and is answered by the global endpoint.</summary>
+    private const string AccountRegion = "us-east-1";
+
+    /// <summary>
+    /// Checks only the credentials of <paramref name="account"/> with <c>ListBuckets</c> in <c>us-east-1</c>: success is Ok;
+    /// <c>AccessDenied</c> is a Warning with <see cref="S3MessageKeys.AccountNoList"/> (the key is valid but may not list buckets,
+    /// normal for bucket-scoped policies); <c>InvalidAccessKeyId</c> / <c>SignatureDoesNotMatch</c> fail with
+    /// <see cref="S3MessageKeys.AccessDenied"/>, network errors with <see cref="S3MessageKeys.Unavailable"/>. The result has
+    /// <see cref="S3Check.Account"/>. Throws <see cref="ArgumentException"/> for an account without secret and
+    /// <see cref="OperationCanceledException"/> when <paramref name="ct"/> is cancelled.
+    /// </summary>
+    public async Task<S3CheckResult> RunAccountAsync(S3Account account, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        if (account.NeedsSecret) throw new ArgumentException("The account has no secret.", nameof(account));
+
+        // The client factory takes a connection: one without bucket, in the region ListBuckets is sent to.
+        var client = _clientFactory(new S3Connection(account.Id, account.Name, AccountRegion, "", account.AccessKeyId, account.Secret));
+        try
+        {
+            await client.ListBucketsAsync(new ListBucketsRequest(), ct).ConfigureAwait(false);
+            return Ok(S3Check.Account);
+        }
+        catch (AmazonServiceException ex) when (!ct.IsCancellationRequested && ex.ErrorCode == "AccessDenied")
+        {
+            return new S3CheckResult(S3Check.Account, S3CheckState.Warning, S3MessageKeys.AccountNoList, null);
+        }
+        catch (Exception ex)
+        {
+            return Failure(S3Check.Account, ex, "", ct);
         }
         finally
         {

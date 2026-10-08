@@ -47,6 +47,11 @@ Architecture test rules (extend `ProjectReferenceTests`):
 
 ## 4. Connections
 
+> **Superseded for storage:** credentials now live in S3 accounts, and `connections.json` is `formatVersion: 2` with
+> `accounts` and `connections` (v1 files below are migrated on load). See
+> [2026-10-08-s3-accounts-design.md](2026-10-08-s3-accounts-design.md) §2–§4. `S3Connection` keeps the shape below as the
+> resolved connection; `SecretProtector` and the store's file rules are unchanged. The text below describes format 1.
+
 ```csharp
 public sealed record S3Connection(string Id, string Name, string Region, string Bucket,
                                   string AccessKeyId, string? Secret);

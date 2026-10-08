@@ -52,6 +52,7 @@
       "error": "Der Test konnte nicht ausgeführt werden.",
       "useRegion": "{region} verwenden",
       "check": {
+        "account": "Zugriffsschlüssel",
         "bucket": "Bucket",
         "versioning": "Versionierung",
         "list": "Auflisten",
@@ -70,7 +71,8 @@
       "lifecycleMissing": "Keine Lebenszyklusregel räumt unvollständige Multipart-Uploads auf (empfohlen: nach 7 Tagen abbrechen).",
       "versioningEnabled": "Die Versionierung ist an oder ausgesetzt: Löschen alter Sicherungen setzt nur Löschmarker und gibt keinen Platz frei, solange keine Lebenszyklusregel nicht aktuelle Versionen ablaufen lässt.",
       "notCheckable": "Mit diesen Berechtigungen nicht prüfbar.",
-      "skipped": "Nicht geprüft."
+      "skipped": "Nicht geprüft.",
+      "accountNoList": "Der Schlüssel ist gültig, darf aber keine Buckets auflisten (normal für Schlüssel, die auf bestimmte Buckets beschränkt sind)."
     }
   }
 }

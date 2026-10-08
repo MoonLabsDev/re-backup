@@ -52,6 +52,9 @@ public class FakeS3Client : DispatchProxy
     /// <summary>The region <c>HeadBucket</c> reports (<c>BucketRegion</c>); <c>null</c> = not reported.</summary>
     public string? BucketRegion { get; set; }
 
+    /// <summary>How often <c>ListBuckets</c> was called.</summary>
+    public int ListBucketsCalls { get; private set; }
+
     /// <summary>The keys <c>DeleteObject</c> was called for.</summary>
     public List<string> DeleteRequests { get; } = [];
 
@@ -112,6 +115,9 @@ public class FakeS3Client : DispatchProxy
                     return Task.FromResult(Abort((AbortMultipartUploadRequest)args![0]!));
                 case "DeleteObjectsAsync":
                     return Task.FromResult(Delete((DeleteObjectsRequest)args![0]!));
+                case "ListBucketsAsync":
+                    ListBucketsCalls++;
+                    return Task.FromResult(new ListBucketsResponse { Buckets = [] });
                 case "HeadBucketAsync":
                     return Task.FromResult(new HeadBucketResponse { BucketRegion = BucketRegion });
                 case "GetBucketVersioningAsync":

@@ -14,4 +14,5 @@ public static class S3MessageKeys
     public const string VersioningEnabled = "s3.check.versioningEnabled";
     public const string NotCheckable = "s3.check.notCheckable";
     public const string Skipped = "s3.check.skipped";
+    public const string AccountNoList = "s3.check.accountNoList";
 }
