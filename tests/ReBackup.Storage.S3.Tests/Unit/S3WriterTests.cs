@@ -451,6 +451,97 @@ public class S3WriterTests
     }
 
     [Fact]
+    public async Task Delete_of_2500_files_under_one_folder_lists_by_page_not_by_path()
+    {
+        var (s, fake) = Make();
+        var paths = Enumerable.Range(0, 2500).Select(i => $"d/f{i:D4}").ToList();
+        foreach (var p in paths) fake.Add("p/" + p);
+
+        await s.DeleteAsync(paths, Ct);
+
+        fake.ListRequests.Should().HaveCountLessThanOrEqualTo(4);
+        fake.DeleteBatches.Select(b => b.Count).Should().Equal(1000, 1000, 500);
+        fake.Objects.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Delete_of_a_top_level_file_lists_only_the_top_level()
+    {
+        // A recursive listing of the parent would walk the whole storage for one file.
+        var (s, fake) = Make();
+        foreach (var i in Enumerable.Range(0, 50)) fake.Add($"p/big/f{i}");
+        fake.Add("p/x");
+
+        await s.DeleteAsync(["x"], Ct);
+
+        var list = fake.ListRequests.Should().ContainSingle().Subject;
+        (list.Prefix, list.Delimiter).Should().Be(("p/", "/"));
+        fake.Objects.Should().HaveCount(50);
+    }
+
+    [Fact]
+    public async Task Delete_of_a_directory_and_its_tree_lists_the_tree_once()
+    {
+        var (s, fake) = Make();
+        fake.PageSize = 2;
+        fake.Add("p/v/").Add("p/v/a/").Add("p/v/a/x").Add("p/v/a/y").Add("p/v/b/z").Add("p/w/keep");
+
+        // Bottom-up, as the version remover sends it.
+        await s.DeleteAsync(["v/a/x", "v/a/y", "v/b/z", "v/a", "v/b", "v"], Ct);
+
+        fake.Objects.Select(o => o.Key).Should().Equal("p/w/keep");
+        fake.ListRequests.Where(r => r.Delimiter is null).Select(r => r.Prefix).Distinct().Should().Equal("p/v/");
+        fake.ListRequests.Where(r => r.Delimiter is not null).Select(r => r.Prefix).Distinct().Should().Equal("p/");
+    }
+
+    [Fact]
+    public async Task Delete_of_a_directory_whose_content_follows_in_the_same_call_succeeds()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/d/").Add("p/d/f.txt");
+
+        await s.DeleteAsync(["d", "d/f.txt"], Ct);
+
+        fake.Objects.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Delete_of_a_directory_with_a_non_empty_subdirectory_conflicts_and_keeps_its_content()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/d/").Add("p/d/e/").Add("p/d/e/f").Add("p/x");
+
+        var act = () => s.DeleteAsync(["x", "d", "d/e"], Ct);
+
+        (await act.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("d");
+        fake.Objects.Select(o => o.Key).Should().BeEquivalentTo(["p/d/", "p/d/e/", "p/d/e/f"]);
+    }
+
+    [Fact]
+    public async Task Delete_of_a_file_that_also_has_keys_below_it_conflicts()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/a").Add("p/a/b");
+
+        var act = () => s.DeleteAsync(["a"], Ct);
+
+        (await act.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("a");
+        fake.Objects.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Delete_maps_listing_failures_to_the_path()
+    {
+        var (s, fake) = Make();
+        fake.Failures["ListObjectsV2Async"] = new HttpRequestException("down");
+
+        var act = () => s.DeleteAsync(["d/a"], Ct);
+
+        (await act.Should().ThrowAsync<StorageUnavailableException>()).Which.Path.Should().Be("d/a");
+        fake.DeleteBatches.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Delete_errors_in_the_response_are_mapped()
     {
         var (s, fake) = Make();

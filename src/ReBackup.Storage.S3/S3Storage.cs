@@ -174,8 +174,10 @@ public sealed class S3Storage : IStorage
     }
 
     /// <summary>
-    /// Deletes in <c>DeleteObjects</c> batches of up to 1000 keys, in the given order. Each path is checked for objects below it first:
-    /// a directory with content is a conflict (after the paths before it are deleted), a lone placeholder <c>x/</c> is deleted with it.
+    /// Deletes in <c>DeleteObjects</c> batches of up to 1000 keys, in the given order. What lies below the paths is listed up front,
+    /// once per parent directory (see <see cref="ListKeysBelowAsync"/>), not once per path. A path with keys below it other than its
+    /// placeholder <c>x/</c> and the keys this same call deletes is a conflict (thrown after the paths before it are deleted; nothing
+    /// below it is deleted); a placeholder whose directory is empty then is deleted with the path.
     /// </summary>
     public async Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct)
     {
@@ -184,22 +186,35 @@ public sealed class S3Storage : IStorage
         foreach (var (p, _) in targets)
             if (p.Length == 0) throw new StorageConflictException(p, "The root cannot be deleted.");
 
+        var below = await ListKeysBelowAsync(targets, ct).ConfigureAwait(false);
+
+        // Everything this call deletes: the keys and the placeholders of all its paths, wherever they stand in the order.
+        var deleting = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (_, key) in targets)
+        {
+            deleting.Add(key);
+            deleting.Add(key + "/");
+        }
+
         var batch = new List<(string Key, string Path)>();
         foreach (var (path, key) in targets)
         {
             ct.ThrowIfCancellationRequested();
-            var (hasPlaceholder, hasContent) = await ProbeBelowAsync(path, key, ct).ConfigureAwait(false);
-            if (hasContent && batch.Count > 0)
+            var placeholder = key + "/";
+            var hasPlaceholder = false;
+            foreach (var keyBelow in KeysWithPrefix(below, placeholder))
             {
-                // The content may be keys of this very call that are still queued.
-                await DeleteBatchAsync(batch, ct).ConfigureAwait(false);
-                (hasPlaceholder, hasContent) = await ProbeBelowAsync(path, key, ct).ConfigureAwait(false);
+                if (keyBelow == placeholder) hasPlaceholder = true;
+                else if (!deleting.Contains(keyBelow))
+                {
+                    await DeleteBatchAsync(batch, ct).ConfigureAwait(false);
+                    throw new StorageConflictException(path, $"The directory '{path}' is not empty.");
+                }
             }
-            if (hasContent) throw new StorageConflictException(path, $"The directory '{path}' is not empty.");
 
             if (batch.Count + (hasPlaceholder ? 2 : 1) > MaxDeleteBatch) await DeleteBatchAsync(batch, ct).ConfigureAwait(false);
             batch.Add((key, path));
-            if (hasPlaceholder) batch.Add((key + "/", path));
+            if (hasPlaceholder) batch.Add((placeholder, path));
         }
         await DeleteBatchAsync(batch, ct).ConfigureAwait(false);
     }
@@ -230,22 +245,87 @@ public sealed class S3Storage : IStorage
         }
     }
 
-    /// <summary>Whether the placeholder <c>key/</c> exists, and whether any other object lies below <paramref name="key"/>.</summary>
-    private async Task<(bool HasPlaceholder, bool HasContent)> ProbeBelowAsync(string path, string key, CancellationToken ct)
+    /// <summary>
+    /// Every key below the paths that are directories, sorted ordinally. The parent directory of each path is listed once with
+    /// delimiter <c>/</c> (its subdirectories come back as common prefixes, so a page answers for up to 1000 paths); a path found
+    /// to be a directory is then listed recursively, once. Parents are taken shallow first, so a parent inside a directory already
+    /// listed (or already found empty) needs no listing of its own: deleting a whole tree lists its root's parent and the tree.
+    /// </summary>
+    private async Task<string[]> ListKeysBelowAsync(List<(string Path, string Key)> targets, CancellationToken ct)
     {
-        var placeholder = key + "/";
+        var known = new List<string>();
+        var resolved = new HashSet<string>(StringComparer.Ordinal); // requested keys whose whole subtree is known
+        var groups = targets.DistinctBy(t => t.Key).GroupBy(t => StoragePath.Parent(t.Path))
+            .OrderBy(g => g.Key.Length == 0 ? 0 : g.Key.Count(c => c == '/') + 1);
+        foreach (var group in groups)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (IsInResolved(S3Keys.ToKey(_prefix, group.Key), resolved))
+            {
+                foreach (var (_, key) in group) resolved.Add(key);
+                continue;
+            }
+
+            var children = group.ToList();
+            var (_, directories) = await ListAllAsync(S3Keys.DirectoryPrefix(_prefix, group.Key), "/", children[0].Path, ct).ConfigureAwait(false);
+            foreach (var (path, key) in children)
+            {
+                if (directories.Contains(key + "/"))
+                    known.AddRange((await ListAllAsync(key + "/", null, path, ct).ConfigureAwait(false)).Keys);
+                resolved.Add(key);
+            }
+        }
+
+        var sorted = known.ToArray();
+        Array.Sort(sorted, StringComparer.Ordinal);
+        return sorted;
+
+        // Whether the key or one of its ancestors is a requested key whose subtree is known.
+        static bool IsInResolved(string key, HashSet<string> resolved)
+        {
+            for (var candidate = key; candidate.Length > 0; candidate = candidate[..Math.Max(candidate.LastIndexOf('/'), 0)])
+                if (resolved.Contains(candidate)) return true;
+            return false;
+        }
+    }
+
+    /// <summary>All pages of a listing: the object keys and the common prefixes. Errors are mapped to <paramref name="path"/>.</summary>
+    private async Task<(List<string> Keys, HashSet<string> CommonPrefixes)> ListAllAsync(string keyPrefix, string? delimiter, string path, CancellationToken ct)
+    {
+        var keys = new List<string>();
+        var commonPrefixes = new HashSet<string>(StringComparer.Ordinal);
+        string? token = null;
         try
         {
-            // Keys are listed in order, so a placeholder comes before everything below it.
-            var below = await _client.ListObjectsV2Async(
-                new ListObjectsV2Request { BucketName = _bucket, Prefix = placeholder, MaxKeys = 2 }, ct).ConfigureAwait(false);
-            var keys = below.S3Objects ?? [];
-            return (keys.Any(o => o.Key == placeholder), keys.Any(o => o.Key != placeholder));
+            do
+            {
+                ct.ThrowIfCancellationRequested();
+                var page = await _client.ListObjectsV2Async(new ListObjectsV2Request
+                {
+                    BucketName = _bucket,
+                    Prefix = keyPrefix.Length == 0 ? null : keyPrefix,
+                    Delimiter = delimiter,
+                    ContinuationToken = token,
+                }, ct).ConfigureAwait(false);
+                token = page.IsTruncated == true ? page.NextContinuationToken : null;
+                keys.AddRange((page.S3Objects ?? []).Select(o => o.Key));
+                commonPrefixes.UnionWith(page.CommonPrefixes ?? []);
+            }
+            while (token is not null);
         }
         catch (Exception ex) when (ex is not StorageException)
         {
             throw S3Errors.Map(ex, path, ct);
         }
+        return (keys, commonPrefixes);
+    }
+
+    /// <summary>The keys of the ordinally sorted <paramref name="sorted"/> that start with <paramref name="prefix"/> (a contiguous run).</summary>
+    private static IEnumerable<string> KeysWithPrefix(string[] sorted, string prefix)
+    {
+        var index = Array.BinarySearch(sorted, prefix, StringComparer.Ordinal);
+        for (index = index < 0 ? ~index : index; index < sorted.Length && sorted[index].StartsWith(prefix, StringComparison.Ordinal); index++)
+            yield return sorted[index];
     }
 
     /// <summary>Deletes the queued keys with one <c>DeleteObjects</c> and empties the queue. Per-key errors are mapped; a missing key is none.</summary>
