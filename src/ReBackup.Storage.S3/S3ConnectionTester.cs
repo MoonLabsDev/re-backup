@@ -9,7 +9,7 @@ using ReBackup.Storage.S3.Connections;
 namespace ReBackup.Storage.S3;
 
 /// <summary>What <see cref="S3ConnectionTester"/> checks, in the order it checks.</summary>
-public enum S3Check { Bucket, List, WriteDelete, Lifecycle }
+public enum S3Check { Bucket, Versioning, List, WriteDelete, Lifecycle }
 
 /// <summary>How a check ended. <c>Warning</c> works but needs attention, <c>Skipped</c> was not run or cannot be judged.</summary>
 public enum S3CheckState { Ok, Failed, Warning, Skipped }
@@ -17,7 +17,10 @@ public enum S3CheckState { Ok, Failed, Warning, Skipped }
 /// <summary>The outcome of one check: <paramref name="MessageKey"/> is an <see cref="S3MessageKeys"/> value, <paramref name="Detail"/> extra data for the text (the bucket's region for a region warning). Never holds the secret.</summary>
 public sealed record S3CheckResult(S3Check Check, S3CheckState State, string? MessageKey, string? Detail);
 
-/// <summary>Probes an S3 connection: bucket reachable, listing, writing and deleting, and the lifecycle rule that cleans up abandoned multipart uploads.</summary>
+/// <summary>
+/// Probes an S3 connection: bucket reachable, versioning off (deletes free space), listing, writing and deleting, and the lifecycle
+/// rule that cleans up abandoned multipart uploads.
+/// </summary>
 public sealed class S3ConnectionTester
 {
     private readonly Func<S3Connection, IAmazonS3> _clientFactory;
@@ -32,7 +35,7 @@ public sealed class S3ConnectionTester
 
     /// <summary>
     /// Runs the checks on the whole bucket and returns one result per <see cref="S3Check"/>, in order. A failed check skips the ones
-    /// after it, except Lifecycle, which runs whenever Bucket did not fail. A region that is no AWS region name fails Bucket with
+    /// after it, except Versioning and Lifecycle, which run whenever Bucket did not fail. A region that is no AWS region name fails Bucket with
     /// <see cref="S3MessageKeys.RegionInvalid"/> before any client is built. With <paramref name="checkWrite"/> false, WriteDelete is
     /// skipped. Throws <see cref="OperationCanceledException"/> when <paramref name="ct"/> is cancelled.
     /// </summary>
@@ -62,6 +65,7 @@ public sealed class S3ConnectionTester
         {
             var bucket = await CheckBucketAsync(client, connection, ct).ConfigureAwait(false);
             var bucketUsable = bucket.State is S3CheckState.Ok or S3CheckState.Warning;
+            var versioning = bucketUsable ? await CheckVersioningAsync(client, connection, ct).ConfigureAwait(false) : Skipped(S3Check.Versioning);
 
             var list = bucketUsable ? await CheckListAsync(client, connection, prefix, ct).ConfigureAwait(false) : Skipped(S3Check.List);
             var listOk = list.State == S3CheckState.Ok;
@@ -69,7 +73,7 @@ public sealed class S3ConnectionTester
             var write = !checkWrite || !listOk ? Skipped(S3Check.WriteDelete) : await CheckWriteAsync(client, connection, prefix, ct).ConfigureAwait(false);
             var lifecycle = bucketUsable ? await CheckLifecycleAsync(client, connection, ct).ConfigureAwait(false) : Skipped(S3Check.Lifecycle);
 
-            return [bucket, list, write, lifecycle];
+            return [bucket, versioning, list, write, lifecycle];
         }
         finally
         {
@@ -159,6 +163,26 @@ public sealed class S3ConnectionTester
         }
     }
 
+    /// <summary>
+    /// <c>DeleteObjects</c> without a version id only adds delete markers in a versioned bucket (also one whose versioning is
+    /// suspended: the old versions stay), so deleting frees no space unless a lifecycle rule expires noncurrent versions.
+    /// </summary>
+    private static async Task<S3CheckResult> CheckVersioningAsync(IAmazonS3 client, S3Connection connection, CancellationToken ct)
+    {
+        try
+        {
+            var response = await client.GetBucketVersioningAsync(new GetBucketVersioningRequest { BucketName = connection.Bucket }, ct).ConfigureAwait(false);
+            var status = response.VersioningConfig?.Status;
+            return status == VersionStatus.Enabled || status == VersionStatus.Suspended
+                ? new S3CheckResult(S3Check.Versioning, S3CheckState.Warning, S3MessageKeys.VersioningEnabled, null)
+                : Ok(S3Check.Versioning);
+        }
+        catch (Exception ex)
+        {
+            return NotCheckableWhenDenied(Failure(S3Check.Versioning, ex, connection.Bucket, ct));
+        }
+    }
+
     private static async Task<S3CheckResult> CheckLifecycleAsync(IAmazonS3 client, S3Connection connection, CancellationToken ct)
     {
         try
@@ -173,15 +197,17 @@ public sealed class S3ConnectionTester
         }
         catch (Exception ex)
         {
-            var failure = Failure(S3Check.Lifecycle, ex, connection.Bucket, ct);
-            // Not being allowed to read the configuration is no problem with the connection itself.
-            return failure.MessageKey == S3MessageKeys.AccessDenied
-                ? new S3CheckResult(S3Check.Lifecycle, S3CheckState.Skipped, S3MessageKeys.NotCheckable, null)
-                : failure;
+            return NotCheckableWhenDenied(Failure(S3Check.Lifecycle, ex, connection.Bucket, ct));
         }
 
         static S3CheckResult Missing() => new(S3Check.Lifecycle, S3CheckState.Warning, S3MessageKeys.LifecycleMissing, null);
     }
+
+    /// <summary>Not being allowed to read a bucket configuration is no problem with the connection itself: "cannot be checked".</summary>
+    private static S3CheckResult NotCheckableWhenDenied(S3CheckResult failure) =>
+        failure.MessageKey == S3MessageKeys.AccessDenied
+            ? new S3CheckResult(failure.Check, S3CheckState.Skipped, S3MessageKeys.NotCheckable, null)
+            : failure;
 
     /// <summary>Classifies <paramref name="ex"/> through <see cref="S3Errors"/>; the SDK message (it may carry request details) is dropped.</summary>
     private static S3CheckResult Failure(S3Check check, Exception ex, string path, CancellationToken ct)

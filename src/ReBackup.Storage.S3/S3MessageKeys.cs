@@ -11,6 +11,7 @@ public static class S3MessageKeys
     public const string Unavailable = "s3.check.unavailable";
     public const string Failed = "s3.check.failed";
     public const string LifecycleMissing = "s3.check.lifecycleMissing";
+    public const string VersioningEnabled = "s3.check.versioningEnabled";
     public const string NotCheckable = "s3.check.notCheckable";
     public const string Skipped = "s3.check.skipped";
 }

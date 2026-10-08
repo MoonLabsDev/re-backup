@@ -303,7 +303,7 @@ public class S3ConnectionDialogViewModelTests
 
         vm.IsTesting.Should().BeFalse();
         vm.Results.Select(r => (r.Check, r.State)).Should().Equal(
-            (S3Check.Bucket, S3CheckState.Warning), (S3Check.List, S3CheckState.Ok),
+            (S3Check.Bucket, S3CheckState.Warning), (S3Check.Versioning, S3CheckState.Ok), (S3Check.List, S3CheckState.Ok),
             (S3Check.WriteDelete, S3CheckState.Ok), (S3Check.Lifecycle, S3CheckState.Ok));
         vm.Results[0].MessageKey.Should().Be(S3MessageKeys.RegionMismatch);
         vm.Results[0].Detail.Should().Be("eu-west-1");
@@ -329,7 +329,7 @@ public class S3ConnectionDialogViewModelTests
         await vm.TestCommand.ExecuteAsync(null);
 
         tested.Should().ContainSingle().Which.Secret.Should().Be("stored-secret");
-        vm.Results.Should().HaveCount(4);
+        vm.Results.Should().HaveCount(5);
     }
 
     [Fact]

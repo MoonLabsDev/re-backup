@@ -65,7 +65,7 @@ public class S3ConnectionTesterTests
 
         var results = await tester.RunAsync(Conn, checkWrite: true, Ct);
 
-        results.Select(r => r.Check).Should().Equal(S3Check.Bucket, S3Check.List, S3Check.WriteDelete, S3Check.Lifecycle);
+        results.Select(r => r.Check).Should().Equal(S3Check.Bucket, S3Check.Versioning, S3Check.List, S3Check.WriteDelete, S3Check.Lifecycle);
         results.Should().OnlyContain(r => r.State == S3CheckState.Ok && r.MessageKey == S3MessageKeys.Ok);
         fake.Puts.Should().ContainSingle().Which.Key.Should().StartWith(".rebackup-connection-test-");
         fake.Objects.Should().BeEmpty("the test object is deleted again");
@@ -167,7 +167,7 @@ public class S3ConnectionTesterTests
         var results = await tester.RunAsync(Conn, true, Ct);
 
         Of(results, S3Check.Bucket).Should().Be(new S3CheckResult(S3Check.Bucket, S3CheckState.Failed, S3MessageKeys.AccessDenied, null));
-        foreach (var check in new[] { S3Check.List, S3Check.WriteDelete, S3Check.Lifecycle })
+        foreach (var check in new[] { S3Check.Versioning, S3Check.List, S3Check.WriteDelete, S3Check.Lifecycle })
             Of(results, check).Should().Be(new S3CheckResult(check, S3CheckState.Skipped, S3MessageKeys.Skipped, null));
         fake.Puts.Should().BeEmpty();
     }
@@ -208,6 +208,67 @@ public class S3ConnectionTesterTests
         Of(results, S3Check.List).State.Should().Be(S3CheckState.Failed);
         Of(results, S3Check.WriteDelete).State.Should().Be(S3CheckState.Skipped);
         Of(results, S3Check.Lifecycle).State.Should().Be(S3CheckState.Ok);
+        Of(results, S3Check.Versioning).State.Should().Be(S3CheckState.Ok);
+    }
+
+    [Theory]
+    [InlineData("Enabled")]
+    [InlineData("Suspended")]
+    public async Task A_versioned_bucket_is_a_warning(string status)
+    {
+        // DeleteObjects without a version id only adds delete markers there: deleting frees no space.
+        var (tester, fake) = Create();
+        fake.Versioning = VersionStatus.FindValue(status);
+
+        var results = await tester.RunAsync(Conn, true, Ct);
+
+        Of(results, S3Check.Versioning).Should().Be(new S3CheckResult(S3Check.Versioning, S3CheckState.Warning, S3MessageKeys.VersioningEnabled, null));
+        results.Where(r => r.Check != S3Check.Versioning).Should().OnlyContain(r => r.State == S3CheckState.Ok);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Off")]
+    public async Task An_unversioned_bucket_is_ok(string? status)
+    {
+        var (tester, fake) = Create();
+        fake.Versioning = status is null ? null : VersionStatus.FindValue(status);
+
+        Of(await tester.RunAsync(Conn, true, Ct), S3Check.Versioning).Should().Be(new S3CheckResult(S3Check.Versioning, S3CheckState.Ok, S3MessageKeys.Ok, null));
+    }
+
+    [Fact]
+    public async Task Versioning_access_denied_is_skipped_as_not_checkable()
+    {
+        var (tester, fake) = Create();
+        fake.Failures["GetBucketVersioningAsync"] = S3("AccessDenied", HttpStatusCode.Forbidden);
+
+        var results = await tester.RunAsync(Conn, true, Ct);
+
+        Of(results, S3Check.Versioning).Should().Be(new S3CheckResult(S3Check.Versioning, S3CheckState.Skipped, S3MessageKeys.NotCheckable, null));
+        Of(results, S3Check.List).State.Should().Be(S3CheckState.Ok, "an unreadable versioning state stops nothing");
+    }
+
+    [Fact]
+    public async Task Other_versioning_failures_are_classified_and_stop_nothing()
+    {
+        var (tester, fake) = Create();
+        fake.Failures["GetBucketVersioningAsync"] = S3("InternalError", HttpStatusCode.InternalServerError);
+
+        var results = await tester.RunAsync(Conn, true, Ct);
+
+        Of(results, S3Check.Versioning).Should().Be(new S3CheckResult(S3Check.Versioning, S3CheckState.Failed, S3MessageKeys.Unavailable, null));
+        results.Where(r => r.Check != S3Check.Versioning).Should().OnlyContain(r => r.State == S3CheckState.Ok);
+    }
+
+    [Fact]
+    public async Task Versioning_runs_after_a_region_warning()
+    {
+        var (tester, fake) = Create();
+        fake.BucketRegion = "us-west-2";
+        fake.Versioning = VersionStatus.Enabled;
+
+        Of(await tester.RunAsync(Conn, true, Ct), S3Check.Versioning).State.Should().Be(S3CheckState.Warning);
     }
 
     [Fact]

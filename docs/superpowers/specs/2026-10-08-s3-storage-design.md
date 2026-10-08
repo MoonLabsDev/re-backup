@@ -113,11 +113,12 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 `S3ConnectionTester.RunAsync(S3Connection, bool checkWrite, CancellationToken) → IReadOnlyList<S3CheckResult>`, and an overload `RunAsync(S3Connection, string prefix, bool checkWrite, CancellationToken)` that scopes List and Write + delete to a prefix (validated as a storage path; `""` = whole bucket) for access keys limited to one prefix — connections hold no prefix, so the dialog tests the whole bucket; `S3CheckResult(S3Check Check, S3CheckState State, string? MessageKey, string? Detail)`, states `Ok | Failed | Warning | Skipped`.
 
 1. **Credentials + bucket:** `HeadBucket`. A region mismatch (the bucket's region ≠ connection region) → `Warning` with `Detail` = the bucket's region. The region is read from the response's `BucketRegion` or, when the call fails with a wrong-region error, from the `x-amz-bucket-region` header of that error.
-2. **List:** `ListObjectsV2(MaxKeys = 1)`, with `Prefix = prefix + "/"` when a prefix is given.
-3. **Write + delete** (only when `checkWrite`, else `Skipped`): put `[prefix/].rebackup-connection-test-<guid>` (empty), then delete it. When the put fails or the test is cancelled, the test object is still deleted best-effort (own short timeout, errors ignored).
-4. **Lifecycle:** `GetLifecycleConfiguration`; no rule with `AbortIncompleteMultipartUpload` → `Warning`; access denied → `Skipped` ("cannot be checked").
+2. **Versioning:** `GetBucketVersioning`; `Enabled` or `Suspended` → `Warning` `s3.check.versioningEnabled` (`DeleteObjects` without a version id only adds delete markers there: deleting frees no space unless a lifecycle rule expires noncurrent versions); off (no status) → `Ok`; access denied → `Skipped` ("cannot be checked"); other failures → `Failed`, classified. Never stops the following checks.
+3. **List:** `ListObjectsV2(MaxKeys = 1)`, with `Prefix = prefix + "/"` when a prefix is given.
+4. **Write + delete** (only when `checkWrite`, else `Skipped`): put `[prefix/].rebackup-connection-test-<guid>` (empty), then delete it. When the put fails or the test is cancelled, the test object is still deleted best-effort (own short timeout, errors ignored).
+5. **Lifecycle:** `GetLifecycleConfiguration`; no rule with `AbortIncompleteMultipartUpload` → `Warning`; access denied → `Skipped` ("cannot be checked").
 
-A failed check stops the following ones (they become `Skipped`), except that 4 runs whenever 1 succeeded.
+A failed check stops the following ones (they become `Skipped`), except that 2 and 5 run whenever 1 succeeded (`Ok` or region `Warning`).
 
 Region names are checked in one place, `S3Regions.IsValid(string?)` (`\A[a-z]{2}(-[a-z]+)+-[0-9]{1,2}\z`), used by the factory, the tester and the dialog. The tester checks the region before it builds a client: an invalid one → Bucket `Failed` with `s3.check.regionInvalid`, all other checks `Skipped`, never a raw SDK exception.
 
@@ -126,20 +127,20 @@ Region names are checked in one place, `S3Regions.IsValid(string?)` (`\A[a-z]{2}
 Fields: Name (required, unique among the app's connections — uniqueness check supplied by the caller), Region (editable combo of AWS regions; a typed value that is no region name per `S3Regions.IsValid` → `s3.error.regionInvalid`, shown below the field, Save and Test disabled), Bucket (required, S3 naming rules: 3–63 chars, lowercase letters, digits, `.`, `-`, starts/ends with letter or digit), Access key ID (required), Secret (`PasswordBox`).
 
 - Editing: Secret empty with placeholder "unchanged" keeps the stored secret; when the stored secret is not decryptable the placeholder says "re-enter secret" and the field is required. When the access key ID is changed, the stored secret no longer applies: the secret is required and the placeholder is empty.
-- "Test connection": runs the tester asynchronously with a Cancel button, checkbox "Check write and delete permission" (default on), shows one row per check with ✓ / ✗ / ! / – and the translated reason; a region warning offers "Use <region>".
+- "Test connection": runs the tester asynchronously with a Cancel button, checkbox "Check write and delete permission" (default on), shows one row per check (Bucket, Versioning, List, Write and delete, Lifecycle rule) with ✓ / ✗ / ! / – and the translated reason; a region warning offers "Use <region>".
 - Save is enabled when all required fields are valid; testing is optional.
 - All texts in `wpf.en-US.json` / `wpf.de-DE.json`. The view model holds the logic and is testable without a window.
 
 ## 10. Testing
 
 - **Unit (no Docker):** `S3Errors` mapping per row of section 6; `S3Keys` (prefix joining, 1024-byte limit, placeholders); `SecretProtector` round trip and undecryptable blob → `Secret = null`; `S3ConnectionStore` (insert, replace, null secret keeps blob, delete, missing file, corrupt file, invalid entries, duplicate ids, missing or newer format version); writer part sizing; dispose without commit aborts the multipart upload (fake `IAmazonS3`).
-- **Integration (LocalStack via Testcontainers, pinned image `localstack/localstack:4.9`, which supports conditional writes):** `S3StorageContractTests : StorageContractTests` with a fresh prefix per test; multipart above 16 MiB round trip; two concurrent exclusive single-part writers → exactly one wins; a second exclusive multipart write after the first committed → conflict (the simultaneous multipart race is skipped: LocalStack does not serialize conditional `CompleteMultipartUpload`); placeholder `x/` listed as directory and deletable; non-root missing folder → NotFound; tester with and without a lifecycle rule. Without Docker these tests report as skipped (`Xunit.SkippableFact`), never as passed.
+- **Integration (LocalStack via Testcontainers, pinned image `localstack/localstack:4.9`, which supports conditional writes):** `S3StorageContractTests : StorageContractTests` with a fresh prefix per test; multipart above 16 MiB round trip; two concurrent exclusive single-part writers → exactly one wins; a second exclusive multipart write after the first committed → conflict (the simultaneous multipart race is skipped: LocalStack does not serialize conditional `CompleteMultipartUpload`); placeholder `x/` listed as directory and deletable; non-root missing folder → NotFound; tester with and without a lifecycle rule, and on a bucket with versioning enabled (→ Warning). Without Docker these tests report as skipped (`Xunit.SkippableFact`), never as passed.
 - **View model (`ReBackup.Shared.Wpf.Tests`):** validation rules, "unchanged" secret, re-enter state, "Use <region>" applies the region, Save enablement.
 - **Architecture:** rules of section 3.
 
 ## 11. Documentation
 
-README section "Amazon S3": minimum IAM permissions (`s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload` (the writer aborts an unfinished multipart upload; AWS checks it separately from `s3:PutObject`), optional `s3:GetLifecycleConfiguration`; `s3:ListBucket` must be granted on the whole bucket without an `s3:prefix` condition, otherwise "not found" turns into "access denied"), the recommended lifecycle rule "abort incomplete multipart uploads after 7 days", and that secrets are bound to the Windows account (DPAPI).
+README section "Amazon S3": minimum IAM permissions (`s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload` (the writer aborts an unfinished multipart upload; AWS checks it separately from `s3:PutObject`), optional `s3:GetBucketVersioning` and `s3:GetLifecycleConfiguration`; `s3:ListBucket` must be granted on the whole bucket without an `s3:prefix` condition, otherwise "not found" turns into "access denied"), the recommended lifecycle rule "abort incomplete multipart uploads after 7 days", that versioned buckets do not free space on delete unless a lifecycle rule expires noncurrent versions, and that secrets are bound to the Windows account (DPAPI).
 
 ## 12. Implementation order
 

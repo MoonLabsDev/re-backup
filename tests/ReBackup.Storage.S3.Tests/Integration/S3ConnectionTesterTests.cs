@@ -20,7 +20,7 @@ public sealed class S3ConnectionTesterIntegrationTests(S3ServerFixture server)
 
         var results = await server.CreateTester().RunAsync(server.CreateConnection(bucket), checkWrite: true, Ct);
 
-        foreach (var check in new[] { S3Check.Bucket, S3Check.List, S3Check.WriteDelete })
+        foreach (var check in new[] { S3Check.Bucket, S3Check.Versioning, S3Check.List, S3Check.WriteDelete })
             Of(results, check).State.Should().Be(S3CheckState.Ok, check.ToString());
         Of(results, S3Check.Lifecycle).Should().Be(new S3CheckResult(S3Check.Lifecycle, S3CheckState.Warning, S3MessageKeys.LifecycleMissing, null));
 
@@ -54,6 +54,24 @@ public sealed class S3ConnectionTesterIntegrationTests(S3ServerFixture server)
         var results = await server.CreateTester().RunAsync(server.CreateConnection(bucket), checkWrite: true, Ct);
 
         results.Should().OnlyContain(r => r.State == S3CheckState.Ok);
+    }
+
+    [SkippableFact]
+    public async Task Versioned_bucket_is_a_warning()
+    {
+        Skip.IfNot(server.Available, server.SkipReason);
+        var bucket = await server.CreateBucketAsync();
+        await server.Client.PutBucketVersioningAsync(new PutBucketVersioningRequest
+        {
+            BucketName = bucket,
+            VersioningConfig = new S3BucketVersioningConfig { Status = VersionStatus.Enabled },
+        }, Ct);
+
+        var results = await server.CreateTester().RunAsync(server.CreateConnection(bucket), checkWrite: true, Ct);
+
+        Of(results, S3Check.Versioning).Should().Be(new S3CheckResult(S3Check.Versioning, S3CheckState.Warning, S3MessageKeys.VersioningEnabled, null));
+        foreach (var check in new[] { S3Check.Bucket, S3Check.List, S3Check.WriteDelete })
+            Of(results, check).State.Should().Be(S3CheckState.Ok, check.ToString());
     }
 
     [SkippableFact]

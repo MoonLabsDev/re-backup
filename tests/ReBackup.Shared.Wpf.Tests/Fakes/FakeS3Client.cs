@@ -31,6 +31,10 @@ public class FakeS3Client : DispatchProxy
         "ListObjectsV2Async" => Task.FromResult(new ListObjectsV2Response()),
         "PutObjectAsync" => Task.FromResult(new PutObjectResponse()),
         "DeleteObjectAsync" => Task.FromResult(new DeleteObjectResponse()),
+        "GetBucketVersioningAsync" => Task.FromResult(new GetBucketVersioningResponse
+        {
+            VersioningConfig = new S3BucketVersioningConfig { Status = VersionStatus.Off },
+        }),
         "GetLifecycleConfigurationAsync" => Task.FromResult(new GetLifecycleConfigurationResponse
         {
             Configuration = new LifecycleConfiguration

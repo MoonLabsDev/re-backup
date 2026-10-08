@@ -43,6 +43,9 @@ public class FakeS3Client : DispatchProxy
     /// <summary>The lifecycle rules <c>GetLifecycleConfiguration</c> returns.</summary>
     public List<LifecycleRule> Lifecycle { get; set; } = [];
 
+    /// <summary>The status <c>GetBucketVersioning</c> reports (<c>null</c>: never versioned, as AWS answers then).</summary>
+    public VersionStatus? Versioning { get; set; }
+
     /// <summary>The region <c>HeadBucket</c> reports (<c>BucketRegion</c>); <c>null</c> = not reported.</summary>
     public string? BucketRegion { get; set; }
 
@@ -105,6 +108,8 @@ public class FakeS3Client : DispatchProxy
                     return Task.FromResult(Delete((DeleteObjectsRequest)args![0]!));
                 case "HeadBucketAsync":
                     return Task.FromResult(new HeadBucketResponse { BucketRegion = BucketRegion });
+                case "GetBucketVersioningAsync":
+                    return Task.FromResult(new GetBucketVersioningResponse { VersioningConfig = new S3BucketVersioningConfig { Status = Versioning } });
                 case "GetLifecycleConfigurationAsync":
                     return Task.FromResult(new GetLifecycleConfigurationResponse { Configuration = new LifecycleConfiguration { Rules = Lifecycle } });
                 case "DeleteObjectAsync":

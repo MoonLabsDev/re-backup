@@ -31,6 +31,7 @@ public static class S3DialogTexts
     public static string NameOf(S3Check check) => check switch
     {
         S3Check.Bucket => Loc.T("s3.test.check.bucket"),
+        S3Check.Versioning => Loc.T("s3.test.check.versioning"),
         S3Check.List => Loc.T("s3.test.check.list"),
         S3Check.WriteDelete => Loc.T("s3.test.check.writeDelete"),
         S3Check.Lifecycle => Loc.T("s3.test.check.lifecycle"),

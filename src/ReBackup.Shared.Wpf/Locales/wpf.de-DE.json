@@ -53,6 +53,7 @@
       "useRegion": "{region} verwenden",
       "check": {
         "bucket": "Bucket",
+        "versioning": "Versionierung",
         "list": "Auflisten",
         "writeDelete": "Schreiben und löschen",
         "lifecycle": "Lebenszyklusregel"
@@ -67,6 +68,7 @@
       "unavailable": "S3 ist nicht erreichbar: die Netzwerkverbindung prüfen.",
       "failed": "Die Prüfung ist fehlgeschlagen.",
       "lifecycleMissing": "Keine Lebenszyklusregel räumt unvollständige Multipart-Uploads auf (empfohlen: nach 7 Tagen abbrechen).",
+      "versioningEnabled": "Die Versionierung ist an: Löschen alter Sicherungen setzt nur Löschmarker und gibt keinen Platz frei, solange keine Lebenszyklusregel nicht aktuelle Versionen ablaufen lässt.",
       "notCheckable": "Mit diesen Berechtigungen nicht prüfbar.",
       "skipped": "Nicht geprüft."
     }
