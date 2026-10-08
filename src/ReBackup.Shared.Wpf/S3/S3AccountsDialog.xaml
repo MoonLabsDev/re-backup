@@ -1,0 +1,108 @@
+<Window x:Class="ReBackup.Shared.Wpf.S3.S3AccountsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization"
+        xmlns:s3="clr-namespace:ReBackup.Shared.Wpf.S3"
+        Width="660" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource {x:Type Window}}">
+    <!-- The S3 accounts (access keys) of the app: add, edit, delete. Every change is stored at once by the view model. -->
+    <StackPanel Margin="20,18">
+        <Border Style="{StaticResource Border.Card}" Padding="0">
+            <Grid>
+                <ListView x:Name="AccountList" Style="{StaticResource ListView.Table}" SelectionMode="Single" MinHeight="160" MaxHeight="360"
+                          ItemsSource="{Binding Accounts}" SelectedItem="{Binding Selected}" MouseDoubleClick="OnRowDoubleClick"
+                          AutomationProperties.Name="{l:Loc s3.accounts.title}">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="{l:Loc s3.field.name}" Width="170">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate DataType="{x:Type s3:S3AccountRow}">
+                                        <TextBlock Margin="8,0" Text="{Binding Account.Name}" TextTrimming="CharacterEllipsis" />
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="{l:Loc s3.field.accessKeyId}" Width="190">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate DataType="{x:Type s3:S3AccountRow}">
+                                        <TextBlock Margin="8,0" Style="{StaticResource TextBlock.Mono}" Text="{Binding Account.AccessKeyId}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="{l:Loc s3.accounts.column.usedBy}" Width="110">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate DataType="{x:Type s3:S3AccountRow}">
+                                        <TextBlock Margin="8,0" Style="{StaticResource TextBlock.Muted}">
+                                            <TextBlock.Text>
+                                                <MultiBinding Converter="{x:Static s3:S3DialogTexts.UsedBy}">
+                                                    <Binding />
+                                                    <Binding Path="Language" Source="{x:Static l:Loc.Instance}" />
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Width="140">
+                                <GridViewColumn.CellTemplate>
+                                    <!-- Badge: the secret cannot be decrypted here and must be entered again (Edit). -->
+                                    <DataTemplate DataType="{x:Type s3:S3AccountRow}">
+                                        <TextBlock Margin="8,0" FontSize="12" Foreground="{DynamicResource Brush.Warning}" TextWrapping="Wrap"
+                                                   Text="{l:Loc s3.accounts.needsSecret}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding NeedsSecret}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <!-- No accounts yet -->
+                <TextBlock Style="{StaticResource TextBlock.Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsHitTestVisible="False" Text="{l:Loc s3.accounts.empty}">
+                    <TextBlock.Visibility>
+                        <Binding Path="IsEmpty">
+                            <Binding.Converter>
+                                <BooleanToVisibilityConverter />
+                            </Binding.Converter>
+                        </Binding>
+                    </TextBlock.Visibility>
+                </TextBlock>
+
+                <!-- The connection file cannot be read; it is left as it is -->
+                <TextBlock Margin="16,0" Foreground="{DynamicResource Brush.Danger}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextWrapping="Wrap" IsHitTestVisible="False" Text="{l:Loc s3.accounts.loadFailed}">
+                    <TextBlock.Visibility>
+                        <Binding Path="LoadFailed">
+                            <Binding.Converter>
+                                <BooleanToVisibilityConverter />
+                            </Binding.Converter>
+                        </Binding>
+                    </TextBlock.Visibility>
+                </TextBlock>
+            </Grid>
+        </Border>
+
+        <DockPanel Margin="0,18,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Left" Content="{l:Loc s3.accounts.add}" MinWidth="96" Command="{Binding AddCommand}"
+                    AutomationProperties.Name="{l:Loc s3.accounts.add}" />
+            <Button DockPanel.Dock="Left" Content="{l:Loc s3.accounts.edit}" MinWidth="96" Margin="8,0,0,0" Command="{Binding EditCommand}"
+                    AutomationProperties.Name="{l:Loc s3.accounts.edit}" />
+            <Button DockPanel.Dock="Left" Content="{l:Loc s3.accounts.delete}" MinWidth="96" Margin="8,0,0,0" Command="{Binding DeleteCommand}"
+                    AutomationProperties.Name="{l:Loc s3.accounts.delete}" />
+            <Button DockPanel.Dock="Right" Content="{l:Loc s3.accounts.close}" MinWidth="80" IsCancel="True" IsDefault="True"
+                    AutomationProperties.Name="{l:Loc s3.accounts.close}" />
+        </DockPanel>
+    </StackPanel>
+</Window>

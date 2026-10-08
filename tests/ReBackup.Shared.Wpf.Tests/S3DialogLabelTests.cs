@@ -7,7 +7,7 @@ using ReBackup.Storage.S3;
 
 namespace ReBackup.Shared.Wpf.Tests;
 
-/// <summary>The keys the dialog takes from code (check results, validation, placeholders) are in both embedded wpf label files.</summary>
+/// <summary>The keys the dialogs take from code (check results, validation, placeholders) are in both embedded wpf label files.</summary>
 public class S3DialogLabelTests
 {
     private static LabelSet Embedded(string language)
@@ -29,12 +29,16 @@ public class S3DialogLabelTests
     {
         var keys = ConstantsOf(typeof(S3MessageKeys))
             .Concat(ConstantsOf(typeof(S3ConnectionDialogViewModel)))
-            .Concat(["s3.dialog.titleNew", "s3.dialog.titleEdit"])
+            .Concat(ConstantsOf(typeof(S3AccountDialogViewModel)))
+            .Concat(ConstantsOf(typeof(S3AccountsViewModel)))
+            .Concat(["s3.dialog.titleNew", "s3.dialog.titleEdit", "s3.accountDialog.titleNew", "s3.accountDialog.titleEdit",
+                "s3.accounts.title"])
             .ToList();
         var set = Embedded(language);
 
-        keys.Should().HaveCountGreaterThan(15);
+        keys.Should().HaveCountGreaterThan(30);
         keys.Where(key => !set.Entries.ContainsKey(key)).Should().BeEmpty();
+        set.Plurals.Should().Contain(S3DialogTexts.UsedByKey);
     }
 
     [Fact]

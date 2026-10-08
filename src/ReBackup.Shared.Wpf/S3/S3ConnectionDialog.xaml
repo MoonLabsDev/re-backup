@@ -8,7 +8,7 @@
         Width="600" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Style="{StaticResource {x:Type Window}}">
-    <!-- Add or edit one S3 connection; the view model holds the logic. The secret goes from the PasswordBox to the view model in code-behind only. -->
+    <!-- Add or edit one S3 connection (region, bucket and the account whose key opens it); the view model holds the logic. -->
     <Window.Resources>
         <Style x:Key="FieldLabel" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -106,36 +106,34 @@
                 </TextBlock.Text>
             </TextBlock>
 
-            <!-- Access key ID -->
-            <TextBlock Grid.Row="6" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.accessKeyId}" />
-            <TextBox Grid.Row="6" Grid.Column="1" Margin="0,10,0,0" Text="{Binding AccessKeyId, UpdateSourceTrigger=PropertyChanged}"
-                     FontFamily="{StaticResource Font.Mono}" IsEnabled="{Binding IsEditable}"
-                     AutomationProperties.Name="{l:Loc s3.field.accessKeyId}" />
-
-            <!-- Secret: placeholder "unchanged" / "re-enter" while empty -->
-            <TextBlock Grid.Row="7" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.secret}" />
-            <Grid Grid.Row="7" Grid.Column="1" Margin="0,10,0,0">
-                <PasswordBox x:Name="SecretBox" PasswordChanged="OnSecretChanged" IsEnabled="{Binding IsEditable}"
-                             AutomationProperties.Name="{l:Loc s3.field.secret}" />
-                <TextBlock Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{DynamicResource Brush.TextFaint}">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Visible" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasSecretInput}" Value="True">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                    <TextBlock.Text>
-                        <MultiBinding Converter="{x:Static s3:S3DialogTexts.Label}">
-                            <Binding Path="SecretPlaceholderKey" />
-                            <Binding Path="Language" Source="{x:Static l:Loc.Instance}" />
-                        </MultiBinding>
-                    </TextBlock.Text>
-                </TextBlock>
-            </Grid>
+            <!-- Account: the stored access keys, or a new one -->
+            <TextBlock Grid.Row="6" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc s3.field.account}" />
+            <DockPanel Grid.Row="6" Grid.Column="1" Margin="0,10,0,0">
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" MinWidth="120" Content="{l:Loc s3.account.new}"
+                        Command="{Binding NewAccountCommand}" AutomationProperties.Name="{l:Loc s3.account.new}" />
+                <ComboBox ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount}" DisplayMemberPath="Name"
+                          IsEnabled="{Binding IsEditable}" AutomationProperties.Name="{l:Loc s3.field.account}" />
+            </DockPanel>
+            <TextBlock Grid.Row="7" Grid.Column="1">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource FieldHint}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding AccountHintKey}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding AccountHintKey}" Value="{x:Static s3:S3ConnectionDialogViewModel.AccountNeedsSecretKey}">
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+                <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static s3:S3DialogTexts.Label}">
+                        <Binding Path="AccountHintKey" />
+                        <Binding Path="Language" Source="{x:Static l:Loc.Instance}" />
+                    </MultiBinding>
+                </TextBlock.Text>
+            </TextBlock>
         </Grid>
 
         <!-- Test connection (optional) -->
