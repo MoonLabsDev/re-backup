@@ -205,6 +205,7 @@ public partial class App : Application
         _tray = new TaskbarIcon
         {
             ToolTipText = "ReBackup",
+            Id = TrayIconId.ForCurrentProcess("ReBackup"),
             ContextMenu = _trayMenu,
             NoLeftClickDelay = true,
             LeftClickCommand = new RelayCommand(ShowMainWindow),
