@@ -141,6 +141,21 @@ public class S3ConnectionDialogViewModelTests
     }
 
     [Fact]
+    public void Has_secret_input_follows_the_secret_field_and_is_raised()
+    {
+        var vm = Create(Stored);
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.HasSecretInput.Should().BeFalse();
+        vm.Secret = "typed";
+        vm.HasSecretInput.Should().BeTrue();
+        raised.Should().Contain(nameof(vm.HasSecretInput));
+        vm.Secret = "";
+        vm.HasSecretInput.Should().BeFalse();
+    }
+
+    [Fact]
     public void A_new_secret_replaces_the_stored_one()
     {
         var vm = Create(Stored);

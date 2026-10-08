@@ -137,7 +137,7 @@ Fields: Name (required, unique among the app's connections — uniqueness check 
 
 ## 11. Documentation
 
-README section "Amazon S3": minimum IAM permissions (`s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, optional `s3:GetLifecycleConfiguration`), the recommended lifecycle rule "abort incomplete multipart uploads after 7 days", and that secrets are bound to the Windows account (DPAPI).
+README section "Amazon S3": minimum IAM permissions (`s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload` (the writer aborts an unfinished multipart upload; AWS checks it separately from `s3:PutObject`), optional `s3:GetLifecycleConfiguration`), the recommended lifecycle rule "abort incomplete multipart uploads after 7 days", and that secrets are bound to the Windows account (DPAPI).
 
 ## 12. Implementation order
 

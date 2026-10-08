@@ -186,7 +186,8 @@ checks that the bucket can be reached and listed, optionally that a test object 
 whether the bucket has the recommended lifecycle rule. If the bucket is in a different region, it offers that region.
 
 **Minimum IAM permissions.** The access key needs these actions on the bucket (`s3:GetLifecycleConfiguration` is
-optional; without it the test reports the lifecycle rule as *cannot be checked*):
+optional; without it the test reports the lifecycle rule as *cannot be checked*). `s3:AbortMultipartUpload` lets an
+interrupted upload of a large file clean up its parts; AWS checks it separately from `s3:PutObject`:
 
 ```json
 {
@@ -194,7 +195,8 @@ optional; without it the test reports the lifecycle rule as *cannot be checked*)
   "Statement": [
     { "Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetLifecycleConfiguration"],
       "Resource": "arn:aws:s3:::my-backup-bucket" },
-    { "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+    { "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject",
+                                    "s3:AbortMultipartUpload"],
       "Resource": "arn:aws:s3:::my-backup-bucket/*" }
   ]
 }

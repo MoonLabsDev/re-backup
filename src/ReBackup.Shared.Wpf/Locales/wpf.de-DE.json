@@ -54,7 +54,7 @@
         "bucket": "Bucket",
         "list": "Auflisten",
         "writeDelete": "Schreiben und löschen",
-        "lifecycle": "Lifecycle-Regel"
+        "lifecycle": "Lebenszyklusregel"
       }
     },
     "check": {
@@ -64,7 +64,7 @@
       "notFound": "Nicht gefunden: den Bucket-Namen prüfen.",
       "unavailable": "S3 ist nicht erreichbar: die Netzwerkverbindung prüfen.",
       "failed": "Die Prüfung ist fehlgeschlagen.",
-      "lifecycleMissing": "Keine Lifecycle-Regel räumt unvollständige Multipart-Uploads auf (empfohlen: nach 7 Tagen abbrechen).",
+      "lifecycleMissing": "Keine Lebenszyklusregel räumt unvollständige Multipart-Uploads auf (empfohlen: nach 7 Tagen abbrechen).",
       "notCheckable": "Mit diesen Berechtigungen nicht prüfbar.",
       "skipped": "Nicht geprüft."
     }

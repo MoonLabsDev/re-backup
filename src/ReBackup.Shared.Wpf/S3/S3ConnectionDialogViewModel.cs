@@ -74,7 +74,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
 
     /// <summary>The secret as typed (pushed from the PasswordBox); empty with <see cref="SecretUnchangedKey"/> keeps the stored one.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Errors))]
+    [NotifyPropertyChangedFor(nameof(Errors), nameof(HasSecretInput))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand))]
     private string _secret = "";
 
@@ -90,6 +90,9 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     /// <summary>How the last test ended when it has no results: <see cref="TestCancelledKey"/>, <see cref="TestErrorKey"/> or <c>null</c>.</summary>
     [ObservableProperty]
     private string? _testStatusKey;
+
+    /// <summary>Something is typed in the secret field (hides its placeholder; the dialog binds this, never the secret).</summary>
+    public bool HasSecretInput => Secret.Length > 0;
 
     /// <summary>True for a new connection (the dialog's title).</summary>
     public bool IsNew => _existing is null;
