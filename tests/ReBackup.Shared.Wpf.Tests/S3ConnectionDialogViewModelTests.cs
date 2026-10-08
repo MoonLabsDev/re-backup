@@ -179,6 +179,39 @@ public class S3ConnectionDialogViewModelTests
     }
 
     [Fact]
+    public void A_changed_access_key_needs_its_secret()
+    {
+        var vm = Create(Stored);
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.AccessKeyId = "AKIA2";
+
+        vm.Errors.Should().Equal("s3.error.secretRequired");
+        vm.SecretPlaceholderKey.Should().BeNull("the stored secret belongs to the old key");
+        raised.Should().Contain(nameof(vm.SecretPlaceholderKey));
+        vm.SaveCommand.CanExecute(null).Should().BeFalse();
+        vm.TestCommand.CanExecute(null).Should().BeFalse();
+
+        vm.Secret = "secret-2";
+        vm.Errors.Should().BeEmpty();
+        vm.SaveCommand.Execute(null);
+        vm.Result.Should().Be(Stored with { AccessKeyId = "AKIA2", Secret = "secret-2" });
+    }
+
+    [Fact]
+    public void Restoring_the_access_key_keeps_the_stored_secret_again()
+    {
+        var vm = Create(Stored);
+
+        vm.AccessKeyId = "AKIA2";
+        vm.AccessKeyId = " AKIA1 ";
+
+        vm.Errors.Should().BeEmpty();
+        vm.SecretPlaceholderKey.Should().Be("s3.secret.unchanged");
+    }
+
+    [Fact]
     public void Save_trims_the_fields_and_gives_a_new_connection_an_id()
     {
         var vm = Create();

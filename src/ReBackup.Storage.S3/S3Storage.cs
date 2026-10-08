@@ -1,6 +1,5 @@
 using System.Net;
 using System.Runtime.CompilerServices;
-using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -25,19 +24,19 @@ public sealed class S3Storage : IStorage
     private readonly string _prefix;
 
     /// <summary>
-    /// Creates a storage on <paramref name="connection"/> with <paramref name="prefix"/> as its root. The client is created from the
-    /// connection's region and access key unless one is given (tests). Throws <see cref="ArgumentException"/> when the connection has
-    /// no secret or the prefix is not a valid storage path.
+    /// Creates a storage on <paramref name="connection"/> with <paramref name="prefix"/> as its root, talking through
+    /// <paramref name="client"/>. The storage does not own the client and never disposes it: open storages through
+    /// <see cref="S3StorageFactory"/>, which creates, caches and disposes the clients. Throws <see cref="ArgumentException"/> when the
+    /// connection has no secret or the prefix is not a valid storage path.
     /// </summary>
-    public S3Storage(S3Connection connection, string prefix, IAmazonS3? client = null)
+    public S3Storage(S3Connection connection, string prefix, IAmazonS3 client)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(client);
         if (connection.NeedsSecret) throw new ArgumentException("The connection has no secret; it must be entered again.", nameof(connection));
         _prefix = S3Keys.NormalizePrefix(prefix);
         _bucket = connection.Bucket;
-        _client = client ?? new AmazonS3Client(
-            new BasicAWSCredentials(connection.AccessKeyId, connection.Secret),
-            RegionEndpoint.GetBySystemName(connection.Region));
+        _client = client;
     }
 
     public StorageCapabilities Capabilities => StorageCapabilities.CaseSensitive;
@@ -137,7 +136,12 @@ public sealed class S3Storage : IStorage
         }
     }
 
-    /// <summary>Starts an <see cref="S3Writer"/>. An exclusive create checks with <c>HeadObject</c> first; the commit is exclusive too (<c>If-None-Match</c>). <see cref="CreateOptions.ModifiedUtc"/> and <see cref="CreateOptions.Durable"/> are ignored.</summary>
+    /// <summary>
+    /// Starts an <see cref="S3Writer"/>. An exclusive create checks with <c>HeadObject</c> first; the commit is exclusive too
+    /// (<c>If-None-Match</c>) and is the authority. A check answered with 403 leaves existence unknown and goes ahead: without an
+    /// effective <c>s3:ListBucket</c> (e.g. one limited by an <c>s3:prefix</c> condition) S3 answers a missing key with 403 instead
+    /// of 404. <see cref="CreateOptions.ModifiedUtc"/> and <see cref="CreateOptions.Durable"/> are ignored.
+    /// </summary>
     public async Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -153,6 +157,11 @@ public sealed class S3Storage : IStorage
             }
             catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
+                exists = false;
+            }
+            catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.Forbidden && !ct.IsCancellationRequested)
+            {
+                // Unknown; the conditional commit decides. Real lack of write permission fails there.
                 exists = false;
             }
             catch (Exception ex) when (ex is not StorageException)

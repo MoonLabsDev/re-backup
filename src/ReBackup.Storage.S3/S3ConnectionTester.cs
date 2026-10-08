@@ -31,14 +31,25 @@ public sealed class S3ConnectionTester
     }
 
     /// <summary>
-    /// Runs the checks and returns one result per <see cref="S3Check"/>, in order. A failed check skips the ones after it, except
-    /// Lifecycle, which runs whenever Bucket did not fail. With <paramref name="checkWrite"/> false, WriteDelete is skipped.
-    /// Throws <see cref="OperationCanceledException"/> when <paramref name="ct"/> is cancelled.
+    /// Runs the checks on the whole bucket and returns one result per <see cref="S3Check"/>, in order. A failed check skips the ones
+    /// after it, except Lifecycle, which runs whenever Bucket did not fail. With <paramref name="checkWrite"/> false, WriteDelete is
+    /// skipped. Throws <see cref="OperationCanceledException"/> when <paramref name="ct"/> is cancelled.
     /// </summary>
-    public async Task<IReadOnlyList<S3CheckResult>> RunAsync(S3Connection connection, bool checkWrite, CancellationToken ct)
+    public Task<IReadOnlyList<S3CheckResult>> RunAsync(S3Connection connection, bool checkWrite, CancellationToken ct) =>
+        RunAsync(connection, "", checkWrite, ct);
+
+    /// <summary>
+    /// Runs the checks like <see cref="RunAsync(S3Connection, bool, CancellationToken)"/>, with List and WriteDelete scoped to
+    /// <paramref name="prefix"/> (a storage path, <c>""</c> = the whole bucket): the listing asks for <c>prefix/</c> and the test
+    /// object is <c>prefix/.rebackup-connection-test-…</c>, so a key whose permissions are limited to the prefix passes.
+    /// Throws <see cref="ArgumentException"/> for a prefix that is no valid storage path.
+    /// </summary>
+    public async Task<IReadOnlyList<S3CheckResult>> RunAsync(S3Connection connection, string prefix, bool checkWrite, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(prefix);
         if (connection.NeedsSecret) throw new ArgumentException("The connection has no secret.", nameof(connection));
+        prefix = S3Keys.NormalizePrefix(prefix);
 
         var client = _clientFactory(connection);
         try
@@ -46,10 +57,10 @@ public sealed class S3ConnectionTester
             var bucket = await CheckBucketAsync(client, connection, ct).ConfigureAwait(false);
             var bucketUsable = bucket.State is S3CheckState.Ok or S3CheckState.Warning;
 
-            var list = bucketUsable ? await CheckListAsync(client, connection, ct).ConfigureAwait(false) : Skipped(S3Check.List);
+            var list = bucketUsable ? await CheckListAsync(client, connection, prefix, ct).ConfigureAwait(false) : Skipped(S3Check.List);
             var listOk = list.State == S3CheckState.Ok;
 
-            var write = !checkWrite || !listOk ? Skipped(S3Check.WriteDelete) : await CheckWriteAsync(client, connection, ct).ConfigureAwait(false);
+            var write = !checkWrite || !listOk ? Skipped(S3Check.WriteDelete) : await CheckWriteAsync(client, connection, prefix, ct).ConfigureAwait(false);
             var lifecycle = bucketUsable ? await CheckLifecycleAsync(client, connection, ct).ConfigureAwait(false) : Skipped(S3Check.Lifecycle);
 
             return [bucket, list, write, lifecycle];
@@ -95,11 +106,12 @@ public sealed class S3ConnectionTester
             ? new S3CheckResult(S3Check.Bucket, S3CheckState.Warning, S3MessageKeys.RegionMismatch, bucketRegion)
             : Ok(S3Check.Bucket);
 
-    private static async Task<S3CheckResult> CheckListAsync(IAmazonS3 client, S3Connection connection, CancellationToken ct)
+    private static async Task<S3CheckResult> CheckListAsync(IAmazonS3 client, S3Connection connection, string prefix, CancellationToken ct)
     {
         try
         {
-            await client.ListObjectsV2Async(new ListObjectsV2Request { BucketName = connection.Bucket, MaxKeys = 1 }, ct).ConfigureAwait(false);
+            var request = new ListObjectsV2Request { BucketName = connection.Bucket, Prefix = prefix.Length == 0 ? null : prefix + "/", MaxKeys = 1 };
+            await client.ListObjectsV2Async(request, ct).ConfigureAwait(false);
             return Ok(S3Check.List);
         }
         catch (Exception ex)
@@ -108,9 +120,9 @@ public sealed class S3ConnectionTester
         }
     }
 
-    private static async Task<S3CheckResult> CheckWriteAsync(IAmazonS3 client, S3Connection connection, CancellationToken ct)
+    private static async Task<S3CheckResult> CheckWriteAsync(IAmazonS3 client, S3Connection connection, string prefix, CancellationToken ct)
     {
-        var key = ".rebackup-connection-test-" + Guid.NewGuid().ToString("N");
+        var key = S3Keys.ToKey(prefix, ".rebackup-connection-test-" + Guid.NewGuid().ToString("N"));
         var putDone = false;
         try
         {

@@ -48,7 +48,6 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
             _region = existing.Region;
             _bucket = existing.Bucket;
             _accessKeyId = existing.AccessKeyId;
-            SecretPlaceholderKey = existing.NeedsSecret ? SecretReenterKey : SecretUnchangedKey;
         }
     }
 
@@ -68,7 +67,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     private string _bucket = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Errors))]
+    [NotifyPropertyChangedFor(nameof(Errors), nameof(SecretPlaceholderKey))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand), nameof(TestCommand))]
     private string _accessKeyId = "";
 
@@ -103,8 +102,12 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     /// <summary>The results of the last test, one per check; cleared when a tested field changes.</summary>
     public ObservableCollection<S3CheckResult> Results { get; } = [];
 
-    /// <summary>The hint in the empty secret field: <see cref="SecretUnchangedKey"/>, <see cref="SecretReenterKey"/> or <c>null</c> (new connection).</summary>
-    public string? SecretPlaceholderKey { get; }
+    /// <summary>
+    /// The hint in the empty secret field: <see cref="SecretUnchangedKey"/>, <see cref="SecretReenterKey"/> (stored secret lost) or
+    /// <c>null</c> (new connection, or the access key was changed: the stored secret belongs to the old one).
+    /// </summary>
+    public string? SecretPlaceholderKey =>
+        _existing is null || !KeepsAccessKey ? null : _existing.NeedsSecret ? SecretReenterKey : SecretUnchangedKey;
 
     /// <summary>The connection as saved; <c>Secret</c> is <c>null</c> when the stored secret stays unchanged. Set by <see cref="SaveCommand"/>.</summary>
     public S3Connection? Result { get; private set; }
@@ -135,7 +138,10 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     /// <summary>The error shown below the bucket: only once something is typed.</summary>
     public string? BucketHintKey => Bucket.Trim().Length > 0 && Errors.Contains(BucketInvalidKey) ? BucketInvalidKey : null;
 
-    private bool SecretRequired => _existing is null || _existing.NeedsSecret;
+    /// <summary>An empty secret keeps the stored one only for an existing connection that has one and still uses its access key.</summary>
+    private bool SecretRequired => _existing is null || _existing.NeedsSecret || !KeepsAccessKey;
+
+    private bool KeepsAccessKey => _existing is not null && string.Equals(AccessKeyId.Trim(), _existing.AccessKeyId, StringComparison.Ordinal);
 
     private bool IsOwnName(string name) => _existing is not null && string.Equals(name, _existing.Name, StringComparison.OrdinalIgnoreCase);
 
@@ -188,7 +194,7 @@ public sealed partial class S3ConnectionDialogViewModel : ObservableObject
     {
         var secret = Secret.Trim();
         return new S3Connection(_existing?.Id ?? "", Name.Trim(), Region.Trim(), Bucket.Trim(), AccessKeyId.Trim(),
-            secret.Length > 0 ? secret : _existing?.Secret);
+            secret.Length > 0 ? secret : SecretRequired ? null : _existing?.Secret);
     }
 
     [RelayCommand(CanExecute = nameof(IsTesting))]

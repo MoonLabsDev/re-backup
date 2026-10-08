@@ -53,6 +53,31 @@ public class S3StorageFactoryTests
         act.Should().Throw<StorageAccessDeniedException>().WithMessage("*re-entered*");
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("not a region!")]
+    [InlineData("eu-central-1\n")]
+    [InlineData("EU-CENTRAL-1")]
+    public void An_invalid_region_is_a_storage_error(string region)
+    {
+        using var factory = Factory(new RecordingFactory(), Connection(region: region));
+        var act = () => factory.Open(new StorageLocation("s3", "backups", "c1"));
+        act.Should().Throw<StorageIOException>().WithMessage("*region*invalid*");
+        factory.CachedClientCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("us-east-1")]
+    [InlineData("us-gov-west-1")]
+    [InlineData("ap-southeast-2")]
+    [InlineData("cn-northwest-1")]
+    public void Real_region_names_are_accepted(string region)
+    {
+        using var factory = Factory(new RecordingFactory(), Connection(region: region));
+        factory.Open(new StorageLocation("s3", "backups", "c1")).Should().BeOfType<S3Storage>();
+    }
+
     [Fact]
     public void Other_kinds_go_to_the_inner_factory()
     {

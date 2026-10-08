@@ -70,6 +70,53 @@ public class S3ConnectionTesterTests
         fake.Puts.Should().ContainSingle().Which.Key.Should().StartWith(".rebackup-connection-test-");
         fake.Objects.Should().BeEmpty("the test object is deleted again");
         fake.ListRequests.Single().MaxKeys.Should().Be(1);
+        fake.ListRequests.Single().Prefix.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_prefix_scopes_the_list_and_the_test_object()
+    {
+        var (tester, fake) = Create();
+        fake.Add("other/x").Add("wp/elvora/backup.zip");
+
+        var results = await tester.RunAsync(Conn, "wp/elvora", checkWrite: true, Ct);
+
+        results.Should().OnlyContain(r => r.State == S3CheckState.Ok);
+        fake.ListRequests.Single().Prefix.Should().Be("wp/elvora/");
+        fake.Puts.Should().ContainSingle().Which.Key.Should().StartWith("wp/elvora/.rebackup-connection-test-");
+        fake.DeleteRequests.Should().ContainSingle().Which.Should().Be(fake.Puts[0].Key);
+        fake.Objects.Select(o => o.Key).Should().BeEquivalentTo("other/x", "wp/elvora/backup.zip");
+    }
+
+    [Fact]
+    public async Task An_empty_prefix_is_the_whole_bucket()
+    {
+        var (tester, fake) = Create();
+
+        await tester.RunAsync(Conn, "", checkWrite: true, Ct);
+
+        fake.ListRequests.Single().Prefix.Should().BeNull();
+        fake.Puts.Should().ContainSingle().Which.Key.Should().StartWith(".rebackup-connection-test-");
+    }
+
+    [Theory]
+    [InlineData("/wp")]
+    [InlineData("wp/")]
+    [InlineData("wp//elvora")]
+    [InlineData("wp/../x")]
+    public async Task An_invalid_prefix_is_rejected_before_any_request(string prefix)
+    {
+        var created = false;
+        var tester = new S3ConnectionTester(_ =>
+        {
+            created = true;
+            return FakeS3Client.Create().Client;
+        });
+
+        var act = () => tester.RunAsync(Conn, prefix, checkWrite: true, Ct);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        created.Should().BeFalse();
     }
 
     [Fact]

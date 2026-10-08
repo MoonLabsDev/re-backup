@@ -325,6 +325,37 @@ public class S3WriterTests
     }
 
     [Fact]
+    public async Task Create_exclusive_proceeds_when_the_check_is_denied_and_the_commit_stays_exclusive()
+    {
+        // Prefix-scoped IAM: without an effective s3:ListBucket, AWS answers a HEAD on a missing key with 403, not 404.
+        var (s, fake) = Make();
+        fake.Failures["GetObjectMetadataAsync"] = new AmazonS3Exception("x", ErrorType.Sender, "AccessDenied", "r", System.Net.HttpStatusCode.Forbidden);
+
+        await using (var writer = await s.CreateAsync("a.txt", new CreateOptions(Overwrite: false), Ct))
+        {
+            await writer.WriteAsync(new byte[] { 1, 2 }, Ct);
+            await writer.CommitAsync(Ct);
+        }
+
+        fake.Puts.Should().ContainSingle().Which.IfNoneMatch.Should().Be("*");
+        fake.Objects.Should().ContainSingle(o => o.Key == "p/a.txt");
+    }
+
+    [Fact]
+    public async Task Create_exclusive_with_a_denied_check_still_conflicts_on_commit_when_the_key_exists()
+    {
+        var (s, fake) = Make();
+        fake.Add("p/a.txt");
+        fake.Failures["GetObjectMetadataAsync"] = new AmazonS3Exception("x", ErrorType.Sender, "AccessDenied", "r", System.Net.HttpStatusCode.Forbidden);
+
+        await using var writer = await s.CreateAsync("a.txt", new CreateOptions(Overwrite: false), Ct);
+        await writer.WriteAsync(new byte[] { 1 }, Ct);
+        var commit = () => writer.CommitAsync(Ct);
+
+        (await commit.Should().ThrowAsync<StorageConflictException>()).Which.Path.Should().Be("a.txt");
+    }
+
+    [Fact]
     public async Task Create_with_overwrite_does_not_check_existence()
     {
         var (s, fake) = Make();
