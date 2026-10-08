@@ -88,6 +88,64 @@ public sealed class S3ConnectionStoreTests : IDisposable
         File.ReadAllText(FilePath).Should().Be("{ this is not json");
     }
 
+    private const string ValidEntry = """{ "id": "a", "name": "A", "region": "eu-west-1", "bucket": "bkt", "accessKeyId": "AKIAX" }""";
+
+    /// <summary>Writes <paramref name="json"/>, then asserts that loading, saving and deleting all throw and leave the file as it was.</summary>
+    private JsonException AssertRejected(string json)
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(FilePath, json);
+        var store = new S3ConnectionStore(FilePath);
+
+        var thrown = store.Invoking(s => s.LoadAll()).Should().Throw<JsonException>().Which;
+        store.Invoking(s => s.TryGet("a")).Should().Throw<JsonException>();
+        store.Invoking(s => s.Save(Connection("b"))).Should().Throw<JsonException>();
+        store.Invoking(s => s.Delete("a")).Should().Throw<JsonException>();
+
+        File.ReadAllText(FilePath).Should().Be(json);
+        return thrown;
+    }
+
+    [Theory]
+    [InlineData("id")]
+    [InlineData("name")]
+    [InlineData("region")]
+    [InlineData("bucket")]
+    [InlineData("accessKeyId")]
+    public void Entry_with_a_missing_or_empty_required_field_is_corrupt(string field)
+    {
+        var missing = ValidEntry.Replace($"\"{field}\": ", $"\"x{field}\": ");
+        var empty = System.Text.RegularExpressions.Regex.Replace(ValidEntry, $"\"{field}\": \"[^\"]*\"", $"\"{field}\": \"\"");
+        var nul = System.Text.RegularExpressions.Regex.Replace(ValidEntry, $"\"{field}\": \"[^\"]*\"", $"\"{field}\": null");
+
+        foreach (var entry in new[] { missing, empty, nul })
+            AssertRejected($$"""{ "formatVersion": 1, "connections": [ {{entry}} ] }""");
+    }
+
+    [Fact]
+    public void Duplicate_ids_are_corrupt()
+    {
+        var other = ValidEntry.Replace("\"a\"", "\"A\"").Replace("\"name\": \"A\"", "\"name\": \"Other\"");
+
+        AssertRejected($$"""{ "formatVersion": 1, "connections": [ {{ValidEntry}}, {{other}} ] }""");
+    }
+
+    [Theory]
+    [InlineData("""{ "connections": [] }""")]
+    [InlineData("""{ "formatVersion": 0, "connections": [] }""")]
+    public void Missing_format_version_is_corrupt(string json) => AssertRejected(json);
+
+    [Fact]
+    public void Newer_format_version_is_rejected_and_never_overwritten()
+    {
+        var thrown = AssertRejected($$"""{ "formatVersion": 2, "connections": [ {{ValidEntry}} ] }""");
+
+        thrown.Message.Should().Contain("newer version");
+    }
+
+    [Fact]
+    public void A_null_entry_is_corrupt() => AssertRejected("""{ "formatVersion": 1, "connections": [ null ] }""");
+
     [Fact]
     public void Delete_removes_only_that_connection()
     {

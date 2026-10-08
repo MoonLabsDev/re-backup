@@ -6,7 +6,8 @@ namespace ReBackup.Storage.S3.Connections;
 
 /// <summary>
 /// The connections of one app in a JSON file; secrets are stored DPAPI-protected and the plain secret is never written.
-/// A missing file is an empty list, a corrupt file throws <see cref="JsonException"/> and is never overwritten.
+/// A missing file is an empty list. A corrupt file (invalid JSON, no format version, an entry without id, name, region, bucket or
+/// access key ID, an id used twice) or one of a newer format throws <see cref="JsonException"/> and is never overwritten.
 /// An entry whose secret cannot be decrypted is kept (loaded with <c>Secret = null</c>) so it survives later saves.
 /// </summary>
 public sealed class S3ConnectionStore
@@ -60,7 +61,22 @@ public sealed class S3ConnectionStore
         if (!File.Exists(_filePath)) return [];
         var file = JsonSerializer.Deserialize<FileDto>(File.ReadAllText(_filePath), JsonDefaults.Options)
                    ?? throw new JsonException("The connections file is empty.");
-        return file.Connections?.ToList() ?? [];
+        if (file.FormatVersion > FormatVersion)
+            throw new JsonException($"The connections file was written by a newer version (format {file.FormatVersion}); this version reads format {FormatVersion} and leaves the file unchanged.");
+        if (file.FormatVersion < 1) throw new JsonException("The connections file is corrupt: it has no format version.");
+
+        var entries = file.Connections?.ToList() ?? [];
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var e = entries[i];
+            if (e is null || IsBlank(e.Id) || IsBlank(e.Name) || IsBlank(e.Region) || IsBlank(e.Bucket) || IsBlank(e.AccessKeyId))
+                throw new JsonException($"The connections file is corrupt: connection {i + 1} lacks a required field.");
+            if (!ids.Add(e.Id)) throw new JsonException($"The connections file is corrupt: the id of connection {i + 1} is used twice.");
+        }
+        return entries;
+
+        static bool IsBlank(string? value) => string.IsNullOrWhiteSpace(value);
     }
 
     private void Write(List<Entry> entries) =>

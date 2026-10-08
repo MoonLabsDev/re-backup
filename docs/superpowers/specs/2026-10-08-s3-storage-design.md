@@ -62,7 +62,7 @@ public sealed record S3Connection(string Id, string Name, string Region, string 
 ```
 
 - `SecretProtector` uses `ProtectedData.Protect/Unprotect` with `DataProtectionScope.CurrentUser` and a fixed entropy `"ReBackup.S3.v1"` (UTF-8). A `CryptographicException` or bad Base64 on load yields `Secret = null`; the entry is kept.
-- `S3ConnectionStore(string filePath)`: `LoadAll()`, `TryGet(id)`, `Save(S3Connection)` (insert or replace by id; a `null` secret keeps the stored blob), `Delete(id)`. A missing file is an empty list; a corrupt file throws `JsonException` (the app reports it, nothing is overwritten).
+- `S3ConnectionStore(string filePath)`: `LoadAll()`, `TryGet(id)`, `Save(S3Connection)` (insert or replace by id; a `null` secret keeps the stored blob), `Delete(id)`. A missing file is an empty list; a corrupt file throws `JsonException` (the app reports it, nothing is overwritten). Corrupt also means: `formatVersion` missing or 0, an entry that is `null` or has an empty id, name, region, bucket or access key ID, two entries with the same id (case-insensitive). `formatVersion` > 1 throws `JsonException` saying the file was written by a newer version; `Save`/`Delete` read first, so they throw too and never overwrite it.
 - The plain secret exists only in memory; it is never logged, never put in exception messages and never written unencrypted.
 - Each app passes its own file path (ReBackup: its config folder in sub-project 4; re-s3: its own).
 
@@ -130,7 +130,7 @@ Fields: Name (required, unique among the app's connections — uniqueness check 
 
 ## 10. Testing
 
-- **Unit (no Docker):** `S3Errors` mapping per row of section 6; `S3Keys` (prefix joining, 1024-byte limit, placeholders); `SecretProtector` round trip and undecryptable blob → `Secret = null`; `S3ConnectionStore` (insert, replace, null secret keeps blob, delete, missing file, corrupt file); writer part sizing; dispose without commit aborts the multipart upload (fake `IAmazonS3`).
+- **Unit (no Docker):** `S3Errors` mapping per row of section 6; `S3Keys` (prefix joining, 1024-byte limit, placeholders); `SecretProtector` round trip and undecryptable blob → `Secret = null`; `S3ConnectionStore` (insert, replace, null secret keeps blob, delete, missing file, corrupt file, invalid entries, duplicate ids, missing or newer format version); writer part sizing; dispose without commit aborts the multipart upload (fake `IAmazonS3`).
 - **Integration (LocalStack via Testcontainers, pinned image `localstack/localstack:4.9`, which supports conditional writes):** `S3StorageContractTests : StorageContractTests` with a fresh prefix per test; multipart above 16 MiB round trip; two concurrent exclusive single-part writers → exactly one wins; a second exclusive multipart write after the first committed → conflict (the simultaneous multipart race is skipped: LocalStack does not serialize conditional `CompleteMultipartUpload`); placeholder `x/` listed as directory and deletable; non-root missing folder → NotFound; tester with and without a lifecycle rule. Without Docker these tests report as skipped (`Xunit.SkippableFact`), never as passed.
 - **View model (`ReBackup.Shared.Wpf.Tests`):** validation rules, "unchanged" secret, re-enter state, "Use <region>" applies the region, Save enablement.
 - **Architecture:** rules of section 3.
