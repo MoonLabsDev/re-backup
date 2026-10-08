@@ -10,7 +10,10 @@ namespace ReBackup.Storage.Tests;
 /// </summary>
 public abstract class StorageContractTests
 {
-    /// <summary>A fresh, empty storage; every test gets its own.</summary>
+    /// <summary>
+    /// A fresh, empty storage; every test gets its own and asks for it first. A provider whose backend may be absent (a server in a
+    /// container) skips the test here with <c>Skip.If</c>; the tests are <c>[SkippableFact]</c> so that reports as skipped, not failed.
+    /// </summary>
     protected abstract IStorage CreateEmpty();
 
     private static readonly CancellationToken Ct = CancellationToken.None;
@@ -39,7 +42,7 @@ public abstract class StorageContractTests
         return entries;
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Created_file_is_invisible_until_committed()
     {
         var storage = CreateEmpty();
@@ -56,7 +59,7 @@ public abstract class StorageContractTests
         listed.Should().ContainSingle().Which.Should().Match<StorageEntry>(e => e.Path == "a.txt" && e.Size == 5 && !e.IsDirectory);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Disposing_without_commit_discards_the_file()
     {
         var storage = CreateEmpty();
@@ -68,7 +71,7 @@ public abstract class StorageContractTests
         (await ListAsync(storage, "", true)).Should().BeEmpty();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Exclusive_create_of_an_existing_file_throws_conflict()
     {
         var storage = CreateEmpty();
@@ -80,7 +83,7 @@ public abstract class StorageContractTests
         (await ReadAsync(storage, "a.txt")).Should().Be("one");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Exclusive_create_does_not_overwrite_a_file_committed_in_between()
     {
         var storage = CreateEmpty();
@@ -94,7 +97,7 @@ public abstract class StorageContractTests
         (await ReadAsync(storage, "a.txt")).Should().Be("second");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Overwrite_replaces_content_on_commit_and_keeps_old_content_until_then()
     {
         var storage = CreateEmpty();
@@ -110,7 +113,7 @@ public abstract class StorageContractTests
         (await ReadAsync(storage, "a.txt")).Should().Be("brand new");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Writer_is_write_only_and_rejects_second_commit_and_writes_after_commit()
     {
         var storage = CreateEmpty();
@@ -128,7 +131,7 @@ public abstract class StorageContractTests
         await writeAfter.Should().ThrowAsync<InvalidOperationException>();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Durable_create_commits_like_any_other()
     {
         var storage = CreateEmpty();
@@ -143,7 +146,7 @@ public abstract class StorageContractTests
         await exclusive.Should().ThrowAsync<StorageConflictException>();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Modified_time_is_kept_when_supported()
     {
         var storage = CreateEmpty();
@@ -155,7 +158,7 @@ public abstract class StorageContractTests
         (await storage.StatAsync("a.txt", Ct))!.ModifiedUtc.Should().Be(modified);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task List_non_recursive_returns_direct_children_with_directories()
     {
         var storage = CreateEmpty();
@@ -170,7 +173,7 @@ public abstract class StorageContractTests
         inner.Select(e => (e.Path, e.IsDirectory)).Should().BeEquivalentTo(new[] { ("d/inner.txt", false) });
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task List_recursive_returns_all_files_with_relative_paths()
     {
         var storage = CreateEmpty();
@@ -183,7 +186,7 @@ public abstract class StorageContractTests
         (await ListAsync(storage, "a", true)).Where(e => !e.IsDirectory).Select(e => e.Path).Should().BeEquivalentTo("a/b/c.txt");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task List_of_a_missing_folder_throws_not_found()
     {
         var storage = CreateEmpty();
@@ -193,7 +196,7 @@ public abstract class StorageContractTests
         await act.Should().ThrowAsync<StorageNotFoundException>();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Open_read_of_missing_file_throws_not_found()
     {
         var storage = CreateEmpty();
@@ -203,7 +206,7 @@ public abstract class StorageContractTests
         await act.Should().ThrowAsync<StorageNotFoundException>();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Delete_removes_files_and_ignores_missing_paths()
     {
         var storage = CreateEmpty();
@@ -216,7 +219,7 @@ public abstract class StorageContractTests
         (await storage.StatAsync("b.txt", Ct)).Should().NotBeNull();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Delete_of_non_empty_directory_throws()
     {
         var storage = CreateEmpty();
@@ -229,7 +232,7 @@ public abstract class StorageContractTests
         (await storage.StatAsync("d/f.txt", Ct)).Should().NotBeNull();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Delete_of_the_root_is_a_conflict_even_when_it_is_empty()
     {
         var storage = CreateEmpty();
@@ -240,7 +243,7 @@ public abstract class StorageContractTests
         await act.Should().ThrowAsync<StorageConflictException>();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Delete_removes_an_emptied_directory()
     {
         var storage = CreateEmpty();
@@ -251,7 +254,7 @@ public abstract class StorageContractTests
         (await storage.StatAsync("d", Ct)).Should().BeNull();
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Stamp_changes_when_content_changes()
     {
         var storage = CreateEmpty();
@@ -265,7 +268,7 @@ public abstract class StorageContractTests
         after.Should().NotBe(before);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Stamp_is_stable_while_the_file_is_unchanged()
     {
         var storage = CreateEmpty();
@@ -277,7 +280,7 @@ public abstract class StorageContractTests
         second.Should().Be(first);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task Ensure_directory_does_not_fail_and_keeps_the_storage_usable()
     {
         var storage = CreateEmpty();
@@ -290,7 +293,7 @@ public abstract class StorageContractTests
             (await storage.StatAsync("x", Ct))!.IsDirectory.Should().BeTrue();
     }
 
-    [Theory]
+    [SkippableTheory]
     [InlineData("a\\b")]
     [InlineData("/a")]
     [InlineData("a/../b")]

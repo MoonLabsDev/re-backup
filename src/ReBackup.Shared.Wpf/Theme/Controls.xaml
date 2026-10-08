@@ -285,6 +285,47 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Rail}" />
     </Style>
 
+    <!-- A secret field (the S3 connection dialog): the TextBox look. -->
+    <Style TargetType="PasswordBox">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Bg}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderStrong}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text}" />
+        <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="SelectionOpacity" Value="0.4" />
+        <Setter Property="Padding" Value="4,3" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="KeyboardNavigation.TabNavigation" Value="None" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="PasswordBox">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" SnapsToDevicePixels="True">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False" Margin="{TemplateBinding Padding}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.BorderHover}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Surface}" />
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===================================================================== CheckBox, switch, RadioButton -->
 
     <Style TargetType="CheckBox">

@@ -9,6 +9,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ReBackup.Shared\ReBackup.Shared.csproj" />
+    <ProjectReference Include="..\ReBackup.Storage.S3\ReBackup.Storage.S3.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
   <ItemGroup>

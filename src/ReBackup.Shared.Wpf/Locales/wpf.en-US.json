@@ -15,5 +15,58 @@
     "treemap": {
       "toolTip": "{path}\n{total}, backup {included} — {status}"
     }
+  },
+  "s3": {
+    "dialog": {
+      "titleNew": "Add S3 connection",
+      "titleEdit": "Edit S3 connection",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "field": {
+      "name": "Name",
+      "region": "Region",
+      "bucket": "Bucket",
+      "accessKeyId": "Access key ID",
+      "secret": "Secret access key"
+    },
+    "secret": {
+      "unchanged": "Unchanged",
+      "reenter": "Enter the secret again"
+    },
+    "error": {
+      "nameRequired": "Enter a name.",
+      "nameTaken": "Another connection already has this name.",
+      "regionRequired": "Choose a region.",
+      "bucketInvalid": "A bucket name has 3–63 characters: lowercase letters, digits, dots and hyphens, starting and ending with a letter or digit.",
+      "accessKeyRequired": "Enter the access key ID.",
+      "secretRequired": "Enter the secret access key."
+    },
+    "test": {
+      "run": "Test connection",
+      "cancel": "Cancel test",
+      "checkWrite": "Check write and delete permission",
+      "results": "Test results",
+      "cancelled": "The test was cancelled.",
+      "error": "The test could not run.",
+      "useRegion": "Use {region}",
+      "check": {
+        "bucket": "Bucket",
+        "list": "List",
+        "writeDelete": "Write and delete",
+        "lifecycle": "Lifecycle rule"
+      }
+    },
+    "check": {
+      "ok": "OK",
+      "regionMismatch": "The bucket is in {region}.",
+      "accessDenied": "Access denied: check the access key and its permissions.",
+      "notFound": "Not found: check the bucket name.",
+      "unavailable": "S3 cannot be reached: check the network connection.",
+      "failed": "The check failed.",
+      "lifecycleMissing": "No lifecycle rule cleans up incomplete multipart uploads (recommended: abort them after 7 days).",
+      "notCheckable": "Cannot be checked with these permissions.",
+      "skipped": "Not checked."
+    }
   }
 }
