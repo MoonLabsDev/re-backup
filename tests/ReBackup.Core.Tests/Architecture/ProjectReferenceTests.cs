@@ -9,7 +9,7 @@ public class ProjectReferenceTests
 {
     [Theory]
     [InlineData("ReBackup.Shared", new string[0])]
-    [InlineData("ReBackup.Shared.Wpf", new[] { "ReBackup.Shared" })]
+    [InlineData("ReBackup.Shared.Wpf", new[] { "ReBackup.Shared", "ReBackup.Storage.S3" })]
     [InlineData("ReBackup.Storage", new string[0])]
     [InlineData("ReBackup.Storage.S3", new[] { "ReBackup.Storage", "ReBackup.Shared" })]
     public void Library_references_only_what_is_allowed(string project, string[] allowed)
@@ -25,6 +25,7 @@ public class ProjectReferenceTests
 
     [Theory]
     [InlineData("ReBackup.Storage.S3", new[] { "AWSSDK.S3", "System.Security.Cryptography.ProtectedData" })]
+    [InlineData("ReBackup.Shared.Wpf", new[] { "CommunityToolkit.Mvvm" })]
     public void Library_packages_are_exactly(string project, string[] expected) =>
         PackageReferencesOf(project).Should().BeEquivalentTo(expected);
 
