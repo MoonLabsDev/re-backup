@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -5,6 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
+using System.Windows.Threading;
 
 namespace ReBackup.Shared.Wpf.Controls;
 
@@ -22,6 +24,9 @@ public readonly record struct ItemSpan(int Index, double Top, double Height)
 /// the list and dragging an item shows an insertion line in the accent colour (<c>Brush.Accent</c>, followed on theme
 /// changes); dropping it executes the command with a <see cref="ListMove"/> when it can execute. The command moves the
 /// item in the bound collection; the behavior changes nothing itself. Drags that start on a button are left alone.
+/// After any move of the selected (or focused) item, by drop, menu or key, the item is scrolled into view and its
+/// container gets the keyboard focus back (a virtualizing panel makes a new container for a moved item, which loses
+/// the focus), so Alt+Up / Alt+Down can be pressed again and again.
 /// </summary>
 public static class ListReorder
 {
@@ -106,6 +111,8 @@ public static class ListReorder
         list.DragOver -= OnDragOver;
         list.DragLeave -= OnDragLeave;
         list.Drop -= OnDrop;
+        if (StateOf(list) is { } old)
+            ((INotifyCollectionChanged)list.Items).CollectionChanged -= old.OnItemsChanged;
 
         if (e.NewValue is null)
         {
@@ -114,7 +121,9 @@ public static class ListReorder
             return;
         }
 
-        list.SetValue(StateProperty, new DragState());
+        var state = new DragState(list);
+        list.SetValue(StateProperty, state);
+        ((INotifyCollectionChanged)list.Items).CollectionChanged += state.OnItemsChanged;
         list.AllowDrop = true;
         list.PreviewMouseLeftButtonDown += OnPreviewMouseDown;
         list.PreviewMouseLeftButtonUp += OnPreviewMouseUp;
@@ -314,8 +323,43 @@ public static class ListReorder
 
     private sealed record DragToken(ItemsControl List, int FromIndex);
 
-    private sealed class DragState
+    /// <summary>
+    /// The item moved: when it was the selected one or its container had the focus, it is scrolled into view and
+    /// focused again once the list has made its new container.
+    /// </summary>
+    private static void OnItemMoved(ItemsControl list, object? item)
     {
+        if (item is null)
+            return;
+        var container = list.ItemContainerGenerator.ContainerFromItem(item) as UIElement;
+        var hadFocus = container?.IsKeyboardFocusWithin == true || list.IsKeyboardFocusWithin;
+        var selected = list is Selector selector && Equals(selector.SelectedItem, item);
+        if (!selected && container?.IsKeyboardFocusWithin != true)
+            return;
+
+        list.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            if (!list.Items.Contains(item))
+                return;
+            if (list is ListBox listBox)
+                listBox.ScrollIntoView(item);
+            list.UpdateLayout();
+            // Only when the focus was in the list or went nowhere: a move must not take the focus from elsewhere.
+            var focused = Keyboard.FocusedElement as DependencyObject;
+            if (!hadFocus && focused is not null && !(focused is Visual visual && list.IsAncestorOf(visual)))
+                return;
+            (list.ItemContainerGenerator.ContainerFromItem(item) as UIElement)?.Focus();
+        });
+    }
+
+    private sealed class DragState(ItemsControl list)
+    {
+        public void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.Action == NotifyCollectionChangedAction.Move && e.OldItems is { Count: 1 } moved)
+                OnItemMoved(list, moved[0]);
+        }
+
         public int FromIndex { get; set; } = -1;
         public Point Start { get; set; }
         public InsertionAdorner? Adorner { get; set; }

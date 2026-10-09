@@ -1,5 +1,9 @@
+using System.Collections.ObjectModel;
 using System.Runtime.ExceptionServices;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Input;
 using FluentAssertions;
 using ReBackup.Shared.Wpf.Controls;
@@ -79,6 +83,23 @@ public class ListReorderTests
         ListReorder.InsertionLineY(Items, insertion).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(0, 0)]      // above the realized items: their top
+    [InlineData(1, 0)]
+    [InlineData(7, 86)]     // below them: their bottom
+    public void Without_realized_neighbours_the_line_sits_at_the_realized_edge(int insertion, double expected)
+    {
+        ItemSpan[] realized = [new(3, 0, 40), new(4, 46, 40)];
+
+        ListReorder.InsertionLineY(realized, insertion).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Without_realized_items_the_line_is_at_the_top()
+    {
+        ListReorder.InsertionLineY([], 2).Should().Be(0);
+    }
+
     [Fact]
     public void Setting_a_move_command_lets_the_list_accept_drops()
     {
@@ -96,6 +117,61 @@ public class ListReorderTests
             list.AllowDrop.Should().BeFalse();
         });
     }
+
+    [Fact]
+    public void A_moved_item_keeps_the_keyboard_focus_so_the_next_move_works_too()
+    {
+        RunOnSta(() =>
+        {
+            var items = new ObservableCollection<string>(Enumerable.Range(0, 30).Select(i => $"Item {i}"));
+            var list = new ListBox { ItemsSource = items };   // a VirtualizingStackPanel regenerates moved containers
+            IRelayCommand up = null!;
+            up = new RelayCommand(() =>
+            {
+                var index = items.IndexOf((string)list.SelectedItem);
+                items.Move(index, index - 1);
+            });
+            list.InputBindings.Add(new KeyBinding(up, Key.Up, ModifierKeys.Alt));
+            ListReorder.SetMoveCommand(list, new RelayCommand<ListMove>(move => items.Move(move.From, move.To)));
+            var window = new Window
+            {
+                Content = list, Width = 300, Height = 200, Left = -10000, Top = -10000,
+                WindowStyle = WindowStyle.None, ShowInTaskbar = false,
+            };
+            window.Show();
+            try
+            {
+                window.Activate();
+                list.SelectedItem = "Item 25";
+                list.ScrollIntoView("Item 25");
+                Pump();
+                ((ListBoxItem)list.ItemContainerGenerator.ContainerFromItem("Item 25")).Focus();
+                Pump();
+
+                for (var i = 0; i < 2; i++)
+                {
+                    // What the Alt+Up key binding does: it runs only while the focus is in the list.
+                    list.IsKeyboardFocusWithin.Should().BeTrue("move {0} needs the focus in the list", i + 1);
+                    up.Execute(null);
+                    Pump();
+                }
+
+                items.IndexOf("Item 25").Should().Be(23);
+                var container = (ListBoxItem)list.ItemContainerGenerator.ContainerFromItem("Item 25");
+                container.Should().NotBeNull("the moved item is scrolled into view");
+                container.IsKeyboardFocused.Should().BeTrue();
+                list.SelectedItem.Should().Be("Item 25");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    /// <summary>Runs what the dispatcher has queued down to the Loaded priority (layout included).</summary>
+    private static void Pump() =>
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
 
     private static void RunOnSta(Action action)
     {
