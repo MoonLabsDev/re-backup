@@ -76,6 +76,7 @@ public static class CoreTexts
         ["core.file.noLongerExists"] = "no longer exists",
         ["core.file.accessDenied"] = "access denied",
         ["core.file.locked"] = "locked by another program",
+        ["core.file.archived"] = "archived (e.g. S3 Glacier); it must be restored before it can be read",
         ["core.file.cannotOpen"] = "cannot be opened: {error}",
         ["core.file.notAFolder"] = "\"{name}\" is not a folder (or is a link) and is not removed.",
         ["core.file.inTransit"] = "\"{name}\" is being written or deleted by another run and is not removed.",

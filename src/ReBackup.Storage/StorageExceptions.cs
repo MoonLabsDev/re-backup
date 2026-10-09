@@ -65,4 +65,10 @@ public sealed class StorageIOException : StorageException
 {
     public StorageIOException(string path, string? message = null, Exception? inner = null)
         : base(path, message ?? $"I/O error at '{path}'" + (inner is null ? "." : $": {inner.Message}"), inner) { }
+
+    /// <summary>
+    /// The file is archived (e.g. S3 Glacier or Deep Archive) and cannot be read before it is restored. Callers skip such
+    /// a file like a locked one.
+    /// </summary>
+    public bool Archived { get; init; }
 }

@@ -20,17 +20,21 @@ public sealed class InMemoryStorage : IStorage
     private readonly TimeProvider _time;
     private long _versionCounter;
 
+    private readonly StorageCapabilities _capabilities;
+
     public InMemoryStorage(
         StorageCapabilities capabilities = StorageCapabilities.EmptyDirectories | StorageCapabilities.SetModifiedTime,
         TimeProvider? time = null)
     {
-        Capabilities = capabilities;
+        _capabilities = capabilities;
         _time = time ?? TimeProvider.System;
     }
 
-    public StorageCapabilities Capabilities { get; }
+    /// <summary>The capabilities given to the constructor, plus <see cref="StorageCapabilities.FreeSpace"/> while <see cref="FreeSpace"/> is set.</summary>
+    public StorageCapabilities Capabilities =>
+        FreeSpace is null ? _capabilities : _capabilities | StorageCapabilities.FreeSpace;
 
-    /// <summary>What <see cref="GetFreeSpaceAsync"/> returns; <c>null</c> means unknown.</summary>
+    /// <summary>What <see cref="GetFreeSpaceAsync"/> returns; <c>null</c> means unknown (and the storage then lacks the capability).</summary>
     public long? FreeSpace { get; set; }
 
     /// <summary>The committed file paths, for assertions.</summary>

@@ -63,6 +63,19 @@ public class InMemoryStorageTests : StorageContractTests
     }
 
     [Fact]
+    public void Free_space_capability_is_reported_while_a_free_space_is_set()
+    {
+        var storage = new InMemoryStorage(StorageCapabilities.CaseSensitive);
+        storage.Capabilities.Should().Be(StorageCapabilities.CaseSensitive);
+
+        storage.FreeSpace = 42;
+        storage.Capabilities.Should().Be(StorageCapabilities.CaseSensitive | StorageCapabilities.FreeSpace);
+
+        storage.FreeSpace = null;
+        storage.Capabilities.Should().Be(StorageCapabilities.CaseSensitive);
+    }
+
+    [Fact]
     public async Task Modified_time_is_ignored_without_the_set_modified_time_capability()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 6, 0, 0, 0, TimeSpan.Zero));

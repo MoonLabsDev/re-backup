@@ -144,6 +144,7 @@
       "noLongerExists": "existiert nicht mehr",
       "accessDenied": "Zugriff verweigert",
       "locked": "von einem anderen Programm gesperrt",
+      "archived": "archiviert (z. B. S3 Glacier); muss wiederhergestellt werden, bevor es gelesen werden kann",
       "cannotOpen": "kann nicht geöffnet werden: {error}",
       "inTransit": "„{name}“ wird von einem anderen Lauf geschrieben oder gelöscht und wird nicht entfernt.",
       "notAFolder": "„{name}“ ist kein Ordner (oder eine Verknüpfung) und wird nicht entfernt."
