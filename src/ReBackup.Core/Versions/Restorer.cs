@@ -230,7 +230,8 @@ public static class Restorer
 
     /// <summary>
     /// Copies the plan's files through the destination's <see cref="StorageWriter"/>: a file appears complete or not at
-    /// all, and gets the version's modified time. Folders are created only on storages with real folders. A file that
+    /// all, and gets the version's modified time where the destination can set it
+    /// (<see cref="StorageCapabilities.SetModifiedTime"/>). Folders are created only on storages with real folders. A file that
     /// cannot be written is recorded as a failure and the rest continues. Skip and KeepBoth never replace a file, also
     /// not one that appeared after planning. Cancellation stops before the next file (a half-written file is discarded).
     /// </summary>
@@ -410,7 +411,9 @@ public static class Restorer
         var input = await versions.OpenReadAsync(file.Source, ct).ConfigureAwait(false);
         await using (input.ConfigureAwait(false))
         {
-            var output = await destination.CreateAsync(target, new CreateOptions(Overwrite: overwrite, ModifiedUtc: file.ModifiedUtc), ct)
+            // A storage that cannot set modified times (e.g. S3) is not asked to.
+            var modified = destination.Capabilities.HasFlag(StorageCapabilities.SetModifiedTime) ? file.ModifiedUtc : null;
+            var output = await destination.CreateAsync(target, new CreateOptions(Overwrite: overwrite, ModifiedUtc: modified), ct)
                 .ConfigureAwait(false);
             await using (output.ConfigureAwait(false))
             {

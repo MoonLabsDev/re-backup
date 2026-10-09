@@ -185,16 +185,17 @@ public sealed class BackupRunner : IBackupRunner
     /// to make room.
     /// </summary>
     /// <remarks>
-    /// The checks that need paths on a file system (the source exists, source and target do not overlap) apply to
-    /// <c>"fs"</c> locations only; for other kinds a missing source shows when it is indexed.
+    /// The checks that need paths on a file system (a path is given, the source exists, source and target do not
+    /// overlap) apply to <c>"fs"</c> locations only; for other kinds a missing source shows when it is indexed.
     /// </remarks>
     private async Task<BackupWork> PrepareAsync(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
         var plan = request.Plan;
-        if (string.IsNullOrWhiteSpace(plan.Source.Path) || (plan.Source.IsFileSystem && !Directory.Exists(plan.Source.Path)))
+        // On other kinds an empty path is the storage's root (e.g. a whole bucket), not a missing one.
+        if (plan.Source.IsFileSystem && (string.IsNullOrWhiteSpace(plan.Source.Path) || !Directory.Exists(plan.Source.Path)))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceMissing", ("source", plan.Source.Path)));
-        if (string.IsNullOrWhiteSpace(plan.Target.Path))
+        if (plan.Target.IsFileSystem && string.IsNullOrWhiteSpace(plan.Target.Path))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.noTarget"));
         if (string.IsNullOrWhiteSpace(plan.Name) || plan.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.nameNotFolder", ("name", plan.Name)));
