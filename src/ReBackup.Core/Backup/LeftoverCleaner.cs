@@ -83,7 +83,7 @@ public static class LeftoverCleaner
                 await CleanLegacyDeletingAsync(target, folder, planId, planName, warnings, onFileDeleted, progress, ct).ConfigureAwait(false);
             else
                 await CleanMarkedAsync(target, folder, planId, planName, currentVersionName, machineName, warnings, foreign,
-                    onFileDeleted, progress, ct).ConfigureAwait(false);
+                    onFileDeleted, progress, reportUnexamined: false, ct).ConfigureAwait(false);
         }
         return new LeftoverCleanup(warnings, foreign);
     }
@@ -112,7 +112,7 @@ public static class LeftoverCleaner
         }
 
         await CleanMarkedAsync(target, folder.Name, planId, planName, currentVersionName: null, machineName: folder.Host,
-            warnings, foreign: [], onFileDeleted: null, progress: onFileDeleted, ct: ct).ConfigureAwait(false);
+            warnings, foreign: [], onFileDeleted: null, progress: onFileDeleted, reportUnexamined: true, ct: ct).ConfigureAwait(false);
         return warnings;
     }
 
@@ -152,9 +152,16 @@ public static class LeftoverCleaner
     /// </summary>
     private static async Task CleanMarkedAsync(IStorage target, string folder, string planId, string planName,
         string? currentVersionName, string machineName, List<string> warnings, List<ForeignMarkedFolder> foreign,
-        Action<string, int>? onFileDeleted, Action<int>? progress, CancellationToken ct)
+        Action<string, int>? onFileDeleted, Action<int>? progress, bool reportUnexamined, CancellationToken ct)
     {
         var name = StoragePath.Name(folder);
+        void Unexamined()
+        {
+            // The cleanup leaves such a folder silently for the next run; a take-over must say it did nothing.
+            if (reportUnexamined)
+                warnings.Add(CoreTexts.English("core.run.takeOverUnexamined", ("name", name)));
+        }
+
         if (!VersionName.TryParseAny(name, out _, out var folderPlanName))
             return;   // not named like a version: not ours to look into
 
@@ -162,7 +169,10 @@ public static class LeftoverCleaner
         var pending = StoragePath.Combine(folder, VersionMarkerNames.Pending);
         string markerPath;
         if (await ExistsAsync(target, deleting, ct).ConfigureAwait(false) is not { } hasDeleting)
+        {
+            Unexamined();
             return;   // cannot be examined: left alone
+        }
         if (hasDeleting)
         {
             markerPath = deleting;
@@ -172,6 +182,7 @@ public static class LeftoverCleaner
             switch (await ExistsAsync(target, pending, ct).ConfigureAwait(false))
             {
                 case null:
+                    Unexamined();
                     return;   // cannot be examined: left alone
                 case false when string.Equals(name, currentVersionName, StringComparison.OrdinalIgnoreCase):
                     return;   // the folder the current run reserved, its marker maybe not visible yet: never remains

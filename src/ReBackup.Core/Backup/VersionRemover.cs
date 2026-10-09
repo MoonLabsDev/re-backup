@@ -28,6 +28,10 @@ public static class VersionRemover
     /// makes the folder no longer a version (2), deletes the other files in batches (3) and the directories bottom-up (4),
     /// then the marker (5) and the folder itself. When step 1 fails, nothing has changed. When a later step fails, the
     /// remains keep the marker and the next run of the plan finishes the deletion (<see cref="FinishRemovalAsync"/>).
+    /// Right before step 1 the folder's markers are looked at again, as a run or deletion may have started since the
+    /// folder was listed (also on another computer): a folder being written (<see cref="VersionMarkerNames.Pending"/>)
+    /// or being deleted by another computer is refused, and so is one whose markers cannot be looked at. Only a deletion
+    /// marker of this computer (<paramref name="marker"/>'s host) is replaced: its own deletion that is retried.
     /// </summary>
     /// <param name="marker">
     /// What the marker says. Its plan name is replaced by the one the folder is named after: a version made before the
@@ -41,8 +45,8 @@ public static class VersionRemover
     /// </remarks>
     /// <exception cref="VersionRemainsException">The folder no longer is a version, but its remains could not be deleted.</exception>
     /// <exception cref="StorageException">
-    /// The folder is gone or a link, or the marker could not be written: nothing was changed. For the root,
-    /// <see cref="StorageConflictException"/>, as the storages refuse to delete it.
+    /// The folder is gone or a link, or the marker could not be written: nothing was changed. For the root, and for a
+    /// folder that is being written or deleted elsewhere, <see cref="StorageConflictException"/>.
     /// </exception>
     /// <exception cref="ArgumentException"><paramref name="versionPath"/> is not a valid storage path, or one the storage cannot hold.</exception>
     /// <param name="onFileDeleted">Called with the batch size after every batch of deleted files (manifest and marker aside).</param>
@@ -50,6 +54,7 @@ public static class VersionRemover
         CancellationToken ct = default)
     {
         await RefuseMissingOrLinkAsync(target, versionPath, ct).ConfigureAwait(false);
+        await RefuseInTransitAsync(target, versionPath, marker.Host, ct).ConfigureAwait(false);
         if (VersionName.TryParseAny(StoragePath.Name(versionPath), out _, out var folderPlanName))
             marker = marker with { PlanName = folderPlanName };
         await VersionMarkers.WriteDeletingAsync(target, versionPath, marker, ct).ConfigureAwait(false);
@@ -116,6 +121,24 @@ public static class VersionRemover
             throw new StorageNotFoundException(folderPath);
         if (entry.IsLink || !entry.IsDirectory)
             throw new StorageIOException(folderPath, CoreTexts.English("core.file.notAFolder", ("name", StoragePath.Name(folderPath))));
+    }
+
+    /// <summary>
+    /// Refuses a folder that carries <see cref="VersionMarkerNames.Pending"/> (a run writes it), or a
+    /// <see cref="VersionMarkerNames.Deleting"/> that is not this computer's (<see cref="MarkerInfo.IsOwn"/>) or cannot be
+    /// read. A marker that cannot be looked at refuses too: overwriting it could take a folder from a run that goes on.
+    /// </summary>
+    private static async Task RefuseInTransitAsync(IStorage target, string versionPath, string machineName, CancellationToken ct)
+    {
+        var name = StoragePath.Name(versionPath);
+        if (await target.StatAsync(StoragePath.Combine(versionPath, VersionMarkerNames.Pending), ct).ConfigureAwait(false) is not null)
+            throw new StorageConflictException(versionPath, CoreTexts.English("core.file.inTransit", ("name", name)));
+        var deleting = StoragePath.Combine(versionPath, VersionMarkerNames.Deleting);
+        if (await target.StatAsync(deleting, ct).ConfigureAwait(false) is null)
+            return;
+        if (await VersionMarkers.TryReadAsync(target, deleting, ct).ConfigureAwait(false) is not { } existing ||
+            !existing.IsOwn(machineName))
+            throw new StorageConflictException(versionPath, CoreTexts.English("core.file.inTransit", ("name", name)));
     }
 
     /// <summary>

@@ -88,7 +88,10 @@ public class ForeignMarkerTests : IDisposable
     /// A run of the plan whose target reports 2 free bytes plus 10 for every old version that is gone: the run frees
     /// space by retention before it copies, then retention runs after it.
     /// </summary>
-    private Task<RunLogEntry> RunShortOfSpace(BackupPlan plan, params int[] days)
+    private Task<RunLogEntry> RunShortOfSpace(BackupPlan plan, params int[] days) => RunShortOfSpace(plan, null, days);
+
+    /// <param name="before">Called before every operation on the target, with the operation and the path.</param>
+    private Task<RunLogEntry> RunShortOfSpace(BackupPlan plan, Action<string, string>? before, params int[] days)
     {
         var storages = new TestStorageFactory(location =>
         {
@@ -97,7 +100,11 @@ public class ForeignMarkerTests : IDisposable
                 ? storage
                 : new FaultyStorage(storage)
                 {
-                    FreeSpace = () => 2 + 10 * days.Count(day => !Directory.Exists(Path.Combine(_target, OldName(day)))),
+                    Before = before,
+                    // Without days, the target tells its real free space.
+                    FreeSpace = days.Length == 0
+                        ? null
+                        : () => 2 + 10 * days.Count(day => !Directory.Exists(Path.Combine(_target, OldName(day)))),
                 };
         });
         return new BackupRunner(storages, _time).RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
@@ -115,13 +122,20 @@ public class ForeignMarkerTests : IDisposable
             Old(day);
         await MarkOnDisk(Marked, OtherPc, kind);
         var before = FilesUnder(Marked);
+        string[]? whenCopyStarted = null;   // the folders left once space was freed, before the new version is written
 
-        var entry = await RunShortOfSpace(FreeingPlan(), 25, 26, 27, 28);
+        var entry = await RunShortOfSpace(FreeingPlan(), (operation, path) =>
+        {
+            if (operation == "create" && path == $"{NewVersion}/re-pending.json")
+                whenCopyStarted = Directory.GetDirectories(_target).Select(d => Path.GetFileName(d)!).ToArray();
+        }, 25, 26, 27, 28);
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, "a run that meets another computer's folder never ends as error");
         entry.Version.Should().Be(NewVersion);
         FilesUnder(Marked).Should().Equal(before);
-        entry.RetentionDeleted.Should().NotContain(Marked).And.Contain([OldName(25), OldName(26)]);
+        entry.RetentionDeleted.Should().NotContain(Marked);
+        whenCopyStarted.Should().BeEquivalentTo([Marked, OldName(27), OldName(28), OldName(29)],
+            "freeing space deleted the two oldest versions it needed, and passed over the oldest folder of all");
         entry.Warnings.Should().ContainSingle().Which.Should().Be($"\"{Marked}\" was left alone: it {warning}.");
         (await VersionCatalog.ListAsync(new FileSystemStorage(_target), PlanId, PlanName)).Select(v => v.Name)
             .Should().Equal([NewVersion], "a folder in transit is no version, so retention never counts it");
@@ -268,5 +282,123 @@ public class ForeignMarkerTests : IDisposable
 
         results.Should().Equal(new VersionDeletion(Marked, VersionDeletionOutcome.NotManaged, null));
         FilesUnder(Marked).Should().Equal(before);
+    }
+
+    [Fact]
+    public async Task Retention_leaves_a_version_another_computer_starts_deleting_after_the_listing()
+    {
+        // The other computer marks the version between retention's listing and its deletion.
+        Old(27);
+        Old(28);
+        var marked = false;
+        var plan = FreeingPlan();
+        plan.FreeSpaceByRetention = false;
+
+        var entry = await RunShortOfSpace(plan, (operation, path) =>
+        {
+            if (operation != "stat" || path != OldName(27) || marked)
+                return;
+            marked = true;
+            VersionMarkers.WriteDeletingAsync(new FileSystemStorage(_target), OldName(27), Marker(OtherPc), CancellationToken.None)
+                .GetAwaiter().GetResult();
+        });
+
+        marked.Should().BeTrue();
+        entry.RetentionDeleted.Should().Equal(OldName(28));
+        entry.Warnings.Should().ContainSingle().Which.Should().Contain(OldName(27));
+        File.Exists(Path.Combine(_target, OldName(27), "re-manifest.json")).Should().BeTrue();
+        (await VersionMarkers.TryReadAsync(new FileSystemStorage(_target), $"{OldName(27)}/re-deleting.json", CancellationToken.None))!
+            .Host.Should().Be(OtherPc, "the other computer's marker is not overwritten");
+    }
+
+    [Theory]
+    [InlineData("re-pending.json", "OTHER-PC")]
+    [InlineData("re-pending.json", "THIS-PC")]
+    [InlineData("re-deleting.json", "OTHER-PC")]
+    public async Task The_remover_never_overwrites_a_marker_it_did_not_expect(string markerName, string host)
+    {
+        var folder = await VersionFolder.CreateAsync(_storage, Marked, PlanId);
+        var marker = Marker(host);
+        if (markerName == "re-pending.json")
+            await VersionMarkers.WritePendingAsync(_storage, folder, marker, CancellationToken.None);
+        else
+            await VersionMarkers.WriteDeletingAsync(_storage, folder, marker, CancellationToken.None);
+        var before = _storage.Files.ToList();
+
+        var removal = () => VersionRemover.RemoveAsync(_storage, folder, Marker(ThisPc));
+
+        await removal.Should().ThrowAsync<StorageConflictException>();
+        _storage.Files.Should().BeEquivalentTo(before);
+        (await VersionMarkers.TryReadAsync(_storage, $"{folder}/{markerName}", CancellationToken.None))!.Host.Should().Be(host);
+    }
+
+    [Fact]
+    public async Task The_remover_retries_its_own_interrupted_deletion()
+    {
+        var folder = await VersionFolder.CreateAsync(_storage, Marked, PlanId);
+        await VersionMarkers.WriteDeletingAsync(_storage, folder, Marker("this-pc"), CancellationToken.None);
+
+        await VersionRemover.RemoveAsync(_storage, folder, Marker(ThisPc));
+
+        InMemoryFilesIn(Marked).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_version_whose_markers_cannot_be_looked_at_is_not_listed()
+    {
+        await VersionFolder.CreateAsync(_storage, Marked, PlanId);
+        await VersionFolder.CreateAsync(_storage, "2026_09_21-02_00 Projects", PlanId);
+        var storage = new FaultyStorage(_storage)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "stat" && path == $"{Marked}/re-pending.json")
+                    throw new StorageIOException(path, "The network name is no longer available.");
+            },
+        };
+
+        var versions = await VersionCatalog.ListAsync(storage, PlanId, PlanName);
+
+        versions.Select(v => v.Name).Should().Equal("2026_09_21-02_00 Projects");
+    }
+
+    [Fact]
+    public async Task Take_over_reports_a_folder_that_cannot_be_examined()
+    {
+        await MarkInMemory(Marked, OtherPc, MarkerKind.Pending);
+        var before = _storage.Files.ToList();
+        var storage = new FaultyStorage(_storage)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "stat" && path == $"{Marked}/re-deleting.json")
+                    throw new StorageIOException(path, "boom");
+            },
+        };
+
+        var warnings = await LeftoverCleaner.TakeOverAsync(storage, PlanId, PlanName,
+            new ForeignMarkedFolder(Marked, OtherPc, Started, MarkerKind.Pending), CancellationToken.None);
+
+        warnings.Should().Equal($"\"{Marked}\" could not be examined and was left as it is.");
+        _storage.Files.Should().BeEquivalentTo(before);
+    }
+
+    [Theory]
+    [InlineData(null)]          // the marker vanished: the other computer finished
+    [InlineData(ThisPc)]        // the marker became this computer's own
+    [InlineData("")]            // ... or one without a host
+    public async Task Take_over_is_refused_when_the_marker_is_no_longer_the_listed_one(string? nowHost)
+    {
+        await MarkInMemory(Marked, OtherPc, MarkerKind.Pending);
+        await _storage.DeleteAsync([$"{Marked}/re-pending.json"], CancellationToken.None);
+        if (nowHost is not null)
+            await VersionMarkers.WritePendingAsync(_storage, Marked, Marker(nowHost), CancellationToken.None);
+        var before = _storage.Files.ToList();
+
+        var warnings = await LeftoverCleaner.TakeOverAsync(_storage, PlanId, PlanName,
+            new ForeignMarkedFolder(Marked, OtherPc, Started, MarkerKind.Pending), CancellationToken.None);
+
+        warnings.Should().Equal($"\"{Marked}\" was not taken over: its marker has changed meanwhile.");
+        _storage.Files.Should().BeEquivalentTo(before);
     }
 }

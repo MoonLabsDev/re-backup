@@ -130,6 +130,7 @@
       "leftoverOtherHostPending": "„{name}“ wurde nicht angetastet: Es wird seit {time} von {host} geschrieben.",
       "leftoverOtherHostDeleting": "„{name}“ wurde nicht angetastet: Es wird seit {time} von {host} gelöscht.",
       "takeOverChanged": "„{name}“ wurde nicht übernommen: Seine Markierung hat sich inzwischen geändert.",
+      "takeOverUnexamined": "„{name}“ konnte nicht geprüft werden und bleibt unverändert.",
       "leftoverPartialWithManifest": "„{name}“ wurde nicht angetastet: Es sieht unfertig aus, enthält aber ein Manifest.",
       "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
     },
@@ -144,6 +145,7 @@
       "accessDenied": "Zugriff verweigert",
       "locked": "von einem anderen Programm gesperrt",
       "cannotOpen": "kann nicht geöffnet werden: {error}",
+      "inTransit": "„{name}“ wird von einem anderen Lauf geschrieben oder gelöscht und wird nicht entfernt.",
       "notAFolder": "„{name}“ ist kein Ordner (oder eine Verknüpfung) und wird nicht entfernt."
     },
     "scan": {

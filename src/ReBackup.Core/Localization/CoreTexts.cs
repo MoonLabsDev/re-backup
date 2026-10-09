@@ -63,6 +63,7 @@ public static class CoreTexts
         ["core.run.leftoverOtherHostPending"] = "\"{name}\" was left alone: it is being written by {host} since {time}.",
         ["core.run.leftoverOtherHostDeleting"] = "\"{name}\" was left alone: it is being deleted by {host} since {time}.",
         ["core.run.takeOverChanged"] = "\"{name}\" was not taken over: its marker has changed meanwhile.",
+        ["core.run.takeOverUnexamined"] = "\"{name}\" could not be examined and was left as it is.",
         ["core.run.leftoverPartialWithManifest"] = "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
 
@@ -77,6 +78,7 @@ public static class CoreTexts
         ["core.file.locked"] = "locked by another program",
         ["core.file.cannotOpen"] = "cannot be opened: {error}",
         ["core.file.notAFolder"] = "\"{name}\" is not a folder (or is a link) and is not removed.",
+        ["core.file.inTransit"] = "\"{name}\" is being written or deleted by another run and is not removed.",
 
         ["core.scan.link"] = "Link is not followed.",
         ["core.scan.tooDeep"] = "Folder nesting too deep.",

@@ -130,6 +130,7 @@
       "leftoverOtherHostPending": "\"{name}\" was left alone: it is being written by {host} since {time}.",
       "leftoverOtherHostDeleting": "\"{name}\" was left alone: it is being deleted by {host} since {time}.",
       "takeOverChanged": "\"{name}\" was not taken over: its marker has changed meanwhile.",
+      "takeOverUnexamined": "\"{name}\" could not be examined and was left as it is.",
       "leftoverPartialWithManifest": "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
       "indexFailed": "The version index could not be updated: {error}"
     },
@@ -144,6 +145,7 @@
       "accessDenied": "access denied",
       "locked": "locked by another program",
       "cannotOpen": "cannot be opened: {error}",
+      "inTransit": "\"{name}\" is being written or deleted by another run and is not removed.",
       "notAFolder": "\"{name}\" is not a folder (or is a link) and is not removed."
     },
     "scan": {

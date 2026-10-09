@@ -198,7 +198,8 @@ public static class VersionCatalog
 
     /// <summary>
     /// True while the folder carries the marker of a run that is writing it or of a deletion in progress. A marker that
-    /// cannot be looked at counts as absent: the probe has already told what the folder is.
+    /// cannot be looked at counts as present (fail closed): a folder that may be in transit is never listed as a version,
+    /// so retention never deletes or counts it.
     /// </summary>
     /// <exception cref="StorageUnavailableException">The target cannot be reached.</exception>
     private static async Task<bool> IsInTransitAsync(IStorage target, string versionPath, CancellationToken ct) =>
@@ -211,9 +212,13 @@ public static class VersionCatalog
         {
             return await target.StatAsync(markerPath, ct).ConfigureAwait(false) is { IsDirectory: false };
         }
-        catch (StorageException ex) when (ex is not StorageUnavailableException)
+        catch (StorageNotFoundException)
         {
             return false;
+        }
+        catch (StorageException ex) when (ex is not StorageUnavailableException)
+        {
+            return true;
         }
     }
 
