@@ -45,7 +45,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _allPlans = allPlans;
         _folders = folders;
         Run = new PlanRunViewModel(versions.Storages);
-        Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
+        Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions);
         Versions.VersionsDeleted += () => RetentionPreview.ReloadIfLoaded();
@@ -153,13 +153,19 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
+    /// <summary>
+    /// The source as edited: a location of another kind (only possible by editing the plan file) stays as loaded unless
+    /// its text was edited.
+    /// </summary>
+    private StorageLocation SourceLocation() =>
+        Source != _saved.Source.Path ? StorageLocation.FileSystem(Source) : _saved.Source;
+
     public BackupPlan ToPlan()
     {
         var plan = _saved.Clone();
         plan.Name = Name;
-        // A location of another kind (only possible by editing the plan file) stays as loaded unless its text was edited.
-        if (Source != _saved.Source.Path)
-            plan.Source = StorageLocation.FileSystem(Source);
+        plan.Source = SourceLocation();
+        // Likewise the target.
         if (Target != _saved.Target.Path)
             plan.Target = StorageLocation.FileSystem(Target);
         plan.Enabled = Enabled;

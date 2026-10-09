@@ -18,7 +18,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private static readonly TimeSpan ReevaluateDelay = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan LiveRefreshInterval = TimeSpan.FromMilliseconds(250);
 
-    private readonly Func<string> _source;
+    private readonly Func<StorageLocation?> _source;
     private readonly Func<IgnoreSettings> _ignoreSettings;
     private readonly Func<IReadOnlyList<string>> _globalDefaults;
     private readonly IStorageFactory _storages;
@@ -80,7 +80,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     /// <summary>Included size of the last complete evaluation; kept during a rescan (Root is null then). Null when none.</summary>
     public long? LastEvaluatedIncludedSize { get; private set; }
 
-    public IgnorePreviewViewModel(Func<string> source, Func<IgnoreSettings> ignoreSettings,
+    /// <param name="source">The plan's source as it is edited right now; null when there is none.</param>
+    public IgnorePreviewViewModel(Func<StorageLocation?> source, Func<IgnoreSettings> ignoreSettings,
         Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages)
     {
         _storages = storages;
@@ -160,11 +161,12 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     {
         var source = _source();
         IStorage? storage = null;
-        if (!string.IsNullOrWhiteSpace(source))
+        // A folder needs a path; on other kinds (e.g. S3) an empty path is the storage's root.
+        if (source is not null && (!source.IsFileSystem || !string.IsNullOrWhiteSpace(source.Path)))
         {
             try
             {
-                var opened = _storages.Open(StorageLocation.FileSystem(source));
+                var opened = _storages.Open(source);
                 // Not there, offline or not a folder: all "missing" for the user, as Directory.Exists said before.
                 if (await opened.StatAsync("", CancellationToken.None) is { IsDirectory: true })
                     storage = opened;
