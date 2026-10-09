@@ -185,7 +185,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         try
         {
-            StartupRegistration.Apply(App.AppId, StartWithWindows);
+            AppStartup.Apply(StartWithWindows);
             registryChanged = StartWithWindows != oldStartWithWindows;
 
             _settings.DefaultIgnorePatterns = ParsePatterns();
@@ -206,7 +206,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             _settings.Language = oldLanguage;
             if (registryChanged)
             {
-                try { StartupRegistration.Apply(App.AppId, oldStartWithWindows); }
+                try { AppStartup.Apply(oldStartWithWindows); }
                 catch (Exception revertEx) when (revertEx is IOException or UnauthorizedAccessException or SecurityException) { }
             }
             _dialogs.ShowError(Loc.T("settings.title"), ex.Message);

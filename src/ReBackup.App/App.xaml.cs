@@ -84,6 +84,16 @@ public partial class App : Application
 
         Loc.Instance.Apply(AppLanguages.Resolve(_settings.Language));
 
+        // The Run entry follows the exe that is running now (moved or updated installs would leave a stale path).
+        try
+        {
+            AppStartup.RefreshOnStart(_settings);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException or ArgumentException)
+        {
+            // Autostart is a convenience; a locked registry must not stop the app.
+        }
+
         // Before the first window exists, so a light theme never flashes dark.
         ThemeManager.ThemeChanged += OnThemeChanged;
         ThemeManager.Apply(_settings.Theme);
