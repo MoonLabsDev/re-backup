@@ -197,6 +197,8 @@
       "newName": "New plan",
       "delete": "Delete plan",
       "list": "Plans",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
       "deleteConfirm": "Delete plan \"{plan}\"?\n\nBackups already stored in the target are not touched.",
       "deleteHistory": "Also delete this plan's run history?",
       "historyNotDeleted": "The plan was deleted, but its run history could not be: {error}"
@@ -222,6 +224,7 @@
     "status": {
       "configuration": "Configuration: {path}",
       "reloadFailed": "Plans could not be reloaded: {error}",
+      "orderNotSaved": "The order of the plans could not be saved: {error}",
       "reloaded": "Plans reloaded after a change on disk.",
       "loadErrors": {
         "one": "{count} plan file could not be read: {details}",

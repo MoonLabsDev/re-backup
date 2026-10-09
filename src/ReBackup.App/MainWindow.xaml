@@ -396,10 +396,23 @@
                     </StackPanel>
                 </Button>
 
+                <!-- The order is the user's: drag a card (an insertion line shows where it goes), the context menu or
+                     Alt+Up / Alt+Down move the selected plan; the order is saved in settings.json. -->
                 <ListBox ItemsSource="{Binding Plans}" SelectedItem="{Binding SelectedPlan}"
                          ItemContainerStyle="{StaticResource ListBoxItem.PlanCard}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         controls:ListReorder.MoveCommand="{Binding MovePlanCommand}"
                          AutomationProperties.Name="{l:Loc shell.plans.list}">
+                    <ListBox.InputBindings>
+                        <KeyBinding Modifiers="Alt" Key="Up" Command="{Binding MoveUpCommand}" />
+                        <KeyBinding Modifiers="Alt" Key="Down" Command="{Binding MoveDownCommand}" />
+                    </ListBox.InputBindings>
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="{l:Loc shell.plans.moveUp}" InputGestureText="Alt+↑" Command="{Binding MoveUpCommand}" />
+                            <MenuItem Header="{l:Loc shell.plans.moveDown}" InputGestureText="Alt+↓" Command="{Binding MoveDownCommand}" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <!-- Ring | name, phase, detail | action -->

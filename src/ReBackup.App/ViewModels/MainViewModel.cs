@@ -10,6 +10,7 @@ using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
 using ReBackup.Shared.Schedule;
+using ReBackup.Shared.Wpf.Controls;
 using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
@@ -29,6 +30,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly PlanStore _store;
     private readonly ConfigPaths _paths;
     private readonly AppSettings _settings;
+    private readonly Action _saveSettings;
+    private readonly Func<string?> _settingsLoadError;
     private readonly IDialogService _dialogs;
     private readonly IFolderOpener _folders;
     private readonly Action _openSettings;
@@ -39,6 +42,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedPlan))]
+    [NotifyCanExecuteChangedFor(nameof(MoveUpCommand), nameof(MoveDownCommand))]
     private PlanEditorViewModel? _selectedPlan;
 
     /// <summary>The tab shown for the selected plan; it stays when another plan is selected.</summary>
@@ -48,7 +52,10 @@ public sealed partial class MainViewModel : ObservableObject
     private LocText _queueText = LocText.Of("shell.queue.idle");
     private bool _schedulerPaused;
 
-    public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, IDialogService dialogs,
+    /// <param name="saveSettings">Saves <paramref name="settings"/> (the plan order) to settings.json.</param>
+    /// <param name="settingsLoadError">Why settings.json could not be read; the plan order then is not saved over it.</param>
+    public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, Action saveSettings,
+        Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
         IStorageFactory storages)
@@ -61,6 +68,8 @@ public sealed partial class MainViewModel : ObservableObject
         _store = store;
         _paths = paths;
         _settings = settings;
+        _saveSettings = saveSettings;
+        _settingsLoadError = settingsLoadError;
         _dialogs = dialogs;
         _openSettings = openSettings;
         _queue = queue;
@@ -68,8 +77,14 @@ public sealed partial class MainViewModel : ObservableObject
         _runOnUi = runOnUi;
         _queue.Changed += update => _runOnUi(() => OnJobUpdate(update));
 
+        Plans.CollectionChanged += (_, _) =>
+        {
+            MoveUpCommand.NotifyCanExecuteChanged();
+            MoveDownCommand.NotifyCanExecuteChanged();
+        };
+
         var result = _store.LoadAll();
-        foreach (var plan in result.Plans)
+        foreach (var plan in PlanOrder.Apply(result.Plans, _settings.PlanOrder))
             AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
@@ -224,8 +239,12 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
 
-        foreach (var plan in loaded.Values)
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions));
+        // Plans that appeared go where the saved order puts them, the others to the end (by name).
+        foreach (var plan in PlanOrder.Apply(loaded.Values, _settings.PlanOrder))
+        {
+            var editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions);
+            AddEditor(editor, PlanOrder.InsertionIndex(Plans, p => p.Id, plan.Id, _settings.PlanOrder));
+        }
 
         RevalidateAll();
 
@@ -305,6 +324,78 @@ public sealed partial class MainViewModel : ObservableObject
         RevalidateAll();
         SelectedPlan = Plans.Count == 0 ? null : Plans[Math.Clamp(index, 0, Plans.Count - 1)];
         PublishPlans();
+        if (!editor.IsNew)
+            SavePlanOrder();   // drops the deleted plan's id
+    }
+
+    /// <summary>Moves the plan (the selected one when null) one place up; disabled for the first plan.</summary>
+    [RelayCommand(CanExecute = nameof(CanMoveUp))]
+    private void MoveUp(PlanEditorViewModel? editor)
+    {
+        var index = Plans.IndexOf(editor ?? SelectedPlan!);
+        if (index > 0)
+            MoveTo(index, index - 1);
+    }
+
+    private bool CanMoveUp(PlanEditorViewModel? editor) => Plans.IndexOf((editor ?? SelectedPlan)!) > 0;
+
+    /// <summary>Moves the plan (the selected one when null) one place down; disabled for the last plan.</summary>
+    [RelayCommand(CanExecute = nameof(CanMoveDown))]
+    private void MoveDown(PlanEditorViewModel? editor)
+    {
+        var index = Plans.IndexOf(editor ?? SelectedPlan!);
+        if (index >= 0 && index < Plans.Count - 1)
+            MoveTo(index, index + 1);
+    }
+
+    private bool CanMoveDown(PlanEditorViewModel? editor) =>
+        (editor ?? SelectedPlan) is { } plan && Plans.IndexOf(plan) is var index && index >= 0 && index < Plans.Count - 1;
+
+    /// <summary>A drop in the plan list (<see cref="ListReorder"/>).</summary>
+    [RelayCommand(CanExecute = nameof(CanMovePlan))]
+    private void MovePlan(ListMove move) => MoveTo(move.From, move.To);
+
+    private bool CanMovePlan(ListMove move) => IsMove(move.From, move.To);
+
+    private bool IsMove(int from, int to) => from != to && from >= 0 && to >= 0 && from < Plans.Count && to < Plans.Count;
+
+    /// <summary>
+    /// Moves the plan at <paramref name="from"/> to <paramref name="to"/> and saves the order; the selection and the
+    /// open tab stay. False (nothing changes) when that is no move.
+    /// </summary>
+    public bool MoveTo(int from, int to)
+    {
+        if (!IsMove(from, to))
+            return false;
+        var selected = SelectedPlan;
+        Plans.Move(from, to);
+        // A list may drop its selection while its item moves; the plan stays selected.
+        if (!ReferenceEquals(SelectedPlan, selected))
+            SelectedPlan = selected;
+        SavePlanOrder();
+        return true;
+    }
+
+    /// <summary>
+    /// Saves the order of the saved plans to settings.json; a failure is shown in the footer and the order is kept for
+    /// this session. An unreadable settings.json is not replaced by a move: it would lose the other settings.
+    /// </summary>
+    private void SavePlanOrder()
+    {
+        _settings.PlanOrder = Plans.Where(p => !p.IsNew).Select(p => p.Id).ToList();
+        if (_settingsLoadError() is { } loadError)
+        {
+            SetStatus(LocText.Of("shell.status.orderNotSaved", ("error", loadError)));
+            return;
+        }
+        try
+        {
+            _saveSettings();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            SetStatus(LocText.Of("shell.status.orderNotSaved", ("error", ex.Message)));
+        }
     }
 
     [RelayCommand]
@@ -319,13 +410,16 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            var targetBefore = editor.IsNew ? null : editor.SavedPlan().Target.Path;
+            var wasNew = editor.IsNew;
+            var targetBefore = wasNew ? null : editor.SavedPlan().Target.Path;
             var saved = editor.TrySave(_store);
             SetStatus(saved ? LocText.Of("shell.status.saved", ("plan", editor.Name)) : LocText.Of("shell.status.notSaved"));
             RevalidateAll();
             if (saved)
             {
                 PublishPlans();
+                if (wasNew)
+                    SavePlanOrder();   // its place in the list, also when it was moved before the first save
                 if (!string.Equals(targetBefore, editor.SavedPlan().Target.Path, StringComparison.OrdinalIgnoreCase))
                 {
                     LoadHistory(editor);   // the folder buttons look in the new target
@@ -627,7 +721,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private void AddEditor(PlanEditorViewModel editor)
+    private void AddEditor(PlanEditorViewModel editor, int? index = null)
     {
         editor.PropertyChanged += (_, e) =>
         {
@@ -636,7 +730,7 @@ public sealed partial class MainViewModel : ObservableObject
         };
         LoadHistory(editor);
         ShowSchedule(editor, _scheduler.IsPaused);
-        Plans.Add(editor);
+        Plans.Insert(index ?? Plans.Count, editor);
     }
 
     private void RevalidateAll()

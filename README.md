@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.3.0" src="https://img.shields.io/badge/version-1.3.0-2BB3A3">
+  <img alt="Version 1.3.1" src="https://img.shields.io/badge/version-1.3.1-2BB3A3">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0F1216">
   <img alt=".NET 9 WPF" src="https://img.shields.io/badge/.NET%209-WPF-512BD4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-lightgrey">
@@ -123,9 +123,9 @@ dotnet run --project src/ReBackup.App         # start the app
 `publish.ps1` publishes the app in Release as one file and copies it to `dist\`.
 
 ```powershell
-.\publish.ps1                       # dist\ReBackup-1.3.0-win-x64.exe, self-contained (.NET runtime included)
-.\publish.ps1 -Version 1.3.1        # override the version from Directory.Build.props
-.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.3.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
+.\publish.ps1                       # dist\ReBackup-1.3.1-win-x64.exe, self-contained (.NET runtime included)
+.\publish.ps1 -Version 1.3.2        # override the version from Directory.Build.props
+.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.3.1-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
 .\publish.ps1 -Runtime win-arm64    # for Windows on ARM
 ```
 

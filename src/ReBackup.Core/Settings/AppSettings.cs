@@ -18,4 +18,10 @@ public sealed class AppSettings
     [JsonConverter(typeof(LanguageConverter))]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Language { get; set; }
+
+    /// <summary>
+    /// The plan ids in the order of the plan list; plans it does not name come after, by name (see
+    /// <see cref="Plans.PlanOrder"/>). Lives in the configuration folder, so it moves and syncs with the plans.
+    /// </summary>
+    public List<string> PlanOrder { get; set; } = [];
 }
