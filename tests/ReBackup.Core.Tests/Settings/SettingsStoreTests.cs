@@ -179,4 +179,25 @@ public class SettingsStoreTests : IDisposable
 
         new SettingsStore(path).Load().Language.Should().Be("de-DE");
     }
+
+    [Fact]
+    public void Plan_order_round_trips_as_planOrder()
+    {
+        var store = new SettingsStore(_tmp.PathOf("settings.json"));
+
+        store.Save(new AppSettings { PlanOrder = ["b", "a", "c"] });
+
+        File.ReadAllText(store.SettingsFile).Should().Contain("\"planOrder\"");
+        store.Load().PlanOrder.Should().Equal("b", "a", "c");
+    }
+
+    [Theory]
+    [InlineData("{ }")]
+    [InlineData("""{ "planOrder": null }""")]
+    public void Missing_plan_order_loads_as_empty(string json)
+    {
+        var path = _tmp.WriteFile("settings.json", json);
+
+        new SettingsStore(path).Load().PlanOrder.Should().BeEmpty();
+    }
 }

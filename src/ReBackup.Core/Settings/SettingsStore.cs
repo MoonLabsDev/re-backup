@@ -23,6 +23,7 @@ public sealed class SettingsStore
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsFile), JsonDefaults.Options)
                 ?? new AppSettings();
             settings.DefaultIgnorePatterns ??= [.. AppSettings.BuiltInIgnoreDefaults];
+            settings.PlanOrder ??= [];
             return settings;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
