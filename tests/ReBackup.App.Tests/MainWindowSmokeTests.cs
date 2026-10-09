@@ -60,6 +60,28 @@ public class MainWindowSmokeTests
         });
     }
 
+    [Fact]
+    public void The_versions_view_loads_with_the_take_over_menu_for_folders_of_other_computers()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddPlan("a", "Alpha");
+            var vm = fixture.Create();
+            var view = new ReBackup.App.Views.VersionsView { DataContext = vm.Plans[0] };
+            view.Measure(new Size(1280, 800));
+            view.Arrange(new Rect(new Size(1280, 800)));
+            view.UpdateLayout();
+
+            var list = FindAll<ListBox>(view).Should()
+                .ContainSingle(l => ReferenceEquals(l.ItemsSource, vm.Plans[0].Versions.ForeignRows)).Subject;
+            list.ContextMenu!.Items.OfType<MenuItem>()
+                .Select(item => BindingOperations.GetBinding(item, MenuItem.CommandProperty)?.Path.Path)
+                .Should().Equal("Versions.TakeOverCommand");
+        });
+    }
+
     private static FrameworkElement Layout(Window window)
     {
         var content = (FrameworkElement)window.Content;

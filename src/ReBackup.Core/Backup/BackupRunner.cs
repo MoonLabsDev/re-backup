@@ -74,7 +74,10 @@ public sealed class BackupRunner : IBackupRunner
     /// It is called on the run's path, so it must return quickly (the app hands the work to a
     /// <see cref="VersionIndexWorker"/>).
     /// </param>
-    /// <param name="host">The computer the markers a run writes name; <see cref="Environment.MachineName"/> when null.</param>
+    /// <param name="host">
+    /// The computer the markers a run writes name, and whose markers the leftover cleanup may act on (spec 5);
+    /// <see cref="Environment.MachineName"/> when null.
+    /// </param>
     public BackupRunner(IStorageFactory? storages = null, TimeProvider? timeProvider = null,
         Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null, IVersionIndexSink? indexSink = null,
         string? host = null)
@@ -121,7 +124,10 @@ public sealed class BackupRunner : IBackupRunner
                 cancellationToken);
 
             entry.Version = versionName;
-            entry.Status = entry.SkippedCount > 0 ? RunStatus.CompletedWithWarnings : RunStatus.Completed;
+            // A folder another computer is writing or deleting in the target was left alone: worth a look (spec 5).
+            entry.Status = entry.SkippedCount > 0 || prepared.MetForeignMarkers
+                ? RunStatus.CompletedWithWarnings
+                : RunStatus.Completed;
             completed = true;
         }
         catch (OperationCanceledException)
@@ -210,7 +216,7 @@ public sealed class BackupRunner : IBackupRunner
         var source = _storages.Open(plan.Source);
         var target = _storages.Open(plan.Target);
         await target.EnsureDirectoryAsync("", cancellationToken).ConfigureAwait(false);
-        await DeleteLeftoversAsync(target, plan, entry, progress, cancellationToken).ConfigureAwait(false);
+        var metForeignMarkers = await DeleteLeftoversAsync(target, plan, entry, progress, cancellationToken).ConfigureAwait(false);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
         SourceIndex index;
@@ -229,7 +235,10 @@ public sealed class BackupRunner : IBackupRunner
 
         // index.Root is only a display name; the manifest records where the source is.
         var work = new BackupWork(source, target,
-            plan.Source.IsFileSystem ? PathUtil.Normalize(plan.Source.Path) : plan.Source.Path);
+            plan.Source.IsFileSystem ? PathUtil.Normalize(plan.Source.Path) : plan.Source.Path)
+        {
+            MetForeignMarkers = metForeignMarkers,
+        };
         foreach (var path in index.UnreadableIgnoreFiles)
             work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.ignoreFileUnreadable")));
         Collect(root, work);
@@ -332,13 +341,13 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>
     /// Removes what earlier runs of this plan left behind (<see cref="LeftoverCleaner"/>): folders of runs that never
     /// finished, interrupted deletions, and the ".partial" / ".deleting" folders of older versions. Its warnings go into
-    /// the run log.
+    /// the run log. Folders another computer marked are left alone; true when there were any.
     /// </summary>
     /// <remarks>
     /// On a network target this can take long (a run that was killed leaves a whole copy), so the files removed are
     /// reported, and cancellation stops between batches of files: the rest stays for the next run.
     /// </remarks>
-    private static async Task DeleteLeftoversAsync(IStorage target, BackupPlan plan, RunLogEntry entry,
+    private async Task<bool> DeleteLeftoversAsync(IStorage target, BackupPlan plan, RunLogEntry entry,
         IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         var removed = 0;
@@ -365,11 +374,12 @@ public sealed class BackupRunner : IBackupRunner
         }
 
         // Nothing runs yet whose folder must be spared: the name is reserved after the cleanup, never before it.
-        var warnings = await LeftoverCleaner.CleanAsync(target, plan.Id, plan.Name, currentVersionName: null,
-            cancellationToken, OnFileDeleted).ConfigureAwait(false);
-        entry.Warnings.AddRange(warnings);
+        var cleanup = await LeftoverCleaner.CleanAsync(target, plan.Id, plan.Name, currentVersionName: null,
+            cancellationToken, OnFileDeleted, _host).ConfigureAwait(false);
+        entry.Warnings.AddRange(cleanup.Warnings);
         if (started)
             Report();
+        return cleanup.ForeignMarked.Count > 0;
     }
 
     /// <summary>
@@ -845,6 +855,9 @@ public sealed class BackupRunner : IBackupRunner
         public List<IndexNode> Files { get; } = [];
         public List<SkippedEntry> Skipped { get; } = [];
         public long TotalBytes { get; set; }
+
+        /// <summary>The leftover cleanup left folders that another computer marked.</summary>
+        public bool MetForeignMarkers { get; init; }
     }
 
     private sealed class BackupAbortException(RunStatus status, string message) : Exception(message)

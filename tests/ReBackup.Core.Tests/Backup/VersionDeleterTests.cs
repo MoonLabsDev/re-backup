@@ -179,8 +179,8 @@ public class VersionDeleterTests : IDisposable
         var result = (await Delete([older], storage)).Single();
 
         result.Outcome.Should().Be(VersionDeletionOutcome.RemainsLeft);
-        var warnings = await LeftoverCleaner.CleanAsync(Target, PlanId, PlanName, null, CancellationToken.None);
-        warnings.Should().BeEmpty();
+        var cleanup = await LeftoverCleaner.CleanAsync(Target, PlanId, PlanName, null, CancellationToken.None);
+        cleanup.Warnings.Should().BeEmpty();
         Directory.Exists(Path.Combine(_target, older)).Should().BeFalse();
     }
 

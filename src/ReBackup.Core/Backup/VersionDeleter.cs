@@ -57,13 +57,19 @@ public static class VersionDeleter
     /// The plan's current name; it goes into the deletion marker unless the folder is named after an earlier one
     /// (<see cref="VersionRemover.RemoveAsync"/>).
     /// </param>
+    /// <param name="machineName">
+    /// This computer, as markers name it (<see cref="Environment.MachineName"/> when null): a folder another computer marked
+    /// as being deleted is not managed, as that deletion may still go on there.
+    /// </param>
     /// <param name="progress">
     /// Gets a report while the manifests are read (for the file counts), then when each version starts, then at most every <see cref="ProgressInterval"/> while its files are
     /// deleted, and when it ends; on the deleting thread.
     /// </param>
     public static async Task<IReadOnlyList<VersionDeletion>> DeleteAsync(IStorage target, string planId, string planName,
-        IReadOnlyList<string> versionNames, IProgress<VersionDeletionProgress>? progress = null, CancellationToken ct = default)
+        IReadOnlyList<string> versionNames, IProgress<VersionDeletionProgress>? progress = null, CancellationToken ct = default,
+        string? machineName = null)
     {
+        var host = machineName ?? Environment.MachineName;
         long filesTotal = 0;
         if (progress is not null)
         {
@@ -84,8 +90,8 @@ public static class VersionDeleter
             var current = i + 1;
             progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
             var sinceReport = Stopwatch.StartNew();
-            var marker = new MarkerInfo(VersionMarkers.FormatVersion, planId, planName, DateTime.UtcNow, Environment.MachineName);
-            results.Add(await DeleteOneAsync(target, planId, name, marker, progress is null ? null : count =>
+            var marker = new MarkerInfo(VersionMarkers.FormatVersion, planId, planName, DateTime.UtcNow, host);
+            results.Add(await DeleteOneAsync(target, planId, name, marker, host, progress is null ? null : count =>
             {
                 filesDone += count;
                 if (sinceReport.Elapsed < ProgressInterval)
@@ -127,7 +133,7 @@ public static class VersionDeleter
     /// leave remains for the next run.
     /// </remarks>
     private static async Task<VersionDeletion> DeleteOneAsync(IStorage target, string planId, string name, MarkerInfo marker,
-        Action<int>? onFileDeleted)
+        string machineName, Action<int>? onFileDeleted)
     {
         if (!IsVersionName(name))
             return new VersionDeletion(name, VersionDeletionOutcome.NotManaged, null);
@@ -139,7 +145,8 @@ public static class VersionDeleter
             // A link is never a version; a folder that a run is writing is not one yet.
             if (entry.IsLink || !entry.IsDirectory ||
                 await target.StatAsync(StoragePath.Combine(name, VersionMarkerNames.Pending), CancellationToken.None).ConfigureAwait(false) is not null ||
-                (await VersionCatalog.ProbeAsync(target, name, planId).ConfigureAwait(false)).Ownership != VersionOwnership.Owned)
+                (await VersionCatalog.ProbeAsync(target, name, planId).ConfigureAwait(false)).Ownership != VersionOwnership.Owned ||
+                await IsDeletedElsewhereAsync(target, name, machineName).ConfigureAwait(false))
                 return new VersionDeletion(name, VersionDeletionOutcome.NotManaged, null);
 
             await VersionRemover.RemoveAsync(target, name, marker, onFileDeleted).ConfigureAwait(false);
@@ -156,6 +163,14 @@ public static class VersionDeleter
                 : new VersionDeletion(name, VersionDeletionOutcome.Gone, null);
         }
     }
+
+    /// <summary>
+    /// Whether another computer marked the folder as being deleted: its deletion may still go on there. A marker
+    /// that cannot be read counts as none, as before.
+    /// </summary>
+    private static async Task<bool> IsDeletedElsewhereAsync(IStorage target, string name, string machineName) =>
+        await VersionMarkers.TryReadAsync(target, StoragePath.Combine(name, VersionMarkerNames.Deleting), CancellationToken.None)
+            .ConfigureAwait(false) is { } marker && !marker.IsOwn(machineName);
 
     /// <summary>
     /// Whether the version folder is still there: its manifest is, or the folder can be listed. When that cannot be found

@@ -15,10 +15,15 @@ namespace ReBackup.App.ViewModels;
 /// <summary>
 /// What every plan's Versions tab shares: the index worker (syncs of one plan's index run one at a time, behind the
 /// versions finished runs hand to it), the dialogs, the footer's status line and the app's one storage factory.
+/// <paramref name="MachineName"/> is this computer as markers name it (<see cref="Environment.MachineName"/> when null):
+/// folders that other computers marked are listed apart.
 /// </summary>
 public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<LocText> ReportStatus,
-    IStorageFactory Storages)
+    IStorageFactory Storages, string? MachineName = null)
 {
+    /// <summary>This computer, as markers name it.</summary>
+    public string Host => MachineName ?? Environment.MachineName;
+
     /// <summary>The plans' indexes; reads (queries) may run beside a sync.</summary>
     public VersionIndexSet Indexes => Worker.Indexes;
 }
@@ -62,6 +67,8 @@ public sealed partial class VersionsViewModel : ObservableObject
     {
         OnPropertyChanged(string.Empty);
         foreach (var row in VersionRows)
+            row.Refresh();
+        foreach (var row in ForeignRows)
             row.Refresh();
         OnRefreshTexts();
     }
@@ -135,6 +142,7 @@ public sealed partial class VersionsViewModel : ObservableObject
         ErrorText = null;
         SelectedVersion = null;
         VersionRows.ReplaceAll([]);
+        ShowForeign([]);
         OnPropertyChanged(nameof(ShowEmpty));
     }
 
@@ -158,14 +166,17 @@ public sealed partial class VersionsViewModel : ObservableObject
         try
         {
             // Listing the target and reading the index never wait for a sync (the index allows reads beside writes).
-            var (index, state, target, folders, indexed) = await Task.Run(async () =>
+            var (index, state, target, folders, foreign, indexed) = await Task.Run(async () =>
             {
                 var planIndex = _context.Indexes.For(plan.Id);
                 var (targetState, storage) = await TargetStates.OpenAndProbeAsync(_context.Storages, plan.Target, cts.Token);
                 IReadOnlyList<VersionInfo> list = storage is null
                     ? []
                     : await VersionCatalog.ListAsync(storage, plan.Id, plan.Name, cts.Token);
-                return (planIndex, targetState, storage, list, planIndex.Versions());
+                IReadOnlyList<ForeignMarkedFolder> marked = storage is null
+                    ? []
+                    : await VersionCatalog.ListForeignMarkedAsync(storage, plan.Id, plan.Name, _context.Host, cts.Token);
+                return (planIndex, targetState, storage, list, marked, planIndex.Versions());
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
                 return;
@@ -176,6 +187,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             {
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.
                 ShowFolders([], []);
+                ShowForeign([]);
                 Sync = LocText.Empty;
                 ErrorText = TargetUnavailable(plan.Target.Path);
                 return;
@@ -184,11 +196,13 @@ public sealed partial class VersionsViewModel : ObservableObject
             {
                 // The plan has not run yet (the first run creates the folder): nothing to list or index.
                 ShowFolders([], []);
+                ShowForeign([]);
                 Sync = LocText.Empty;
                 return;
             }
 
             ShowFolders(folders, indexed);
+            ShowForeign(foreign);
             Sync = LocText.Of("versions.sync.waiting");
             var progress = new Progress<IndexSyncProgress>(p =>
             {

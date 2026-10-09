@@ -44,6 +44,12 @@ public partial class VersionsView : UserControl
         }
     }
 
+    private void OnForeignRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        // Right-click does not select by itself; make the context menu act on the clicked folder.
+        ((ListBoxItem)sender).IsSelected = true;
+    }
+
     private void OnVersionSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (DataContext is PlanEditorViewModel editor)

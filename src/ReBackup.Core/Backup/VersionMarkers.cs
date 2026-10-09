@@ -8,7 +8,27 @@ namespace ReBackup.Core.Backup;
 /// What a marker in a version folder says: which plan's run (<see cref="VersionMarkerNames.Pending"/>) or deletion
 /// (<see cref="VersionMarkerNames.Deleting"/>) it belongs to, since when and on which computer.
 /// </summary>
-public sealed record MarkerInfo(int FormatVersion, string PlanId, string PlanName, DateTime StartedUtc, string Host);
+public sealed record MarkerInfo(int FormatVersion, string PlanId, string PlanName, DateTime StartedUtc, string Host)
+{
+    /// <summary>
+    /// Whether this computer (<paramref name="machineName"/>, as <see cref="Environment.MachineName"/>) wrote the marker:
+    /// its host is that name, whatever the case, or it names no host (ReBackup 1.0.x and 1.1 wrote none). A marker of
+    /// another computer belongs to a run or deletion that may still go on there: it is never cleaned up automatically.
+    /// </summary>
+    public bool IsOwn(string machineName) =>
+        string.IsNullOrEmpty(Host) || string.Equals(Host, machineName, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Which marker a folder carries: <see cref="VersionMarkerNames.Pending"/> or <see cref="VersionMarkerNames.Deleting"/>.</summary>
+public enum MarkerKind { Pending, Deleting }
+
+/// <summary>
+/// A folder named like a version that another computer (<paramref name="Host"/>) marked, since <paramref name="StartedUtc"/>,
+/// as being written (<see cref="MarkerKind.Pending"/>) or deleted (<see cref="MarkerKind.Deleting"/>). It is left alone
+/// until a person takes it over (<see cref="LeftoverCleaner.TakeOverAsync"/>). <paramref name="Name"/> is the folder's
+/// name directly under the target's root.
+/// </summary>
+public sealed record ForeignMarkedFolder(string Name, string Host, DateTime StartedUtc, MarkerKind Kind);
 
 /// <summary>Writes and reads the marker files that keep a folder from counting as a version while it is written or deleted.</summary>
 public static class VersionMarkers

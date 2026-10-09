@@ -21,9 +21,11 @@ public class LeftoverCleanerTests : IDisposable
 
     private static MarkerInfo Marker(string planId = PlanId) => new(1, planId, PlanName, Started, "HOST");
 
-    private Task<IReadOnlyList<string>> Clean(IStorage? storage = null, string? current = null, CancellationToken ct = default,
+    /// <summary>The cleanup on the computer the markers of these tests name.</summary>
+    private async Task<IReadOnlyList<string>> Clean(IStorage? storage = null, string? current = null, CancellationToken ct = default,
         Action<string, int>? onFileDeleted = null) =>
-        LeftoverCleaner.CleanAsync(storage ?? _storage, PlanId, PlanName, current, ct, onFileDeleted);
+        (await LeftoverCleaner.CleanAsync(storage ?? _storage, PlanId, PlanName, current, ct, onFileDeleted, machineName: "HOST"))
+        .Warnings;
 
     private async Task<string> Unfinished(string name = Folder, string planId = PlanId, int files = 2, bool withManifest = false)
     {

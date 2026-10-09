@@ -60,6 +60,9 @@ public static class CoreTexts
         ["core.run.leftoverForeign"] = "\"{name}\" was left alone: it is marked by another plan.",
         ["core.run.leftoverUnreadable"] = "\"{name}\" was left alone: its marker cannot be read.",
         ["core.run.leftoverRenamed"] = "\"{name}\" was left alone: it is marked by this plan but was renamed.",
+        ["core.run.leftoverOtherHostPending"] = "\"{name}\" was left alone: it is being written by {host} since {time}.",
+        ["core.run.leftoverOtherHostDeleting"] = "\"{name}\" was left alone: it is being deleted by {host} since {time}.",
+        ["core.run.takeOverChanged"] = "\"{name}\" was not taken over: its marker has changed meanwhile.",
         ["core.run.leftoverPartialWithManifest"] = "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
 

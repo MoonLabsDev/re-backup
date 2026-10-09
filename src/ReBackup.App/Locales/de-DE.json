@@ -127,6 +127,9 @@
       "leftoverForeign": "„{name}“ wurde nicht angetastet: Es ist von einem anderen Plan markiert.",
       "leftoverUnreadable": "„{name}“ wurde nicht angetastet: Seine Markierung kann nicht gelesen werden.",
       "leftoverRenamed": "„{name}“ wurde nicht angetastet: Es ist von diesem Plan markiert, wurde aber umbenannt.",
+      "leftoverOtherHostPending": "„{name}“ wurde nicht angetastet: Es wird seit {time} von {host} geschrieben.",
+      "leftoverOtherHostDeleting": "„{name}“ wurde nicht angetastet: Es wird seit {time} von {host} gelöscht.",
+      "takeOverChanged": "„{name}“ wurde nicht übernommen: Seine Markierung hat sich inzwischen geändert.",
       "leftoverPartialWithManifest": "„{name}“ wurde nicht angetastet: Es sieht unfertig aus, enthält aber ein Manifest.",
       "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
     },
@@ -660,6 +663,20 @@
       "indexing": "wird indiziert …",
       "indexed": "indiziert",
       "failed": "konnte nicht indiziert werden"
+    },
+    "foreign": {
+      "list": "Ordner, die andere Computer schreiben oder löschen",
+      "pending": "Wird seit {time} von {host} geschrieben",
+      "deleting": "Wird seit {time} von {host} gelöscht",
+      "toolTip": "Ein anderer Computer arbeitet an diesem Ordner; er bleibt unangetastet, bis er übernommen wird",
+      "menu": "Übernehmen und aufräumen …",
+      "title": "Übernehmen und aufräumen",
+      "confirmPending": "„{name}“ wird seit {time} von {host} geschrieben.\n\nNur übernehmen, wenn dieses Backup dort nicht mehr läuft (z. B. weil der Computer abgestürzt oder ausgeschaltet ist). Der unfertige Ordner wird dann wie ein Überbleibsel dieses Plans gelöscht.",
+      "confirmDeleting": "„{name}“ wird seit {time} von {host} gelöscht.\n\nNur übernehmen, wenn dieses Löschen dort nicht mehr läuft (z. B. weil der Computer abgestürzt oder ausgeschaltet ist). Das Löschen wird dann von hier aus abgeschlossen.",
+      "backupRunning": "Ein Backup dieses Plans ist eingereiht oder läuft. Den Ordner erst übernehmen, wenn es fertig ist.",
+      "done": "„{name}“ wurde übernommen und aufgeräumt.",
+      "problems": "„{name}“ konnte nicht vollständig aufgeräumt werden:",
+      "failed": "Das Übernehmen wurde angehalten: {error}"
     },
     "notManaged": {
       "noManifest": "Nicht verwaltet: kein Manifest",
