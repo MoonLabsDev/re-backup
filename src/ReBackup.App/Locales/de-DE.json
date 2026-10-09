@@ -197,6 +197,8 @@
       "newName": "Neuer Plan",
       "delete": "Plan löschen",
       "list": "Pläne",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
       "deleteConfirm": "Plan „{plan}“ löschen?\n\nBereits im Ziel gespeicherte Backups bleiben unberührt.",
       "deleteHistory": "Auch den Laufverlauf dieses Plans löschen?",
       "historyNotDeleted": "Der Plan wurde gelöscht, sein Laufverlauf aber nicht: {error}"
@@ -222,6 +224,7 @@
     "status": {
       "configuration": "Konfiguration: {path}",
       "reloadFailed": "Die Pläne konnten nicht neu geladen werden: {error}",
+      "orderNotSaved": "Die Reihenfolge der Pläne konnte nicht gespeichert werden: {error}",
       "reloaded": "Pläne nach einer Änderung auf dem Datenträger neu geladen.",
       "loadErrors": {
         "one": "{count} Plandatei konnte nicht gelesen werden: {details}",
