@@ -49,6 +49,25 @@ public class PlanOrderTests
         PlanOrder.Apply([Beta, Alpha], null).Should().Equal(Alpha, Beta);
     }
 
+    [Theory]
+    [InlineData("a", 0)]        // before everything the order puts after it
+    [InlineData("b", 1)]
+    [InlineData("c", 2)]
+    [InlineData("unknown", 3)]  // not in the order: at the end
+    public void A_plan_that_appears_goes_where_the_order_puts_it(string id, int expected)
+    {
+        // The list holds x, y and an unsaved plan the order does not name.
+        var current = new[] { "x", "y", "new" };
+
+        PlanOrder.InsertionIndex(current, s => s, id, ["a", "x", "b", "y", "c"]).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Without_an_order_a_plan_that_appears_goes_to_the_end()
+    {
+        PlanOrder.InsertionIndex(new[] { "x", "y" }, s => s, "a", null).Should().Be(2);
+    }
+
     [Fact]
     public void Works_for_any_item_with_an_id_and_a_name()
     {

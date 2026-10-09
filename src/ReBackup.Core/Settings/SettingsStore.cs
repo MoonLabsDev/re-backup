@@ -33,6 +33,10 @@ public sealed class SettingsStore
         }
     }
 
-    public void Save(AppSettings settings) =>
+    /// <summary>Writes the settings; once written, the file is readable again (<see cref="LastLoadError"/> is cleared).</summary>
+    public void Save(AppSettings settings)
+    {
         AtomicFile.WriteAllText(SettingsFile, JsonSerializer.Serialize(settings, JsonDefaults.Options));
+        LastLoadError = null;
+    }
 }

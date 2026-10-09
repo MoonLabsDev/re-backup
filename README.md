@@ -124,7 +124,7 @@ dotnet run --project src/ReBackup.App         # start the app
 
 ```powershell
 .\publish.ps1                       # dist\ReBackup-1.3.1-win-x64.exe, self-contained (.NET runtime included)
-.\publish.ps1 -Version 1.3.1        # override the version from Directory.Build.props
+.\publish.ps1 -Version 1.3.2        # override the version from Directory.Build.props
 .\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.3.1-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
 .\publish.ps1 -Runtime win-arm64    # for Windows on ARM
 ```

@@ -50,6 +50,9 @@ public sealed class MainViewModelFixture : IDisposable
     /// <summary>Thrown by the settings save when set.</summary>
     public Exception? SaveFailure { get; set; }
 
+    /// <summary>Why settings.json could not be read on startup; null when it was fine.</summary>
+    public string? LoadError { get; set; }
+
     public BackupPlan AddPlan(string id, string name)
     {
         var plan = new BackupPlan { Id = id, Name = name };
@@ -63,7 +66,7 @@ public sealed class MainViewModelFixture : IDisposable
         var queue = new BackupQueue(new BackupRunner(storages), planId => new RunLog(Paths.LogFileFor(planId)));
         var scheduler = new Scheduler((_, _) => { });
         var versionIndex = new VersionIndexWorker(new VersionIndexSet(Path.Combine(Root, "index")));
-        return new MainViewModel(Store, Paths, Settings, SaveSettings, Dialogs, () => { }, queue, scheduler,
+        return new MainViewModel(Store, Paths, Settings, SaveSettings, () => LoadError, Dialogs, () => { }, queue, scheduler,
             action => action(), new ThemeToggleViewModel(() => ThemeMode.Dark, _ => { }),
             new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages);
     }

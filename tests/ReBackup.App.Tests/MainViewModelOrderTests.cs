@@ -228,7 +228,34 @@ public class MainViewModelOrderTests : IDisposable
 
         vm.ReloadFromDisk();
 
-        Ids(vm).Should().Equal("a", "b", "c", "e", "d");
+        Ids(vm).Should().Equal("e", "a", "b", "c", "d");
+    }
+
+    [Fact]
+    public void Unsaved_plans_are_not_written_into_the_order()
+    {
+        var vm = _fixture.Create();
+        vm.NewPlanCommand.Execute(null);
+        var created = vm.SelectedPlan!;
+
+        vm.MoveTo(3, 0);
+
+        vm.Plans[0].Should().BeSameAs(created);
+        _fixture.Settings.PlanOrder.Should().Equal("a", "b", "c");
+    }
+
+    [Fact]
+    public void An_unreadable_settings_file_is_not_overwritten_by_a_move()
+    {
+        _fixture.LoadError = "unexpected character";
+        var vm = _fixture.Create();
+
+        vm.MoveTo(0, 2).Should().BeTrue();
+
+        Ids(vm).Should().Equal("b", "c", "a");
+        _fixture.SettingsSaves.Should().Be(0);
+        File.Exists(_fixture.Paths.SettingsFile).Should().BeFalse();
+        vm.StatusMessage.Should().Contain("unexpected character");
     }
 
     [Fact]

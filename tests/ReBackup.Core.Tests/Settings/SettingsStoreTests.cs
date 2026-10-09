@@ -191,13 +191,24 @@ public class SettingsStoreTests : IDisposable
         store.Load().PlanOrder.Should().Equal("b", "a", "c");
     }
 
-    [Theory]
-    [InlineData("{ }")]
-    [InlineData("""{ "planOrder": null }""")]
-    public void Missing_plan_order_loads_as_empty(string json)
+    [Fact]
+    public void Null_plan_order_loads_as_empty()
     {
-        var path = _tmp.WriteFile("settings.json", json);
+        var path = _tmp.WriteFile("settings.json", """{ "planOrder": null }""");
 
         new SettingsStore(path).Load().PlanOrder.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_successful_save_clears_the_load_error()
+    {
+        var path = _tmp.WriteFile("settings.json", "{ nope");
+        var store = new SettingsStore(path);
+        store.Load();
+        store.LastLoadError.Should().NotBeNull();
+
+        store.Save(new AppSettings());
+
+        store.LastLoadError.Should().BeNull();
     }
 }

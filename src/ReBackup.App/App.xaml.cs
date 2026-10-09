@@ -160,9 +160,10 @@ public partial class App : Application
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var languageToggle = new LanguageToggleViewModel(() => Loc.Instance.Language, ChooseLanguage);
-            var mainViewModel = new MainViewModel(planStore, paths, settings, () => settingsStore.Save(settings), _dialogs,
-                ShowSettings, queue, scheduler, action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle,
-                new ExplorerFolderOpener(), versionIndex, storages);
+            var mainViewModel = new MainViewModel(planStore, paths, settings, () => settingsStore.Save(settings),
+                () => settingsStore.LastLoadError, _dialogs, ShowSettings, queue, scheduler,
+                action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(),
+                versionIndex, storages);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);

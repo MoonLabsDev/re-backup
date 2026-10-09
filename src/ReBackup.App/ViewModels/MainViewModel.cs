@@ -31,6 +31,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ConfigPaths _paths;
     private readonly AppSettings _settings;
     private readonly Action _saveSettings;
+    private readonly Func<string?> _settingsLoadError;
     private readonly IDialogService _dialogs;
     private readonly IFolderOpener _folders;
     private readonly Action _openSettings;
@@ -52,7 +53,9 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _schedulerPaused;
 
     /// <param name="saveSettings">Saves <paramref name="settings"/> (the plan order) to settings.json.</param>
-    public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, Action saveSettings, IDialogService dialogs,
+    /// <param name="settingsLoadError">Why settings.json could not be read; the plan order then is not saved over it.</param>
+    public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, Action saveSettings,
+        Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
         IStorageFactory storages)
@@ -66,6 +69,7 @@ public sealed partial class MainViewModel : ObservableObject
         _paths = paths;
         _settings = settings;
         _saveSettings = saveSettings;
+        _settingsLoadError = settingsLoadError;
         _dialogs = dialogs;
         _openSettings = openSettings;
         _queue = queue;
@@ -235,9 +239,12 @@ public sealed partial class MainViewModel : ObservableObject
             }
         }
 
-        // Plans that appeared go to the end, in the saved order where it names them.
+        // Plans that appeared go where the saved order puts them, the others to the end (by name).
         foreach (var plan in PlanOrder.Apply(loaded.Values, _settings.PlanOrder))
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions));
+        {
+            var editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions);
+            AddEditor(editor, PlanOrder.InsertionIndex(Plans, p => p.Id, plan.Id, _settings.PlanOrder));
+        }
 
         RevalidateAll();
 
@@ -369,10 +376,18 @@ public sealed partial class MainViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>Saves the plan list's order to settings.json; a failure is shown in the footer and the order is kept for this session.</summary>
+    /// <summary>
+    /// Saves the order of the saved plans to settings.json; a failure is shown in the footer and the order is kept for
+    /// this session. An unreadable settings.json is not replaced by a move: it would lose the other settings.
+    /// </summary>
     private void SavePlanOrder()
     {
-        _settings.PlanOrder = Plans.Select(p => p.Id).ToList();
+        _settings.PlanOrder = Plans.Where(p => !p.IsNew).Select(p => p.Id).ToList();
+        if (_settingsLoadError() is { } loadError)
+        {
+            SetStatus(LocText.Of("shell.status.orderNotSaved", ("error", loadError)));
+            return;
+        }
         try
         {
             _saveSettings();
@@ -706,7 +721,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private void AddEditor(PlanEditorViewModel editor)
+    private void AddEditor(PlanEditorViewModel editor, int? index = null)
     {
         editor.PropertyChanged += (_, e) =>
         {
@@ -715,7 +730,7 @@ public sealed partial class MainViewModel : ObservableObject
         };
         LoadHistory(editor);
         ShowSchedule(editor, _scheduler.IsPaused);
-        Plans.Add(editor);
+        Plans.Insert(index ?? Plans.Count, editor);
     }
 
     private void RevalidateAll()
