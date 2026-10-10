@@ -151,6 +151,15 @@ plan ─► scan source ─► apply ignore patterns ─► reserve "YYYY_MM_DD-
 4. **Cancel or error.** What the run wrote is removed, the marker last; whatever cannot be removed keeps the marker
    and is removed at the plan's next run. The run is logged either way.
 
+**Several computers, one target.** Every marker names the computer that wrote it. A folder whose marker another
+computer wrote (it is writing or deleting that folder) is never touched by a run, by retention or by "When the target
+is full…": the run names it in its log, and when the folder belongs to this plan the run ends as *completed with
+warnings*. The **Versions** tab lists such folders of the plan under "Folders other computers are writing or
+deleting". If that computer will not finish (it crashed or was switched off), right-click the folder and choose
+**Take over and clean up…**: after a confirmation, an unfinished copy is deleted like a leftover of this plan, and an
+interrupted deletion is finished from here. Nothing is changed if the marker changed in the meantime (that computer
+started again), and a folder of another plan or one renamed by hand is still left alone.
+
 A target can look like this:
 
 ```
@@ -191,7 +200,7 @@ prefix, `re-manifest.json` and the markers, so retention, the Versions tab and r
 be restored without ReBackup. When the source or the target is S3, eight files are copied at a time. The original
 modification times are kept in the manifest (S3 cannot store them); a restore to a folder sets them again. An S3
 source object in an archive storage class (Glacier) is skipped and listed, like a locked file. A plan whose S3 target
-is the same as its S3 source or lies inside it (same bucket and region) cannot be saved. "When the target is full…"
+is the same as its S3 source or lies inside it (same bucket, whatever region the connections name) cannot be saved. "When the target is full…"
 is not offered for S3 targets (S3 has no free-space limit).
 
 **Costs: every version is a full copy.** As with folders, each run uploads every included file again (no
@@ -259,6 +268,9 @@ secret has to be entered again (the accounts dialog marks such an account; its c
 **Does it run without the app?**
 No. There is no Windows service. Schedules run while ReBackup runs; closing the window keeps it in the tray, and
 "Start with Windows" starts it minimized at sign-in. Missed triggers get one catch-up run at the next start.
+While "Start with Windows" is on, every start of ReBackup rewrites its entry under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` with the path of the exe that is running, so the entry follows
+an exe that was moved or replaced by a newer download.
 
 **Are open files backed up?**
 Only if they can be read. ReBackup does not use Volume Shadow Copy (VSS): a file that is locked by another program
