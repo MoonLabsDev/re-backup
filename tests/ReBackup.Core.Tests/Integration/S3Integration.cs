@@ -23,9 +23,9 @@ internal static class S3Integration
 
     /// <summary>
     /// Opens locations as the App does: <c>"s3"</c> locations on the saved connection they name, everything else with the plain
-    /// <see cref="StorageFactory"/>. <see cref="S3StorageFactory"/> builds its clients for the AWS endpoints, so the S3 part is composed
-    /// here with the fixture's client (path style, LocalStack endpoint); <paramref name="wrap"/> may wrap any opened storage, e.g. in
-    /// a <see cref="FaultyStorage"/>.
+    /// <see cref="StorageFactory"/>. The S3 part is composed here with the fixture's client (path style, LocalStack endpoint), so
+    /// <paramref name="wrap"/> may wrap any opened storage, e.g. in a <see cref="FaultyStorage"/>; <see cref="S3StorageFactoryTests"/>
+    /// goes through the real <see cref="S3StorageFactory"/> instead.
     /// </summary>
     public static IStorageFactory Storages(S3ServerFixture server, Func<StorageLocation, IStorage, IStorage>? wrap = null) =>
         new TestStorageFactory(location =>

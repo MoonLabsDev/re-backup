@@ -118,6 +118,34 @@ public class S3StorageFactoryTests
     }
 
     [Fact]
+    public async Task A_given_client_factory_builds_the_clients_once_per_connection_state_and_they_are_disposed_with_the_factory()
+    {
+        var current = Connection();
+        var built = new List<(S3Connection Connection, Amazon.S3.AmazonS3Client Client)>();
+        var factory = new S3StorageFactory(new RecordingFactory(), _ => current, connection =>
+        {
+            var client = new Amazon.S3.AmazonS3Client(new Amazon.Runtime.BasicAWSCredentials("a", "b"), Amazon.RegionEndpoint.USEast1);
+            built.Add((connection, client));
+            return client;
+        });
+        var location = new StorageLocation("s3", "a", "c1");
+
+        var first = (S3Storage)factory.Open(location);
+        var again = (S3Storage)factory.Open(location with { Path = "b" });
+        current = Connection("changed");
+        var edited = (S3Storage)factory.Open(location);
+
+        built.Select(b => b.Connection).Should().Equal(Connection(), Connection("changed"));
+        ClientOf(first).Should().BeSameAs(built[0].Client);
+        ClientOf(again).Should().BeSameAs(built[0].Client);
+        ClientOf(edited).Should().BeSameAs(built[1].Client);
+
+        factory.Dispose();
+        foreach (var (_, client) in built)
+            await client.Invoking(c => c.ListBucketsAsync()).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
     public void Concurrent_opens_share_one_client()
     {
         using var factory = Factory(new RecordingFactory(), Connection());
