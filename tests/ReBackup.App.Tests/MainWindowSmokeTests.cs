@@ -119,6 +119,48 @@ public class MainWindowSmokeTests
     }
 
     [Fact]
+    public void Switching_the_plan_view_between_an_S3_plan_and_a_folder_plan_changes_neither()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddConnection("c1", "Offsite", "offsite");
+            fixture.Store.Save(new ReBackup.Core.Plans.BackupPlan
+            {
+                Id = "a",
+                Name = "Alpha",
+                Source = new ReBackup.Storage.StorageLocation("s3", "camera", "c1"),
+                Target = new ReBackup.Storage.StorageLocation("s3", "docs", "c1"),
+            });
+            fixture.AddPlan("b", "Beta");
+            var vm = fixture.Create();
+            var (a, b) = (vm.Plans.Single(p => p.Id == "a"), vm.Plans.Single(p => p.Id == "b"));
+            var view = new ReBackup.App.Views.PlanView();
+            void Show(PlanEditorViewModel editor)
+            {
+                view.DataContext = editor;
+                view.Measure(new Size(1280, 800));
+                view.Arrange(new Rect(new Size(1280, 800)));
+                view.UpdateLayout();
+            }
+
+            Show(a);
+            Show(b);
+            Show(a);
+            Show(b);
+
+            a.SourceIsS3.Should().BeTrue();
+            a.TargetIsS3.Should().BeTrue();
+            a.IsDirty.Should().BeFalse();
+            b.SourceIsS3.Should().BeFalse();
+            b.TargetIsS3.Should().BeFalse();
+            b.IsDirty.Should().BeFalse();
+            FindAll<RadioButton>(view).Where(r => r.IsChecked == true).Should().HaveCount(2, "Folder for B's source and target");
+        });
+    }
+
+    [Fact]
     public void The_settings_window_loads_with_the_S3_entries()
     {
         RunOnSta(() =>

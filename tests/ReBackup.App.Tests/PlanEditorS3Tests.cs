@@ -2,7 +2,9 @@ using System.IO;
 using FluentAssertions;
 using ReBackup.App.Tests.TestSupport;
 using ReBackup.App.ViewModels;
+using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
+using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
 using ReBackup.Storage.S3;
 using ReBackup.Storage.S3.Connections;
@@ -278,7 +280,7 @@ public class PlanEditorS3Tests : IDisposable
     }
 
     [Fact]
-    public void The_S3_plan_runs_through_the_apps_storage_factory_with_the_connection()
+    public void A_saved_S3_target_opens_through_the_apps_storage_factory_on_its_connection()
     {
         _fixture.AddConnection("c1", "Offsite", "offsite");
         var editor = FolderPlan(out _);
@@ -286,8 +288,67 @@ public class PlanEditorS3Tests : IDisposable
         editor.TargetS3.ConnectionId = "c1";
         editor.TargetS3.Prefix = "x";
         editor.TrySave(_fixture.Store).Should().BeTrue();
+        using var factory = new S3StorageFactory(new StorageFactory(), _fixture.S3.Resolve);   // as App composes it
 
-        editor.SavedPlan().Target.Should().Be(new StorageLocation("s3", "x", "c1"));
-        _fixture.S3.Describe(editor.SavedPlan().Target).Should().Be("Offsite · s3://offsite/x");
+        var target = editor.SavedPlan().Target;
+
+        target.Should().Be(new StorageLocation("s3", "x", "c1"));
+        factory.Open(target).Should().BeOfType<S3Storage>("the location opens on the saved connection (no request is sent)");
+        _fixture.S3.Describe(target).Should().Be("Offsite · s3://offsite/x");
+    }
+
+    [Fact]
+    public void A_scheduled_run_of_a_saved_plan_that_no_longer_validates_is_skipped_and_logged()
+    {
+        _fixture.AddConnection("c1", "Source", "photos");
+        _fixture.AddConnection("c2", "Target", "archive");
+        _fixture.Store.Save(new BackupPlan
+        {
+            Id = "p1",
+            Name = "Pull",
+            Enabled = true,
+            Source = new StorageLocation("s3", "data", "c1"),
+            Target = new StorageLocation("s3", "data/backups", "c2"),
+        });
+        var vm = _fixture.Create();
+        vm.Plans.Single().Errors.Should().BeEmpty("different buckets");
+
+        // The target connection now points at the source's bucket: the target lies inside the source.
+        _fixture.S3.Save(new S3ConnectionInfo("c2", "Target", "eu-central-1", "photos", MainViewModelFixture.AccountId));
+        vm.RunScheduled("p1", RunTrigger.Scheduled);
+
+        _fixture.Queue.IsBusy.Should().BeFalse("nothing is queued");
+        var entry = new RunLog(_fixture.Paths.LogFileFor("p1")).ReadLast()!;
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Trigger.Should().Be(RunTrigger.Scheduled);
+        entry.Reason.Should().Contain("Target must not be inside the source.");
+        vm.StatusMessage.Should().Contain("Pull").And.Contain("Target must not be inside the source.");
+        vm.Plans.Single().Run.History.Should().ContainSingle("the history shows the skipped run");
+    }
+
+    [Fact]
+    public async Task Results_of_a_test_whose_connection_or_prefix_changed_meanwhile_are_dropped()
+    {
+        _fixture.AddConnection("c1", "Offsite", "offsite");
+        var editor = FolderPlan(out _);
+        editor.TargetIsS3 = true;
+        editor.TargetS3.ConnectionId = "c1";
+        editor.TargetS3.Prefix = "a";
+        _fixture.TestGate = new TaskCompletionSource();
+
+        var test = editor.TargetS3.TestCommand.ExecuteAsync(null);
+        editor.TargetS3.Prefix = "b";
+        _fixture.TestGate.TrySetResult();
+        await test;
+
+        editor.TargetS3.Results.Should().BeEmpty("they belong to the prefix before the change");
+        editor.TargetS3.TestStatus.Should().BeNull();
+        editor.TargetS3.IsTesting.Should().BeFalse();
+
+        _fixture.TestGate = null;
+        await editor.TargetS3.TestCommand.ExecuteAsync(null);
+        editor.TargetS3.Results.Should().ContainSingle();
+        editor.TargetS3.Prefix = "c";
+        editor.TargetS3.Results.Should().BeEmpty("a finished test's results go when the prefix changes");
     }
 }

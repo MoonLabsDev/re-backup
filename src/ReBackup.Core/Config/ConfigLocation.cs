@@ -43,6 +43,7 @@ public static class ConfigLocation
     {
         var paths = new ConfigPaths(root);
         return File.Exists(paths.SettingsFile)
+            || File.Exists(paths.ConnectionsFile)
             || (Directory.Exists(paths.PlansDirectory) && Directory.EnumerateFiles(paths.PlansDirectory, "*.json").Any());
     }
 

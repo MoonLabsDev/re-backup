@@ -71,6 +71,9 @@ public class ConfigLocationTests : IDisposable
         ConfigLocation.ContainsConfiguration(empty).Should().BeFalse();
         ConfigLocation.ContainsConfiguration(withSettings).Should().BeTrue();
         ConfigLocation.ContainsConfiguration(withPlans).Should().BeTrue();
+        var withConnections = _tmp.CreateDir("c");
+        File.WriteAllText(Path.Combine(withConnections, "connections.json"), "{}");
+        ConfigLocation.ContainsConfiguration(withConnections).Should().BeTrue("copying over it would replace its connections");
     }
 
     [Fact]

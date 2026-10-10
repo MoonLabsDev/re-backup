@@ -251,6 +251,8 @@ public class PlanValidatorTests : IDisposable
     [InlineData("c1", "data", "c3", "data/backups")]  // same bucket name, another region
     [InlineData("c1", "data", "c1", "database")]      // a sibling whose name starts alike
     [InlineData("c1", "data/a", "c1", "data/b")]
+    [InlineData("c1", "Data", "c1", "data/backups")]  // S3 keys are case-sensitive
+    [InlineData("c1", "data", "c1", "Data")]
     public void S3_source_and_target_apart_are_valid(string sourceId, string sourcePrefix, string targetId, string targetPrefix)
     {
         var plan = ValidPlan();

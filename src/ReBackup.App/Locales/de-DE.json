@@ -253,6 +253,7 @@
       "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
       "saved": "„{plan}“ gespeichert.",
       "notSaved": "Nicht gespeichert: Die im Plan angezeigten Fehler beheben.",
+      "scheduledInvalid": "Das geplante Backup von „{plan}“ wurde nicht gestartet: {reason}",
       "scheduledFailed": "Ein geplantes Backup konnte nicht eingereiht werden: {error}",
       "scheduleFailed": "Der Zeitplan konnte nicht aktualisiert werden: {error}",
       "canceling": "Backup von „{plan}“ wird abgebrochen …",

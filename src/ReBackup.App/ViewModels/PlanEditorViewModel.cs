@@ -101,6 +101,18 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         set { if (value) TargetIsS3 = false; }
     }
 
+    /// <summary>
+    /// The Folder | S3 segments of the source ("Folder" or "S3"). The segments show the kind one-way and call this:
+    /// two-way radio bindings in the one Plan view, whose DataContext switches between plans, wrote one plan's kind
+    /// into another.
+    /// </summary>
+    [RelayCommand]
+    private void ChooseSourceKind(string? kind) => SourceIsS3 = kind == "S3";
+
+    /// <summary>Likewise for the target.</summary>
+    [RelayCommand]
+    private void ChooseTargetKind(string? kind) => TargetIsS3 = kind == "S3";
+
     /// <summary>"When the target is full, …" means nothing on S3 (no free-space information): shown for folders only.</summary>
     public bool ShowFreeSpaceOption => !TargetIsS3;
 

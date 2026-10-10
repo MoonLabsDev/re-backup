@@ -253,6 +253,7 @@
       "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
       "saved": "Saved \"{plan}\".",
       "notSaved": "Not saved: fix the errors shown in the plan.",
+      "scheduledInvalid": "The scheduled backup of \"{plan}\" was not started: {reason}",
       "scheduledFailed": "A scheduled backup could not be queued: {error}",
       "scheduleFailed": "The schedule could not be updated: {error}",
       "canceling": "Canceling the backup of \"{plan}\"…",

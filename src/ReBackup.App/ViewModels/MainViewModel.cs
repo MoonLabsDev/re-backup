@@ -6,6 +6,7 @@ using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
@@ -495,12 +496,52 @@ public sealed partial class MainViewModel : ObservableObject
             var plan = editor.SavedPlan();
             if (!plan.Enabled)
                 return;   // disabled after the scheduler decided
+            if (ScheduledRunBlocker(plan) is { } reason)
+            {
+                SkipScheduledRun(editor, plan, trigger, reason);
+                return;
+            }
             _queue.Enqueue(new BackupRequest(plan, _settings.DefaultIgnorePatterns.ToList(), trigger));
         }
         catch (Exception ex)
         {
             SetStatus(LocText.Of("shell.status.scheduledFailed", ("error", ex.Message)));
         }
+    }
+
+    /// <summary>
+    /// Why the saved plan must not run on schedule: its validation with the connections as they are now (a connection
+    /// edited, deleted or unreadable since the plan was saved; an S3 target now inside its S3 source). English, as the run
+    /// log stores reasons. Null when it may run. Plans without an S3 side are left to the runner as before (it checks
+    /// folders itself and logs its own errors).
+    /// </summary>
+    private string? ScheduledRunBlocker(BackupPlan plan)
+    {
+        if (plan.Source.Kind != PlanValidator.S3Kind && plan.Target.Kind != PlanValidator.S3Kind)
+            return null;
+        var saved = Plans.Where(p => !p.IsNew).Select(p => p.SavedPlan()).ToList();
+        var errors = PlanValidator.Validate(plan, saved, _s3.BucketOf);
+        return errors.Count == 0 ? null : string.Join(" ", errors.Select(error => CoreTexts.English(error)));
+    }
+
+    /// <summary>
+    /// A scheduled run that is not started: an error entry in the plan's run log (the history and the scheduler's
+    /// catch-up see it, as a run that ended as error with nothing written), and the reason in the footer.
+    /// </summary>
+    private void SkipScheduledRun(PlanEditorViewModel editor, BackupPlan plan, RunTrigger trigger, string reason)
+    {
+        var now = DateTime.UtcNow;
+        new RunLog(_paths.LogFileFor(plan.Id)).Append(new RunLogEntry
+        {
+            RunId = Guid.NewGuid().ToString("N"),
+            Trigger = trigger,
+            StartUtc = now,
+            EndUtc = now,
+            Status = RunStatus.Error,
+            Reason = reason,
+        });
+        LoadHistory(editor);
+        SetStatus(LocText.Of("shell.status.scheduledInvalid", ("plan", plan.Name), ("reason", new LocText(() => Loc.Known(reason)))));
     }
 
     /// <summary>

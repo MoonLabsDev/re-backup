@@ -23,6 +23,7 @@ public sealed partial class S3LocationViewModel : ObservableObject
     private readonly Action _changed;
     private CancellationTokenSource? _testCts;
     private bool _loading;
+    private int _edits;   // counts connection and prefix changes; a test's results belong to the count it started at
 
     /// <param name="isTarget">A target is tested with the write check, a source (only read) without it.</param>
     /// <param name="changed">Called after the user changed the connection or the prefix.</param>
@@ -101,13 +102,13 @@ public sealed partial class S3LocationViewModel : ObservableObject
 
     partial void OnPrefixChanged(string value) => OnEdited();
 
+    /// <summary>Results and status belong to the inputs they were made for: they go, and a running test is cancelled.</summary>
     private void OnEdited()
     {
-        if (!IsTesting)
-        {
-            Results.Clear();
-            TestStatus = null;
-        }
+        _edits++;
+        _testCts?.Cancel();
+        Results.Clear();
+        TestStatus = null;
         if (!_loading)
             _changed();
     }
@@ -163,21 +164,28 @@ public sealed partial class S3LocationViewModel : ObservableObject
 
         using var cts = new CancellationTokenSource();
         _testCts = cts;
+        var edits = _edits;
         IsTesting = true;
         try
         {
-            foreach (var result in await _connections.TestAsync(connection, Prefix, _isTarget, cts.Token))
-                Results.Add(result);
+            var results = await _connections.TestAsync(connection, Prefix, _isTarget, cts.Token);
+            if (edits == _edits)
+            {
+                foreach (var result in results)
+                    Results.Add(result);
+            }
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            TestStatus = Loc.T("s3.test.cancelled");
+            if (edits == _edits)   // cancelled by an edit: nothing to report about the old inputs
+                TestStatus = Loc.T("s3.test.cancelled");
         }
         catch (Exception)
         {
             // The tester classifies the SDK's errors itself; whatever is left is reported without its message (it may
             // hold request details).
-            TestStatus = Loc.T("s3.test.error");
+            if (edits == _edits)
+                TestStatus = Loc.T("s3.test.error");
         }
         finally
         {

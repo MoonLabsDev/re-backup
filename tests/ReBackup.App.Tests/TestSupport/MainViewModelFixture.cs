@@ -32,12 +32,20 @@ public sealed class MainViewModelFixture : IDisposable
         Directory.CreateDirectory(Paths.LogsDirectory);
         Store = new PlanStore(Paths.PlansDirectory);
         SettingsStore = new SettingsStore(Paths.SettingsFile);
-        S3 = new S3Connections(Paths.ConnectionsFile, (connection, prefix, checkWrite, _) =>
+        S3 = new S3Connections(Paths.ConnectionsFile, async (connection, prefix, checkWrite, ct) =>
         {
             TestRuns.Add((connection.Bucket, prefix, checkWrite));
-            return Task.FromResult<IReadOnlyList<S3CheckResult>>([new S3CheckResult(S3Check.Bucket, S3CheckState.Ok, null, null)]);
+            if (TestGate is { } gate)
+                await gate.Task.WaitAsync(ct);
+            return [new S3CheckResult(S3Check.Bucket, S3CheckState.Ok, null, null)];
         });
     }
+
+    /// <summary>When set, a connection test waits for it (or for its cancellation).</summary>
+    public TaskCompletionSource? TestGate { get; set; }
+
+    /// <summary>The queue of the last <see cref="Create"/>.</summary>
+    public BackupQueue Queue { get; private set; } = null!;
 
     /// <summary>The id of the account <see cref="AddConnection"/> stores its connections under.</summary>
     public const string AccountId = "acc-1";
@@ -101,7 +109,7 @@ public sealed class MainViewModelFixture : IDisposable
     public MainViewModel Create()
     {
         var storages = new StorageFactory();
-        var queue = new BackupQueue(new BackupRunner(storages), planId => new RunLog(Paths.LogFileFor(planId)));
+        var queue = Queue = new BackupQueue(new BackupRunner(storages), planId => new RunLog(Paths.LogFileFor(planId)));
         var scheduler = new Scheduler((_, _) => { });
         var versionIndex = new VersionIndexWorker(new VersionIndexSet(Path.Combine(Root, "index")));
         return new MainViewModel(Store, Paths, Settings, SaveSettings, () => LoadError, Dialogs, () => { }, queue, scheduler,

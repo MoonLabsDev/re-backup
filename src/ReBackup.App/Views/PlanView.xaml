@@ -217,10 +217,13 @@
                     <DockPanel Margin="0,12,0,0">
                         <Border Style="{StaticResource Border.KindSwitch}" AutomationProperties.Name="{l:Loc plan.kind.sourceName}">
                             <StackPanel Orientation="Horizontal">
-                                <RadioButton Style="{StaticResource RadioButton.Kind}" GroupName="SourceKind" Content="{l:Loc plan.kind.folder}"
-                                             IsChecked="{Binding SourceIsFolder}" />
-                                <RadioButton Style="{StaticResource RadioButton.Kind}" GroupName="SourceKind" Content="{l:Loc plan.kind.s3}"
-                                             IsChecked="{Binding SourceIsS3}" />
+                                <!-- One-way plus a command: the view's DataContext switches between plans. -->
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.folder}"
+                                             IsChecked="{Binding SourceIsFolder, Mode=OneWay}"
+                                             Command="{Binding ChooseSourceKindCommand}" CommandParameter="Folder" />
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.s3}"
+                                             IsChecked="{Binding SourceIsS3, Mode=OneWay}"
+                                             Command="{Binding ChooseSourceKindCommand}" CommandParameter="S3" />
                             </StackPanel>
                         </Border>
                         <TextBlock Style="{StaticResource TextBlock.Label}" VerticalAlignment="Bottom" Text="{l:Loc plan.source.source}" />
@@ -241,10 +244,12 @@
                     <DockPanel Margin="0,12,0,0">
                         <Border Style="{StaticResource Border.KindSwitch}" AutomationProperties.Name="{l:Loc plan.kind.targetName}">
                             <StackPanel Orientation="Horizontal">
-                                <RadioButton Style="{StaticResource RadioButton.Kind}" GroupName="TargetKind" Content="{l:Loc plan.kind.folder}"
-                                             IsChecked="{Binding TargetIsFolder}" />
-                                <RadioButton Style="{StaticResource RadioButton.Kind}" GroupName="TargetKind" Content="{l:Loc plan.kind.s3}"
-                                             IsChecked="{Binding TargetIsS3}" />
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.folder}"
+                                             IsChecked="{Binding TargetIsFolder, Mode=OneWay}"
+                                             Command="{Binding ChooseTargetKindCommand}" CommandParameter="Folder" />
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.s3}"
+                                             IsChecked="{Binding TargetIsS3, Mode=OneWay}"
+                                             Command="{Binding ChooseTargetKindCommand}" CommandParameter="S3" />
                             </StackPanel>
                         </Border>
                         <TextBlock Style="{StaticResource TextBlock.Label}" VerticalAlignment="Bottom" Text="{l:Loc plan.source.target}" />
