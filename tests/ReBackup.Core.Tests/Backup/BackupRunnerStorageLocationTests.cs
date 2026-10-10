@@ -101,4 +101,82 @@ public class BackupRunnerStorageLocationTests
         entry.RetentionDeleted.Should().BeEmpty();
         _target.Files.Should().BeEquivalentTo(before, "no version is written and none is deleted");
     }
+
+    /// <summary>A plan from an S3-like source to an S3-like target that keeps one daily version, with one older version in the target.</summary>
+    private async Task<(BackupPlan Plan, List<string> TargetBefore)> PlanWithOldVersion()
+    {
+        await VersionFolder.CreateAsync(_target, "2026_09_20-02_00 Projects", "p1");
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Source = new StorageLocation("s3", "photos", "conn-1"),
+            Target = new StorageLocation("s3", "backups", "conn-2"),
+            Retention = [new RetentionRule { Period = RetentionPeriod.Daily, Keep = 1 }],
+        };
+        return (plan, _target.Files.ToList());
+    }
+
+    [Fact]
+    public async Task A_source_that_lists_but_refuses_every_file_ends_as_error_without_a_version_or_retention()
+    {
+        // ListBucket without GetObject (or objects encrypted with a KMS key the user may not use): the root answers, so
+        // each file alone would be skipped, and an empty version would let retention delete the real ones.
+        var (plan, before) = await PlanWithOldVersion();
+        var source = new GatedStorage(_source)
+        {
+            BeforeOpen = (path, _) => throw new StorageAccessDeniedException(path),
+        };
+        var storages = new TestStorageFactory(location => location == plan.Source ? source : _target);
+
+        var entry = await new BackupRunner(storages, _time, host: "TESTHOST")
+            .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().Be(CoreTexts.English("core.run.sourceReadDenied"));
+        entry.Version.Should().BeNull();
+        entry.RetentionDeleted.Should().BeEmpty();
+        _target.Files.Should().BeEquivalentTo(before, "the unfinished version is removed and the earlier one stays");
+    }
+
+    [Fact]
+    public async Task A_source_whose_root_listing_is_refused_is_reported_unreadable_not_empty()
+    {
+        var (plan, before) = await PlanWithOldVersion();
+        var source = new GatedStorage(_source)
+        {
+            BeforeList = (path, _) => throw new StorageAccessDeniedException(path, "Access Denied"),
+        };
+        var storages = new TestStorageFactory(location => location == plan.Source ? source : _target);
+
+        var entry = await new BackupRunner(storages, _time, host: "TESTHOST")
+            .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().StartWith(CoreTexts.English("core.run.sourceUnreadable", ("error", "")).TrimEnd());
+        entry.Reason.Should().NotBe(CoreTexts.English("core.run.sourceEmpty"));
+        _target.Files.Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task An_empty_source_folder_is_still_backed_up()
+    {
+        // Only a source that is no folder is suspicious when empty; an empty folder is there and is what the user chose.
+        using var tmp = new TempDir();
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Source = StorageLocation.FileSystem(tmp.CreateDir("source")),
+            Target = new StorageLocation("s3", "backups", "conn-2"),
+        };
+        var storages = new TestStorageFactory(location => location == plan.Source ? new StorageFactory().Open(location) : _target);
+
+        var entry = await new BackupRunner(storages, _time, host: "TESTHOST")
+            .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+
+        entry.Status.Should().Be(RunStatus.Completed, entry.Reason);
+        entry.Version.Should().Be(Version);
+        _target.Files.Should().Equal($"{Version}/re-manifest.json");
+    }
 }

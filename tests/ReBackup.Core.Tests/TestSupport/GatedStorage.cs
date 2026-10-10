@@ -24,6 +24,9 @@ public sealed class GatedStorage(IStorage inner, StorageCapabilities? capabiliti
     /// <summary>Runs before <see cref="StatAsync"/>, with the path; what it throws, the stat throws.</summary>
     public Func<string, CancellationToken, Task>? BeforeStat { get; init; }
 
+    /// <summary>Runs before a folder is listed, with its path; what it throws, the listing throws.</summary>
+    public Func<string, CancellationToken, Task>? BeforeList { get; init; }
+
     /// <summary>Runs before a file is committed, with its path; what it throws, the commit throws.</summary>
     public Func<string, CancellationToken, Task>? BeforeCommit { get; init; }
 
@@ -59,6 +62,8 @@ public sealed class GatedStorage(IStorage inner, StorageCapabilities? capabiliti
 
     public async IAsyncEnumerable<StorageEntry> ListAsync(string folder, bool recursive, [EnumeratorCancellation] CancellationToken ct)
     {
+        if (BeforeList is { } before)
+            await before(folder, ct);
         await foreach (var entry in inner.ListAsync(folder, recursive, ct))
             yield return entry;
     }

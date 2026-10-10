@@ -127,6 +127,7 @@
       "targetFull": "Auf dem Ziel ist während des Backups der Platz ausgegangen.",
       "sourceGone": "Der Quellordner ist nicht mehr verfügbar.",
       "sourceEmpty": "Die Quelle ist leer – es wurde keine Version geschrieben und die Aufbewahrung lief nicht.",
+      "sourceReadDenied": "Die Quelle hat das Öffnen jeder Datei verweigert: Der Zugriffsschlüssel darf sie wohl auflisten, aber nicht lesen (S3: s3:GetObject oder kms:Decrypt für den KMS-Schlüssel des Buckets). Es wurde keine Version geschrieben und die Aufbewahrung lief nicht.",
       "retentionFailed": "Die Aufbewahrung wurde übersprungen: {error}",
       "retentionRulesUnreadable": "Die Aufbewahrung wurde übersprungen: Die aktuellen Regeln des Plans konnten nicht gelesen werden: {error}",
       "retentionPlanGone": "Die Aufbewahrung wurde übersprungen: Den Plan gibt es nicht mehr.",

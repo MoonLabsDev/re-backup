@@ -127,6 +127,7 @@
       "targetFull": "The target ran out of space during the backup.",
       "sourceGone": "The source folder is no longer available.",
       "sourceEmpty": "The source is empty — no version was written and retention did not run.",
+      "sourceReadDenied": "The source refused to open every file: the access key may list but not read them (S3: s3:GetObject, or kms:Decrypt for the bucket's KMS key). No version was written and retention did not run.",
       "retentionFailed": "Retention was skipped: {error}",
       "retentionRulesUnreadable": "Retention was skipped: the plan's current rules could not be read: {error}",
       "retentionPlanGone": "Retention was skipped: the plan no longer exists.",

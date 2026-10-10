@@ -54,6 +54,7 @@ public static class CoreTexts
         ["core.run.targetFull"] = "The target ran out of space during the backup.",
         ["core.run.sourceGone"] = "The source folder is no longer available.",
         ["core.run.sourceEmpty"] = "The source is empty — no version was written and retention did not run.",
+        ["core.run.sourceReadDenied"] = "The source refused to open every file: the access key may list but not read them (S3: s3:GetObject, or kms:Decrypt for the bucket's KMS key). No version was written and retention did not run.",
         ["core.run.retentionFailed"] = "Retention was skipped: {error}",
         ["core.run.retentionRulesUnreadable"] = "Retention was skipped: the plan's current rules could not be read: {error}",
         ["core.run.retentionPlanGone"] = "Retention was skipped: the plan no longer exists.",
