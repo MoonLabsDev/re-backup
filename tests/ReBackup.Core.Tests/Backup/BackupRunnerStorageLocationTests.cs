@@ -3,9 +3,11 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Json;
+using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
 using ReBackup.Storage.InMemory;
@@ -69,5 +71,34 @@ public class BackupRunnerStorageLocationTests
             JsonDefaults.Options)!;
         manifest.Source.Should().Be(sourcePath);
         manifest.Files.Select(f => f.Path).Should().BeEquivalentTo(["a.txt", "docs/.backupignore", "docs/b.txt"]);
+    }
+
+    [Fact]
+    public async Task An_empty_s3_source_ends_as_error_without_a_version_or_retention()
+    {
+        // A mistyped or emptied prefix (or a connection that points elsewhere) scans to nothing: a "completed" empty
+        // version would let retention delete the real ones, one run at a time.
+        var empty = new InMemoryStorage(StorageCapabilities.None);
+        const string old = "2026_09_20-02_00 Projects";
+        await VersionFolder.CreateAsync(_target, old, "p1");
+        var before = _target.Files.ToList();
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Source = new StorageLocation("s3", "photoz", "conn-1"),
+            Target = new StorageLocation("s3", "backups", "conn-2"),
+            Retention = [new RetentionRule { Period = RetentionPeriod.Daily, Keep = 1 }],
+        };
+        var storages = new TestStorageFactory(location => location == plan.Source ? empty : _target);
+
+        var entry = await new BackupRunner(storages, _time, host: "TESTHOST")
+            .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().Be(CoreTexts.English("core.run.sourceEmpty"));
+        entry.Version.Should().BeNull();
+        entry.RetentionDeleted.Should().BeEmpty();
+        _target.Files.Should().BeEquivalentTo(before, "no version is written and none is deleted");
     }
 }

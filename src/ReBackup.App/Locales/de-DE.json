@@ -126,6 +126,7 @@
       "notEnoughSpace": "Das Backup braucht {required}, auf dem Ziel sind aber nur {free} frei.",
       "targetFull": "Auf dem Ziel ist während des Backups der Platz ausgegangen.",
       "sourceGone": "Der Quellordner ist nicht mehr verfügbar.",
+      "sourceEmpty": "Die Quelle ist leer – es wurde keine Version geschrieben und die Aufbewahrung lief nicht.",
       "retentionFailed": "Die Aufbewahrung wurde übersprungen: {error}",
       "retentionRulesUnreadable": "Die Aufbewahrung wurde übersprungen: Die aktuellen Regeln des Plans konnten nicht gelesen werden: {error}",
       "retentionPlanGone": "Die Aufbewahrung wurde übersprungen: Den Plan gibt es nicht mehr.",

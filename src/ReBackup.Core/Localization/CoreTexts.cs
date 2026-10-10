@@ -53,6 +53,7 @@ public static class CoreTexts
         ["core.run.notEnoughSpace"] = "The backup needs {required} but only {free} is free on the target.",
         ["core.run.targetFull"] = "The target ran out of space during the backup.",
         ["core.run.sourceGone"] = "The source folder is no longer available.",
+        ["core.run.sourceEmpty"] = "The source is empty — no version was written and retention did not run.",
         ["core.run.retentionFailed"] = "Retention was skipped: {error}",
         ["core.run.retentionRulesUnreadable"] = "Retention was skipped: the plan's current rules could not be read: {error}",
         ["core.run.retentionPlanGone"] = "Retention was skipped: the plan no longer exists.",

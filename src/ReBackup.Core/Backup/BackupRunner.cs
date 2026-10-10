@@ -235,6 +235,11 @@ public sealed class BackupRunner : IBackupRunner
         {
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceMissing", ("source", plan.Source.Path)));
         }
+        // On a storage that is no folder an empty root exists anyway (a bucket with a mistyped or emptied prefix, a
+        // connection that points elsewhere): an empty version would let retention delete the real ones, so nothing is
+        // written. An empty source folder is still backed up: it is there, and empty is what the user chose.
+        if (!plan.Source.IsFileSystem && index.RootNode.Children.Count == 0)
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceEmpty"));
         var matcher = IgnoreMatcher.ForPlan(plan.Ignore, request.GlobalIgnoreDefaults, index.IgnoreFiles);
         var root = IndexEvaluator.Evaluate(index, matcher, cancellationToken);
         if (root.Node.Error is { } rootError)

@@ -126,6 +126,7 @@
       "notEnoughSpace": "The backup needs {required} but only {free} is free on the target.",
       "targetFull": "The target ran out of space during the backup.",
       "sourceGone": "The source folder is no longer available.",
+      "sourceEmpty": "The source is empty — no version was written and retention did not run.",
       "retentionFailed": "Retention was skipped: {error}",
       "retentionRulesUnreadable": "Retention was skipped: the plan's current rules could not be read: {error}",
       "retentionPlanGone": "Retention was skipped: the plan no longer exists.",
