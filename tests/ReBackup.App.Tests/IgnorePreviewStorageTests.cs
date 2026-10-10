@@ -40,6 +40,20 @@ public class IgnorePreviewStorageTests : IDisposable
         vm.Root.IgnoredFiles.Should().Be(1);
     }
 
+    [Fact]
+    public async Task An_empty_S3_prefix_is_an_empty_source_not_a_missing_one()
+    {
+        // S3Storage answers StatAsync("") with a folder whenever the bucket can be listed, also for a prefix without objects.
+        var empty = new InMemoryStorage(StorageCapabilities.None);
+        var location = new StorageLocation("s3", "", "conn-1");
+        var vm = new IgnorePreviewViewModel(() => location, () => new IgnoreSettings(), () => [], new Factory(_ => empty));
+
+        await vm.IndexCommand.ExecuteAsync(null);
+
+        vm.ErrorText.Should().BeNull();
+        vm.Root!.IncludedFiles.Should().Be(0);
+    }
+
     private sealed class Factory(Func<StorageLocation, IStorage> open) : IStorageFactory
     {
         public IStorage Open(StorageLocation location) => open(location);

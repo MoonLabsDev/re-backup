@@ -39,6 +39,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Scheduler _scheduler;
     private readonly Action<Action> _runOnUi;
     private readonly VersionsContext _versions;
+    private readonly S3Connections _s3;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedPlan))]
@@ -58,10 +59,14 @@ public sealed partial class MainViewModel : ObservableObject
         Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
-        IStorageFactory storages)
+        IStorageFactory storages, S3Connections? s3 = null)
     {
         _folders = folders;
-        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages);
+        _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
+        _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
+            DescribeLocation: _s3.Describe);
+        // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
+        _s3.Changed += (_, _) => RevalidateAll();
         Theme = theme;
         Language = language;
         Loc.LanguageChanged += (_, _) => OnLanguageChanged();
@@ -85,7 +90,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var result = _store.LoadAll();
         foreach (var plan in PlanOrder.Apply(result.Plans, _settings.PlanOrder))
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         SetStatus(LoadErrorText(result) ?? LocText.Of("shell.status.configuration", ("path", _paths.Root)));
@@ -211,9 +216,9 @@ public sealed partial class MainViewModel : ObservableObject
                 }
                 else
                 {
-                    var targetBefore = editor.SavedPlan().Target.Path;
+                    var targetBefore = editor.SavedPlan().Target;
                     editor.ReplaceSaved(plan);
-                    if (!string.Equals(targetBefore, plan.Target.Path, StringComparison.OrdinalIgnoreCase))
+                    if (!SameLocation(targetBefore, plan.Target))
                     {
                         LoadHistory(editor);
                         editor.Versions.OnSavedTargetChanged();
@@ -242,7 +247,7 @@ public sealed partial class MainViewModel : ObservableObject
         // Plans that appeared go where the saved order puts them, the others to the end (by name).
         foreach (var plan in PlanOrder.Apply(loaded.Values, _settings.PlanOrder))
         {
-            var editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions);
+            var editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3);
             AddEditor(editor, PlanOrder.InsertionIndex(Plans, p => p.Id, plan.Id, _settings.PlanOrder));
         }
 
@@ -259,7 +264,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void NewPlan()
     {
         var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName(Loc.T("shell.plans.newName")) }, isNew: true, AllPlans, GlobalIgnoreDefaults,
-            _folders, _versions);
+            _folders, _versions, _s3);
         AddEditor(editor);
         RevalidateAll();
         SelectedPlan = editor;
@@ -411,7 +416,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             var wasNew = editor.IsNew;
-            var targetBefore = wasNew ? null : editor.SavedPlan().Target.Path;
+            var targetBefore = wasNew ? null : editor.SavedPlan().Target;
             var saved = editor.TrySave(_store);
             SetStatus(saved ? LocText.Of("shell.status.saved", ("plan", editor.Name)) : LocText.Of("shell.status.notSaved"));
             RevalidateAll();
@@ -420,7 +425,7 @@ public sealed partial class MainViewModel : ObservableObject
                 PublishPlans();
                 if (wasNew)
                     SavePlanOrder();   // its place in the list, also when it was moved before the first save
-                if (!string.Equals(targetBefore, editor.SavedPlan().Target.Path, StringComparison.OrdinalIgnoreCase))
+                if (targetBefore is null || !SameLocation(targetBefore, editor.SavedPlan().Target))
                 {
                     LoadHistory(editor);   // the folder buttons look in the new target
                     editor.Versions.OnSavedTargetChanged();
@@ -712,8 +717,9 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
+            // Only a folder target's versions can be opened in Explorer from the history.
             editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll(),
-                editor.IsNew ? null : editor.SavedPlan().Target.Path);
+                editor.IsNew || editor.SavedPlan().Target is not { IsFileSystem: true } target ? null : target.Path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -740,6 +746,25 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private IEnumerable<BackupPlan> AllPlans() => Plans.Select(p => p.ToPlan());
+
+    /// <summary>
+    /// The names of the plans whose source or target is on the S3 connection <paramref name="connectionId"/>, as saved or
+    /// as edited (a connection must not be deleted under either).
+    /// </summary>
+    public IReadOnlyList<string> PlansUsingConnection(string connectionId) =>
+        Plans.Where(editor => (!editor.IsNew && UsesConnection(editor.SavedPlan(), connectionId)) ||
+                              UsesConnection(editor.ToPlan(), connectionId))
+            .Select(editor => string.IsNullOrWhiteSpace(editor.Name) ? Loc.T("common.unnamed") : editor.Name)
+            .ToList();
+
+    private static bool UsesConnection(BackupPlan plan, string connectionId) =>
+        S3Connections.Uses(plan.Source, connectionId) || S3Connections.Uses(plan.Target, connectionId);
+
+    /// <summary>The same location: kind and connection, a folder's path case-insensitively, a storage path exactly.</summary>
+    private static bool SameLocation(StorageLocation a, StorageLocation b) =>
+        string.Equals(a.Kind, b.Kind, StringComparison.Ordinal) &&
+        string.Equals(a.ConnectionId, b.ConnectionId, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(a.Path, b.Path, a.IsFileSystem ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     // Read on every use, so edits made in the settings dialog apply to the next evaluation.
     private IReadOnlyList<string> GlobalIgnoreDefaults() => _settings.DefaultIgnorePatterns;

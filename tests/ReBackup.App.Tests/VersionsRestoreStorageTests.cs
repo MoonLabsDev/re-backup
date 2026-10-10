@@ -48,7 +48,8 @@ public class VersionsRestoreStorageTests : IDisposable
         await _bucket.DeleteAsync(["a.txt"], CancellationToken.None);
 
         var worker = new VersionIndexWorker(new VersionIndexSet(Path.Combine(_fixture.Root, "index")));
-        var context = new VersionsContext(worker, _fixture.Dialogs, _ => { }, _storages, MachineName: "THIS-PC");
+        var context = new VersionsContext(worker, _fixture.Dialogs, _ => { }, _storages, MachineName: "THIS-PC",
+            DescribeLocation: location => "Offsite · s3://bucket/" + location.Path);
         var vm = new VersionsViewModel(() => _plan, () => false, new FakeFolderOpener(), context);
         await vm.RefreshCommand.ExecuteAsync(null);
         vm.SelectedVersion = vm.VersionRows.Should().ContainSingle().Subject;
@@ -58,6 +59,9 @@ public class VersionsRestoreStorageTests : IDisposable
         await vm.RestoreToOriginalCommand.ExecuteAsync(null);
 
         _fixture.Dialogs.Errors.Should().BeEmpty();
+        _fixture.Dialogs.Confirms.Should().ContainSingle().Which.Should()
+            .Contain("Offsite · s3://bucket/photos/a.txt", "the destination is named by connection, bucket and prefix")
+            .And.NotContain("mem://");
         _bucket.Files.Should().Equal("a.txt");
         Encoding.UTF8.GetString(_bucket.ReadAllBytes("a.txt")).Should().Be("alpha");
     }

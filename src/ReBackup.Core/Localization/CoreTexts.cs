@@ -29,6 +29,15 @@ public static class CoreTexts
         ["core.plan.unsupportedLocation"] = "This kind of location is not supported yet.",
         ["core.plan.targetInsideSource"] = "Target must not be inside the source.",
         ["core.plan.sourceInsideTarget"] = "Source must not be inside the target.",
+        ["core.plan.sourceConnectionRequired"] = "Choose an S3 connection for the source.",
+        ["core.plan.targetConnectionRequired"] = "Choose an S3 connection for the target.",
+        ["core.plan.sourceConnectionMissing"] = "The source's S3 connection no longer exists.",
+        ["core.plan.targetConnectionMissing"] = "The target's S3 connection no longer exists.",
+        ["core.plan.sourcePrefixInvalid"] =
+            "The source prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+        ["core.plan.targetPrefixInvalid"] =
+            "The target prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+        ["core.plan.connectionsUnreadable"] = "The S3 connections could not be read: {error}",
         ["core.plan.retentionRule"] = "Retention rule {index}: {problem}",
         ["core.plan.trigger"] = "Trigger {index}: {problem}",
 

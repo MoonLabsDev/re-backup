@@ -74,6 +74,12 @@
       "closeToTray": "Schließen des Fensters minimiert in den Infobereich",
       "startWithWindows": "Mit Windows starten (im Infobereich)"
     },
+    "s3": {
+      "title": "S3",
+      "note": "Konten (Zugriffsschlüssel) und Verbindungen (Bucket und Konto) für S3-Quellen und -Ziele, gespeichert im Konfigurationsordner.",
+      "accounts": "S3-Konten…",
+      "connections": "S3-Verbindungen…"
+    },
     "theme": {
       "title": "DESIGN",
       "name": "Design",
@@ -97,6 +103,13 @@
       "unsupportedLocation": "Diese Art von Speicherort wird noch nicht unterstützt.",
       "targetInsideSource": "Das Ziel darf nicht in der Quelle liegen.",
       "sourceInsideTarget": "Die Quelle darf nicht im Ziel liegen.",
+      "sourceConnectionRequired": "Wähle eine S3-Verbindung für die Quelle.",
+      "targetConnectionRequired": "Wähle eine S3-Verbindung für das Ziel.",
+      "sourceConnectionMissing": "Die S3-Verbindung der Quelle existiert nicht mehr.",
+      "targetConnectionMissing": "Die S3-Verbindung des Ziels existiert nicht mehr.",
+      "sourcePrefixInvalid": "Das Präfix der Quelle ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
+      "targetPrefixInvalid": "Das Präfix des Ziels ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
+      "connectionsUnreadable": "Die S3-Verbindungen konnten nicht gelesen werden: {error}",
       "retentionRule": "Aufbewahrungsregel {index}: {problem}",
       "trigger": "Auslöser {index}: {problem}"
     },
@@ -372,6 +385,23 @@
       "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"
     }
   },
+  "s3connections": {
+    "title": "S3-Verbindungen",
+    "note": "Pläne nutzen diese Verbindungen als Quelle oder Ziel. Gespeichert in connections.json im Konfigurationsordner; Secrets funktionieren nur für dieses Windows-Konto.",
+    "column": { "bucket": "Bucket", "region": "Region" },
+    "empty": "Noch keine Verbindungen.",
+    "add": "Hinzufügen…",
+    "edit": "Bearbeiten…",
+    "delete": "Löschen",
+    "inUse": "„{name}“ wird von diesen Plänen verwendet und kann nicht gelöscht werden:",
+    "deleteConfirm": "Die S3-Verbindung „{name}“ löschen?",
+    "saveFailed": "Die S3-Verbindungen konnten nicht gespeichert werden: {error}",
+    "loadFailed": "Die S3-Verbindungen konnten nicht gelesen werden: {error}"
+  },
+  "s3location": {
+    "describe": "{connection} · s3://{bucket}/{prefix}",
+    "unknown": "S3-Verbindung nicht gefunden · {prefix}"
+  },
   "plan": {
     "source": {
       "title": "QUELLE → ZIEL",
@@ -382,6 +412,22 @@
       "enabled": "Nach Zeitplan ausführen",
       "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
       "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+    },
+    "kind": {
+      "folder": "Ordner",
+      "s3": "S3",
+      "sourceName": "Art der Quelle",
+      "targetName": "Art des Ziels"
+    },
+    "s3": {
+      "connection": "S3-Verbindung",
+      "newConnection": "Neue Verbindung…",
+      "prefix": "Präfix",
+      "prefixPlaceholder": "backups/moonlabs",
+      "prefixHint": "Leer = der ganze Bucket.",
+      "test": "Testen",
+      "connectionMissing": "Die S3-Verbindung existiert nicht mehr.",
+      "needsSecret": "Das Secret des S3-Kontos dieser Verbindung muss auf diesem PC neu eingegeben werden (Einstellungen → S3-Konten…)."
     },
     "lastRun": {
       "title": "LETZTER LAUF",

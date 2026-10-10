@@ -3,13 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf"
         xmlns:appl="clr-namespace:ReBackup.App.Localization"
-        Title="{l:Loc settings.windowTitle}" Width="600" Height="760" MinWidth="480" MinHeight="660"
+        Title="{l:Loc settings.windowTitle}" Width="600" Height="830" MinWidth="480" MinHeight="730"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Style="{StaticResource {x:Type Window}}">
     <Grid Margin="20,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -40,7 +41,24 @@
             </DockPanel>
         </Border>
 
+        <!-- S3: the accounts (access keys) and the connections (bucket + account) plans can use; stored at once. -->
         <Border Grid.Row="2" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="{l:Loc settings.s3.accounts}" Command="{Binding ManageS3AccountsCommand}"
+                            AutomationProperties.Name="{l:Loc settings.s3.accounts}" />
+                    <Button Margin="8,0,0,0" Content="{l:Loc settings.s3.connections}" Command="{Binding ManageS3ConnectionsCommand}"
+                            AutomationProperties.Name="{l:Loc settings.s3.connections}" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="{l:Loc settings.s3.title}" />
+                    <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
+                               Text="{l:Loc settings.s3.note}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="3" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <StackPanel>
                 <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,12" Text="{l:Loc settings.app.title}" />
                 <CheckBox Style="{StaticResource CheckBox.Switch}" IsChecked="{Binding CloseToTray}">
@@ -52,7 +70,7 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="3" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+        <Border Grid.Row="4" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <DockPanel>
                 <Border DockPanel.Dock="Right" VerticalAlignment="Center" Padding="3" CornerRadius="8" BorderThickness="1"
                         Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
@@ -72,7 +90,7 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="4" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+        <Border Grid.Row="5" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <DockPanel>
                 <Border DockPanel.Dock="Right" VerticalAlignment="Center" Padding="3" CornerRadius="8" BorderThickness="1"
                         Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
@@ -106,7 +124,7 @@
             </DockPanel>
         </Border>
 
-        <DockPanel Grid.Row="5" Margin="0,16,0,0" LastChildFill="False">
+        <DockPanel Grid.Row="6" Margin="0,16,0,0" LastChildFill="False">
             <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{appl:LocVersion}" />
                 <!-- Copyright with a link to the company's site. -->

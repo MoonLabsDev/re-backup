@@ -74,6 +74,12 @@
       "closeToTray": "Closing the window minimizes to the tray",
       "startWithWindows": "Start with Windows (minimized to tray)"
     },
+    "s3": {
+      "title": "S3",
+      "note": "Accounts (access keys) and connections (bucket and account) for S3 sources and targets, kept in the configuration folder.",
+      "accounts": "S3 accounts…",
+      "connections": "S3 connections…"
+    },
     "theme": {
       "title": "THEME",
       "name": "Theme",
@@ -97,6 +103,13 @@
       "unsupportedLocation": "This kind of location is not supported yet.",
       "targetInsideSource": "Target must not be inside the source.",
       "sourceInsideTarget": "Source must not be inside the target.",
+      "sourceConnectionRequired": "Choose an S3 connection for the source.",
+      "targetConnectionRequired": "Choose an S3 connection for the target.",
+      "sourceConnectionMissing": "The source's S3 connection no longer exists.",
+      "targetConnectionMissing": "The target's S3 connection no longer exists.",
+      "sourcePrefixInvalid": "The source prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+      "targetPrefixInvalid": "The target prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+      "connectionsUnreadable": "The S3 connections could not be read: {error}",
       "retentionRule": "Retention rule {index}: {problem}",
       "trigger": "Trigger {index}: {problem}"
     },
@@ -372,6 +385,23 @@
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
     }
   },
+  "s3connections": {
+    "title": "S3 connections",
+    "note": "Plans use these connections as source or target. Stored in connections.json in the configuration folder; secrets only work for this Windows account.",
+    "column": { "bucket": "Bucket", "region": "Region" },
+    "empty": "No connections yet.",
+    "add": "Add…",
+    "edit": "Edit…",
+    "delete": "Delete",
+    "inUse": "\"{name}\" is used by these plans and cannot be deleted:",
+    "deleteConfirm": "Delete the S3 connection \"{name}\"?",
+    "saveFailed": "The S3 connections could not be saved: {error}",
+    "loadFailed": "The S3 connections could not be read: {error}"
+  },
+  "s3location": {
+    "describe": "{connection} · s3://{bucket}/{prefix}",
+    "unknown": "S3 connection not found · {prefix}"
+  },
   "plan": {
     "source": {
       "title": "SOURCE → TARGET",
@@ -382,6 +412,22 @@
       "enabled": "Run on schedule",
       "enabledToolTip": "When off, the plan runs only when started by hand.",
       "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+    },
+    "kind": {
+      "folder": "Folder",
+      "s3": "S3",
+      "sourceName": "Kind of source",
+      "targetName": "Kind of target"
+    },
+    "s3": {
+      "connection": "S3 connection",
+      "newConnection": "New connection…",
+      "prefix": "Prefix",
+      "prefixPlaceholder": "backups/moonlabs",
+      "prefixHint": "Empty = the whole bucket.",
+      "test": "Test",
+      "connectionMissing": "The S3 connection no longer exists.",
+      "needsSecret": "The secret of this connection's S3 account must be re-entered on this PC (Settings → S3 accounts…)."
     },
     "lastRun": {
       "title": "LAST RUN",

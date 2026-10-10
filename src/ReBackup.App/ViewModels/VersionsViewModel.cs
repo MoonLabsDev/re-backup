@@ -16,13 +16,18 @@ namespace ReBackup.App.ViewModels;
 /// What every plan's Versions tab shares: the index worker (syncs of one plan's index run one at a time, behind the
 /// versions finished runs hand to it), the dialogs, the footer's status line and the app's one storage factory.
 /// <paramref name="MachineName"/> is this computer as markers name it (<see cref="Environment.MachineName"/> when null):
-/// folders that other computers marked are listed apart.
+/// folders that other computers marked are listed apart. <paramref name="DescribeLocation"/> names a location in
+/// messages (an S3 location by its connection, bucket and prefix); a folder's path, else <c>kind://path</c>, when null.
 /// </summary>
 public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<LocText> ReportStatus,
-    IStorageFactory Storages, string? MachineName = null)
+    IStorageFactory Storages, string? MachineName = null, Func<StorageLocation, string>? DescribeLocation = null)
 {
     /// <summary>This computer, as markers name it.</summary>
     public string Host => MachineName ?? Environment.MachineName;
+
+    /// <summary>A location as the user reads it.</summary>
+    public string Describe(StorageLocation location) =>
+        DescribeLocation?.Invoke(location) ?? (location.IsFileSystem ? location.Path : $"{location.Kind}://{location.Path}");
 
     /// <summary>The plans' indexes; reads (queries) may run beside a sync.</summary>
     public VersionIndexSet Indexes => Worker.Indexes;
@@ -189,7 +194,7 @@ public sealed partial class VersionsViewModel : ObservableObject
                 ShowFolders([], []);
                 ShowForeign([]);
                 Sync = LocText.Empty;
-                ErrorText = TargetUnavailable(plan.Target.Path);
+                ErrorText = TargetUnavailable(plan.Target);
                 return;
             }
             if (state == TargetState.NotCreatedYet)
@@ -227,7 +232,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             {
                 ApplyIndexed(versions, []);
                 Sync = LocText.Empty;
-                ErrorText = TargetUnavailable(plan.Target.Path);
+                ErrorText = TargetUnavailable(plan.Target);
                 return;
             }
 
@@ -279,7 +284,8 @@ public sealed partial class VersionsViewModel : ObservableObject
         }
     }
 
-    private static LocText TargetUnavailable(string target) => LocText.Of("core.index.targetUnavailable", ("folder", target));
+    private LocText TargetUnavailable(StorageLocation target) =>
+        LocText.Of("core.index.targetUnavailable", ("folder", _context.Describe(target)));
 
     /// <summary>Runs after every successful sync; the tree reloads here (Versions tab, tree part).</summary>
     partial void OnIndexReady();

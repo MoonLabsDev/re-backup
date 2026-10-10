@@ -349,12 +349,11 @@ public sealed partial class VersionsViewModel
         return ConflictPolicy.Skip;   // as above: a file appearing after planning is never replaced
     }
 
-    /// <summary>A restore destination as the user reads it: the folder, or kind and path of a storage location.</summary>
-    private static string DisplayRoot(StorageLocation location) =>
-        location.IsFileSystem ? location.Path : $"{location.Kind}://{location.Path}";
+    /// <summary>A restore destination as the user reads it: the folder, or the connection, bucket and prefix of an S3 location.</summary>
+    private string DisplayRoot(StorageLocation location) => _context.Describe(location);
 
     /// <summary>Where <paramref name="relative"/> (a version path) lands below <paramref name="location"/>, for messages.</summary>
-    private static string DisplayDestination(StorageLocation location, string relative) =>
+    private string DisplayDestination(StorageLocation location, string relative) =>
         location.IsFileSystem
             ? Path.Combine(location.Path, relative.Replace('/', Path.DirectorySeparatorChar))
             : DisplayRoot(location with { Path = StoragePath.Combine(location.Path, relative) });
@@ -365,7 +364,8 @@ public sealed partial class VersionsViewModel
     /// </summary>
     private string? InsideTarget(string root, string relative)
     {
-        if (_savedPlan()?.Target.Path is not { Length: > 0 } target)
+        // Only a folder target can hold a folder destination (the plan's checks keep a storage source apart from its target).
+        if (_savedPlan()?.Target is not { IsFileSystem: true, Path: { Length: > 0 } target })
             return null;
         try
         {

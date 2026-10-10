@@ -1,11 +1,19 @@
 using System.IO;
 using System.Windows;
 using Microsoft.Win32;
+using System.Text.Json;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Wpf.S3;
+using ReBackup.Storage.S3;
+using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.App.Services;
 
-public sealed class WpfDialogService : IDialogService
+/// <param name="connections">
+/// The S3 connections of the configuration folder (null before it is loaded): the "name taken" check and the account
+/// picker of the connection dialog, and the accounts dialog.
+/// </param>
+public sealed class WpfDialogService(Func<S3ConnectionStore?> connections) : IDialogService
 {
     /// <summary>
     /// The active window, else the main window while it is shown (e.g. a result after a long restore, when another
@@ -62,8 +70,55 @@ public sealed class WpfDialogService : IDialogService
         return ShowOwned(new FailuresDialog(title, message, lines, confirmText)) == true;
     }
 
+    public S3ConnectionInfo? EditS3Connection(S3ConnectionInfo? existing)
+    {
+        if (connections() is not { } store)
+            return null;
+        var tester = new S3ConnectionTester();
+        var accountDialogs = new S3AccountDialogs(tester, () => Owner);
+        var viewModel = new S3ConnectionDialogViewModel(existing, name => IsNameTaken(store, existing, name), tester,
+            () => LoadAccounts(store), () => accountDialogs.CreateIn(store));
+        return ShowOwned(new S3ConnectionDialog(viewModel)) == true ? viewModel.Result : null;
+    }
+
+    public void ManageS3Accounts()
+    {
+        if (connections() is { } store)
+            ShowOwned(new S3AccountsDialog(store, new S3ConnectionTester()));
+    }
+
+    /// <summary>
+    /// Another saved connection than <paramref name="existing"/> has <paramref name="name"/> (case-insensitive); an
+    /// unreadable file blocks nothing here, saving reports it.
+    /// </summary>
+    private static bool IsNameTaken(S3ConnectionStore store, S3ConnectionInfo? existing, string name)
+    {
+        try
+        {
+            return store.LoadAll().Any(c => !string.Equals(c.Id, existing?.Id, StringComparison.OrdinalIgnoreCase)
+                                            && string.Equals(c.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The saved S3 accounts for the picker; none when the file cannot be read (saving reports it).</summary>
+    private static IReadOnlyList<S3Account> LoadAccounts(S3ConnectionStore store)
+    {
+        try
+        {
+            return store.LoadAccounts();
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
     /// <summary>Shows a dialog over <see cref="Owner"/>; without one, centered and in the taskbar so it cannot hide.</summary>
-    private static bool? ShowOwned(Window dialog)
+    internal static bool? ShowOwned(Window dialog)
     {
         if (Owner is { } owner)
         {

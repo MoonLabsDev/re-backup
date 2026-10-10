@@ -1,4 +1,5 @@
 using ReBackup.Core.Versions;
+using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.App.Services;
 
@@ -29,4 +30,13 @@ public interface IDialogService
 
     /// <summary>Like <see cref="ShowFailures"/>, with <paramref name="confirmText"/> / Cancel; true to go on.</summary>
     bool ConfirmFailures(string title, string message, IReadOnlyList<string> lines, string confirmText);
+
+    /// <summary>
+    /// The shared S3 connection dialog on <paramref name="existing"/> (null = a new connection; its account is picked or
+    /// created there). The connection as saved in the dialog, not yet stored; null when cancelled.
+    /// </summary>
+    S3ConnectionInfo? EditS3Connection(S3ConnectionInfo? existing);
+
+    /// <summary>The shared S3 accounts dialog; its changes are stored at once.</summary>
+    void ManageS3Accounts();
 }

@@ -9,6 +9,8 @@ public class ProjectReferenceTests
 {
     [Theory]
     [InlineData("ReBackup.Shared", new string[0])]
+    // Core sees storage only through IStorage / IStorageFactory; the App composes the S3 factory.
+    [InlineData("ReBackup.Core", new[] { "ReBackup.Shared", "ReBackup.Storage" })]
     [InlineData("ReBackup.Shared.Wpf", new[] { "ReBackup.Shared", "ReBackup.Storage.S3" })]
     [InlineData("ReBackup.Storage", new string[0])]
     [InlineData("ReBackup.Storage.S3", new[] { "ReBackup.Storage", "ReBackup.Shared" })]

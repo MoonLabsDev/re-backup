@@ -20,6 +20,7 @@ public class ConfigLocationTests : IDisposable
         paths.PlansDirectory.Should().Be(@"C:\cfg\plans");
         paths.LogsDirectory.Should().Be(@"C:\cfg\logs");
         paths.SettingsFile.Should().Be(@"C:\cfg\settings.json");
+        paths.ConnectionsFile.Should().Be(@"C:\cfg\connections.json");
         paths.LogFileFor("abc").Should().Be(@"C:\cfg\logs\abc.jsonl");
     }
 
@@ -80,6 +81,7 @@ public class ConfigLocationTests : IDisposable
         _tmp.WriteFile(@"appdata\settings.json", "{}");
         _tmp.WriteFile(@"appdata\plans\p1.json", "plan");
         _tmp.WriteFile(@"appdata\logs\p1.jsonl", "log");
+        _tmp.WriteFile(@"appdata\connections.json", "connections");
         var newRoot = _tmp.PathOf("newcfg");
 
         var moved = ConfigLocation.Move(appData, current, newRoot, ConfigMoveMode.CopyCurrent);
@@ -88,6 +90,7 @@ public class ConfigLocationTests : IDisposable
         File.ReadAllText(moved.SettingsFile).Should().Be("{}");
         File.ReadAllText(Path.Combine(moved.PlansDirectory, "p1.json")).Should().Be("plan");
         File.ReadAllText(moved.LogFileFor("p1")).Should().Be("log");
+        File.ReadAllText(moved.ConnectionsFile).Should().Be("connections", "the plans' S3 connections move with them");
         File.Exists(Path.Combine(appData, "plans", "p1.json")).Should().BeTrue("old files are kept");
         ConfigLocation.Resolve(appData).Root.Should().Be(newRoot);
     }

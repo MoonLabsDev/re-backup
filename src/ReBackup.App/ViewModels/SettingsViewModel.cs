@@ -23,6 +23,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly Action<ThemeMode> _previewTheme;
     private readonly Action<string> _previewLanguage;
     private readonly string _initialLanguage;
+    private readonly Action _manageS3Accounts;
+    private readonly Action _manageS3Connections;
     private readonly bool _ready;
     private bool _saved;
     private ConfigPaths _paths;
@@ -44,8 +46,10 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public SettingsViewModel(SettingsStore store, AppSettings settings, ConfigPaths paths, string appDataRoot,
         IDialogService dialogs, Func<bool> confirmRestart, Func<bool> isBackupActive, Action<ThemeMode> previewTheme,
-        string language, Action<string> previewLanguage)
+        string language, Action<string> previewLanguage, Action? manageS3Accounts = null, Action? manageS3Connections = null)
     {
+        _manageS3Accounts = manageS3Accounts ?? (() => { });
+        _manageS3Connections = manageS3Connections ?? (() => { });
         _store = store;
         _settings = settings;
         _paths = paths;
@@ -219,4 +223,12 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void Cancel() => CloseRequested?.Invoke(this, false);
+
+    /// <summary>"S3 accounts…": the shared accounts dialog; its changes are stored at once (not by OK).</summary>
+    [RelayCommand]
+    private void ManageS3Accounts() => _manageS3Accounts();
+
+    /// <summary>"S3 connections…": the list of connections; its changes are stored at once (not by OK).</summary>
+    [RelayCommand]
+    private void ManageS3Connections() => _manageS3Connections();
 }
