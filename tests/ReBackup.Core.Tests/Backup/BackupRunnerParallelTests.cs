@@ -260,15 +260,21 @@ public class BackupRunnerParallelTests
         _targetFiles.Files.Should().BeEmpty("the unfinished version is removed, its pending marker last");
     }
 
+    /// <summary>
+    /// The source refuses or cannot be reached for the first file: an unreachable source stops at once, a refusal stops
+    /// when the source's root is refused (or unreachable) too, as with revoked credentials.
+    /// </summary>
     [Theory]
-    [InlineData(typeof(StorageUnavailableException))]
-    [InlineData(typeof(StorageAccessDeniedException))]
-    public async Task Storage_failure_opening_a_source_file_stops_all_workers(Type failureType)
+    [InlineData(typeof(StorageUnavailableException), null)]
+    [InlineData(typeof(StorageAccessDeniedException), typeof(StorageAccessDeniedException))]
+    [InlineData(typeof(StorageAccessDeniedException), typeof(StorageUnavailableException))]
+    public async Task Storage_failure_opening_a_source_file_stops_all_workers(Type failureType, Type? rootFailureType)
     {
         // Eight downloads are starting when the bucket becomes unreachable (or refuses) for one of them.
         var allHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var hold = HoldUntil(BackupRunner.ParallelS3Copies, _ => true, allHeld);
         var canceledWaits = 0;
+        var failed = 0;
         var failure = (StorageException)Activator.CreateInstance(failureType, Name(0), null, null)!;
         var source = new GatedStorage(_sourceFiles)
         {
@@ -278,7 +284,10 @@ public class BackupRunnerParallelTests
                 {
                     await hold(path, ct);
                     if (path == Name(0))
+                    {
+                        Volatile.Write(ref failed, 1);
                         throw failure;
+                    }
                     await new TaskCompletionSource().Task.WaitAsync(Guard, ct);
                 }
                 catch (OperationCanceledException)
@@ -287,6 +296,9 @@ public class BackupRunnerParallelTests
                     throw;
                 }
             },
+            BeforeStat = (path, _) => path.Length == 0 && rootFailureType is not null && Volatile.Read(ref failed) == 1
+                ? throw (StorageException)Activator.CreateInstance(rootFailureType, "", null, null)!
+                : Task.CompletedTask,
         };
 
         var entry = await Run("s3", "mem", source, _targetFiles);
@@ -297,6 +309,34 @@ public class BackupRunnerParallelTests
         source.Opens.Should().Be(8, "no file is started after the failure");
         entry.Skipped.Should().BeEmpty("the file is not skipped: the run stops");
         _targetFiles.Files.Should().BeEmpty("the unfinished version is removed");
+    }
+
+    [Fact]
+    public async Task A_denied_file_of_a_folder_source_is_skipped_while_the_others_are_uploaded()
+    {
+        // One file of the folder is protected by its ACL (or one object is encrypted with a key the user may not use):
+        // the source itself answers, so the file is skipped instead of failing the run forever.
+        using var tmp = new TempDir();
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Source = StorageLocation.FileSystem(tmp.CreateDir("source")),
+            Target = new StorageLocation("s3", "", "conn-2"),
+        };
+        var source = new GatedStorage(_sourceFiles)
+        {
+            BeforeOpen = (path, _) => path == Name(5) ? throw new StorageAccessDeniedException(path) : Task.CompletedTask,
+        };
+        var storages = new TestStorageFactory(location => location == plan.Source ? source : _targetFiles);
+
+        var entry = await new BackupRunner(storages, _time, host: "TESTHOST")
+            .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
+        entry.Skipped.Should().Equal(new SkippedEntry(Name(5), CoreTexts.English("core.file.accessDenied")));
+        entry.FilesCopied.Should().Be(FileCount - 1);
+        Manifest().Files.Select(f => f.Path).Should().Equal(Enumerable.Range(0, FileCount).Where(i => i != 5).Select(Name));
     }
 
     [Fact]

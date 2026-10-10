@@ -748,7 +748,8 @@ public sealed class BackupRunner : IBackupRunner
     /// copied, hashed and checked as in the sequential loop; a file that cannot be read is skipped. What the files give is
     /// added to the manifest and the run log in the order of <see cref="BackupWork.Files"/>, whatever order the copies
     /// finish in, also when the run stops. A storage-level failure (<see cref="StorageUnavailableException"/> or
-    /// <see cref="StorageAccessDeniedException"/>, also when a source file is opened) and anything else a worker meets
+    /// <see cref="StorageAccessDeniedException"/>; opening a source file, a refusal counts only when the source's root is
+    /// refused too, see <see cref="CopyFileAsync"/>) and anything else a worker meets
     /// (the source gone) stops all workers: no file is started after it, the files in flight are canceled (their
     /// writers are disposed, which aborts them) and the first such failure is thrown. Cancellation by the caller stops
     /// them the same way, and takes precedence: what the workers throw after it (an aborted upload may answer with a
@@ -889,9 +890,10 @@ public sealed class BackupRunner : IBackupRunner
     /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed.
     /// </summary>
     /// <param name="storageFailuresStop">
-    /// A <see cref="StorageUnavailableException"/> or <see cref="StorageAccessDeniedException"/> opening the source file
-    /// propagates instead of skipping the file (the parallel copy, spec 4). Otherwise the file is skipped and the caller
-    /// finds out whether the whole source is gone.
+    /// A <see cref="StorageUnavailableException"/> opening the source file propagates instead of skipping the file (the
+    /// parallel copy, spec 4); so does a <see cref="StorageAccessDeniedException"/> when the source's root is refused or
+    /// unreachable too (revoked credentials), while one file refused on its own is skipped. Otherwise the file is skipped
+    /// and the caller finds out whether the whole source is gone.
     /// </param>
     private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed)> CopyFileAsync(IStorage source,
         IStorage target, string versionName, IndexNode node, byte[] buffer, Action<int> onBytes,
@@ -902,9 +904,14 @@ public sealed class BackupRunner : IBackupRunner
         {
             input = await source.OpenReadAsync(node.RelativePath, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (!(storageFailuresStop && ex is StorageUnavailableException or StorageAccessDeniedException) &&
+        catch (Exception ex) when (!(storageFailuresStop && ex is StorageUnavailableException) &&
                                    SourceSkipReason(ex) is { } reason)
         {
+            // One file refused (its ACL, an object encrypted with a key the user may not use) is skipped; refused
+            // credentials refuse the root too, and then the run stops.
+            if (storageFailuresStop && ex is StorageAccessDeniedException && await IsSourceRefusedAsync(source, cancellationToken)
+                    .ConfigureAwait(false))
+                ExceptionDispatchInfo.Throw(ex);
             return (null, reason, false);
         }
 
@@ -964,6 +971,27 @@ public sealed class BackupRunner : IBackupRunner
 
         return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
             "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed);
+    }
+
+    /// <summary>
+    /// Whether the source refuses or cannot be reached as a whole: its root answers with
+    /// <see cref="StorageAccessDeniedException"/> or <see cref="StorageUnavailableException"/>.
+    /// </summary>
+    private static async Task<bool> IsSourceRefusedAsync(IStorage source, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await source.StatAsync("", cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+        catch (StorageException ex) when (ex is StorageAccessDeniedException or StorageUnavailableException)
+        {
+            return true;
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            return false;   // whether the root is still there at all, the caller finds out
+        }
     }
 
     /// <summary>Whether the source's root is still there; false when it is gone or cannot be reached.</summary>

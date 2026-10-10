@@ -68,7 +68,9 @@ proven by the existing tests).
 hashing (xxHash64), skip logging, progress and cancellation stay per file; the manifest lists files in the same
 deterministic order as today (sorted by relative path) regardless of completion order. A failing file is logged and
 skipped as today; a storage-level failure (`StorageUnavailableException`, `StorageAccessDeniedException`) cancels the
-remaining workers and ends the run as error, with the usual cleanup.
+remaining workers and ends the run as error, with the usual cleanup. A source file refused on open
+(`StorageAccessDeniedException`: an ACL, an SSE-KMS key) counts as storage-level only when the source's root is refused
+or unreachable too (revoked credentials); otherwise the file is skipped like any other failing file.
 
 ## 5. Markers of other hosts
 
