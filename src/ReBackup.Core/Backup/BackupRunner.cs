@@ -742,14 +742,17 @@ public sealed class BackupRunner : IBackupRunner
     /// Copies the files with <see cref="ParallelS3Copies"/> workers fed by a bounded channel (spec 4). Each file is
     /// copied, hashed and checked as in the sequential loop; a file that cannot be read is skipped. What the files give is
     /// added to the manifest and the run log in the order of <see cref="BackupWork.Files"/>, whatever order the copies
-    /// finish in, also when the run stops. Anything else a worker meets (the target or the source unavailable, access to
-    /// the target denied, the source gone) stops all workers: no file is started after it, the files in flight are
-    /// canceled (their writers are disposed, which aborts them) and the first such failure is thrown. Cancellation by
-    /// the caller stops them the same way.
+    /// finish in, also when the run stops. A storage-level failure (<see cref="StorageUnavailableException"/> or
+    /// <see cref="StorageAccessDeniedException"/>, also when a source file is opened) and anything else a worker meets
+    /// (the source gone) stops all workers: no file is started after it, the files in flight are canceled (their
+    /// writers are disposed, which aborts them) and the first such failure is thrown. Cancellation by the caller stops
+    /// them the same way, and takes precedence: what the workers throw after it (an aborted upload may answer with a
+    /// storage error) does not turn the canceled run into a failed one.
     /// </summary>
     /// <remarks>
-    /// Memory: each worker has its own 1 MiB buffer, and a writer may buffer a part of its file (the S3 writer up to
-    /// 16 MiB), so at most about <see cref="ParallelS3Copies"/> × 17 MiB are held at once.
+    /// Memory: each worker has its own 1 MiB buffer, and the S3 writer keeps a part that is filling and one that is
+    /// uploading, 16 MiB each for files up to about 160 GB (parts grow for larger files). That is about
+    /// <see cref="ParallelS3Copies"/> × 33 MiB ≈ 264 MiB at worst, more while very large files are copied.
     /// </remarks>
     private static async Task CopyInParallelAsync(BackupWork work, string versionName, Func<string, bool> isInUnaddressable,
         BackupManifest manifest, RunLogEntry entry, ParallelCopyProgress progress, CancellationToken cancellationToken)
@@ -812,7 +815,7 @@ public sealed class BackupRunner : IBackupRunner
                     var add = Math.Min(count, Math.Max(0, file.Size - counted));
                     counted += add;
                     progress.AddBytes(add, file.RelativePath);
-                }, stop.Token).ConfigureAwait(false);
+                }, stop.Token, storageFailuresStop: true).ConfigureAwait(false);
 
             // Every file fails once the whole source is gone (e.g. a drive or share went away): abort, do not skip all.
             if (copied is null && !await SourceRootExistsAsync(work.Source, stop.Token).ConfigureAwait(false))
@@ -847,9 +850,10 @@ public sealed class BackupRunner : IBackupRunner
             }
         }
 
+        // The caller's cancellation first: a failure that came after it is its consequence (or does not matter any more).
+        cancellationToken.ThrowIfCancellationRequested();
         if (failure is not null)
             ExceptionDispatchInfo.Throw(failure);
-        cancellationToken.ThrowIfCancellationRequested();
     }
 
     /// <summary>
@@ -879,16 +883,22 @@ public sealed class BackupRunner : IBackupRunner
     /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
     /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed.
     /// </summary>
+    /// <param name="storageFailuresStop">
+    /// A <see cref="StorageUnavailableException"/> or <see cref="StorageAccessDeniedException"/> opening the source file
+    /// propagates instead of skipping the file (the parallel copy, spec 4). Otherwise the file is skipped and the caller
+    /// finds out whether the whole source is gone.
+    /// </param>
     private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed)> CopyFileAsync(IStorage source,
         IStorage target, string versionName, IndexNode node, byte[] buffer, Action<int> onBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool storageFailuresStop = false)
     {
         Stream input;
         try
         {
             input = await source.OpenReadAsync(node.RelativePath, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (SourceSkipReason(ex) is { } reason)
+        catch (Exception ex) when (!(storageFailuresStop && ex is StorageUnavailableException or StorageAccessDeniedException) &&
+                                   SourceSkipReason(ex) is { } reason)
         {
             return (null, reason, false);
         }
@@ -1002,12 +1012,13 @@ public sealed class BackupRunner : IBackupRunner
 
     /// <summary>
     /// The progress of a parallel copy. The workers share the counters; every report reads them under one lock, so the
-    /// reported numbers only grow, and reports come at most every <see cref="ProgressInterval"/>.
+    /// reported numbers only grow, and reports come at most every <see cref="ProgressInterval"/>. The interval is checked
+    /// before the lock, so the workers do not queue up on it between reports.
     /// </summary>
     private sealed class ParallelCopyProgress(IProgress<BackupProgress>? progress, int filesTotal, long bytesTotal)
     {
         private readonly object _gate = new();
-        private readonly Stopwatch _sinceReport = Stopwatch.StartNew();
+        private long _lastReport = Stopwatch.GetTimestamp();
         private int _filesDone;
         private long _bytesDone;
 
@@ -1029,13 +1040,13 @@ public sealed class BackupRunner : IBackupRunner
 
         private void Report(string currentFile)
         {
-            if (progress is null)
+            if (progress is null || Stopwatch.GetElapsedTime(Volatile.Read(ref _lastReport)) < ProgressInterval)
                 return;
             lock (_gate)
             {
-                if (_sinceReport.Elapsed < ProgressInterval)
-                    return;
-                _sinceReport.Restart();
+                if (Stopwatch.GetElapsedTime(_lastReport) < ProgressInterval)
+                    return;   // another worker reported meanwhile
+                Volatile.Write(ref _lastReport, Stopwatch.GetTimestamp());
                 progress.Report(new BackupProgress(BackupPhase.Copying, Volatile.Read(ref _filesDone), filesTotal,
                     Interlocked.Read(ref _bytesDone), bytesTotal, currentFile));
             }

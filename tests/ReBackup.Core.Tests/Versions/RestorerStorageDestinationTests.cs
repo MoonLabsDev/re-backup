@@ -1,6 +1,7 @@
 using System.Text;
 using FluentAssertions;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Core.Versions;
 using ReBackup.Storage;
@@ -104,5 +105,23 @@ public class RestorerStorageDestinationTests
 
         destination.Creates.Select(c => c.Options.ModifiedUtc).Should().BeEquivalentTo(new DateTime?[] { Old, Mtime });
         (await bucket.StatAsync("a.txt", CancellationToken.None))!.ModifiedUtc.Should().Be(Old);
+    }
+
+    [Fact]
+    public async Task An_archived_file_in_the_version_fails_with_its_own_reason()
+    {
+        var versions = new GatedStorage(_versions)
+        {
+            BeforeOpen = (path, _) => path == $"{Version}/a.txt"
+                ? throw new StorageIOException(path, "archived") { Archived = true }
+                : Task.CompletedTask,
+        };
+        var destination = new InMemoryStorage(StorageCapabilities.None);
+
+        var plan = await Restorer.PlanAsync(versions, Version, [""], destination, RestoreMode.Original);
+        var result = await Restorer.RunAsync(plan, ConflictPolicy.Overwrite);
+
+        result.Failures.Should().Equal(new RestoreFailure("a.txt", CoreTexts.English("core.file.archived")));
+        result.Copied.Should().Be(1);
     }
 }

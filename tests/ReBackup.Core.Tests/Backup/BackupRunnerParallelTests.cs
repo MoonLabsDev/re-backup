@@ -110,11 +110,30 @@ public class BackupRunnerParallelTests
     [Fact]
     public async Task Folder_to_folder_copies_one_file_at_a_time()
     {
-        var source = new GatedStorage(_sourceFiles);
+        // Each open waits a moment for a second one to come while it is in flight; with one copy at a time none comes.
+        var secondOpen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        GatedStorage source = null!;
+        source = new GatedStorage(_sourceFiles)
+        {
+            BeforeOpen = async (_, ct) =>
+            {
+                if (source.InFlight > 1)
+                    secondOpen.TrySetResult();
+                try
+                {
+                    await secondOpen.Task.WaitAsync(TimeSpan.FromMilliseconds(25), ct);
+                }
+                catch (TimeoutException)
+                {
+                    // No second open came: as it should be.
+                }
+            },
+        };
 
         var entry = await Run("mem", "mem", source, _targetFiles);
 
         entry.Status.Should().Be(RunStatus.Completed, entry.Reason);
+        secondOpen.Task.IsCompleted.Should().BeFalse("no file is opened while another is copied");
         source.MaxInFlight.Should().Be(1);
         Manifest().Files.Select(f => f.Path).Should().Equal(Enumerable.Range(0, FileCount).Select(Name));
     }
@@ -239,6 +258,80 @@ public class BackupRunnerParallelTests
         target.Aborted.Should().Be(8, "every upload in flight is aborted");
         target.Commits.Where(IsCopy).Should().BeEmpty();
         _targetFiles.Files.Should().BeEmpty("the unfinished version is removed, its pending marker last");
+    }
+
+    [Theory]
+    [InlineData(typeof(StorageUnavailableException))]
+    [InlineData(typeof(StorageAccessDeniedException))]
+    public async Task Storage_failure_opening_a_source_file_stops_all_workers(Type failureType)
+    {
+        // Eight downloads are starting when the bucket becomes unreachable (or refuses) for one of them.
+        var allHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hold = HoldUntil(BackupRunner.ParallelS3Copies, _ => true, allHeld);
+        var canceledWaits = 0;
+        var failure = (StorageException)Activator.CreateInstance(failureType, Name(0), null, null)!;
+        var source = new GatedStorage(_sourceFiles)
+        {
+            BeforeOpen = async (path, ct) =>
+            {
+                try
+                {
+                    await hold(path, ct);
+                    if (path == Name(0))
+                        throw failure;
+                    await new TaskCompletionSource().Task.WaitAsync(Guard, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref canceledWaits);
+                    throw;
+                }
+            },
+        };
+
+        var entry = await Run("s3", "mem", source, _targetFiles);
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().Be(failure.Message);
+        canceledWaits.Should().Be(7, "the other seven downloads are stopped");
+        source.Opens.Should().Be(8, "no file is started after the failure");
+        entry.Skipped.Should().BeEmpty("the file is not skipped: the run stops");
+        _targetFiles.Files.Should().BeEmpty("the unfinished version is removed");
+    }
+
+    [Fact]
+    public async Task A_failure_after_the_cancellation_still_ends_as_canceled()
+    {
+        // The uploads in flight answer the cancellation with a storage error (as an aborted connection can).
+        var allHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hold = HoldUntil(BackupRunner.ParallelS3Copies, IsCopy, allHeld);
+        var target = new GatedStorage(_targetFiles)
+        {
+            BeforeCommit = async (path, ct) =>
+            {
+                if (!IsCopy(path))
+                    return;
+                try
+                {
+                    await hold(path, ct);
+                    await new TaskCompletionSource().Task.WaitAsync(Guard, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw new StorageUnavailableException(path);
+                }
+            },
+        };
+        using var cancel = new CancellationTokenSource();
+
+        var run = Run("mem", "s3", _sourceFiles, target, cancellationToken: cancel.Token);
+        await allHeld.Task.WaitAsync(Guard);
+        cancel.Cancel();
+        var entry = await run.WaitAsync(Guard);
+
+        entry.Status.Should().Be(RunStatus.Canceled, entry.Reason);
+        target.Aborted.Should().Be(8);
+        _targetFiles.Files.Should().BeEmpty();
     }
 
     [Fact]
