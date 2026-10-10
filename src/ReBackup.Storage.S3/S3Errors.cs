@@ -44,7 +44,10 @@ internal static class S3Errors
         var status = ex.StatusCode;
 
         if (code == "InvalidObjectState")
-            return new StorageIOException(path, $"'{path}' is archived (Glacier or Deep Archive) and must be restored first.", ex);
+            return new StorageIOException(path, $"'{path}' is archived (Glacier or Deep Archive) and must be restored first.", ex)
+            {
+                Archived = true,
+            };
         if (code is "NoSuchKey" or "NoSuchBucket" || status == HttpStatusCode.NotFound)
             return new StorageNotFoundException(path, $"Not found: '{path}'.", ex);
         if (code is "AccessDenied" or "InvalidAccessKeyId" or "SignatureDoesNotMatch" || status == HttpStatusCode.Forbidden)

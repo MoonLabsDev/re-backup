@@ -173,26 +173,31 @@ public sealed partial class VersionsViewModel
         var versionsLocation = _versionsLocation;
         var versionDate = new LocText(() => version.DateText);
 
-        string root;
+        string root;   // the destination as the user reads it: a folder, or a location in a storage
+        StorageLocation destinationLocation;
         if (mode == RestoreMode.Original)
         {
             // The manifest's source (a folder); a version without a (readable) manifest goes back to the plan's source.
-            var source = version.Indexed is { Origin: IndexOrigin.Manifest, Source.Length: > 0 } indexed
+            // A source that is no folder (e.g. S3) is only named by the manifest (its prefix): it goes back to the plan's.
+            var planSource = _savedPlan()?.Source;
+            var source = version.Indexed is { Origin: IndexOrigin.Manifest, Source.Length: > 0 } indexed &&
+                         (planSource is null or { IsFileSystem: true } || Path.IsPathFullyQualified(indexed.Source))
                 ? StorageLocation.FileSystem(indexed.Source)
-                : _savedPlan()?.Source;
-            if (source is not { IsFileSystem: true, Path: var sourcePath } || string.IsNullOrWhiteSpace(sourcePath) ||
-                !Path.IsPathFullyQualified(sourcePath))
+                : planSource;
+            if (source is null || (source.IsFileSystem &&
+                    (string.IsNullOrWhiteSpace(source.Path) || !Path.IsPathFullyQualified(source.Path))))
             {
                 dialogs.ShowError(Loc.T("restore.title"), Loc.T("restore.originUnknown"));
                 return;
             }
-            root = sourcePath;
+            destinationLocation = source;
+            root = DisplayRoot(source);
             var warning = _isBackupActive()
                 ? Loc.T("restore.backupRunningWarning")
                 : "";
             if (!dialogs.ConfirmDefaultNo(Loc.T("restore.confirmTitle"),
                     Loc.F(whole ? "restore.confirmVersion" : "restore.confirm", ("item", item), ("date", versionDate),
-                        ("destination", Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))),
+                        ("destination", DisplayDestination(source, relative)),
                         ("warning", warning))))
                 return;
         }
@@ -207,9 +212,12 @@ public sealed partial class VersionsViewModel
                 return;
             }
             root = folder;
+            destinationLocation = StorageLocation.FileSystem(folder);
         }
 
-        if (InsideTarget(root, mode == RestoreMode.Original ? relative : Path.GetFileName(relative)) is { } target)
+        // Only folders can lie in a folder target; the plan's checks keep a storage source apart from its target.
+        if (destinationLocation.IsFileSystem &&
+            InsideTarget(root, mode == RestoreMode.Original ? relative : Path.GetFileName(relative)) is { } target)
         {
             dialogs.ShowError(Loc.T("restore.title"), Loc.F("restore.insideTarget", ("target", target)));
             return;
@@ -232,7 +240,7 @@ public sealed partial class VersionsViewModel
                 }
                 var factory = _context.Storages;
                 var versions = factory.Open(versionsLocation);
-                var destination = factory.Open(StorageLocation.FileSystem(root));
+                var destination = factory.Open(destinationLocation);
                 plan = await Task.Run(() => Restorer.PlanAsync(versions, versionPath, [relative], destination, mode, cts.Token),
                     cts.Token);
             }
@@ -341,13 +349,23 @@ public sealed partial class VersionsViewModel
         return ConflictPolicy.Skip;   // as above: a file appearing after planning is never replaced
     }
 
+    /// <summary>A restore destination as the user reads it: the folder, or the connection, bucket and prefix of an S3 location.</summary>
+    private string DisplayRoot(StorageLocation location) => _context.Describe(location);
+
+    /// <summary>Where <paramref name="relative"/> (a version path) lands below <paramref name="location"/>, for messages.</summary>
+    private string DisplayDestination(StorageLocation location, string relative) =>
+        location.IsFileSystem
+            ? Path.Combine(location.Path, relative.Replace('/', Path.DirectorySeparatorChar))
+            : DisplayRoot(location with { Path = StoragePath.Combine(location.Path, relative) });
+
     /// <summary>
     /// The plan's target when the destination (<paramref name="root"/> + <paramref name="relative"/>) would lie in it:
     /// a restore must not write into the versions. Null otherwise.
     /// </summary>
     private string? InsideTarget(string root, string relative)
     {
-        if (_savedPlan()?.Target.Path is not { Length: > 0 } target)
+        // Only a folder target can hold a folder destination (the plan's checks keep a storage source apart from its target).
+        if (_savedPlan()?.Target is not { IsFileSystem: true, Path: { Length: > 0 } target })
             return null;
         try
         {

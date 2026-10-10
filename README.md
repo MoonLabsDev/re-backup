@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.3.1" src="https://img.shields.io/badge/version-1.3.1-2BB3A3">
+  <img alt="Version 1.4.0" src="https://img.shields.io/badge/version-1.4.0-2BB3A3">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0F1216">
   <img alt=".NET 9 WPF" src="https://img.shields.io/badge/.NET%209-WPF-512BD4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-lightgrey">
@@ -61,7 +61,7 @@
 
 | Area | What you get |
 |---|---|
-| **Plans** | One source folder and one target folder per plan, any number of plans. Turn off "Run on schedule" for manual-only plans. Optionally, when the target is full, delete the versions that retention would delete anyway before giving up. |
+| **Plans** | One source and one target per plan, each a folder or an **Amazon S3** location (connection + prefix), any number of plans. Turn off "Run on schedule" for manual-only plans. Optionally, when the target is full, delete the versions that retention would delete anyway before giving up. |
 | **Schedules** | Triggers: **Daily** (time), **Weekly** (weekdays + time), **Monthly** (day 1–31, `0` = last day, `-1` = the day before it), **Interval** (every *n* hours between two times). Shows the next five runs. On startup, a plan that missed a trigger gets **one catch-up run** about a minute later. |
 | **Versions** | Every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. |
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
@@ -123,9 +123,9 @@ dotnet run --project src/ReBackup.App         # start the app
 `publish.ps1` publishes the app in Release as one file and copies it to `dist\`.
 
 ```powershell
-.\publish.ps1                       # dist\ReBackup-1.3.1-win-x64.exe, self-contained (.NET runtime included)
-.\publish.ps1 -Version 1.3.2        # override the version from Directory.Build.props
-.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.3.1-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
+.\publish.ps1                       # dist\ReBackup-1.4.0-win-x64.exe, self-contained (.NET runtime included)
+.\publish.ps1 -Version 1.4.1        # override the version from Directory.Build.props
+.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.4.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
 .\publish.ps1 -Runtime win-arm64    # for Windows on ARM
 ```
 
@@ -151,6 +151,15 @@ plan ─► scan source ─► apply ignore patterns ─► reserve "YYYY_MM_DD-
 4. **Cancel or error.** What the run wrote is removed, the marker last; whatever cannot be removed keeps the marker
    and is removed at the plan's next run. The run is logged either way.
 
+**Several computers, one target.** Every marker names the computer that wrote it. A folder whose marker another
+computer wrote (it is writing or deleting that folder) is never touched by a run, by retention or by "When the target
+is full…": the run names it in its log, and when the folder belongs to this plan the run ends as *completed with
+warnings*. The **Versions** tab lists such folders of the plan under "Folders other computers are writing or
+deleting". If that computer will not finish (it crashed or was switched off), right-click the folder and choose
+**Take over and clean up…**: after a confirmation, an unfinished copy is deleted like a leftover of this plan, and an
+interrupted deletion is finished from here. Nothing is changed if the marker changed in the meantime (that computer
+started again), and a folder of another plan or one renamed by hand is still left alone.
+
 A target can look like this:
 
 ```
@@ -167,8 +176,9 @@ F:\Backups\Projects\
 | Settings | `%AppData%\ReBackup\settings.json` |
 | Plans | `%AppData%\ReBackup\plans\<plan-id>.json` |
 | Run history | `%AppData%\ReBackup\logs\<plan-id>.jsonl` (one JSON line per run) |
+| S3 accounts and connections | `%AppData%\ReBackup\connections.json` (secrets encrypted for your Windows account) |
 | Version index | `%LocalAppData%\ReBackup\index\<plan-id>.db` (SQLite cache, rebuilt from the manifests if deleted) |
-| Backups | the plan's target folder |
+| Backups | the plan's target folder or S3 prefix |
 
 The configuration folder can be moved in **Settings** (for example to a synced folder); ReBackup then restarts and
 uses it. Plan files are plain JSON and are reloaded when they change on disk.
@@ -177,9 +187,30 @@ uses it. Plan files are plain JSON and are reloaded when they change on disk.
 
 ## Amazon S3
 
-The code base contains an Amazon S3 storage provider and dialogs to set up and test S3 accounts and connections. The
-ReBackup app does not offer S3 as a source or target yet; that comes with a later version. What follows is what such a
-connection will need.
+A plan's source and its target can each be a folder or an S3 location, in any combination: a folder to S3 (an
+offsite copy), S3 to a folder (pull a bucket down to the NAS) or S3 to S3. On the **Plan** tab, the switch
+**Folder | S3** above the source and the target chooses the kind. An S3 location is a *connection* and a *prefix* (a
+folder in the bucket, for example `backups/moonlabs`; empty means the whole bucket). "New connection…" creates a
+connection, "Test" checks it with the prefix (a source is tested without writing). **Settings → S3 accounts…** and
+**S3 connections…** manage them; a connection that a plan uses (saved or still being edited) cannot be deleted, and
+the refusal names the plans.
+
+Versions on S3 have exactly the format of versions in a folder: the version folder `YYYY_MM_DD-hh_mm <Plan>` as a
+prefix, `re-manifest.json` and the markers, so retention, the Versions tab and restore work the same, and a bucket can
+be restored without ReBackup. When the source or the target is S3, eight files are copied at a time. The original
+modification times are kept in the manifest (S3 cannot store them); a restore to a folder sets them again. An S3
+source object in an archive storage class (Glacier) is skipped and listed, like a locked file. A plan whose S3 target
+is the same as its S3 source or lies inside it (same bucket, whatever region the connections name) cannot be saved. "When the target is full…"
+is not offered for S3 targets (S3 has no free-space limit).
+
+**Costs: every version is a full copy.** As with folders, each run uploads every included file again (no
+deduplication). Storage, PUT requests and, for an S3 source, GET requests and data transfer out are billed by AWS for
+every version; choose the retention rules with that in mind.
+
+**Connections live in the configuration folder** (`connections.json` next to the plans), so they move and sync with
+it. The secrets in it only work for the Windows account that entered them: on another PC (or after a synced
+configuration folder arrives there) the accounts dialog marks the account, its plans show the connection as
+unreachable and fail until the secret is entered again in **Settings → S3 accounts…**.
 
 **Accounts and connections.** An *account* is an access key: a name, the access key ID and the secret access key. A
 *connection* is a name, a region, a bucket and the account whose key opens it. Several connections (for example one per
@@ -194,7 +225,8 @@ an error). The connection test checks that the bucket can be reached and listed,
 written and deleted, whether versioning is off, and whether the bucket has the recommended lifecycle rule. If the bucket
 is in a different region, it offers that region.
 
-**Minimum IAM permissions.** The access key needs these actions on the bucket (`s3:GetBucketVersioning` and
+**Minimum IAM permissions.** The access key needs these actions on the bucket (an S3 *source* only needs
+`s3:ListBucket` and `s3:GetObject`; `s3:GetBucketVersioning` and
 `s3:GetLifecycleConfiguration` are optional; without them the test reports versioning or the lifecycle rule as
 *cannot be checked*). `s3:AbortMultipartUpload` lets an
 interrupted upload of a large file clean up its parts; AWS checks it separately from `s3:PutObject`.
@@ -236,6 +268,9 @@ secret has to be entered again (the accounts dialog marks such an account; its c
 **Does it run without the app?**
 No. There is no Windows service. Schedules run while ReBackup runs; closing the window keeps it in the tray, and
 "Start with Windows" starts it minimized at sign-in. Missed triggers get one catch-up run at the next start.
+While "Start with Windows" is on, every start of ReBackup rewrites its entry under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` with the path of the exe that is running, so the entry follows
+an exe that was moved or replaced by a newer download.
 
 **Are open files backed up?**
 Only if they can be read. ReBackup does not use Volume Shadow Copy (VSS): a file that is locked by another program
@@ -251,8 +286,8 @@ A restore never deletes anything. Existing files are overwritten only if you cho
 the version's copy next to the existing file with the version's time in its name.
 
 **Which systems?**
-Windows 10 and 11 only (WPF). The target can be any folder Windows can reach by path: another disk, a USB drive or
-a network share.
+Windows 10 and 11 only (WPF). Source and target can be any folder Windows can reach by path (another disk, a USB
+drive or a network share) or an Amazon S3 bucket and prefix.
 
 **Can a plan have several source folders?**
 No, one source per plan. Create one plan per folder.

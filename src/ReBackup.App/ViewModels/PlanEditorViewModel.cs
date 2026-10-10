@@ -18,12 +18,23 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 {
     private readonly Func<IEnumerable<BackupPlan>> _allPlans;
     private readonly IFolderOpener _folders;
+    private readonly S3Connections _s3;
     private BackupPlan _saved;
     private bool _loading;
 
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _source = "";
     [ObservableProperty] private string _target = "";
+
+    /// <summary>The source is an S3 location (<see cref="SourceS3"/>), not the folder <see cref="Source"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SourceIsFolder))]
+    private bool _sourceIsS3;
+
+    /// <summary>The target is an S3 location (<see cref="TargetS3"/>), not the folder <see cref="Target"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TargetIsFolder), nameof(ShowFreeSpaceOption))]
+    private bool _targetIsS3;
     [ObservableProperty] private bool _enabled;
     [ObservableProperty] private bool _freeSpaceByRetention;
     [ObservableProperty] private string _ignorePatternsText = "";
@@ -38,14 +49,18 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     /// <summary>Whether the scheduler is paused; set by the main view model, shown in the note under the next runs.</summary>
     [ObservableProperty] private bool _schedulerPaused;
 
+    /// <param name="s3">The saved S3 connections: the pickers, validation and "Test".</param>
     public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
-        Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders, VersionsContext versions)
+        Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders, VersionsContext versions, S3Connections s3)
     {
         _saved = plan.Clone();
         _allPlans = allPlans;
         _folders = folders;
+        _s3 = s3;
+        SourceS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: false, () => SourceEdited(s3: true));
+        TargetS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: true, () => TargetEdited(s3: true));
         Run = new PlanRunViewModel(versions.Storages);
-        Preview = new IgnorePreviewViewModel(() => Source, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
+        Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions);
         Versions.VersionsDeleted += () => RetentionPreview.ReloadIfLoaded();
@@ -66,6 +81,40 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     /// <summary>Index and preview of this plan's source; cached for the session.</summary>
     public IgnorePreviewViewModel Preview { get; }
+
+    /// <summary>The S3 connection and prefix of the source; used while <see cref="SourceIsS3"/>.</summary>
+    public S3LocationViewModel SourceS3 { get; }
+
+    /// <summary>The S3 connection and prefix of the target; used while <see cref="TargetIsS3"/>.</summary>
+    public S3LocationViewModel TargetS3 { get; }
+
+    // The Folder segments of the switches; a segment that is unchecked leaves the kind as it is.
+    public bool SourceIsFolder
+    {
+        get => !SourceIsS3;
+        set { if (value) SourceIsS3 = false; }
+    }
+
+    public bool TargetIsFolder
+    {
+        get => !TargetIsS3;
+        set { if (value) TargetIsS3 = false; }
+    }
+
+    /// <summary>
+    /// The Folder | S3 segments of the source ("Folder" or "S3"). The segments show the kind one-way and call this:
+    /// two-way radio bindings in the one Plan view, whose DataContext switches between plans, wrote one plan's kind
+    /// into another.
+    /// </summary>
+    [RelayCommand]
+    private void ChooseSourceKind(string? kind) => SourceIsS3 = kind == "S3";
+
+    /// <summary>Likewise for the target.</summary>
+    [RelayCommand]
+    private void ChooseTargetKind(string? kind) => TargetIsS3 = kind == "S3";
+
+    /// <summary>"When the target is full, …" means nothing on S3 (no free-space information): shown for folders only.</summary>
+    public bool ShowFreeSpaceOption => !TargetIsS3;
 
     /// <summary>Queue state, progress and history of this plan.</summary>
     public PlanRunViewModel Run { get; }
@@ -112,15 +161,35 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
-    partial void OnSourceChanged(string value)
+    partial void OnSourceChanged(string value) => SourceEdited(s3: false);
+
+    partial void OnTargetChanged(string value) => TargetEdited(s3: false);
+
+    partial void OnSourceIsS3Changed(bool value)
     {
         Preview.Invalidate();
         Touch();
     }
 
-    partial void OnTargetChanged(string value)
+    partial void OnTargetIsS3Changed(bool value)
     {
         RetentionPreview.Invalidate();
+        Touch();
+    }
+
+    /// <summary>The folder (<paramref name="s3"/> false) or the S3 half of the source was edited; only the half in use changes the preview.</summary>
+    private void SourceEdited(bool s3)
+    {
+        if (s3 == SourceIsS3)
+            Preview.Invalidate();
+        Touch();
+    }
+
+    /// <summary>Likewise for the target and the retention preview.</summary>
+    private void TargetEdited(bool s3)
+    {
+        if (s3 == TargetIsS3)
+            RetentionPreview.Invalidate();
         Touch();
     }
 
@@ -153,15 +222,32 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
+    /// <summary>The source as edited.</summary>
+    private StorageLocation SourceLocation() => EditedLocation(SourceIsS3, SourceS3, Source, _saved.Source);
+
+    /// <summary>
+    /// A side as edited: the S3 location, or the folder. A location of another kind (only possible by editing the plan
+    /// file) stays as loaded unless its text was edited.
+    /// </summary>
+    private static StorageLocation EditedLocation(bool isS3, S3LocationViewModel s3, string folder, StorageLocation saved)
+    {
+        if (isS3)
+            return s3.Location;
+        return saved.IsFileSystem || IsS3(saved) || folder != saved.Path ? StorageLocation.FileSystem(folder) : saved;
+    }
+
+    /// <summary>The location a side shows: its S3 half or its folder, whichever is in use.</summary>
+    private static StorageLocation ShownLocation(bool isS3, S3LocationViewModel s3, string folder) =>
+        isS3 ? s3.Location : StorageLocation.FileSystem(folder);
+
+    private static bool IsS3(StorageLocation location) => location.Kind == PlanValidator.S3Kind;
+
     public BackupPlan ToPlan()
     {
         var plan = _saved.Clone();
         plan.Name = Name;
-        // A location of another kind (only possible by editing the plan file) stays as loaded unless its text was edited.
-        if (Source != _saved.Source.Path)
-            plan.Source = StorageLocation.FileSystem(Source);
-        if (Target != _saved.Target.Path)
-            plan.Target = StorageLocation.FileSystem(Target);
+        plan.Source = SourceLocation();
+        plan.Target = EditedLocation(TargetIsS3, TargetS3, Target, _saved.Target);
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
         plan.Ignore = CurrentIgnoreSettings();
@@ -322,7 +408,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
 
     public void Validate() =>
-        Errors = PlanValidator.Validate(ToPlan(), _allPlans()).Select(message => Loc.F(message)).ToList();
+        Errors = PlanValidator.Validate(ToPlan(), _allPlans(), _s3.BucketOf).Select(message => Loc.F(message)).ToList();
 
     /// <summary>The language changed: the texts this editor builds in code are built again.</summary>
     public void RefreshTexts()
@@ -349,6 +435,17 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         var plan = ToPlan();
         store.Save(plan);
         _saved = plan;
+        // From now on only the saved kind is kept; the other side of each switch starts empty.
+        _loading = true;
+        try
+        {
+            if (SourceIsS3) Source = ""; else SourceS3.Load(null, "");
+            if (TargetIsS3) Target = ""; else TargetS3.Load(null, "");
+        }
+        finally
+        {
+            _loading = false;
+        }
         IsDirty = false;
         IsNew = false;
         return true;
@@ -386,12 +483,18 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     private void LoadFrom(BackupPlan plan)
     {
+        var sourceBefore = ShownLocation(SourceIsS3, SourceS3, Source);
+        var targetBefore = ShownLocation(TargetIsS3, TargetS3, Target);
         _loading = true;
         try
         {
             Name = plan.Name;
-            Source = plan.Source.Path;
-            Target = plan.Target.Path;
+            SourceIsS3 = IsS3(plan.Source);
+            Source = SourceIsS3 ? "" : plan.Source.Path;
+            SourceS3.Load(SourceIsS3 ? plan.Source.ConnectionId : null, SourceIsS3 ? plan.Source.Path : "");
+            TargetIsS3 = IsS3(plan.Target);
+            Target = TargetIsS3 ? "" : plan.Target.Path;
+            TargetS3.Load(TargetIsS3 ? plan.Target.ConnectionId : null, TargetIsS3 ? plan.Target.Path : "");
             Enabled = plan.Enabled;
             FreeSpaceByRetention = plan.FreeSpaceByRetention;
             IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);
@@ -414,6 +517,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         {
             _loading = false;
         }
+        // Loading the S3 half is no edit, so a connection or prefix it changes would not invalidate the previews.
+        if (ShownLocation(SourceIsS3, SourceS3, Source) != sourceBefore)
+            Preview.Invalidate();
+        if (ShownLocation(TargetIsS3, TargetS3, Target) != targetBefore)
+            RetentionPreview.Invalidate();
         OnPropertyChanged(nameof(HasNoRetentionRules));
         RefreshNextRuns();
         RetentionPreview.RequestEvaluate();

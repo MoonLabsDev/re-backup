@@ -124,6 +124,16 @@ public class LocaleFileTests
         LabelsFor(language).Format(Message.Of(key, ("count", count))).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(AppLanguages.English, "versions.foreign.pending", "Being written by PC-2 since 30.09.2026 15:00")]
+    [InlineData(AppLanguages.English, "versions.foreign.deleting", "Being deleted by PC-2 since 30.09.2026 15:00")]
+    [InlineData(AppLanguages.German, "versions.foreign.pending", "Wird seit 30.09.2026 15:00 von PC-2 geschrieben")]
+    [InlineData(AppLanguages.German, "versions.foreign.deleting", "Wird seit 30.09.2026 15:00 von PC-2 gelöscht")]
+    public void A_folder_of_another_computer_names_the_computer_and_the_time(string language, string key, string expected)
+    {
+        LabelsFor(language).Format(Message.Of(key, ("host", "PC-2"), ("time", "30.09.2026 15:00"))).Should().Be(expected);
+    }
+
     [Fact]
     public void Texts_with_several_counts_use_the_count_labels()
     {

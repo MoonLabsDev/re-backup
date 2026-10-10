@@ -74,6 +74,12 @@
       "closeToTray": "Closing the window minimizes to the tray",
       "startWithWindows": "Start with Windows (minimized to tray)"
     },
+    "s3": {
+      "title": "S3",
+      "note": "Accounts (access keys) and connections (bucket and account) for S3 sources and targets, kept in the configuration folder.",
+      "accounts": "S3 accounts…",
+      "connections": "S3 connections…"
+    },
     "theme": {
       "title": "THEME",
       "name": "Theme",
@@ -97,6 +103,13 @@
       "unsupportedLocation": "This kind of location is not supported yet.",
       "targetInsideSource": "Target must not be inside the source.",
       "sourceInsideTarget": "Source must not be inside the target.",
+      "sourceConnectionRequired": "Choose an S3 connection for the source.",
+      "targetConnectionRequired": "Choose an S3 connection for the target.",
+      "sourceConnectionMissing": "The source's S3 connection no longer exists.",
+      "targetConnectionMissing": "The target's S3 connection no longer exists.",
+      "sourcePrefixInvalid": "The source prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+      "targetPrefixInvalid": "The target prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+      "connectionsUnreadable": "The S3 connections could not be read: {error}",
       "retentionRule": "Retention rule {index}: {problem}",
       "trigger": "Trigger {index}: {problem}"
     },
@@ -113,6 +126,8 @@
       "notEnoughSpace": "The backup needs {required} but only {free} is free on the target.",
       "targetFull": "The target ran out of space during the backup.",
       "sourceGone": "The source folder is no longer available.",
+      "sourceEmpty": "The source is empty — no version was written and retention did not run.",
+      "sourceReadDenied": "The source refused to open every file: the access key may list but not read them (S3: s3:GetObject, or kms:Decrypt for the bucket's KMS key). No version was written and retention did not run.",
       "retentionFailed": "Retention was skipped: {error}",
       "retentionRulesUnreadable": "Retention was skipped: the plan's current rules could not be read: {error}",
       "retentionPlanGone": "Retention was skipped: the plan no longer exists.",
@@ -127,6 +142,10 @@
       "leftoverForeign": "\"{name}\" was left alone: it is marked by another plan.",
       "leftoverUnreadable": "\"{name}\" was left alone: its marker cannot be read.",
       "leftoverRenamed": "\"{name}\" was left alone: it is marked by this plan but was renamed.",
+      "leftoverOtherHostPending": "\"{name}\" was left alone: it is being written by {host} since {time}.",
+      "leftoverOtherHostDeleting": "\"{name}\" was left alone: it is being deleted by {host} since {time}.",
+      "takeOverChanged": "\"{name}\" was not taken over: its marker has changed meanwhile.",
+      "takeOverUnexamined": "\"{name}\" could not be examined and was left as it is.",
       "leftoverPartialWithManifest": "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
       "indexFailed": "The version index could not be updated: {error}"
     },
@@ -140,7 +159,9 @@
       "noLongerExists": "no longer exists",
       "accessDenied": "access denied",
       "locked": "locked by another program",
+      "archived": "archived (e.g. S3 Glacier); it must be restored before it can be read",
       "cannotOpen": "cannot be opened: {error}",
+      "inTransit": "\"{name}\" is being written or deleted by another run and is not removed.",
       "notAFolder": "\"{name}\" is not a folder (or is a link) and is not removed."
     },
     "scan": {
@@ -234,6 +255,7 @@
       "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
       "saved": "Saved \"{plan}\".",
       "notSaved": "Not saved: fix the errors shown in the plan.",
+      "scheduledInvalid": "The scheduled backup of \"{plan}\" was not started: {reason}",
       "scheduledFailed": "A scheduled backup could not be queued: {error}",
       "scheduleFailed": "The schedule could not be updated: {error}",
       "canceling": "Canceling the backup of \"{plan}\"…",
@@ -366,6 +388,23 @@
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
     }
   },
+  "s3connections": {
+    "title": "S3 connections",
+    "note": "Plans use these connections as source or target. Stored in connections.json in the configuration folder; secrets only work for this Windows account.",
+    "column": { "bucket": "Bucket", "region": "Region" },
+    "empty": "No connections yet.",
+    "add": "Add…",
+    "edit": "Edit…",
+    "delete": "Delete",
+    "inUse": "\"{name}\" is used by these plans and cannot be deleted:",
+    "deleteConfirm": "Delete the S3 connection \"{name}\"?",
+    "saveFailed": "The S3 connections could not be saved: {error}",
+    "loadFailed": "The S3 connections could not be read: {error}"
+  },
+  "s3location": {
+    "describe": "{connection} · s3://{bucket}/{prefix}",
+    "unknown": "S3 connection not found · {prefix}"
+  },
   "plan": {
     "source": {
       "title": "SOURCE → TARGET",
@@ -376,6 +415,22 @@
       "enabled": "Run on schedule",
       "enabledToolTip": "When off, the plan runs only when started by hand.",
       "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+    },
+    "kind": {
+      "folder": "Folder",
+      "s3": "S3",
+      "sourceName": "Kind of source",
+      "targetName": "Kind of target"
+    },
+    "s3": {
+      "connection": "S3 connection",
+      "newConnection": "New connection…",
+      "prefix": "Prefix",
+      "prefixPlaceholder": "backups/moonlabs",
+      "prefixHint": "Empty = the whole bucket.",
+      "test": "Test",
+      "connectionMissing": "The S3 connection no longer exists.",
+      "needsSecret": "The secret of this connection's S3 account must be re-entered on this PC (Settings → S3 accounts…)."
     },
     "lastRun": {
       "title": "LAST RUN",
@@ -660,6 +715,20 @@
       "indexing": "indexing…",
       "indexed": "indexed",
       "failed": "could not be indexed"
+    },
+    "foreign": {
+      "list": "Folders other computers are writing or deleting",
+      "pending": "Being written by {host} since {time}",
+      "deleting": "Being deleted by {host} since {time}",
+      "toolTip": "Another computer works on this folder; it is left alone until you take it over",
+      "menu": "Take over and clean up…",
+      "title": "Take over and clean up",
+      "confirmPending": "\"{name}\" is being written by {host} since {time}.\n\nTake it over only if that backup no longer runs there (e.g. the computer crashed or was switched off). The unfinished folder is then deleted like a leftover of this plan.",
+      "confirmDeleting": "\"{name}\" is being deleted by {host} since {time}.\n\nTake it over only if that deletion no longer runs there (e.g. the computer crashed or was switched off). The deletion is then finished from here.",
+      "backupRunning": "A backup of this plan is queued or running. Take the folder over once it has finished.",
+      "done": "\"{name}\" was taken over and cleaned up.",
+      "problems": "\"{name}\" could not be cleaned up completely:",
+      "failed": "Taking over stopped: {error}"
     },
     "notManaged": {
       "noManifest": "Not managed: no manifest",

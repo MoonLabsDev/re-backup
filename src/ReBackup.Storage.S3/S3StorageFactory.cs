@@ -7,7 +7,7 @@ namespace ReBackup.Storage.S3;
 
 /// <summary>
 /// Opens <c>"s3"</c> locations on the saved connection they name and hands every other kind to the inner factory. One
-/// <see cref="AmazonS3Client"/> is kept per connection state (id, region, access key, secret), so storages opened again reuse its
+/// client is kept per connection state (id, region, access key, secret), so storages opened again reuse its
 /// connection pool and an edited connection gets a fresh client. Disposing the factory disposes those clients, so dispose it
 /// only after the storages it opened are no longer in use.
 /// <para>
@@ -22,19 +22,29 @@ public sealed class S3StorageFactory : IStorageFactory, IDisposable
 
     private readonly IStorageFactory _inner;
     private readonly Func<string, S3Connection?> _connections;
-    private readonly Dictionary<(string Id, string Region, string AccessKeyId, string Secret), AmazonS3Client> _clients = [];
+    private readonly Func<S3Connection, IAmazonS3> _clientFactory;
+    private readonly Dictionary<(string Id, string Region, string AccessKeyId, string Secret), IAmazonS3> _clients = [];
     private readonly object _gate = new();
     private bool _disposed;
 
     /// <param name="inner">Opens every kind except <c>"s3"</c>.</param>
     /// <param name="connections">Looks a saved connection up by id (<c>null</c> = unknown).</param>
-    public S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections)
+    /// <param name="clientFactory">
+    /// Builds the client of a connection (called once per connection state; the factory disposes the clients). By default an
+    /// <see cref="AmazonS3Client"/> for the AWS endpoint of the connection's region; tests pass one for another endpoint.
+    /// </param>
+    public S3StorageFactory(IStorageFactory inner, Func<string, S3Connection?> connections,
+        Func<S3Connection, IAmazonS3>? clientFactory = null)
     {
         ArgumentNullException.ThrowIfNull(inner);
         ArgumentNullException.ThrowIfNull(connections);
         _inner = inner;
         _connections = connections;
+        _clientFactory = clientFactory ?? CreateAwsClient;
     }
+
+    private static AmazonS3Client CreateAwsClient(S3Connection connection) =>
+        new(new BasicAWSCredentials(connection.AccessKeyId, connection.Secret), RegionEndpoint.GetBySystemName(connection.Region));
 
     /// <summary>How many clients are cached (for tests).</summary>
     internal int CachedClientCount
@@ -62,16 +72,14 @@ public sealed class S3StorageFactory : IStorageFactory, IDisposable
         return new S3Storage(connection, location.Path, ClientFor(connection));
     }
 
-    private AmazonS3Client ClientFor(S3Connection connection)
+    private IAmazonS3 ClientFor(S3Connection connection)
     {
         var key = (connection.Id, connection.Region, connection.AccessKeyId, connection.Secret!);
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (!_clients.TryGetValue(key, out var client))
-                _clients[key] = client = new AmazonS3Client(
-                    new BasicAWSCredentials(connection.AccessKeyId, connection.Secret),
-                    RegionEndpoint.GetBySystemName(connection.Region));
+                _clients[key] = client = _clientFactory(connection);
             return client;
         }
     }

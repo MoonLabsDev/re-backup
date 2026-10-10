@@ -74,6 +74,12 @@
       "closeToTray": "Schließen des Fensters minimiert in den Infobereich",
       "startWithWindows": "Mit Windows starten (im Infobereich)"
     },
+    "s3": {
+      "title": "S3",
+      "note": "Konten (Zugriffsschlüssel) und Verbindungen (Bucket und Konto) für S3-Quellen und -Ziele, gespeichert im Konfigurationsordner.",
+      "accounts": "S3-Konten…",
+      "connections": "S3-Verbindungen…"
+    },
     "theme": {
       "title": "DESIGN",
       "name": "Design",
@@ -97,6 +103,13 @@
       "unsupportedLocation": "Diese Art von Speicherort wird noch nicht unterstützt.",
       "targetInsideSource": "Das Ziel darf nicht in der Quelle liegen.",
       "sourceInsideTarget": "Die Quelle darf nicht im Ziel liegen.",
+      "sourceConnectionRequired": "Wähle eine S3-Verbindung für die Quelle.",
+      "targetConnectionRequired": "Wähle eine S3-Verbindung für das Ziel.",
+      "sourceConnectionMissing": "Die S3-Verbindung der Quelle existiert nicht mehr.",
+      "targetConnectionMissing": "Die S3-Verbindung des Ziels existiert nicht mehr.",
+      "sourcePrefixInvalid": "Das Präfix der Quelle ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
+      "targetPrefixInvalid": "Das Präfix des Ziels ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
+      "connectionsUnreadable": "Die S3-Verbindungen konnten nicht gelesen werden: {error}",
       "retentionRule": "Aufbewahrungsregel {index}: {problem}",
       "trigger": "Auslöser {index}: {problem}"
     },
@@ -113,6 +126,8 @@
       "notEnoughSpace": "Das Backup braucht {required}, auf dem Ziel sind aber nur {free} frei.",
       "targetFull": "Auf dem Ziel ist während des Backups der Platz ausgegangen.",
       "sourceGone": "Der Quellordner ist nicht mehr verfügbar.",
+      "sourceEmpty": "Die Quelle ist leer – es wurde keine Version geschrieben und die Aufbewahrung lief nicht.",
+      "sourceReadDenied": "Die Quelle hat das Öffnen jeder Datei verweigert: Der Zugriffsschlüssel darf sie wohl auflisten, aber nicht lesen (S3: s3:GetObject oder kms:Decrypt für den KMS-Schlüssel des Buckets). Es wurde keine Version geschrieben und die Aufbewahrung lief nicht.",
       "retentionFailed": "Die Aufbewahrung wurde übersprungen: {error}",
       "retentionRulesUnreadable": "Die Aufbewahrung wurde übersprungen: Die aktuellen Regeln des Plans konnten nicht gelesen werden: {error}",
       "retentionPlanGone": "Die Aufbewahrung wurde übersprungen: Den Plan gibt es nicht mehr.",
@@ -127,6 +142,10 @@
       "leftoverForeign": "„{name}“ wurde nicht angetastet: Es ist von einem anderen Plan markiert.",
       "leftoverUnreadable": "„{name}“ wurde nicht angetastet: Seine Markierung kann nicht gelesen werden.",
       "leftoverRenamed": "„{name}“ wurde nicht angetastet: Es ist von diesem Plan markiert, wurde aber umbenannt.",
+      "leftoverOtherHostPending": "„{name}“ wurde nicht angetastet: Es wird seit {time} von {host} geschrieben.",
+      "leftoverOtherHostDeleting": "„{name}“ wurde nicht angetastet: Es wird seit {time} von {host} gelöscht.",
+      "takeOverChanged": "„{name}“ wurde nicht übernommen: Seine Markierung hat sich inzwischen geändert.",
+      "takeOverUnexamined": "„{name}“ konnte nicht geprüft werden und bleibt unverändert.",
       "leftoverPartialWithManifest": "„{name}“ wurde nicht angetastet: Es sieht unfertig aus, enthält aber ein Manifest.",
       "indexFailed": "Der Versionsindex konnte nicht aktualisiert werden: {error}"
     },
@@ -140,7 +159,9 @@
       "noLongerExists": "existiert nicht mehr",
       "accessDenied": "Zugriff verweigert",
       "locked": "von einem anderen Programm gesperrt",
+      "archived": "archiviert (z. B. S3 Glacier); muss wiederhergestellt werden, bevor es gelesen werden kann",
       "cannotOpen": "kann nicht geöffnet werden: {error}",
+      "inTransit": "„{name}“ wird von einem anderen Lauf geschrieben oder gelöscht und wird nicht entfernt.",
       "notAFolder": "„{name}“ ist kein Ordner (oder eine Verknüpfung) und wird nicht entfernt."
     },
     "scan": {
@@ -234,6 +255,7 @@
       "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
       "saved": "„{plan}“ gespeichert.",
       "notSaved": "Nicht gespeichert: Die im Plan angezeigten Fehler beheben.",
+      "scheduledInvalid": "Das geplante Backup von „{plan}“ wurde nicht gestartet: {reason}",
       "scheduledFailed": "Ein geplantes Backup konnte nicht eingereiht werden: {error}",
       "scheduleFailed": "Der Zeitplan konnte nicht aktualisiert werden: {error}",
       "canceling": "Backup von „{plan}“ wird abgebrochen …",
@@ -366,6 +388,23 @@
       "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"
     }
   },
+  "s3connections": {
+    "title": "S3-Verbindungen",
+    "note": "Pläne nutzen diese Verbindungen als Quelle oder Ziel. Gespeichert in connections.json im Konfigurationsordner; Secrets funktionieren nur für dieses Windows-Konto.",
+    "column": { "bucket": "Bucket", "region": "Region" },
+    "empty": "Noch keine Verbindungen.",
+    "add": "Hinzufügen…",
+    "edit": "Bearbeiten…",
+    "delete": "Löschen",
+    "inUse": "„{name}“ wird von diesen Plänen verwendet und kann nicht gelöscht werden:",
+    "deleteConfirm": "Die S3-Verbindung „{name}“ löschen?",
+    "saveFailed": "Die S3-Verbindungen konnten nicht gespeichert werden: {error}",
+    "loadFailed": "Die S3-Verbindungen konnten nicht gelesen werden: {error}"
+  },
+  "s3location": {
+    "describe": "{connection} · s3://{bucket}/{prefix}",
+    "unknown": "S3-Verbindung nicht gefunden · {prefix}"
+  },
   "plan": {
     "source": {
       "title": "QUELLE → ZIEL",
@@ -376,6 +415,22 @@
       "enabled": "Nach Zeitplan ausführen",
       "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
       "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+    },
+    "kind": {
+      "folder": "Ordner",
+      "s3": "S3",
+      "sourceName": "Art der Quelle",
+      "targetName": "Art des Ziels"
+    },
+    "s3": {
+      "connection": "S3-Verbindung",
+      "newConnection": "Neue Verbindung…",
+      "prefix": "Präfix",
+      "prefixPlaceholder": "backups/moonlabs",
+      "prefixHint": "Leer = der ganze Bucket.",
+      "test": "Testen",
+      "connectionMissing": "Die S3-Verbindung existiert nicht mehr.",
+      "needsSecret": "Das Secret des S3-Kontos dieser Verbindung muss auf diesem PC neu eingegeben werden (Einstellungen → S3-Konten…)."
     },
     "lastRun": {
       "title": "LETZTER LAUF",
@@ -660,6 +715,20 @@
       "indexing": "wird indiziert …",
       "indexed": "indiziert",
       "failed": "konnte nicht indiziert werden"
+    },
+    "foreign": {
+      "list": "Ordner, die andere Computer schreiben oder löschen",
+      "pending": "Wird seit {time} von {host} geschrieben",
+      "deleting": "Wird seit {time} von {host} gelöscht",
+      "toolTip": "Ein anderer Computer arbeitet an diesem Ordner; er bleibt unangetastet, bis er übernommen wird",
+      "menu": "Übernehmen und aufräumen …",
+      "title": "Übernehmen und aufräumen",
+      "confirmPending": "„{name}“ wird seit {time} von {host} geschrieben.\n\nNur übernehmen, wenn dieses Backup dort nicht mehr läuft (z. B. weil der Computer abgestürzt oder ausgeschaltet ist). Der unfertige Ordner wird dann wie ein Überbleibsel dieses Plans gelöscht.",
+      "confirmDeleting": "„{name}“ wird seit {time} von {host} gelöscht.\n\nNur übernehmen, wenn dieses Löschen dort nicht mehr läuft (z. B. weil der Computer abgestürzt oder ausgeschaltet ist). Das Löschen wird dann von hier aus abgeschlossen.",
+      "backupRunning": "Ein Backup dieses Plans ist eingereiht oder läuft. Den Ordner erst übernehmen, wenn es fertig ist.",
+      "done": "„{name}“ wurde übernommen und aufgeräumt.",
+      "problems": "„{name}“ konnte nicht vollständig aufgeräumt werden:",
+      "failed": "Das Übernehmen wurde angehalten: {error}"
     },
     "notManaged": {
       "noManifest": "Nicht verwaltet: kein Manifest",

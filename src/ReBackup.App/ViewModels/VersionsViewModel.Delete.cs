@@ -134,7 +134,7 @@ public sealed partial class VersionsViewModel
         try
         {
             results = await Task.Run(() => VersionDeleter.DeleteAsync(_context.Storages.Open(plan.Target), plan.Id, plan.Name,
-                names, progress, cts.Token));
+                names, progress, cts.Token, _context.Host));
             var gone = results.Where(r => r.Outcome is not (VersionDeletionOutcome.Failed or VersionDeletionOutcome.NotManaged))
                 .Select(r => r.Name)
                 .ToList();

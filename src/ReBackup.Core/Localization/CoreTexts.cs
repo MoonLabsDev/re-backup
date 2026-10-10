@@ -29,6 +29,15 @@ public static class CoreTexts
         ["core.plan.unsupportedLocation"] = "This kind of location is not supported yet.",
         ["core.plan.targetInsideSource"] = "Target must not be inside the source.",
         ["core.plan.sourceInsideTarget"] = "Source must not be inside the target.",
+        ["core.plan.sourceConnectionRequired"] = "Choose an S3 connection for the source.",
+        ["core.plan.targetConnectionRequired"] = "Choose an S3 connection for the target.",
+        ["core.plan.sourceConnectionMissing"] = "The source's S3 connection no longer exists.",
+        ["core.plan.targetConnectionMissing"] = "The target's S3 connection no longer exists.",
+        ["core.plan.sourcePrefixInvalid"] =
+            "The source prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+        ["core.plan.targetPrefixInvalid"] =
+            "The target prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+        ["core.plan.connectionsUnreadable"] = "The S3 connections could not be read: {error}",
         ["core.plan.retentionRule"] = "Retention rule {index}: {problem}",
         ["core.plan.trigger"] = "Trigger {index}: {problem}",
 
@@ -44,6 +53,8 @@ public static class CoreTexts
         ["core.run.notEnoughSpace"] = "The backup needs {required} but only {free} is free on the target.",
         ["core.run.targetFull"] = "The target ran out of space during the backup.",
         ["core.run.sourceGone"] = "The source folder is no longer available.",
+        ["core.run.sourceEmpty"] = "The source is empty — no version was written and retention did not run.",
+        ["core.run.sourceReadDenied"] = "The source refused to open every file: the access key may list but not read them (S3: s3:GetObject, or kms:Decrypt for the bucket's KMS key). No version was written and retention did not run.",
         ["core.run.retentionFailed"] = "Retention was skipped: {error}",
         ["core.run.retentionRulesUnreadable"] = "Retention was skipped: the plan's current rules could not be read: {error}",
         ["core.run.retentionPlanGone"] = "Retention was skipped: the plan no longer exists.",
@@ -60,6 +71,10 @@ public static class CoreTexts
         ["core.run.leftoverForeign"] = "\"{name}\" was left alone: it is marked by another plan.",
         ["core.run.leftoverUnreadable"] = "\"{name}\" was left alone: its marker cannot be read.",
         ["core.run.leftoverRenamed"] = "\"{name}\" was left alone: it is marked by this plan but was renamed.",
+        ["core.run.leftoverOtherHostPending"] = "\"{name}\" was left alone: it is being written by {host} since {time}.",
+        ["core.run.leftoverOtherHostDeleting"] = "\"{name}\" was left alone: it is being deleted by {host} since {time}.",
+        ["core.run.takeOverChanged"] = "\"{name}\" was not taken over: its marker has changed meanwhile.",
+        ["core.run.takeOverUnexamined"] = "\"{name}\" could not be examined and was left as it is.",
         ["core.run.leftoverPartialWithManifest"] = "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
 
@@ -72,8 +87,10 @@ public static class CoreTexts
         ["core.file.noLongerExists"] = "no longer exists",
         ["core.file.accessDenied"] = "access denied",
         ["core.file.locked"] = "locked by another program",
+        ["core.file.archived"] = "archived (e.g. S3 Glacier); it must be restored before it can be read",
         ["core.file.cannotOpen"] = "cannot be opened: {error}",
         ["core.file.notAFolder"] = "\"{name}\" is not a folder (or is a link) and is not removed.",
+        ["core.file.inTransit"] = "\"{name}\" is being written or deleted by another run and is not removed.",
 
         ["core.scan.link"] = "Link is not followed.",
         ["core.scan.tooDeep"] = "Folder nesting too deep.",

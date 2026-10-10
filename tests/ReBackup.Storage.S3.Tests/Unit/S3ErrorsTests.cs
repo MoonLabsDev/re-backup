@@ -48,6 +48,16 @@ public class S3ErrorsTests
     }
 
     [Fact]
+    public void Archived_object_is_marked_archived()
+    {
+        var archived = S3Errors.Map(S3("InvalidObjectState", HttpStatusCode.Forbidden), "a", CancellationToken.None);
+        var other = S3Errors.Map(S3("Whatever", HttpStatusCode.BadRequest), "a", CancellationToken.None);
+
+        archived.Should().BeOfType<StorageIOException>().Which.Archived.Should().BeTrue();
+        other.Should().BeOfType<StorageIOException>().Which.Archived.Should().BeFalse();
+    }
+
+    [Fact]
     public void Http_request_exception_is_unavailable() =>
         S3Errors.Map(new HttpRequestException("dns"), "a", CancellationToken.None).Should().BeOfType<StorageUnavailableException>();
 

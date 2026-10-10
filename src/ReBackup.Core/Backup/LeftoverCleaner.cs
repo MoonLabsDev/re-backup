@@ -1,7 +1,14 @@
+using System.Globalization;
 using ReBackup.Core.Localization;
 using ReBackup.Storage;
 
 namespace ReBackup.Core.Backup;
+
+/// <summary>
+/// What a cleanup left for the run log: its <paramref name="Warnings"/> (in English) and the folders it left because
+/// another computer marked them and that concern the plan (<paramref name="ForeignMarked"/>, also among the warnings).
+/// </summary>
+public sealed record LeftoverCleanup(IReadOnlyList<string> Warnings, IReadOnlyList<ForeignMarkedFolder> ForeignMarked);
 
 /// <summary>
 /// Removes, at the start of a run, what earlier runs of the plan left behind in its target (spec 6.4): folders of runs
@@ -9,6 +16,13 @@ namespace ReBackup.Core.Backup;
 /// </summary>
 public static class LeftoverCleaner
 {
+    /// <summary>The markers a folder is looked at for, in the order the cleanup looks at them.</summary>
+    private static readonly (string Name, MarkerKind Kind)[] MarkersInOrder =
+        [(VersionMarkerNames.Deleting, MarkerKind.Deleting), (VersionMarkerNames.Pending, MarkerKind.Pending)];
+
+    /// <summary>How the run log (English) writes the time a marker of another computer was written.</summary>
+    private const string MarkerTimeFormat = "yyyy-MM-dd HH:mm 'UTC'";
+
     /// <summary>
     /// Looks at the direct children of the target's root that are folders (never links); markers are looked for only in
     /// folders named like a version:
@@ -20,23 +34,29 @@ public static class LeftoverCleaner
     /// deleted; with a manifest it is left alone with a warning, and so is one that cannot be examined (silently, as before);</item>
     /// <item>a ".deleting" folder that is provably the plan's remains (its manifest is <see cref="VersionOwnership.Owned"/>, or it
     /// is empty and named like the plan): it is deleted;</item>
+    /// <item>a marker another computer wrote (<see cref="MarkerInfo.IsOwn"/> is false for <paramref name="machineName"/>):
+    /// the folder is left alone with a warning, whatever plan it names, as that computer may still be writing or deleting
+    /// it; it is listed in <see cref="LeftoverCleanup.ForeignMarked"/> only when it concerns the plan (<see cref="ConcernsPlan"/>);</item>
     /// <item>a marker of another plan or one that cannot be read, or a marker of this plan in a folder that was renamed
     /// (named after neither <paramref name="planName"/> nor the marker's plan name): the folder is left alone with a warning;</item>
     /// <item>an empty folder without markers named like a version of the plan (a deletion whose very last step failed): it is deleted.</item>
     /// </list>
     /// A removal that fails is a warning (".partial" folders aside, as before); the next run tries again.
     /// </summary>
-    /// <returns>The warnings for the run log, in English.</returns>
+    /// <returns>The warnings for the run log, in English, and the folders other computers marked.</returns>
     /// <exception cref="StorageUnavailableException">The target cannot be reached.</exception>
     /// <exception cref="StorageException">The target's root cannot be listed.</exception>
     /// <exception cref="OperationCanceledException">Canceled; what was not removed yet stays for the next run.</exception>
     /// <param name="onFileDeleted">
     /// Called with the folder's name and 0 when its removal starts, then with the batch size after every batch of files.
     /// </param>
-    public static async Task<IReadOnlyList<string>> CleanAsync(IStorage target, string planId, string planName,
-        string? currentVersionName, CancellationToken ct, Action<string, int>? onFileDeleted = null)
+    /// <param name="machineName">This computer, as markers name it; <see cref="Environment.MachineName"/> when null.</param>
+    public static async Task<LeftoverCleanup> CleanAsync(IStorage target, string planId, string planName,
+        string? currentVersionName, CancellationToken ct, Action<string, int>? onFileDeleted = null, string? machineName = null)
     {
+        machineName ??= Environment.MachineName;
         var warnings = new List<string>();
+        var foreign = new List<ForeignMarkedFolder>();
         var folders = new List<string>();
         try
         {
@@ -49,7 +69,7 @@ public static class LeftoverCleaner
         }
         catch (StorageNotFoundException)
         {
-            return warnings;   // the target has not been created yet
+            return new LeftoverCleanup(warnings, foreign);   // the target has not been created yet
         }
 
         foreach (var folder in folders)
@@ -62,21 +82,94 @@ public static class LeftoverCleaner
             else if (name.EndsWith(VersionName.DeletingSuffix, StringComparison.OrdinalIgnoreCase))
                 await CleanLegacyDeletingAsync(target, folder, planId, planName, warnings, onFileDeleted, progress, ct).ConfigureAwait(false);
             else
-                await CleanMarkedAsync(target, folder, planId, planName, currentVersionName, warnings, onFileDeleted, progress, ct).ConfigureAwait(false);
+                await CleanMarkedAsync(target, folder, planId, planName, currentVersionName, machineName, warnings, foreign,
+                    onFileDeleted, progress, reportUnexamined: false, ct).ConfigureAwait(false);
         }
+        return new LeftoverCleanup(warnings, foreign);
+    }
+
+    /// <summary>
+    /// Takes over a folder another computer marked (a person decided that its run or deletion no longer goes on there):
+    /// the folder is cleaned up as if this computer had written the marker, by the rules of <see cref="CleanAsync"/> for a
+    /// folder named like a version, so a marker of another plan or a renamed folder is still left alone. The marker is
+    /// read again first: when it is gone or no longer the one <paramref name="folder"/> describes (that computer started
+    /// again), nothing is changed.
+    /// </summary>
+    /// <returns>The warnings, in English; empty when the folder was cleaned up.</returns>
+    /// <exception cref="StorageUnavailableException">The target cannot be reached.</exception>
+    /// <exception cref="OperationCanceledException">Canceled between batches; the marker stays, so the folder is left as before.</exception>
+    public static async Task<IReadOnlyList<string>> TakeOverAsync(IStorage target, string planId, string planName,
+        ForeignMarkedFolder folder, CancellationToken ct, Action<int>? onFileDeleted = null)
+    {
+        var warnings = new List<string>();
+        var markerName = folder.Kind == MarkerKind.Pending ? VersionMarkerNames.Pending : VersionMarkerNames.Deleting;
+        if (await ReadMarkerAsync(target, StoragePath.Combine(folder.Name, markerName), ct).ConfigureAwait(false) is not { } marker ||
+            !string.Equals(marker.Host, folder.Host, StringComparison.OrdinalIgnoreCase) ||
+            marker.StartedUtc != folder.StartedUtc)
+        {
+            warnings.Add(CoreTexts.English("core.run.takeOverChanged", ("name", folder.Name)));
+            return warnings;
+        }
+
+        await CleanMarkedAsync(target, folder.Name, planId, planName, currentVersionName: null, machineName: folder.Host,
+            warnings, foreign: [], onFileDeleted: null, progress: onFileDeleted, reportUnexamined: true, ct: ct).ConfigureAwait(false);
         return warnings;
+    }
+
+    /// <summary>
+    /// Whether a marker another computer wrote concerns the plan: it names the plan's id, or its folder is named after
+    /// the plan (<paramref name="folderPlanName"/>). Only those are listed for the plan and raise its run status.
+    /// </summary>
+    internal static bool ConcernsPlan(MarkerInfo marker, string folderPlanName, string planId, string planName) =>
+        string.Equals(marker.PlanId, planId, StringComparison.OrdinalIgnoreCase) ||
+        folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The marker in a folder named like a version (the deletion marker before the pending one, as the cleanup looks at
+    /// them) when another computer wrote it; null for any other folder or when that cannot be found out.
+    /// </summary>
+    internal static async Task<ForeignMarkedFolder?> ForeignMarkerOfAsync(IStorage target, string folder, string machineName,
+        Func<MarkerInfo, string, bool> concerns, CancellationToken ct)
+    {
+        var name = StoragePath.Name(folder);
+        if (!VersionName.TryParseAny(name, out _, out var folderPlanName))
+            return null;
+        foreach (var (markerName, kind) in MarkersInOrder)
+        {
+            var path = StoragePath.Combine(folder, markerName);
+            switch (await ExistsAsync(target, path, ct).ConfigureAwait(false))
+            {
+                case null:
+                    return null;
+                case false:
+                    continue;
+            }
+            return await ReadMarkerAsync(target, path, ct).ConfigureAwait(false) is { } marker &&
+                   !marker.IsOwn(machineName) && concerns(marker, folderPlanName)
+                ? new ForeignMarkedFolder(name, marker.Host, marker.StartedUtc, kind)
+                : null;
+        }
+        return null;
     }
 
     /// <summary>
     /// A folder named like a version: a deletion to finish, a run that never finished, or the empty folder a deletion
     /// could not remove at its very end. Markers are trusted only in a folder that still carries the name of the plan
-    /// it was written for: a folder renamed by hand is a person's, whatever marker it holds.
+    /// it was written for: a folder renamed by hand is a person's, whatever marker it holds. A marker of another
+    /// computer is never acted on: its run or deletion may still go on there.
     /// </summary>
     private static async Task CleanMarkedAsync(IStorage target, string folder, string planId, string planName,
-        string? currentVersionName, List<string> warnings, Action<string, int>? onFileDeleted, Action<int>? progress,
-        CancellationToken ct)
+        string? currentVersionName, string machineName, List<string> warnings, List<ForeignMarkedFolder> foreign,
+        Action<string, int>? onFileDeleted, Action<int>? progress, bool reportUnexamined, CancellationToken ct)
     {
         var name = StoragePath.Name(folder);
+        void Unexamined()
+        {
+            // The cleanup leaves such a folder silently for the next run; a take-over must say it did nothing.
+            if (reportUnexamined)
+                warnings.Add(CoreTexts.English("core.run.takeOverUnexamined", ("name", name)));
+        }
+
         if (!VersionName.TryParseAny(name, out _, out var folderPlanName))
             return;   // not named like a version: not ours to look into
 
@@ -84,7 +177,10 @@ public static class LeftoverCleaner
         var pending = StoragePath.Combine(folder, VersionMarkerNames.Pending);
         string markerPath;
         if (await ExistsAsync(target, deleting, ct).ConfigureAwait(false) is not { } hasDeleting)
+        {
+            Unexamined();
             return;   // cannot be examined: left alone
+        }
         if (hasDeleting)
         {
             markerPath = deleting;
@@ -94,6 +190,7 @@ public static class LeftoverCleaner
             switch (await ExistsAsync(target, pending, ct).ConfigureAwait(false))
             {
                 case null:
+                    Unexamined();
                     return;   // cannot be examined: left alone
                 case false when string.Equals(name, currentVersionName, StringComparison.OrdinalIgnoreCase):
                     return;   // the folder the current run reserved, its marker maybe not visible yet: never remains
@@ -109,6 +206,16 @@ public static class LeftoverCleaner
         if (await ReadMarkerAsync(target, markerPath, ct).ConfigureAwait(false) is not { } marker)
         {
             warnings.Add(CoreTexts.English("core.run.leftoverUnreadable", ("name", name)));
+            return;
+        }
+        if (!marker.IsOwn(machineName))
+        {
+            warnings.Add(CoreTexts.English(hasDeleting ? "core.run.leftoverOtherHostDeleting" : "core.run.leftoverOtherHostPending",
+                ("name", name), ("host", marker.Host),
+                ("time", FormatMarkerTime(marker.StartedUtc))));
+            if (ConcernsPlan(marker, folderPlanName, planId, planName))
+                foreign.Add(new ForeignMarkedFolder(name, marker.Host, marker.StartedUtc,
+                    hasDeleting ? MarkerKind.Deleting : MarkerKind.Pending));
             return;
         }
         if (!string.Equals(marker.PlanId, planId, StringComparison.OrdinalIgnoreCase))
@@ -258,6 +365,11 @@ public static class LeftoverCleaner
             return null;
         }
     }
+
+    /// <summary>The time a marker was written, for the run log; a time without a kind is taken as UTC, as markers write it.</summary>
+    private static string FormatMarkerTime(DateTime startedUtc) =>
+        (startedUtc.Kind == DateTimeKind.Local ? startedUtc.ToUniversalTime() : startedUtc)
+        .ToString(MarkerTimeFormat, CultureInfo.InvariantCulture);
 
     /// <summary>The marker; null when it cannot be read, for whatever reason short of an unreachable target.</summary>
     private static async Task<MarkerInfo?> ReadMarkerAsync(IStorage target, string path, CancellationToken ct)

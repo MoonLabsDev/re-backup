@@ -116,6 +116,48 @@ public static class VersionCatalog
     }
 
     /// <summary>
+    /// The folders another computer marked as being written or deleted (spec 5) that concern the plan: the marker
+    /// carries the plan's id or the folder is named like the plan. <see cref="ListAsync"/> leaves them out as folders in
+    /// transit; the Versions tab lists them, to be taken over by hand (<see cref="LeftoverCleaner.TakeOverAsync"/>).
+    /// Ordered by name; links and names that are no plain folder names are left out.
+    /// </summary>
+    /// <param name="machineName">This computer, as markers name it; <see cref="Environment.MachineName"/> when null.</param>
+    /// <returns>An empty list when the target's root does not exist (yet).</returns>
+    /// <exception cref="StorageUnavailableException">The target cannot be reached.</exception>
+    /// <exception cref="StorageException">The target cannot be listed.</exception>
+    public static async Task<IReadOnlyList<ForeignMarkedFolder>> ListForeignMarkedAsync(IStorage target, string planId,
+        string planName, string? machineName = null, CancellationToken ct = default)
+    {
+        machineName ??= Environment.MachineName;
+        var folders = new List<string>();
+        try
+        {
+            await foreach (var entry in target.ListAsync("", recursive: false, ct).ConfigureAwait(false))
+            {
+                if (entry.IsDirectory && !entry.IsLink && VersionName.IsPlainFolderName(StoragePath.Name(entry.Path)) &&
+                    !VersionName.IsTransient(StoragePath.Name(entry.Path)))
+                    folders.Add(entry.Path);
+            }
+        }
+        catch (StorageNotFoundException)
+        {
+            return [];
+        }
+
+        var foreign = new List<ForeignMarkedFolder>();
+        foreach (var folder in folders)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await LeftoverCleaner.ForeignMarkerOfAsync(target, folder, machineName,
+                    (marker, folderPlanName) => LeftoverCleaner.ConcernsPlan(marker, folderPlanName, planId, planName),
+                    ct).ConfigureAwait(false) is { } marked)
+                foreign.Add(marked);
+        }
+        foreign.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        return foreign;
+    }
+
+    /// <summary>
     /// Whether a folder is a version of the plan: its manifest carries the plan's id and the folder is named after the
     /// plan name in that manifest (a ".partial" or ".deleting" suffix aside). A missing manifest (or folder) is
     /// <see cref="VersionOwnership.NoManifest"/>; a manifest that cannot be read, for whatever reason, is
@@ -155,7 +197,8 @@ public static class VersionCatalog
 
     /// <summary>
     /// True while the folder carries the marker of a run that is writing it or of a deletion in progress. A marker that
-    /// cannot be looked at counts as absent: the probe has already told what the folder is.
+    /// cannot be looked at counts as present (fail closed): a folder that may be in transit is never listed as a version,
+    /// so retention never deletes or counts it.
     /// </summary>
     /// <exception cref="StorageUnavailableException">The target cannot be reached.</exception>
     private static async Task<bool> IsInTransitAsync(IStorage target, string versionPath, CancellationToken ct) =>
@@ -168,9 +211,13 @@ public static class VersionCatalog
         {
             return await target.StatAsync(markerPath, ct).ConfigureAwait(false) is { IsDirectory: false };
         }
-        catch (StorageException ex) when (ex is not StorageUnavailableException)
+        catch (StorageNotFoundException)
         {
             return false;
+        }
+        catch (StorageException ex) when (ex is not StorageUnavailableException)
+        {
+            return true;
         }
     }
 

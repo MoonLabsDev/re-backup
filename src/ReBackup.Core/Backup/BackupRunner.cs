@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO.Hashing;
+using System.Runtime.ExceptionServices;
+using System.Threading.Channels;
 using System.Text.Json;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
@@ -47,7 +49,11 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>The target must have room for the included bytes times this factor.</summary>
     public const double FreeSpaceMargin = 1.05;
 
+    /// <summary>How many files are copied at the same time when the source or the target is S3 (spec 4).</summary>
+    public const int ParallelS3Copies = 8;
+
     private const int BufferSize = 1024 * 1024;
+    private const string S3Kind = "s3";
     private const int MarkerDeleteAttempts = 5;
     private static readonly string NoLongerExists = CoreTexts.English("core.file.noLongerExists");
     private static readonly TimeSpan MarkerDeleteRetryDelay = TimeSpan.FromMilliseconds(200);
@@ -74,7 +80,10 @@ public sealed class BackupRunner : IBackupRunner
     /// It is called on the run's path, so it must return quickly (the app hands the work to a
     /// <see cref="VersionIndexWorker"/>).
     /// </param>
-    /// <param name="host">The computer the markers a run writes name; <see cref="Environment.MachineName"/> when null.</param>
+    /// <param name="host">
+    /// The computer the markers a run writes name, and whose markers the leftover cleanup may act on (spec 5);
+    /// <see cref="Environment.MachineName"/> when null.
+    /// </param>
     public BackupRunner(IStorageFactory? storages = null, TimeProvider? timeProvider = null,
         Func<string, IReadOnlyList<RetentionRule>?>? currentRules = null, IVersionIndexSink? indexSink = null,
         string? host = null)
@@ -121,7 +130,10 @@ public sealed class BackupRunner : IBackupRunner
                 cancellationToken);
 
             entry.Version = versionName;
-            entry.Status = entry.SkippedCount > 0 ? RunStatus.CompletedWithWarnings : RunStatus.Completed;
+            // A folder another computer is writing or deleting in the target was left alone: worth a look (spec 5).
+            entry.Status = entry.SkippedCount > 0 || prepared.MetForeignMarkers
+                ? RunStatus.CompletedWithWarnings
+                : RunStatus.Completed;
             completed = true;
         }
         catch (OperationCanceledException)
@@ -179,16 +191,17 @@ public sealed class BackupRunner : IBackupRunner
     /// to make room.
     /// </summary>
     /// <remarks>
-    /// The checks that need paths on a file system (the source exists, source and target do not overlap) apply to
-    /// <c>"fs"</c> locations only; for other kinds a missing source shows when it is indexed.
+    /// The checks that need paths on a file system (a path is given, the source exists, source and target do not
+    /// overlap) apply to <c>"fs"</c> locations only; for other kinds a missing source shows when it is indexed.
     /// </remarks>
     private async Task<BackupWork> PrepareAsync(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
         var plan = request.Plan;
-        if (string.IsNullOrWhiteSpace(plan.Source.Path) || (plan.Source.IsFileSystem && !Directory.Exists(plan.Source.Path)))
+        // On other kinds an empty path is the storage's root (e.g. a whole bucket), not a missing one.
+        if (plan.Source.IsFileSystem && (string.IsNullOrWhiteSpace(plan.Source.Path) || !Directory.Exists(plan.Source.Path)))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceMissing", ("source", plan.Source.Path)));
-        if (string.IsNullOrWhiteSpace(plan.Target.Path))
+        if (plan.Target.IsFileSystem && string.IsNullOrWhiteSpace(plan.Target.Path))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.noTarget"));
         if (string.IsNullOrWhiteSpace(plan.Name) || plan.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.nameNotFolder", ("name", plan.Name)));
@@ -210,7 +223,7 @@ public sealed class BackupRunner : IBackupRunner
         var source = _storages.Open(plan.Source);
         var target = _storages.Open(plan.Target);
         await target.EnsureDirectoryAsync("", cancellationToken).ConfigureAwait(false);
-        await DeleteLeftoversAsync(target, plan, entry, progress, cancellationToken).ConfigureAwait(false);
+        var metForeignMarkers = await DeleteLeftoversAsync(target, plan, entry, progress, cancellationToken).ConfigureAwait(false);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
         SourceIndex index;
@@ -222,6 +235,12 @@ public sealed class BackupRunner : IBackupRunner
         {
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceMissing", ("source", plan.Source.Path)));
         }
+        // On a storage that is no folder an empty root exists anyway (a bucket with a mistyped or emptied prefix, a
+        // connection that points elsewhere): an empty version would let retention delete the real ones, so nothing is
+        // written. An empty source folder is still backed up: it is there, and empty is what the user chose. A root that
+        // could not be listed is reported as unreadable below, not as empty.
+        if (!plan.Source.IsFileSystem && index.RootNode.Error is null && index.RootNode.Children.Count == 0)
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceEmpty"));
         var matcher = IgnoreMatcher.ForPlan(plan.Ignore, request.GlobalIgnoreDefaults, index.IgnoreFiles);
         var root = IndexEvaluator.Evaluate(index, matcher, cancellationToken);
         if (root.Node.Error is { } rootError)
@@ -229,14 +248,18 @@ public sealed class BackupRunner : IBackupRunner
 
         // index.Root is only a display name; the manifest records where the source is.
         var work = new BackupWork(source, target,
-            plan.Source.IsFileSystem ? PathUtil.Normalize(plan.Source.Path) : plan.Source.Path);
+            plan.Source.IsFileSystem ? PathUtil.Normalize(plan.Source.Path) : plan.Source.Path)
+        {
+            MetForeignMarkers = metForeignMarkers,
+        };
         foreach (var path in index.UnreadableIgnoreFiles)
             work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.ignoreFileUnreadable")));
         Collect(root, work);
 
-        // A storage that cannot tell its free space (a network share, most remote storages) skips the preflight; a
+        // A storage that cannot tell its free space (a network share, most remote storages, S3) skips the preflight; a
         // full target is still caught while copying.
-        if (await target.GetFreeSpaceAsync(cancellationToken).ConfigureAwait(false) is not { } free)
+        if (!target.Capabilities.HasFlag(StorageCapabilities.FreeSpace) ||
+            await target.GetFreeSpaceAsync(cancellationToken).ConfigureAwait(false) is not { } free)
             return work;
         var required = (long)Math.Ceiling(work.TotalBytes * FreeSpaceMargin);
         if (required > free && plan.FreeSpaceByRetention)
@@ -332,13 +355,13 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>
     /// Removes what earlier runs of this plan left behind (<see cref="LeftoverCleaner"/>): folders of runs that never
     /// finished, interrupted deletions, and the ".partial" / ".deleting" folders of older versions. Its warnings go into
-    /// the run log.
+    /// the run log. Folders another computer marked are left alone; true when any of them concern this plan.
     /// </summary>
     /// <remarks>
     /// On a network target this can take long (a run that was killed leaves a whole copy), so the files removed are
     /// reported, and cancellation stops between batches of files: the rest stays for the next run.
     /// </remarks>
-    private static async Task DeleteLeftoversAsync(IStorage target, BackupPlan plan, RunLogEntry entry,
+    private async Task<bool> DeleteLeftoversAsync(IStorage target, BackupPlan plan, RunLogEntry entry,
         IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         var removed = 0;
@@ -365,11 +388,12 @@ public sealed class BackupRunner : IBackupRunner
         }
 
         // Nothing runs yet whose folder must be spared: the name is reserved after the cleanup, never before it.
-        var warnings = await LeftoverCleaner.CleanAsync(target, plan.Id, plan.Name, currentVersionName: null,
-            cancellationToken, OnFileDeleted).ConfigureAwait(false);
-        entry.Warnings.AddRange(warnings);
+        var cleanup = await LeftoverCleaner.CleanAsync(target, plan.Id, plan.Name, currentVersionName: null,
+            cancellationToken, OnFileDeleted, _host).ConfigureAwait(false);
+        entry.Warnings.AddRange(cleanup.Warnings);
         if (started)
             Report();
+        return cleanup.ForeignMarked.Count > 0;
     }
 
     /// <summary>
@@ -647,7 +671,16 @@ public sealed class BackupRunner : IBackupRunner
         }
 
         Report(BackupPhase.Copying, "", force: true);
-        foreach (var file in work.Files)
+        var deniedSkips = 0;   // files skipped because the source refused to open them
+        if (CopiesInParallel(plan))
+        {
+            var parallelProgress = new ParallelCopyProgress(progress, work.Files.Count, work.TotalBytes);
+            deniedSkips = await CopyInParallelAsync(work, versionName, IsInUnaddressable, manifest, entry, parallelProgress,
+                cancellationToken).ConfigureAwait(false);
+            filesDone = work.Files.Count;
+            bytesDone = parallelProgress.BytesDone;
+        }
+        else foreach (var file in work.Files)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var bytesBefore = bytesDone;
@@ -659,7 +692,7 @@ public sealed class BackupRunner : IBackupRunner
                 continue;
             }
 
-            var (copied, skipReason, changed) = await CopyFileAsync(work.Source, target, versionName, file, buffer, count =>
+            var (copied, skipReason, changed, denied) = await CopyFileAsync(work.Source, target, versionName, file, buffer, count =>
             {
                 bytesDone += count;
                 Report(BackupPhase.Copying, file.RelativePath, force: false);
@@ -670,6 +703,8 @@ public sealed class BackupRunner : IBackupRunner
                 // Every file fails once the whole source is gone (e.g. a drive or share went away): abort, do not skip all.
                 if (!await SourceRootExistsAsync(work.Source, cancellationToken).ConfigureAwait(false))
                     throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
+                if (denied)
+                    deniedSkips++;
                 entry.AddSkipped(new SkippedEntry(file.RelativePath, skipReason!));
             }
             else
@@ -689,6 +724,11 @@ public sealed class BackupRunner : IBackupRunner
             Report(BackupPhase.Copying, file.RelativePath, force: false);
         }
 
+        // The source answers but refused every file it was asked for (e.g. S3 ListBucket without GetObject, or objects
+        // encrypted with a KMS key the user may not use): an empty version would let retention delete the real ones (spec 4).
+        if (manifest.Files.Count == 0 && deniedSkips > 0)
+            throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceReadDenied"));
+
         // The last report comes before the commit: a throwing progress callback must not undo a finished backup.
         Report(BackupPhase.Finishing, "", force: true);
         manifest.FileCount = manifest.Files.Count;
@@ -705,6 +745,135 @@ public sealed class BackupRunner : IBackupRunner
         // No cancellation from here on: the backup is complete, removing the marker only makes it visible.
         await RemovePendingMarkerAsync(target, versionName).ConfigureAwait(false);
         return manifest;
+    }
+
+    /// <summary>Whether the files are copied by <see cref="ParallelS3Copies"/> workers: when the source or the target is S3.</summary>
+    private static bool CopiesInParallel(BackupPlan plan) =>
+        string.Equals(plan.Source.Kind, S3Kind, StringComparison.Ordinal) ||
+        string.Equals(plan.Target.Kind, S3Kind, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Copies the files with <see cref="ParallelS3Copies"/> workers fed by a bounded channel (spec 4). Each file is
+    /// copied, hashed and checked as in the sequential loop; a file that cannot be read is skipped. What the files give is
+    /// added to the manifest and the run log in the order of <see cref="BackupWork.Files"/>, whatever order the copies
+    /// finish in, also when the run stops. A storage-level failure (<see cref="StorageUnavailableException"/> or
+    /// <see cref="StorageAccessDeniedException"/>; opening a source file, a refusal counts only when the source's root is
+    /// refused too, see <see cref="CopyFileAsync"/>) and anything else a worker meets
+    /// (the source gone) stops all workers: no file is started after it, the files in flight are canceled (their
+    /// writers are disposed, which aborts them) and the first such failure is thrown. Cancellation by the caller stops
+    /// them the same way, and takes precedence: what the workers throw after it (an aborted upload may answer with a
+    /// storage error) does not turn the canceled run into a failed one.
+    /// </summary>
+    /// <remarks>
+    /// Memory: each worker has its own 1 MiB buffer, and the S3 writer keeps a part that is filling and one that is
+    /// uploading, 16 MiB each for files up to about 160 GB (parts grow for larger files). That is about
+    /// <see cref="ParallelS3Copies"/> × 33 MiB ≈ 264 MiB at worst, more while very large files are copied.
+    /// </remarks>
+    /// <returns>How many files were skipped because the source refused to open them.</returns>
+    private static async Task<int> CopyInParallelAsync(BackupWork work, string versionName, Func<string, bool> isInUnaddressable,
+        BackupManifest manifest, RunLogEntry entry, ParallelCopyProgress progress, CancellationToken cancellationToken)
+    {
+        var outcomes = new FileOutcome?[work.Files.Count];
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var queue = Channel.CreateBounded<int>(new BoundedChannelOptions(ParallelS3Copies)
+        {
+            SingleWriter = true,
+            FullMode = BoundedChannelFullMode.Wait,
+        });
+        Exception? failure = null;
+        var deniedSkips = 0;
+
+        async Task ProduceAsync()
+        {
+            try
+            {
+                for (var index = 0; index < work.Files.Count; index++)
+                    await queue.Writer.WriteAsync(index, stop.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+            {
+                // The workers stop too; what is left in the queue is never copied.
+            }
+            queue.Writer.TryComplete();
+        }
+
+        async Task WorkAsync()
+        {
+            var buffer = new byte[BufferSize];
+            try
+            {
+                await foreach (var index in queue.Reader.ReadAllAsync(stop.Token).ConfigureAwait(false))
+                    outcomes[index] = await CopyOneAsync(work.Files[index], buffer).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // A cancellation that follows the stop is its echo; anything else is a failure of its own.
+                if (ex is not OperationCanceledException || !stop.IsCancellationRequested)
+                    Interlocked.CompareExchange(ref failure, ex, null);
+                await stop.CancelAsync().ConfigureAwait(false);
+            }
+        }
+
+        async Task<FileOutcome> CopyOneAsync(IndexNode file, byte[] buffer)
+        {
+            stop.Token.ThrowIfCancellationRequested();   // nothing new starts once the run stops
+            if (isInUnaddressable(file.RelativePath))
+            {
+                // Left out with its folder, which is reported.
+                progress.FileDone(file.Size, file.RelativePath);
+                return new FileOutcome(null, null, false, false);
+            }
+
+            long counted = 0;
+            var (copied, skipReason, changed, denied) = await CopyFileAsync(work.Source, work.Target, versionName, file, buffer,
+                count =>
+                {
+                    // At most the indexed size, so that the total never runs ahead of it and never goes back.
+                    var add = Math.Min(count, Math.Max(0, file.Size - counted));
+                    counted += add;
+                    progress.AddBytes(add, file.RelativePath);
+                }, stop.Token, storageFailuresStop: true).ConfigureAwait(false);
+
+            // Every file fails once the whole source is gone (e.g. a drive or share went away): abort, do not skip all.
+            if (copied is null && !await SourceRootExistsAsync(work.Source, stop.Token).ConfigureAwait(false))
+                throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
+            progress.FileDone(file.Size - counted, file.RelativePath);
+            return new FileOutcome(copied, skipReason, changed, denied);
+        }
+
+        try
+        {
+            var workers = Enumerable.Range(0, ParallelS3Copies).Select(_ => Task.Run(WorkAsync, CancellationToken.None)).ToList();
+            await Task.WhenAll([ProduceAsync(), .. workers]).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Only the run's thread touches the manifest and the run log, after every worker has stopped.
+            for (var index = 0; index < outcomes.Length; index++)
+            {
+                if (outcomes[index] is not { } done)
+                    continue;
+                if (done.Copied is null)
+                {
+                    if (done.Denied)
+                        deniedSkips++;
+                    if (done.SkipReason is not null)
+                        entry.AddSkipped(new SkippedEntry(work.Files[index].RelativePath, done.SkipReason));
+                    continue;
+                }
+                if (done.Changed)
+                    entry.AddSkipped(new SkippedEntry(done.Copied.Path, CoreTexts.English("core.skip.changed")));
+                manifest.Files.Add(done.Copied);
+                entry.FilesCopied++;
+                entry.BytesCopied += done.Copied.Size;
+            }
+        }
+
+        // The caller's cancellation first: a failure that came after it is its consequence (or does not matter any more).
+        cancellationToken.ThrowIfCancellationRequested();
+        if (failure is not null)
+            ExceptionDispatchInfo.Throw(failure);
+        return deniedSkips;
     }
 
     /// <summary>
@@ -734,18 +903,30 @@ public sealed class BackupRunner : IBackupRunner
     /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
     /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed.
     /// </summary>
-    private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed)> CopyFileAsync(IStorage source,
+    /// <param name="storageFailuresStop">
+    /// A <see cref="StorageUnavailableException"/> opening the source file propagates instead of skipping the file (the
+    /// parallel copy, spec 4); so does a <see cref="StorageAccessDeniedException"/> when the source's root is refused or
+    /// unreachable too (revoked credentials), while one file refused on its own is skipped. Otherwise the file is skipped
+    /// and the caller finds out whether the whole source is gone.
+    /// </param>
+    private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed, bool Denied)> CopyFileAsync(IStorage source,
         IStorage target, string versionName, IndexNode node, byte[] buffer, Action<int> onBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool storageFailuresStop = false)
     {
         Stream input;
         try
         {
             input = await source.OpenReadAsync(node.RelativePath, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (SourceSkipReason(ex) is { } reason)
+        catch (Exception ex) when (!(storageFailuresStop && ex is StorageUnavailableException) &&
+                                   SourceSkipReason(ex) is { } reason)
         {
-            return (null, reason, false);
+            // One file refused (its ACL, an object encrypted with a key the user may not use) is skipped; refused
+            // credentials refuse the root too, and then the run stops.
+            if (storageFailuresStop && ex is StorageAccessDeniedException && await IsSourceRefusedAsync(source, cancellationToken)
+                    .ConfigureAwait(false))
+                ExceptionDispatchInfo.Throw(ex);
+            return (null, reason, false, ex is StorageAccessDeniedException);
         }
 
         var hash = new XxHash64();
@@ -762,7 +943,7 @@ public sealed class BackupRunner : IBackupRunner
             catch (ArgumentException ex)
             {
                 // A name the target cannot hold, e.g. one ending in a blank or a dot that WSL created.
-                return (null, CoreTexts.English("core.file.cannotOpen", ("error", ex.Message)), false);
+                return (null, CoreTexts.English("core.file.cannotOpen", ("error", ex.Message)), false, false);
             }
             await using (writer.ConfigureAwait(false))
             {
@@ -776,7 +957,7 @@ public sealed class BackupRunner : IBackupRunner
                     }
                     catch (StorageLockedException)
                     {
-                        return (null, CoreTexts.English("core.file.locked"), false);   // the uncommitted copy is discarded
+                        return (null, CoreTexts.English("core.file.locked"), false, false);   // the uncommitted copy is discarded
                     }
 
                     if (read == 0)
@@ -803,7 +984,28 @@ public sealed class BackupRunner : IBackupRunner
         }
 
         return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
-            "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed);
+            "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false);
+    }
+
+    /// <summary>
+    /// Whether the source refuses or cannot be reached as a whole: its root answers with
+    /// <see cref="StorageAccessDeniedException"/> or <see cref="StorageUnavailableException"/>.
+    /// </summary>
+    private static async Task<bool> IsSourceRefusedAsync(IStorage source, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await source.StatAsync("", cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+        catch (StorageException ex) when (ex is StorageAccessDeniedException or StorageUnavailableException)
+        {
+            return true;
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            return false;   // whether the root is still there at all, the caller finds out
+        }
     }
 
     /// <summary>Whether the source's root is still there; false when it is gone or cannot be reached.</summary>
@@ -825,6 +1027,8 @@ public sealed class BackupRunner : IBackupRunner
         StorageNotFoundException => NoLongerExists,
         StorageAccessDeniedException => CoreTexts.English("core.file.accessDenied"),
         StorageLockedException => CoreTexts.English("core.file.locked"),
+        // An archived object (S3 Glacier, Deep Archive) cannot be read before it is restored: skipped like a locked file.
+        StorageIOException { Archived: true } => CoreTexts.English("core.file.archived"),
         // Opening reads the source only, so any other failure here is the source file's own: e.g. a WSL symlink
         // (Windows cannot open it, error 1920). A source that is gone altogether is caught by the caller.
         StorageException storage => CoreTexts.English("core.file.cannotOpen",
@@ -845,6 +1049,55 @@ public sealed class BackupRunner : IBackupRunner
         public List<IndexNode> Files { get; } = [];
         public List<SkippedEntry> Skipped { get; } = [];
         public long TotalBytes { get; set; }
+
+        /// <summary>The leftover cleanup left folders that another computer marked.</summary>
+        public bool MetForeignMarkers { get; init; }
+    }
+
+    /// <summary>What copying one file gave: the copy, or the reason it was skipped (none for a file left out with its folder).</summary>
+    private readonly record struct FileOutcome(ManifestFile? Copied, string? SkipReason, bool Changed, bool Denied);
+
+    /// <summary>
+    /// The progress of a parallel copy. The workers share the counters; every report reads them under one lock, so the
+    /// reported numbers only grow, and reports come at most every <see cref="ProgressInterval"/>. The interval is checked
+    /// before the lock, so the workers do not queue up on it between reports.
+    /// </summary>
+    private sealed class ParallelCopyProgress(IProgress<BackupProgress>? progress, int filesTotal, long bytesTotal)
+    {
+        private readonly object _gate = new();
+        private long _lastReport = Stopwatch.GetTimestamp();
+        private int _filesDone;
+        private long _bytesDone;
+
+        public long BytesDone => Interlocked.Read(ref _bytesDone);
+
+        public void AddBytes(long count, string currentFile)
+        {
+            Interlocked.Add(ref _bytesDone, count);
+            Report(currentFile);
+        }
+
+        /// <summary>A file is done (copied, skipped or left out); <paramref name="remainingBytes"/> brings its share to its indexed size.</summary>
+        public void FileDone(long remainingBytes, string currentFile)
+        {
+            Interlocked.Add(ref _bytesDone, remainingBytes);
+            Interlocked.Increment(ref _filesDone);
+            Report(currentFile);
+        }
+
+        private void Report(string currentFile)
+        {
+            if (progress is null || Stopwatch.GetElapsedTime(Volatile.Read(ref _lastReport)) < ProgressInterval)
+                return;
+            lock (_gate)
+            {
+                if (Stopwatch.GetElapsedTime(_lastReport) < ProgressInterval)
+                    return;   // another worker reported meanwhile
+                Volatile.Write(ref _lastReport, Stopwatch.GetTimestamp());
+                progress.Report(new BackupProgress(BackupPhase.Copying, Volatile.Read(ref _filesDone), filesTotal,
+                    Interlocked.Read(ref _bytesDone), bytesTotal, currentFile));
+            }
+        }
     }
 
     private sealed class BackupAbortException(RunStatus status, string message) : Exception(message)

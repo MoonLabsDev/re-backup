@@ -86,6 +86,11 @@
         <ContextMenu x:Key="Menu.Version">
             <MenuItem Header="{l:Loc versions.delete.menu}" Command="{Binding Versions.DeleteVersionsCommand}" />
         </ContextMenu>
+
+        <!-- The menu of a folder another computer is writing or deleting: acts on the selected one. -->
+        <ContextMenu x:Key="Menu.Foreign">
+            <MenuItem Header="{l:Loc versions.foreign.menu}" Command="{Binding Versions.TakeOverCommand}" />
+        </ContextMenu>
     </UserControl.Resources>
 
     <Grid Margin="24,20">
@@ -129,6 +134,30 @@
                         </StackPanel>
                     </DockPanel>
                 </StackPanel>
+
+                <!-- Folders other computers are writing or deleting: left alone, taken over only by hand (context menu). -->
+                <ListBox DockPanel.Dock="Top" Margin="0,0,0,6" MaxHeight="160"
+                         ItemsSource="{Binding Versions.ForeignRows}" SelectedItem="{Binding Versions.SelectedForeign}"
+                         SelectionMode="Single" ContextMenu="{StaticResource Menu.Foreign}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="{l:Loc versions.foreign.list}"
+                         Visibility="{Binding Versions.HasForeignRows, Converter={StaticResource BoolToVisibility}}">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="ToolTip" Value="{l:Loc versions.foreign.toolTip}" />
+                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnForeignRightButtonDown" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="10,6" Opacity="0.8">
+                                <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
+                                <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="{DynamicResource Brush.Warning}"
+                                           TextWrapping="Wrap" Text="{Binding Text}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
                 <Grid>
                     <!-- Several versions can be marked (Ctrl, Shift) to delete them; the tree shows the first. -->

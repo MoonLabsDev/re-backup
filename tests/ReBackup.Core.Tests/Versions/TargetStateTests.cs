@@ -116,4 +116,18 @@ public class TargetStateTests : IDisposable
         state.Should().Be(TargetState.Present);
         storage.Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task An_empty_path_on_a_storage_that_is_no_folder_is_its_whole_root()
+    {
+        // A whole bucket: the empty prefix is a valid root, not an unset location.
+        var bucket = new InMemoryStorage();
+        var storages = new TestStorageFactory(_ => bucket);
+
+        var (state, storage) = await TargetStates.OpenAndProbeAsync(storages, new StorageLocation("s3", "", "conn-1"),
+            CancellationToken.None);
+
+        state.Should().Be(TargetState.Present);
+        storage.Should().BeSameAs(bucket);
+    }
 }

@@ -12,6 +12,8 @@ using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Shared.Settings;
 using ReBackup.Storage;
+using ReBackup.Storage.S3;
+using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.App.Tests.TestSupport;
 
@@ -30,6 +32,50 @@ public sealed class MainViewModelFixture : IDisposable
         Directory.CreateDirectory(Paths.LogsDirectory);
         Store = new PlanStore(Paths.PlansDirectory);
         SettingsStore = new SettingsStore(Paths.SettingsFile);
+        S3 = new S3Connections(Paths.ConnectionsFile, async (connection, prefix, checkWrite, ct) =>
+        {
+            TestRuns.Add((connection.Bucket, prefix, checkWrite));
+            if (TestGate is { } gate)
+                await gate.Task.WaitAsync(ct);
+            return [new S3CheckResult(S3Check.Bucket, S3CheckState.Ok, null, null)];
+        });
+    }
+
+    /// <summary>When set, a connection test waits for it (or for its cancellation).</summary>
+    public TaskCompletionSource? TestGate { get; set; }
+
+    /// <summary>The queue of the last <see cref="Create"/>.</summary>
+    public BackupQueue Queue { get; private set; } = null!;
+
+    /// <summary>The id of the account <see cref="AddConnection"/> stores its connections under.</summary>
+    public const string AccountId = "acc-1";
+
+    /// <summary>The S3 connections in the configuration folder; "Test" records its runs in <see cref="TestRuns"/>.</summary>
+    public S3Connections S3 { get; }
+
+    /// <summary>The connection tests run: bucket, prefix and whether the write check was asked for.</summary>
+    public List<(string Bucket, string Prefix, bool CheckWrite)> TestRuns { get; } = [];
+
+    /// <summary>Stores a connection (and the one account it needs) and reloads the list.</summary>
+    public void AddConnection(string id, string name, string bucket, string region = "eu-central-1")
+    {
+        if (S3.Store.TryGetAccount(AccountId) is null)
+            S3.Store.SaveAccount(new S3Account(AccountId, "Main", "AKIAEXAMPLE", "secret-key"));
+        S3.Save(new S3ConnectionInfo(id, name, region, bucket, AccountId));
+    }
+
+    /// <summary>Makes the stored account's secret undecryptable, as on another PC or Windows account.</summary>
+    public bool Secretless
+    {
+        set
+        {
+            if (!value)
+                return;
+            var file = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Paths.ConnectionsFile))!;
+            foreach (var account in file["accounts"]!.AsArray())
+                account!["secretProtected"] = "AAAA";
+            File.WriteAllText(Paths.ConnectionsFile, file.ToJsonString());
+        }
     }
 
     public string Root { get; }
@@ -63,12 +109,12 @@ public sealed class MainViewModelFixture : IDisposable
     public MainViewModel Create()
     {
         var storages = new StorageFactory();
-        var queue = new BackupQueue(new BackupRunner(storages), planId => new RunLog(Paths.LogFileFor(planId)));
+        var queue = Queue = new BackupQueue(new BackupRunner(storages), planId => new RunLog(Paths.LogFileFor(planId)));
         var scheduler = new Scheduler((_, _) => { });
         var versionIndex = new VersionIndexWorker(new VersionIndexSet(Path.Combine(Root, "index")));
         return new MainViewModel(Store, Paths, Settings, SaveSettings, () => LoadError, Dialogs, () => { }, queue, scheduler,
             action => action(), new ThemeToggleViewModel(() => ThemeMode.Dark, _ => { }),
-            new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages);
+            new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages, S3);
     }
 
     /// <summary>The English labels, as the app registers them, so texts in the tests read as in the app.</summary>
@@ -114,9 +160,38 @@ public sealed class FakeDialogs : IDialogService
 
     public List<string> Errors { get; } = [];
 
-    public bool Confirm(string title, string message) => ConfirmAnswer;
+    /// <summary>The questions asked (Confirm and ConfirmDefaultNo).</summary>
+    public List<string> Confirms { get; } = [];
 
-    public bool ConfirmDefaultNo(string title, string message) => ConfirmAnswer;
+    /// <summary>What the next S3 connection dialog returns (then null again: cancelled).</summary>
+    public S3ConnectionInfo? NextConnection { get; set; }
+
+    /// <summary>The connections the S3 connection dialog was opened on (null = a new one).</summary>
+    public List<S3ConnectionInfo?> EditedConnections { get; } = [];
+
+    public int AccountDialogs { get; private set; }
+
+    public bool Confirm(string title, string message)
+    {
+        Confirms.Add(message);
+        return ConfirmAnswer;
+    }
+
+    public bool ConfirmDefaultNo(string title, string message)
+    {
+        Confirms.Add(message);
+        return ConfirmAnswer;
+    }
+
+    public S3ConnectionInfo? EditS3Connection(S3ConnectionInfo? existing)
+    {
+        EditedConnections.Add(existing);
+        var result = NextConnection;
+        NextConnection = null;
+        return result;
+    }
+
+    public void ManageS3Accounts() => AccountDialogs++;
 
     public bool? AskYesNoCancel(string title, string message) => YesNoCancelAnswer;
 
