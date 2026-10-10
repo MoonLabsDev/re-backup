@@ -354,7 +354,7 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>
     /// Removes what earlier runs of this plan left behind (<see cref="LeftoverCleaner"/>): folders of runs that never
     /// finished, interrupted deletions, and the ".partial" / ".deleting" folders of older versions. Its warnings go into
-    /// the run log. Folders another computer marked are left alone; true when there were any.
+    /// the run log. Folders another computer marked are left alone; true when any of them concern this plan.
     /// </summary>
     /// <remarks>
     /// On a network target this can take long (a run that was killed leaves a whole copy), so the files removed are

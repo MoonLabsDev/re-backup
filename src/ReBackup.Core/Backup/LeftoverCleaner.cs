@@ -6,7 +6,7 @@ namespace ReBackup.Core.Backup;
 
 /// <summary>
 /// What a cleanup left for the run log: its <paramref name="Warnings"/> (in English) and the folders it left because
-/// another computer marked them (<paramref name="ForeignMarked"/>, also among the warnings).
+/// another computer marked them and that concern the plan (<paramref name="ForeignMarked"/>, also among the warnings).
 /// </summary>
 public sealed record LeftoverCleanup(IReadOnlyList<string> Warnings, IReadOnlyList<ForeignMarkedFolder> ForeignMarked);
 
@@ -35,8 +35,8 @@ public static class LeftoverCleaner
     /// <item>a ".deleting" folder that is provably the plan's remains (its manifest is <see cref="VersionOwnership.Owned"/>, or it
     /// is empty and named like the plan): it is deleted;</item>
     /// <item>a marker another computer wrote (<see cref="MarkerInfo.IsOwn"/> is false for <paramref name="machineName"/>):
-    /// the folder is left alone with a warning and listed in <see cref="LeftoverCleanup.ForeignMarked"/>, whatever plan it
-    /// names, as that computer may still be writing or deleting it;</item>
+    /// the folder is left alone with a warning, whatever plan it names, as that computer may still be writing or deleting
+    /// it; it is listed in <see cref="LeftoverCleanup.ForeignMarked"/> only when it concerns the plan (<see cref="ConcernsPlan"/>);</item>
     /// <item>a marker of another plan or one that cannot be read, or a marker of this plan in a folder that was renamed
     /// (named after neither <paramref name="planName"/> nor the marker's plan name): the folder is left alone with a warning;</item>
     /// <item>an empty folder without markers named like a version of the plan (a deletion whose very last step failed): it is deleted.</item>
@@ -115,6 +115,14 @@ public static class LeftoverCleaner
             warnings, foreign: [], onFileDeleted: null, progress: onFileDeleted, reportUnexamined: true, ct: ct).ConfigureAwait(false);
         return warnings;
     }
+
+    /// <summary>
+    /// Whether a marker another computer wrote concerns the plan: it names the plan's id, or its folder is named after
+    /// the plan (<paramref name="folderPlanName"/>). Only those are listed for the plan and raise its run status.
+    /// </summary>
+    internal static bool ConcernsPlan(MarkerInfo marker, string folderPlanName, string planId, string planName) =>
+        string.Equals(marker.PlanId, planId, StringComparison.OrdinalIgnoreCase) ||
+        folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The marker in a folder named like a version (the deletion marker before the pending one, as the cleanup looks at
@@ -205,8 +213,9 @@ public static class LeftoverCleaner
             warnings.Add(CoreTexts.English(hasDeleting ? "core.run.leftoverOtherHostDeleting" : "core.run.leftoverOtherHostPending",
                 ("name", name), ("host", marker.Host),
                 ("time", FormatMarkerTime(marker.StartedUtc))));
-            foreign.Add(new ForeignMarkedFolder(name, marker.Host, marker.StartedUtc,
-                hasDeleting ? MarkerKind.Deleting : MarkerKind.Pending));
+            if (ConcernsPlan(marker, folderPlanName, planId, planName))
+                foreign.Add(new ForeignMarkedFolder(name, marker.Host, marker.StartedUtc,
+                    hasDeleting ? MarkerKind.Deleting : MarkerKind.Pending));
             return;
         }
         if (!string.Equals(marker.PlanId, planId, StringComparison.OrdinalIgnoreCase))

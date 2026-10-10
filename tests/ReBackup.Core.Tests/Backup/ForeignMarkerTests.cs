@@ -52,14 +52,14 @@ public class ForeignMarkerTests : IDisposable
             .Select(f => Path.GetRelativePath(_target, f)).Order(StringComparer.Ordinal).ToArray();
 
     /// <summary>A version folder (manifest and all) that <paramref name="host"/> marked as being written or deleted.</summary>
-    private async Task MarkOnDisk(string name, string host, MarkerKind kind)
+    private async Task MarkOnDisk(string name, string host, MarkerKind kind, string planId = PlanId)
     {
-        VersionFolder.Create(_target, name, PlanId);
+        VersionFolder.Create(_target, name, planId);
         var storage = new FileSystemStorage(_target);
         if (kind == MarkerKind.Pending)
-            await VersionMarkers.WritePendingAsync(storage, name, Marker(host), CancellationToken.None);
+            await VersionMarkers.WritePendingAsync(storage, name, Marker(host, planId), CancellationToken.None);
         else
-            await VersionMarkers.WriteDeletingAsync(storage, name, Marker(host), CancellationToken.None);
+            await VersionMarkers.WriteDeletingAsync(storage, name, Marker(host, planId), CancellationToken.None);
     }
 
     private async Task MarkInMemory(string name, string? host, MarkerKind kind, string planId = PlanId)
@@ -167,6 +167,43 @@ public class ForeignMarkerTests : IDisposable
         _storage.Files.Should().BeEquivalentTo(before);
         result.ForeignMarked.Should().Equal(new ForeignMarkedFolder(Marked, OtherPc, Started, kind));
         result.Warnings.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(MarkerKind.Pending)]
+    [InlineData(MarkerKind.Deleting)]
+    public async Task The_cleanup_reports_only_the_foreign_markers_that_concern_the_plan(MarkerKind kind)
+    {
+        // Another plan writes into the same target from another computer: its folder is left alone with a warning, but
+        // it is not this plan's business, so it is not listed (and does not raise the run status).
+        await MarkInMemory("2026_09_24-02_00 Other", OtherPc, kind, planId: "p2");
+        // A folder named after this plan, whatever plan id its marker names, concerns the plan.
+        await MarkInMemory("2026_09_25-02_00 Projects", OtherPc, kind, planId: "p2");
+        // A folder renamed to another plan's name whose marker names this plan concerns it too.
+        await MarkInMemory("2026_09_26-02_00 Other", OtherPc, kind);
+        var before = _storage.Files.ToList();
+
+        var result = await LeftoverCleaner.CleanAsync(_storage, PlanId, PlanName, null, CancellationToken.None, machineName: ThisPc);
+
+        _storage.Files.Should().BeEquivalentTo(before);
+        result.ForeignMarked.Should().Equal(
+            new ForeignMarkedFolder("2026_09_25-02_00 Projects", OtherPc, Started, kind),
+            new ForeignMarkedFolder("2026_09_26-02_00 Other", OtherPc, Started, kind));
+        result.Warnings.Should().HaveCount(3, "every folder another computer marked is still named in the run log");
+    }
+
+    [Fact]
+    public async Task A_foreign_marker_of_another_plan_does_not_raise_the_run_status()
+    {
+        Old(27);
+        Old(28);
+        await MarkOnDisk("2026_09_20-02_00 Other", OtherPc, MarkerKind.Pending, planId: "p2");
+
+        var entry = await RunShortOfSpace(FreeingPlan());
+
+        entry.Status.Should().Be(RunStatus.Completed, "another plan's folder in the same target is not this plan's concern");
+        entry.Version.Should().Be(NewVersion);
+        Directory.Exists(Path.Combine(_target, "2026_09_20-02_00 Other")).Should().BeTrue();
     }
 
     [Theory]

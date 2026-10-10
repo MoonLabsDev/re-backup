@@ -149,8 +149,7 @@ public static class VersionCatalog
         {
             ct.ThrowIfCancellationRequested();
             if (await LeftoverCleaner.ForeignMarkerOfAsync(target, folder, machineName,
-                    (marker, folderPlanName) => string.Equals(marker.PlanId, planId, StringComparison.OrdinalIgnoreCase) ||
-                                                folderPlanName.Equals(planName, StringComparison.OrdinalIgnoreCase),
+                    (marker, folderPlanName) => LeftoverCleaner.ConcernsPlan(marker, folderPlanName, planId, planName),
                     ct).ConfigureAwait(false) is { } marked)
                 foreign.Add(marked);
         }
