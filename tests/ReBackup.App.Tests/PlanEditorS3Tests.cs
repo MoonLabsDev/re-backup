@@ -5,6 +5,7 @@ using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Shared.Schedule;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Storage;
 using ReBackup.Storage.S3;
 using ReBackup.Storage.S3.Connections;
@@ -105,6 +106,64 @@ public class PlanEditorS3Tests : IDisposable
         editor.Target.Should().Be(TargetFolder);
         editor.TargetS3.ConnectionId.Should().BeNull();
         editor.IsDirty.Should().BeFalse();
+    }
+
+    /// <summary>One plan backing a folder up into an S3 target on <c>c1</c>, opened in the editor.</summary>
+    private PlanEditorViewModel S3TargetPlan()
+    {
+        _fixture.AddConnection("c1", "Offsite", "offsite");
+        _fixture.AddConnection("c2", "Archive", "archive");
+        _fixture.Store.Save(new BackupPlan
+        {
+            Id = "p1",
+            Name = "Docs",
+            Source = StorageLocation.FileSystem(SourceFolder),
+            Target = new StorageLocation(S3StorageFactory.Kind, "backups", "c1"),
+        });
+        return _fixture.Create().Plans.Single();
+    }
+
+    private static string NotLoaded => LocText.Of("retention.now.notLoaded").ToString();
+
+    [Fact]
+    public async Task The_retention_preview_is_read_again_when_a_newer_saved_plan_names_another_target_connection()
+    {
+        var editor = S3TargetPlan();
+        await editor.RetentionPreview.RefreshCommand.ExecuteAsync(null);
+        editor.RetentionPreview.NowSummary.Should().NotBe(NotLoaded);
+
+        var newer = editor.SavedPlan().Clone();
+        newer.Target = new StorageLocation(S3StorageFactory.Kind, "backups", "c2");   // same prefix, other connection
+        editor.ReplaceSaved(newer);
+
+        editor.RetentionPreview.NowSummary.Should().Be(NotLoaded, "the versions shown were read from the old connection's bucket");
+        editor.RetentionPreview.Error.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_retention_preview_is_read_again_when_revert_brings_the_saved_target_connection_back()
+    {
+        var editor = S3TargetPlan();
+        editor.TargetS3.ConnectionId = "c2";
+        await editor.RetentionPreview.RefreshCommand.ExecuteAsync(null);
+        editor.RetentionPreview.NowSummary.Should().NotBe(NotLoaded);
+
+        editor.Revert();
+
+        editor.TargetS3.ConnectionId.Should().Be("c1");
+        editor.RetentionPreview.NowSummary.Should().Be(NotLoaded, "the versions shown were read from the edited connection's bucket");
+    }
+
+    [Fact]
+    public async Task Reloading_an_unchanged_saved_plan_keeps_the_retention_preview()
+    {
+        var editor = S3TargetPlan();
+        await editor.RetentionPreview.RefreshCommand.ExecuteAsync(null);
+        var shown = editor.RetentionPreview.NowSummary;
+
+        editor.ReplaceSaved(editor.SavedPlan().Clone());
+
+        editor.RetentionPreview.NowSummary.Should().Be(shown);
     }
 
     [Fact]

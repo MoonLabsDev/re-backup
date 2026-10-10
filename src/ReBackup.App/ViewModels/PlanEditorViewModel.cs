@@ -236,6 +236,10 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         return saved.IsFileSystem || IsS3(saved) || folder != saved.Path ? StorageLocation.FileSystem(folder) : saved;
     }
 
+    /// <summary>The location a side shows: its S3 half or its folder, whichever is in use.</summary>
+    private static StorageLocation ShownLocation(bool isS3, S3LocationViewModel s3, string folder) =>
+        isS3 ? s3.Location : StorageLocation.FileSystem(folder);
+
     private static bool IsS3(StorageLocation location) => location.Kind == PlanValidator.S3Kind;
 
     public BackupPlan ToPlan()
@@ -479,6 +483,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     private void LoadFrom(BackupPlan plan)
     {
+        var sourceBefore = ShownLocation(SourceIsS3, SourceS3, Source);
+        var targetBefore = ShownLocation(TargetIsS3, TargetS3, Target);
         _loading = true;
         try
         {
@@ -511,6 +517,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         {
             _loading = false;
         }
+        // Loading the S3 half is no edit, so a connection or prefix it changes would not invalidate the previews.
+        if (ShownLocation(SourceIsS3, SourceS3, Source) != sourceBefore)
+            Preview.Invalidate();
+        if (ShownLocation(TargetIsS3, TargetS3, Target) != targetBefore)
+            RetentionPreview.Invalidate();
         OnPropertyChanged(nameof(HasNoRetentionRules));
         RefreshNextRuns();
         RetentionPreview.RequestEvaluate();
