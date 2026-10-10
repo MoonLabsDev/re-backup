@@ -66,6 +66,31 @@ public class VersionsRestoreStorageTests : IDisposable
         Encoding.UTF8.GetString(_bucket.ReadAllBytes("a.txt")).Should().Be("alpha");
     }
 
+    [Fact]
+    public async Task Versions_of_a_target_that_is_a_whole_bucket_are_listed()
+    {
+        var bucket = new InMemoryStorage(StorageCapabilities.None);
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Source = new StorageLocation("mem", "photos", "conn-1"),
+            Target = new StorageLocation("s3", "", "conn-2"),
+        };
+        var storages = new LambdaStorageFactory(location => location.Kind == "s3" ? bucket : _bucket);
+        _bucket.AddFile("a.txt", Encoding.UTF8.GetBytes("alpha"));
+        var run = await new BackupRunner(storages).RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+        run.Status.Should().Be(RunStatus.Completed, run.Reason);
+
+        var worker = new VersionIndexWorker(new VersionIndexSet(Path.Combine(_fixture.Root, "index")));
+        var context = new VersionsContext(worker, _fixture.Dialogs, _ => { }, storages, MachineName: "THIS-PC");
+        var vm = new VersionsViewModel(() => plan, () => false, new FakeFolderOpener(), context);
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        vm.ErrorText.Should().BeNull();
+        vm.VersionRows.Should().ContainSingle().Which.Name.Should().Be(run.Version);
+    }
+
     private static async Task<T> WaitForAsync<T>(Func<T?> probe) where T : class
     {
         var until = DateTime.UtcNow + Timeout;

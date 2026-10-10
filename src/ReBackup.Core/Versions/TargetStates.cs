@@ -31,14 +31,15 @@ public static class TargetStates
     }
 
     /// <summary>
-    /// Opens <paramref name="location"/> and probes it. An unset path, a path that is no valid root (e.g. relative) and a
+    /// Opens <paramref name="location"/> and probes it. An unset folder path, a path that is no valid root (e.g. relative) and a
     /// kind this build does not know are <see cref="TargetState.Unreachable"/> with no storage; otherwise the storage is
     /// returned for listing (null unless <see cref="TargetState.Present"/>).
     /// </summary>
     public static async Task<(TargetState State, IStorage? Storage)> OpenAndProbeAsync(IStorageFactory storages,
         StorageLocation location, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(location.Path))
+        // On other kinds an empty path is the storage's root (e.g. a whole bucket), not an unset one.
+        if (location.IsFileSystem && string.IsNullOrWhiteSpace(location.Path))
             return (TargetState.Unreachable, null);
         IStorage storage;
         try
