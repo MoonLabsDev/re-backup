@@ -133,7 +133,7 @@ public class PlanValidatorTests : IDisposable
         ["c1"] = new ConnectionBucket("photos", "eu-central-1"),
         ["c1-copy"] = new ConnectionBucket("photos", "eu-central-1"),   // another connection on the same bucket
         ["c2"] = new ConnectionBucket("archive", "eu-central-1"),
-        ["c3"] = new ConnectionBucket("photos", "us-east-1"),
+        ["c3"] = new ConnectionBucket("photos", "us-east-1"),   // the same bucket, configured with another region
     };
 
     private static ConnectionBucket? Lookup(string id) => Buckets.GetValueOrDefault(id);
@@ -223,6 +223,7 @@ public class PlanValidatorTests : IDisposable
     [InlineData("c1", "data", "c1", "data/backups")]
     [InlineData("c1", "data", "c1-copy", "data/backups/x")]
     [InlineData("c1", "data", "C1", "data/b")]
+    [InlineData("c1", "data", "c3", "data/backups")]  // bucket names are global: the region does not make it another bucket
     public void S3_target_inside_its_S3_source_on_the_same_bucket_is_reported(string sourceId, string sourcePrefix,
         string targetId, string targetPrefix)
     {
@@ -248,7 +249,6 @@ public class PlanValidatorTests : IDisposable
 
     [Theory]
     [InlineData("c1", "data", "c2", "data")]          // another bucket
-    [InlineData("c1", "data", "c3", "data/backups")]  // same bucket name, another region
     [InlineData("c1", "data", "c1", "database")]      // a sibling whose name starts alike
     [InlineData("c1", "data/a", "c1", "data/b")]
     [InlineData("c1", "Data", "c1", "data/backups")]  // S3 keys are case-sensitive

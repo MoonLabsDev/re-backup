@@ -129,9 +129,9 @@ public static class PlanValidator
         return ok ? new CheckedLocation(false, bucket) : null;
     }
 
+    /// <summary>Whether two connections open the same bucket: S3 bucket names are global, so the region does not tell buckets apart.</summary>
     private static bool SameBucket(ConnectionBucket a, ConnectionBucket b) =>
-        string.Equals(a.Bucket, b.Bucket, StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(a.Region, b.Region, StringComparison.OrdinalIgnoreCase);
+        string.Equals(a.Bucket, b.Bucket, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Whether the storage path <paramref name="path"/> is <paramref name="container"/> or lies below it (<c>""</c> holds everything).</summary>
     private static bool IsSameOrInside(string path, string container) =>
