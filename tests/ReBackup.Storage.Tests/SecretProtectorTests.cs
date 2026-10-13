@@ -1,7 +1,7 @@
 using FluentAssertions;
-using ReBackup.Storage.S3.Connections;
+using ReBackup.Storage;
 
-namespace ReBackup.Storage.S3.Tests.Unit;
+namespace ReBackup.Storage.Tests;
 
 public class SecretProtectorTests
 {
