@@ -137,7 +137,7 @@ public class MainWindowSmokeTests
             var combos = FindAll<ComboBox>(view).Where(c => ReferenceEquals(c.ItemsSource, editor.TargetS3.Connections)).ToList();
             combos.Should().NotBeEmpty("the target's connection picker shows the saved connections");
             combos.Should().ContainSingle(c => Shown(c)).Which.SelectedValue.Should().Be("c1");
-            FindAll<RadioButton>(view).Should().HaveCount(4, "Folder | S3 for the source and for the target");
+            FindAll<RadioButton>(view).Should().HaveCount(6, "Folder | S3 | Drive for the source and for the target");
             var freeSpace = FindAll<CheckBox>(view)
                 .Single(c => BindingOperations.GetBinding(c, ToggleButton.IsCheckedProperty)?.Path.Path == "FreeSpaceByRetention");
             Shown(freeSpace).Should().BeFalse();
@@ -149,7 +149,7 @@ public class MainWindowSmokeTests
     }
 
     [Fact]
-    public void Switching_the_plan_view_between_an_S3_plan_and_a_folder_plan_changes_neither()
+    public void Switching_the_plan_view_between_S3_Drive_and_folder_plans_changes_none()
     {
         RunOnSta(() =>
         {
@@ -164,8 +164,17 @@ public class MainWindowSmokeTests
                 Target = new ReBackup.Storage.StorageLocation("s3", "docs", "c1"),
             });
             fixture.AddPlan("b", "Beta");
+            fixture.AddDriveConnection("d1", "Team", "team", "team");
+            fixture.Store.Save(new ReBackup.Core.Plans.BackupPlan
+            {
+                Id = "c",
+                Name = "Gamma",
+                Source = new ReBackup.Storage.StorageLocation("gdrive", "photos", "d1"),
+                Target = new ReBackup.Storage.StorageLocation("gdrive", "backups", "d1"),
+            });
             var vm = fixture.Create();
             var (a, b) = (vm.Plans.Single(p => p.Id == "a"), vm.Plans.Single(p => p.Id == "b"));
+            var c = vm.Plans.Single(p => p.Id == "c");
             var view = new ReBackup.App.Views.PlanView();
             void Show(PlanEditorViewModel editor)
             {
@@ -176,17 +185,71 @@ public class MainWindowSmokeTests
             }
 
             Show(a);
+            Show(c);
             Show(b);
+            Show(c);
             Show(a);
+            Show(c);
             Show(b);
 
             a.SourceIsS3.Should().BeTrue();
             a.TargetIsS3.Should().BeTrue();
+            a.SourceIsDrive.Should().BeFalse();
+            a.TargetIsDrive.Should().BeFalse();
+            a.SourceS3.ConnectionId.Should().Be("c1");
+            a.TargetS3.ConnectionId.Should().Be("c1");
             a.IsDirty.Should().BeFalse();
+            c.SourceIsDrive.Should().BeTrue();
+            c.TargetIsDrive.Should().BeTrue();
+            c.SourceIsS3.Should().BeFalse();
+            c.TargetIsS3.Should().BeFalse();
+            c.SourceDrive.ConnectionId.Should().Be("d1");
+            c.TargetDrive.ConnectionId.Should().Be("d1");
+            c.SourceDrive.Path.Should().Be("photos");
+            c.TargetDrive.Path.Should().Be("backups");
+            c.IsDirty.Should().BeFalse();
+            b.SourceIsDrive.Should().BeFalse();
+            b.TargetIsDrive.Should().BeFalse();
             b.SourceIsS3.Should().BeFalse();
             b.TargetIsS3.Should().BeFalse();
             b.IsDirty.Should().BeFalse();
             FindAll<RadioButton>(view).Where(r => r.IsChecked == true).Should().HaveCount(2, "Folder for B's source and target");
+        });
+    }
+
+    [Fact]
+    public void The_plan_view_shows_the_Drive_fields_of_a_Drive_target_and_hides_the_target_full_toggle()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddDriveConnection("d1", "Team", "team", "team");
+            fixture.Store.Save(new ReBackup.Core.Plans.BackupPlan
+            {
+                Id = "a",
+                Name = "Alpha",
+                Target = new ReBackup.Storage.StorageLocation("gdrive", "docs", "d1"),
+            });
+            var vm = fixture.Create();
+            var editor = vm.Plans[0];
+            var view = new ReBackup.App.Views.PlanView { DataContext = editor };
+            view.Measure(new Size(1280, 800));
+            view.Arrange(new Rect(new Size(1280, 800)));
+            view.UpdateLayout();
+
+            var combos = FindAll<ComboBox>(view).Where(c => ReferenceEquals(c.ItemsSource, editor.TargetDrive.Connections)).ToList();
+            combos.Should().ContainSingle(c => Shown(c)).Which.SelectedValue.Should().Be("d1");
+            FindAll<TextBox>(view).Where(Shown).Select(t => t.Text).Should().Contain("docs", "the path is shown");
+            FindAll<RadioButton>(view).Where(r => r.IsChecked == true).Select(r => r.CommandParameter)
+                .Should().Equal("Folder", "Drive");
+            var freeSpace = FindAll<CheckBox>(view)
+                .Single(c => BindingOperations.GetBinding(c, ToggleButton.IsCheckedProperty)?.Path.Path == "FreeSpaceByRetention");
+            Shown(freeSpace).Should().BeFalse();
+
+            editor.ChooseTargetKindCommand.Execute("Folder");
+            view.UpdateLayout();
+            Shown(freeSpace).Should().BeTrue();
         });
     }
 
@@ -204,7 +267,35 @@ public class MainWindowSmokeTests
 
             FindAll<Button>(content)
                 .Select(b => BindingOperations.GetBinding(b, ButtonBase.CommandProperty)?.Path.Path)
-                .Should().Contain([nameof(SettingsViewModel.ManageS3AccountsCommand), nameof(SettingsViewModel.ManageS3ConnectionsCommand)]);
+                .Should().Contain([nameof(SettingsViewModel.ManageS3AccountsCommand), nameof(SettingsViewModel.ManageS3ConnectionsCommand),
+                    nameof(SettingsViewModel.ManageDriveAccountsCommand), nameof(SettingsViewModel.ManageDriveConnectionsCommand)]);
+        });
+    }
+
+    [Fact]
+    public void The_Drive_windows_and_dialogs_load()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddDriveConnection("d1", "Team", "team", "team");
+            var vm = fixture.Create();
+
+            var connections = Layout(new DriveConnectionsWindow(
+                new DriveConnectionsViewModel(fixture.Drive, fixture.Dialogs, vm.PlansUsingDriveConnection)));
+            FindAll<ListView>(connections).Should().ContainSingle().Which.Items.Count.Should().Be(1);
+
+            var accounts = Layout(new DriveAccountsWindow(new DriveAccountsViewModel(fixture.Drive, fixture.Dialogs)));
+            FindAll<ListView>(accounts).Should().ContainSingle().Which.Items.Count.Should().Be(1);
+
+            var account = Layout(new DriveAccountDialog(
+                new DriveAccountDialogViewModel(fixture.Drive.Accounts[0], _ => false, () => null)));
+            FindAll<TextBox>(account).Select(t => t.Text).Should().Contain(MainViewModelFixture.DriveEmail);
+
+            var connection = Layout(new DriveConnectionDialog(new DriveConnectionDialogViewModel(fixture.Drive.Store.TryGet("d1"),
+                () => fixture.Drive.Store.LoadAccounts(), _ => false, fixture.Drive.ApiForAccount, () => null)));
+            FindAll<ComboBox>(connection).Should().HaveCount(2, "the account and the shared drive");
         });
     }
 

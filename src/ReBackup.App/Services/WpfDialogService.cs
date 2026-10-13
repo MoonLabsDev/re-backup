@@ -2,8 +2,11 @@ using System.IO;
 using System.Windows;
 using Microsoft.Win32;
 using System.Text.Json;
+using ReBackup.App.ViewModels;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Shared.Wpf.S3;
+using ReBackup.Storage.GoogleDrive.Connections;
 using ReBackup.Storage.S3;
 using ReBackup.Storage.S3.Connections;
 
@@ -13,7 +16,8 @@ namespace ReBackup.App.Services;
 /// The S3 connections of the configuration folder (null before it is loaded): the "name taken" check and the account
 /// picker of the connection dialog, and the accounts dialog.
 /// </param>
-public sealed class WpfDialogService(Func<S3ConnectionStore?> connections) : IDialogService
+/// <param name="drive">The Google accounts and Drive connections of the configuration folder (null before it is loaded).</param>
+public sealed class WpfDialogService(Func<S3ConnectionStore?> connections, Func<DriveConnections?>? drive = null) : IDialogService
 {
     /// <summary>
     /// The active window, else the main window while it is shown (e.g. a result after a long restore, when another
@@ -85,6 +89,75 @@ public sealed class WpfDialogService(Func<S3ConnectionStore?> connections) : IDi
     {
         if (connections() is { } store)
             ShowOwned(new S3AccountsDialog(store, new S3ConnectionTester()));
+    }
+
+    public DriveConnectionInfo? EditDriveConnection(DriveConnectionInfo? existing)
+    {
+        if (drive?.Invoke() is not { } store)
+            return null;
+        var viewModel = new DriveConnectionDialogViewModel(existing,
+            () => Safe(() => store.Store.LoadAccounts(), []),
+            name => Safe(() => store.Store.LoadAll().Any(c => !string.Equals(c.Id, existing?.Id, StringComparison.OrdinalIgnoreCase)
+                                                              && string.Equals(c.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)), false),
+            store.ApiForAccount,
+            () => CreateDriveAccount(store));
+        return ShowOwned(new DriveConnectionDialog(viewModel)) == true ? viewModel.Result : null;
+    }
+
+    public DriveAccountInput? EditDriveAccount(DriveAccount? existing)
+    {
+        if (drive?.Invoke() is not { } store)
+            return null;
+        var viewModel = new DriveAccountDialogViewModel(existing,
+            name => Safe(() => store.Store.LoadAccounts().Any(a => !string.Equals(a.Id, existing?.Id, StringComparison.OrdinalIgnoreCase)
+                                                                  && string.Equals(a.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)), false),
+            PickKeyFile);
+        return ShowOwned(new DriveAccountDialog(viewModel)) == true ? viewModel.Result : null;
+    }
+
+    /// <summary>"New account…" in the connection dialog: the account dialog, then the account is stored.</summary>
+    private DriveAccount? CreateDriveAccount(DriveConnections store)
+    {
+        if (EditDriveAccount(null) is not { } input)
+            return null;
+        var id = Guid.NewGuid().ToString("N");
+        try
+        {
+            store.SaveAccount(id, input.Name, input.KeyJson);
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            ShowError(Loc.T("driveaccounts.title"), Loc.F("driveconnections.saveFailed", ("error", ex.Message)));
+            return null;
+        }
+        return store.Accounts.FirstOrDefault(a => a.Id == id);
+    }
+
+    /// <summary>The service account's key file (JSON).</summary>
+    private static string? PickKeyFile()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = Loc.T("driveaccounts.chooseKeyTitle"),
+            Filter = Loc.T("driveaccounts.keyFilter") + "|*.json",
+            CheckFileExists = true,
+        };
+        var owner = Owner;
+        var ok = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+        return ok == true ? dialog.FileName : null;
+    }
+
+    /// <summary>Reads for a picker or a name check; an unreadable file blocks nothing here, saving reports it.</summary>
+    private static T Safe<T>(Func<T> read, T fallback)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return fallback;
+        }
     }
 
     /// <summary>

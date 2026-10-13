@@ -599,6 +599,8 @@ public static class Restorer
         StorageLockedException => CoreTexts.English("core.file.locked"),
         // An archived object (S3 Glacier, Deep Archive) in the version cannot be read before it is restored.
         StorageIOException { Archived: true } => CoreTexts.English("core.file.archived"),
+        // Any other file the storage cannot read: its own message says why (the inner one is the provider's).
+        StorageIOException { NotReadable: true } => exception.Message,
         StorageException { InnerException: { } inner } => inner.Message,
         ArgumentException { ParamName: { } name } => exception.Message.Replace($" (Parameter '{name}')", "", StringComparison.Ordinal),
         _ => exception.Message,

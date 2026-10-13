@@ -16,7 +16,8 @@ namespace ReBackup.Core.Tests.Backup;
 
 /// <summary>
 /// The version lifecycle of a run (spec 6.1) on in-memory storages: the source is the kind <c>"mem-src"</c>, the target
-/// <c>"mem-tgt"</c>; both can be wrapped in a <see cref="FaultyStorage"/>.
+/// <c>"mem-tgt"</c>; both can be wrapped in a <see cref="FaultyStorage"/>. Those kinds are no folders, so files are copied in
+/// parallel; a run with <c>folders: true</c> addresses the same storages as folder locations and copies one file at a time.
 /// </summary>
 public class BackupRunnerLifecycleTests
 {
@@ -36,25 +37,31 @@ public class BackupRunnerLifecycleTests
         _source.EnsureDirectoryAsync("empty", CancellationToken.None).GetAwaiter().GetResult();
     }
 
-    private static BackupPlan Plan() => new()
+    /// <summary>A folder source must exist (the runner checks); the target folder is never touched, its storage is in memory.</summary>
+    private static readonly string SourceFolder = Path.GetTempPath();
+    private static readonly string TargetFolder = Path.Combine(Path.GetPathRoot(Path.GetTempPath())!, "rebackup-lifecycle-test-target");
+
+    private static BackupPlan Plan(bool folders = false) => new()
     {
         Id = "p1",
         Name = "Projects",
-        Source = new StorageLocation("mem-src", "source"),
-        Target = new StorageLocation("mem-tgt", "target"),
+        Source = folders ? StorageLocation.FileSystem(SourceFolder) : new StorageLocation("mem-src", "source"),
+        Target = folders ? StorageLocation.FileSystem(TargetFolder) : new StorageLocation("mem-tgt", "target"),
     };
 
     private Task<RunLogEntry> Run(Func<IStorage, IStorage>? target = null, Func<IStorage, IStorage>? source = null,
-        CancellationToken cancellationToken = default, IProgress<BackupProgress>? progress = null)
+        CancellationToken cancellationToken = default, IProgress<BackupProgress>? progress = null, bool folders = false)
     {
-        var storages = new TestStorageFactory(location => location.Kind switch
+        var storages = new TestStorageFactory(location => (location.Kind, location.Path) switch
         {
-            "mem-src" => source?.Invoke(_source) ?? _source,
-            "mem-tgt" => target?.Invoke(_target) ?? _target,
+            ("mem-src", _) => source?.Invoke(_source) ?? _source,
+            ("mem-tgt", _) => target?.Invoke(_target) ?? _target,
+            ("fs", var path) when path == SourceFolder => source?.Invoke(_source) ?? _source,
+            ("fs", var path) when path == TargetFolder => target?.Invoke(_target) ?? _target,
             _ => throw new NotSupportedException(location.Kind),
         });
         return new BackupRunner(storages, _time, host: "TESTHOST")
-            .RunAsync(new BackupRequest(Plan(), [], RunTrigger.Manual), progress, cancellationToken);
+            .RunAsync(new BackupRequest(Plan(folders), [], RunTrigger.Manual), progress, cancellationToken);
     }
 
     private Task<IReadOnlyList<VersionInfo>> Versions() => VersionCatalog.ListAsync(_target, "p1", "Projects");
@@ -405,6 +412,8 @@ public class BackupRunnerLifecycleTests
     [Fact]
     public async Task A_source_whose_root_is_gone_after_a_failed_open_aborts()
     {
+        // One file at a time (folders): the failed open skips the file, then the gone root stops the run. Copying in parallel
+        // stops on the unavailable source at once (BackupRunnerParallelTests).
         var opened = false;
         var source = (IStorage s) => new FaultyStorage(s)
         {
@@ -417,7 +426,7 @@ public class BackupRunnerLifecycleTests
             },
         };
 
-        var entry = await Run(source: source);
+        var entry = await Run(source: source, folders: true);
 
         entry.Status.Should().Be(RunStatus.Error);
         entry.Reason.Should().Be("The source folder is no longer available.");

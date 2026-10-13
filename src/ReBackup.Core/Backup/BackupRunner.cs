@@ -49,11 +49,10 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>The target must have room for the included bytes times this factor.</summary>
     public const double FreeSpaceMargin = 1.05;
 
-    /// <summary>How many files are copied at the same time when the source or the target is S3 (spec 4).</summary>
+    /// <summary>How many files are copied at the same time when the source or the target is not a folder, e.g. S3 or Google Drive (spec 4).</summary>
     public const int ParallelS3Copies = 8;
 
     private const int BufferSize = 1024 * 1024;
-    private const string S3Kind = "s3";
     private const int MarkerDeleteAttempts = 5;
     private static readonly string NoLongerExists = CoreTexts.English("core.file.noLongerExists");
     private static readonly TimeSpan MarkerDeleteRetryDelay = TimeSpan.FromMilliseconds(200);
@@ -747,10 +746,11 @@ public sealed class BackupRunner : IBackupRunner
         return manifest;
     }
 
-    /// <summary>Whether the files are copied by <see cref="ParallelS3Copies"/> workers: when the source or the target is S3.</summary>
-    private static bool CopiesInParallel(BackupPlan plan) =>
-        string.Equals(plan.Source.Kind, S3Kind, StringComparison.Ordinal) ||
-        string.Equals(plan.Target.Kind, S3Kind, StringComparison.Ordinal);
+    /// <summary>
+    /// Whether the files are copied by <see cref="ParallelS3Copies"/> workers: when the source or the target is not a folder
+    /// (S3, Google Drive: remote storages whose calls take long and run well side by side).
+    /// </summary>
+    private static bool CopiesInParallel(BackupPlan plan) => !plan.Source.IsFileSystem || !plan.Target.IsFileSystem;
 
     /// <summary>
     /// Copies the files with <see cref="ParallelS3Copies"/> workers fed by a bounded channel (spec 4). Each file is
@@ -901,7 +901,8 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>
     /// Copies one file while hashing it; the copy gets the indexed time of the source. Returns no copy and a reason
     /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
-    /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed.
+    /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed, except for a size
+    /// only known by reading (see <see cref="ChangedWhileCopied"/>).
     /// </summary>
     /// <param name="storageFailuresStop">
     /// A <see cref="StorageUnavailableException"/> opening the source file propagates instead of skipping the file (the
@@ -976,7 +977,7 @@ public sealed class BackupRunner : IBackupRunner
         try
         {
             var now = await source.StatAsync(node.RelativePath, cancellationToken).ConfigureAwait(false);
-            changed = now is null || size != node.Size || now.Size != node.Size || now.ModifiedUtc != node.LastWriteUtc;
+            changed = ChangedWhileCopied(node, now, size);
         }
         catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
@@ -985,6 +986,22 @@ public sealed class BackupRunner : IBackupRunner
 
         return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
             "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false);
+    }
+
+    /// <summary>
+    /// Whether the source file changed while it was copied: it is gone, its time differs from the indexed one, or its size (as
+    /// listed now, or the bytes read) differs from the indexed one. The one exception is a size the storage does not know before
+    /// reading: a file listed with size 0 both times (a Google document is exported on read) whose stamp is the same before and
+    /// after is unchanged, however many bytes were read. Every other size difference is a change, whatever the stamps say.
+    /// </summary>
+    private static bool ChangedWhileCopied(IndexNode node, StorageEntry? now, long bytesRead)
+    {
+        if (now is null || now.ModifiedUtc != node.LastWriteUtc)
+            return true;
+        if (bytesRead == node.Size && now.Size == node.Size)
+            return false;
+        var sizeUnknown = node.Size == 0 && now.Size == 0;
+        return !(sizeUnknown && node.Stamp is not null && string.Equals(now.Stamp, node.Stamp, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -1027,8 +1044,11 @@ public sealed class BackupRunner : IBackupRunner
         StorageNotFoundException => NoLongerExists,
         StorageAccessDeniedException => CoreTexts.English("core.file.accessDenied"),
         StorageLockedException => CoreTexts.English("core.file.locked"),
-        // An archived object (S3 Glacier, Deep Archive) cannot be read before it is restored: skipped like a locked file.
-        StorageIOException { Archived: true } => CoreTexts.English("core.file.archived"),
+        // A file the storage cannot read is skipped like a locked one: an archived object (S3 Glacier, Deep Archive) before
+        // it is restored, or e.g. a Google document over the export limit (the storage's message says why).
+        StorageIOException { NotReadable: true } notReadable => notReadable.Archived
+            ? CoreTexts.English("core.file.archived")
+            : notReadable.Message,
         // Opening reads the source only, so any other failure here is the source file's own: e.g. a WSL symlink
         // (Windows cannot open it, error 1920). A source that is gone altogether is caught by the caller.
         StorageException storage => CoreTexts.English("core.file.cannotOpen",

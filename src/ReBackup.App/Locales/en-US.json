@@ -80,6 +80,12 @@
       "accounts": "S3 accounts…",
       "connections": "S3 connections…"
     },
+    "drive": {
+      "title": "GOOGLE DRIVE",
+      "note": "Google service accounts (key files) and connections (a shared drive or folder and its account) for Drive sources and targets, kept in the configuration folder.",
+      "accounts": "Google accounts…",
+      "connections": "Drive connections…"
+    },
     "theme": {
       "title": "THEME",
       "name": "Theme",
@@ -110,6 +116,14 @@
       "sourcePrefixInvalid": "The source prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
       "targetPrefixInvalid": "The target prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
       "connectionsUnreadable": "The S3 connections could not be read: {error}",
+      "sourceDriveConnectionRequired": "Choose a Google Drive connection for the source.",
+      "targetDriveConnectionRequired": "Choose a Google Drive connection for the target.",
+      "sourceDriveConnectionMissing": "The source's Google Drive connection no longer exists.",
+      "targetDriveConnectionMissing": "The target's Google Drive connection no longer exists.",
+      "sourceDrivePathInvalid": "The source path is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+      "targetDrivePathInvalid": "The target path is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+      "targetNotSharedDrive": "Drive targets must be on a shared drive.",
+      "driveConnectionsUnreadable": "The Google Drive connections could not be read: {error}",
       "retentionRule": "Retention rule {index}: {problem}",
       "trigger": "Trigger {index}: {problem}"
     },
@@ -405,6 +419,60 @@
     "describe": "{connection} · s3://{bucket}/{prefix}",
     "unknown": "S3 connection not found · {prefix}"
   },
+  "driveconnections": {
+    "title": "Drive connections",
+    "titleNew": "New Drive connection",
+    "titleEdit": "Edit Drive connection",
+    "note": "Plans use these connections as source or target. Stored in drive-connections.json in the configuration folder; keys only work for this Windows account.",
+    "column": { "root": "Shared drive or folder" },
+    "empty": "No connections yet.",
+    "inUse": "\"{name}\" is used by these plans and cannot be deleted:",
+    "deleteConfirm": "Delete the Drive connection \"{name}\"?",
+    "saveFailed": "The Google Drive connections could not be saved: {error}",
+    "loadFailed": "The Google Drive connections could not be read: {error}",
+    "nameTaken": "Another connection already has this name.",
+    "account": "Account",
+    "newAccount": "New account…",
+    "accountNeedsKey": "The key of this account must be chosen again on this PC (Settings → Google accounts…).",
+    "shareWith": "Share the shared drive or folder with {email}.",
+    "sharedDrive": "Shared drive",
+    "refresh": "Refresh",
+    "folder": "Folder by link or ID",
+    "folderHint": "The folder's link (https://drive.google.com/drive/folders/…) or its ID. Backups can only be written to a folder on a shared drive.",
+    "noSharedDrives": "{email} is not a member of any shared drive. Add it to a shared drive, or use a folder link.",
+    "folderInvalid": "This is neither a Drive folder link nor a folder ID.",
+    "notAFolder": "This is a file, not a folder.",
+    "accessDenied": "The service account {email} may not open this, or its key is not valid. Share the folder or shared drive with {email}.",
+    "notFound": "Not found. Check the link, or share the folder with {email}.",
+    "failed": "Google Drive could not be reached: {error}",
+    "timeout": "Google Drive did not answer in time. Check the connection and try again."
+  },
+  "driveaccounts": {
+    "title": "Google accounts",
+    "titleNew": "New Google account",
+    "titleEdit": "Edit Google account",
+    "note": "Google service accounts, each with its key file. Stored DPAPI-protected in drive-connections.json in the configuration folder; keys only work for this Windows account.",
+    "dialogNote": "A service account from the Google Cloud console (IAM → Service accounts → Keys → Add key → JSON). ReBackup reads its e-mail from the key file.",
+    "column": { "email": "Service account e-mail" },
+    "empty": "No accounts yet.",
+    "needsKey": "key needed",
+    "needsKeyHint": "The stored key cannot be read on this Windows account: choose the key file again.",
+    "inUse": "\"{name}\" is used by these Drive connections and cannot be deleted:",
+    "deleteConfirm": "Delete the Google account \"{name}\"?",
+    "nameTaken": "Another account already has this name.",
+    "key": "Key file",
+    "chooseKey": "Choose key file…",
+    "chooseKeyTitle": "Choose the service account's key file",
+    "keyFilter": "Service account key (*.json)",
+    "keyUnreadable": "The file could not be read: {error}",
+    "keyInvalid": "This is not a Google service account key. Download the JSON key of a service account from the Google Cloud console.",
+    "email": "Service account e-mail",
+    "shareHint": "Share folders and shared drives with this address. For backup targets, add it to the shared drive as Manager: ReBackup deletes old versions permanently, which needs that role."
+  },
+  "drivelocation": {
+    "describe": "{connection} · gdrive://{root}/{path}",
+    "unknown": "Drive connection not found · {path}"
+  },
   "plan": {
     "source": {
       "title": "SOURCE → TARGET",
@@ -419,6 +487,7 @@
     "kind": {
       "folder": "Folder",
       "s3": "S3",
+      "drive": "Drive",
       "sourceName": "Kind of source",
       "targetName": "Kind of target"
     },
@@ -431,6 +500,26 @@
       "test": "Test",
       "connectionMissing": "The S3 connection no longer exists.",
       "needsSecret": "The secret of this connection's S3 account must be re-entered on this PC (Settings → S3 accounts…)."
+    },
+    "drive": {
+      "connection": "Drive connection",
+      "newConnection": "New connection…",
+      "path": "Folder",
+      "pathPlaceholder": "Backups/ReBackup",
+      "pathHint": "Empty = the shared drive or folder itself.",
+      "run": "Test",
+      "connectionMissing": "The Google Drive connection no longer exists.",
+      "needsKey": "The key of this connection's Google account must be chosen again on this PC (Settings → Google accounts…).",
+      "result": {
+        "okSource": "The location can be read.",
+        "okTarget": "The location can be written to (a test file was written and deleted).",
+        "accessDenied": "The service account {email} may not open, write or delete here. Share the folder or shared drive with {email}; a target needs the Manager role on the shared drive.",
+        "notFound": "Not found. Check the folder, or share it with {email}.",
+        "notSharedDrive": "Backups can only be written to a shared drive (a service account has no storage of its own). Choose a shared drive that {email} is a member of.",
+        "error": "The test failed: {error}",
+        "cancelled": "The test was cancelled.",
+        "failed": "The test could not run."
+      }
     },
     "lastRun": {
       "title": "LAST RUN",

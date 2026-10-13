@@ -71,4 +71,16 @@ public sealed class StorageIOException : StorageException
     /// a file like a locked one.
     /// </summary>
     public bool Archived { get; init; }
+
+    /// <summary>
+    /// The file exists but cannot be read: archived (always set with <see cref="Archived"/>), or e.g. a Google document too
+    /// large to export. Callers skip such a file and log it.
+    /// </summary>
+    public bool NotReadable
+    {
+        get => _notReadable || Archived;
+        init => _notReadable = value;
+    }
+
+    private readonly bool _notReadable;
 }

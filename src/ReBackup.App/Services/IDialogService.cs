@@ -1,4 +1,6 @@
+using ReBackup.App.ViewModels;
 using ReBackup.Core.Versions;
+using ReBackup.Storage.GoogleDrive.Connections;
 using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.App.Services;
@@ -39,4 +41,13 @@ public interface IDialogService
 
     /// <summary>The shared S3 accounts dialog; its changes are stored at once.</summary>
     void ManageS3Accounts();
+
+    /// <summary>
+    /// The Drive connection dialog on <paramref name="existing"/> (null = a new connection; its account is picked or created
+    /// there). The connection as saved in the dialog, not yet stored; null when cancelled.
+    /// </summary>
+    DriveConnectionInfo? EditDriveConnection(DriveConnectionInfo? existing);
+
+    /// <summary>The Google account dialog on <paramref name="existing"/> (null = a new account): name and key, not yet stored; null when cancelled.</summary>
+    DriveAccountInput? EditDriveAccount(DriveAccount? existing);
 }

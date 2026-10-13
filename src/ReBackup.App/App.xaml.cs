@@ -25,6 +25,7 @@ using ReBackup.Shared.Localization;
 using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Settings;
 using ReBackup.Storage;
+using ReBackup.Storage.GoogleDrive;
 using ReBackup.Storage.S3;
 using ThemeMode = ReBackup.Shared.Settings.ThemeMode;   // not System.Windows.ThemeMode (WPF Fluent)
 
@@ -37,7 +38,9 @@ public partial class App : Application
 
     private readonly IDialogService _dialogs;
     private S3Connections? _s3;
-    private S3StorageFactory? _storages;
+    private DriveConnections? _drive;
+    private S3StorageFactory? _s3Storages;
+    private DriveStorageFactory? _storages;
     private string _appDataRoot = "";
     private ConfigPaths _paths = null!;
     private SettingsStore _settingsStore = null!;
@@ -56,7 +59,7 @@ public partial class App : Application
 
     public App()
     {
-        _dialogs = new WpfDialogService(() => _s3?.Store);
+        _dialogs = new WpfDialogService(() => _s3?.Store, () => _drive);
     }
 
     protected override void OnStartup(StartupEventArgs e)
@@ -169,10 +172,14 @@ public partial class App : Application
                 (planId, ex) => Dispatcher.InvokeAsync(() => created?.ReportIndexError(planId, ex.Message)));
             // Versions are deleted by the rules as saved at that moment, not as they were when the run was queued.
             // One storage factory for everything the app opens (runs, versions, previews, restores, deletions): folders,
-            // and S3 locations on the connections in connections.json of this configuration folder. An unreadable file
-            // surfaces as a StorageIOException with the store's reason (the run ends as error, nothing is deleted).
+            // S3 locations on the connections in connections.json and Google Drive locations on the connections in
+            // drive-connections.json of this configuration folder. An unreadable file (or a Google key that cannot be read
+            // on this Windows account) surfaces as a StorageIOException with the store's reason (the run ends as error,
+            // nothing is deleted).
             var s3 = new S3Connections(paths.ConnectionsFile);
-            var storages = new S3StorageFactory(new StorageFactory(), s3.Resolve);
+            var drive = new DriveConnections(paths.DriveConnectionsFile);
+            var s3Storages = new S3StorageFactory(new StorageFactory(), s3.Resolve);
+            var storages = new DriveStorageFactory(s3Storages, drive.Resolve);
             var runner = new BackupRunner(storages, currentRules: planId => planStore.TryLoad(planId)?.Retention,
                 indexSink: versionIndex);
             var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
@@ -184,7 +191,7 @@ public partial class App : Application
             var mainViewModel = new MainViewModel(planStore, paths, settings, () => settingsStore.Save(settings),
                 () => settingsStore.LastLoadError, _dialogs, ShowSettings, queue, scheduler,
                 action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(),
-                versionIndex, storages, s3);
+                versionIndex, storages, s3, drive);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
@@ -199,6 +206,8 @@ public partial class App : Application
             _queue = queue;
             _scheduler = scheduler;
             _s3 = s3;
+            _drive = drive;
+            _s3Storages = s3Storages;
             _storages = storages;
         }
         catch
@@ -376,7 +385,9 @@ public partial class App : Application
                 _dialogs.ManageS3Accounts();
                 _s3?.Reload();   // an account's secret entered again: the plans validate again
             },
-            manageS3Connections: ShowS3Connections);
+            manageS3Connections: ShowS3Connections,
+            manageDriveAccounts: ShowDriveAccounts,
+            manageDriveConnections: ShowDriveConnections);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
             window.Owner = _window;
@@ -395,6 +406,23 @@ public partial class App : Application
             return;
         WpfDialogService.ShowOwned(new S3ConnectionsWindow(
             new S3ConnectionsViewModel(_s3, _dialogs, _mainViewModel.PlansUsingConnection)));
+    }
+
+    /// <summary>Settings → "Google accounts…": the list over the settings window; its changes are stored at once.</summary>
+    private void ShowDriveAccounts()
+    {
+        if (_drive is null)
+            return;
+        WpfDialogService.ShowOwned(new DriveAccountsWindow(new DriveAccountsViewModel(_drive, _dialogs)));
+    }
+
+    /// <summary>Settings → "Drive connections…": the list over the settings window; its changes are stored at once.</summary>
+    private void ShowDriveConnections()
+    {
+        if (_drive is null)
+            return;
+        WpfDialogService.ShowOwned(new DriveConnectionsWindow(
+            new DriveConnectionsViewModel(_drive, _dialogs, _mainViewModel.PlansUsingDriveConnection)));
     }
 
     /// <summary>The rail's theme button: applies the mode at once and saves it right away.</summary>
@@ -491,7 +519,9 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         base.OnExit(e);
-        _storages?.Dispose();   // the S3 clients; backups and restores were stopped before the app shut down
+        // The Drive and S3 clients; backups and restores were stopped before the app shut down.
+        _storages?.Dispose();
+        _s3Storages?.Dispose();
         _singleInstance?.Dispose();
     }
 

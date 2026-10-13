@@ -348,4 +348,171 @@ public class PlanValidatorTests : IDisposable
             Message.Of("core.plan.retentionRule", ("index", 1), ("problem", Message.Of("shared.retention.keep", ("max", 9999)))),
             Message.Of("core.plan.trigger", ("index", 1), ("problem", Message.Of("shared.trigger.notWeekday", ("day", "Mo")))));
     }
+
+    // ---- Google Drive locations ----
+
+    private static readonly Dictionary<string, DriveRoot> DriveRoots = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["d1"] = new DriveRoot("team", "team"),            // a shared drive
+        ["d1-copy"] = new DriveRoot("team", "team"),       // another connection on the same shared drive
+        ["d2"] = new DriveRoot("folder-x", "team"),        // a folder on that shared drive (another root)
+        ["d3"] = new DriveRoot("other", "other"),          // another shared drive
+        ["my"] = new DriveRoot("my-folder", null),         // a folder in someone's My Drive
+    };
+
+    private static IReadOnlyList<string> ValidateDrive(BackupPlan plan, Func<string, DriveRoot?>? lookup = null) =>
+        PlanValidator.Validate(plan, [plan], Lookup, lookup ?? DriveRoots.GetValueOrDefault).Select(English).ToList();
+
+    private static StorageLocation Drive(string path, string? connectionId) => new("gdrive", path, connectionId);
+
+    [Fact]
+    public void Drive_source_and_target_with_an_existing_connection_and_a_valid_path_are_valid()
+    {
+        var plan = ValidPlan();
+        plan.Target = Drive("backups/docs", "d1");
+        ValidateDrive(plan).Should().BeEmpty();
+
+        plan = ValidPlan();
+        plan.Source = Drive("", "my");
+        plan.Target = StorageLocation.FileSystem(_tmp.PathOf("dst"));
+        ValidateDrive(plan).Should().BeEmpty("a source may be in My Drive");
+    }
+
+    [Fact]
+    public void Drive_location_without_a_connection_or_with_a_deleted_one_is_reported()
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive("a", null);
+        plan.Target = Drive("b", "gone");
+
+        ValidateDrive(plan).Should().Equal("Choose a Google Drive connection for the source.",
+            "The target's Google Drive connection no longer exists.");
+    }
+
+    [Fact]
+    public void Without_a_Drive_lookup_every_Drive_connection_is_missing()
+    {
+        var plan = ValidPlan();
+        plan.Target = Drive("b", "d1");
+
+        PlanValidator.Validate(plan, [plan]).Select(English).Should().Equal("The target's Google Drive connection no longer exists.");
+    }
+
+    [Theory]
+    [InlineData("/backups")]
+    [InlineData("a//b")]
+    [InlineData("a/../b")]
+    public void Invalid_Drive_path_is_reported(string path)
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive(path, "d3");
+        plan.Target = Drive(path, "d1");
+
+        ValidateDrive(plan).Should().Equal(
+            "The source path is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+            "The target path is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.");
+    }
+
+    [Fact]
+    public void Drive_target_outside_a_shared_drive_is_reported()
+    {
+        var plan = ValidPlan();
+        plan.Target = Drive("backups", "my");
+
+        ValidateDrive(plan).Should().Equal("Drive targets must be on a shared drive.");
+    }
+
+    [Fact]
+    public void Unreadable_Drive_connections_are_reported_once()
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive("a", "d1");
+        plan.Target = Drive("b", "d3");
+
+        ValidateDrive(plan, _ => throw new StorageIOException("drive-connections.json", "drive-connections.json could not be read: corrupt"))
+            .Should().Equal("The Google Drive connections could not be read: drive-connections.json could not be read: corrupt");
+    }
+
+    [Theory]
+    [InlineData("d1", "data", "d1", "data")]
+    [InlineData("d1", "data", "d1-copy", "data/backups")]
+    [InlineData("d1", "", "d1", "backups")]
+    public void Drive_target_inside_its_Drive_source_on_the_same_root_is_reported(string sourceId, string sourcePath,
+        string targetId, string targetPath)
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive(sourcePath, sourceId);
+        plan.Target = Drive(targetPath, targetId);
+
+        ValidateDrive(plan).Should().Equal("Target must not be inside the source.");
+    }
+
+    [Fact]
+    public void Drive_source_inside_its_Drive_target_is_reported()
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive("data/photos", "d1");
+        plan.Target = Drive("data", "d1-copy");
+
+        ValidateDrive(plan).Should().Equal("Source must not be inside the target.");
+    }
+
+    [Theory]
+    [InlineData("d1", "data", "d3", "data")]          // another shared drive
+    [InlineData("d1", "data", "d1", "database")]      // a sibling whose name starts alike
+    [InlineData("d1", "data/a", "d1", "data/b")]
+    public void Drive_source_and_target_apart_are_valid(string sourceId, string sourcePath, string targetId, string targetPath)
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive(sourcePath, sourceId);
+        plan.Target = Drive(targetPath, targetId);
+
+        ValidateDrive(plan).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Drive_never_overlaps_a_folder_or_S3()
+    {
+        var plan = ValidPlan();
+        plan.Source = S3("", "c1");
+        plan.Target = Drive("", "d1");
+        ValidateDrive(plan).Should().BeEmpty();
+
+        plan = ValidPlan();
+        plan.Source = Drive("", "d1");
+        plan.Target = S3("", "c1");
+        ValidateDrive(plan).Should().BeEmpty();
+    }
+
+    // A whole shared drive holds every folder on it, whatever connection opens that folder.
+    [Fact]
+    public void A_folder_target_on_the_shared_drive_that_is_the_whole_source_is_reported()
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive("", "d1");
+        plan.Target = Drive("backups", "d2");
+
+        ValidateDrive(plan).Should().Equal("Target must not be inside the source.");
+    }
+
+    [Fact]
+    public void A_folder_source_on_the_shared_drive_that_is_the_whole_target_is_reported()
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive("", "d2");
+        plan.Target = Drive("", "d1");
+
+        ValidateDrive(plan).Should().Equal("Source must not be inside the target.");
+    }
+
+    [Fact]
+    public void A_path_on_the_shared_drive_side_with_a_folder_root_on_the_same_drive_stays_valid()
+    {
+        // Where the folder root lies on the drive is not known without asking Drive.
+        var plan = ValidPlan();
+        plan.Source = Drive("photos", "d1");
+        plan.Target = Drive("", "d2");
+
+        ValidateDrive(plan).Should().BeEmpty();
+    }
 }

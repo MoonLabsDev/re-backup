@@ -1,0 +1,99 @@
+<Window x:Class="ReBackup.App.DriveConnectionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf"
+        xmlns:controls="clr-namespace:ReBackup.Shared.Wpf.Controls;assembly=ReBackup.Shared.Wpf"
+        Width="600" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource {x:Type Window}}">
+    <!-- Add or edit one Drive connection: the Google account and the root (a shared drive, or a folder by link or ID). -->
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="Converter.Visible" />
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,14,0" />
+        </Style>
+        <Style x:Key="FieldMessage" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+                <Trigger Property="Text" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="20,18">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Name -->
+            <TextBlock Grid.Row="0" Style="{StaticResource FieldLabel}" Text="{l:Loc common.name}" />
+            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding IsEditable}" AutomationProperties.Name="{l:Loc common.name}" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource FieldMessage}" Foreground="{DynamicResource Brush.Danger}"
+                       Text="{Binding NameError}" />
+
+            <!-- Account: the stored service accounts, or a new one -->
+            <TextBlock Grid.Row="2" Margin="0,10,14,0" Style="{StaticResource FieldLabel}" Text="{l:Loc driveconnections.account}" />
+            <DockPanel Grid.Row="2" Grid.Column="1" Margin="0,10,0,0">
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" MinWidth="120" Content="{l:Loc driveconnections.newAccount}"
+                        Command="{Binding NewAccountCommand}" AutomationProperties.Name="{l:Loc driveconnections.newAccount}" />
+                <ComboBox ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount}" DisplayMemberPath="Name"
+                          IsEnabled="{Binding IsEditable}" AutomationProperties.Name="{l:Loc driveconnections.account}" />
+            </DockPanel>
+            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource FieldMessage}" Foreground="{DynamicResource Brush.TextMuted}"
+                       Text="{Binding AccountHint}" />
+        </Grid>
+
+        <!-- Root: a shared drive the account is a member of, or a folder by link or ID -->
+        <Border Margin="0,16,0,0" Padding="0,14,0,0" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Brush.Border}">
+            <StackPanel>
+                <RadioButton GroupName="Root" Content="{l:Loc driveconnections.sharedDrive}" IsChecked="{Binding UseSharedDrive}"
+                             IsEnabled="{Binding IsEditable}" />
+                <DockPanel Margin="24,8,0,0" Visibility="{Binding UseSharedDrive, Converter={StaticResource Converter.Visible}}">
+                    <Button DockPanel.Dock="Right" Margin="8,0,0,0" MinWidth="96" Content="{l:Loc driveconnections.refresh}"
+                            Command="{Binding LoadSharedDrivesCommand}" AutomationProperties.Name="{l:Loc driveconnections.refresh}" />
+                    <ComboBox ItemsSource="{Binding SharedDrives}" SelectedItem="{Binding SelectedSharedDrive}" DisplayMemberPath="Name"
+                              IsEnabled="{Binding IsEditable}" AutomationProperties.Name="{l:Loc driveconnections.sharedDrive}" />
+                </DockPanel>
+
+                <RadioButton Margin="0,12,0,0" GroupName="Root" Content="{l:Loc driveconnections.folder}" IsChecked="{Binding UseFolder}"
+                             IsEnabled="{Binding IsEditable}" />
+                <StackPanel Margin="24,8,0,0" Visibility="{Binding UseFolder, Converter={StaticResource Converter.Visible}}">
+                    <TextBox FontFamily="{StaticResource Font.Mono}" FontSize="12" Text="{Binding FolderText, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding IsEditable}" AutomationProperties.Name="{l:Loc driveconnections.folder}" />
+                    <TextBlock Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextFaint}"
+                               Text="{l:Loc driveconnections.folderHint}" />
+                </StackPanel>
+
+                <DockPanel Margin="0,10,0,0">
+                    <controls:ProgressRing DockPanel.Dock="Left" Width="18" Height="18" Thickness="2" IsIndeterminate="True" Margin="0,0,8,0"
+                                           Visibility="{Binding IsBusy, Converter={StaticResource Converter.Visible}}" />
+                    <TextBlock Style="{StaticResource FieldMessage}" Foreground="{DynamicResource Brush.Danger}" Text="{Binding Error}" />
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Margin="0,18,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="{l:Loc s3.dialog.save}" MinWidth="96" Style="{StaticResource Button.Accent}" IsDefault="True"
+                    Command="{Binding SaveCommand}" AutomationProperties.Name="{l:Loc s3.dialog.save}" />
+            <Button Content="{l:Loc s3.dialog.cancel}" MinWidth="80" Margin="8,0,0,0" IsCancel="True"
+                    AutomationProperties.Name="{l:Loc s3.dialog.cancel}" />
+        </StackPanel>
+    </StackPanel>
+</Window>

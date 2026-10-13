@@ -9,7 +9,7 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="Converter.Visible" />
 
-        <!-- The Folder | S3 switch above a source or target. -->
+        <!-- The Folder | S3 | Drive switch above a source or target. -->
         <Style x:Key="Border.KindSwitch" TargetType="Border">
             <Setter Property="DockPanel.Dock" Value="Right" />
             <Setter Property="VerticalAlignment" Value="Bottom" />
@@ -141,6 +141,71 @@
             </StackPanel>
         </DataTemplate>
 
+        <!-- The Google Drive half of a source or target: connection, path and the connection test (DriveLocationViewModel). -->
+        <DataTemplate x:Key="DriveLocationEditor" DataType="{x:Type vm:DriveLocationViewModel}">
+            <StackPanel>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="{l:Loc plan.drive.newConnection}"
+                            Command="{Binding NewConnectionCommand}" AutomationProperties.Name="{l:Loc plan.drive.newConnection}" />
+                    <ComboBox MinHeight="34" ItemsSource="{Binding Connections}" DisplayMemberPath="Name" SelectedValuePath="Id"
+                              SelectedItem="{Binding SelectedConnection}" AutomationProperties.Name="{l:Loc plan.drive.connection}" />
+                </DockPanel>
+
+                <TextBlock Margin="0,8,0,6" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Text="{l:Loc plan.drive.path}" />
+                <Grid>
+                    <TextBox MinHeight="34" FontFamily="{StaticResource Font.Mono}" FontSize="12" Padding="6,3"
+                             VerticalContentAlignment="Center" AutomationProperties.Name="{l:Loc plan.drive.path}"
+                             Text="{Binding Path, UpdateSourceTrigger=PropertyChanged}" />
+                    <!-- Placeholder while the path is empty (the connection's root) -->
+                    <TextBlock Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False" FontFamily="{StaticResource Font.Mono}"
+                               FontSize="12" Foreground="{DynamicResource Brush.TextFaint}" Text="{l:Loc plan.drive.pathPlaceholder}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Path}" Value="">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+
+                <DockPanel Margin="0,8,0,0">
+                    <Button DockPanel.Dock="Left" MinWidth="80" Content="{l:Loc plan.drive.run}" Command="{Binding TestCommand}"
+                            AutomationProperties.Name="{l:Loc plan.drive.run}" />
+                    <Button DockPanel.Dock="Left" Margin="8,0,0,0" Content="{l:Loc s3.test.cancel}" Command="{Binding CancelTestCommand}"
+                            AutomationProperties.Name="{l:Loc s3.test.cancel}"
+                            Visibility="{Binding IsTesting, Converter={StaticResource Converter.Visible}}" />
+                    <controls:ProgressRing DockPanel.Dock="Left" Width="18" Height="18" Thickness="2" IsIndeterminate="True" Margin="8,0,0,0"
+                                           Visibility="{Binding IsTesting, Converter={StaticResource Converter.Visible}}" />
+                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Brush.TextFaint}" Text="{l:Loc plan.drive.pathHint}" />
+                </DockPanel>
+
+                <!-- The test's outcome: usable (accent), a problem (danger), or why there is no result (warning) -->
+                <TextBlock Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap" Text="{Binding TestMessage}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding TestPassed}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding TestPassed}" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding TestMessage}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
+
         <!-- Field label above an input. -->
         <Style x:Key="TextBlock.Label" TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
             <Setter Property="FontSize" Value="12" />
@@ -224,6 +289,9 @@
                                 <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.s3}"
                                              IsChecked="{Binding SourceIsS3, Mode=OneWay}"
                                              Command="{Binding ChooseSourceKindCommand}" CommandParameter="S3" />
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.drive}"
+                                             IsChecked="{Binding SourceIsDrive, Mode=OneWay}"
+                                             Command="{Binding ChooseSourceKindCommand}" CommandParameter="Drive" />
                             </StackPanel>
                         </Border>
                         <TextBlock Style="{StaticResource TextBlock.Label}" VerticalAlignment="Bottom" Text="{l:Loc plan.source.source}" />
@@ -231,6 +299,9 @@
                     <ContentControl Focusable="False" IsTabStop="False" Content="{Binding SourceS3}"
                                     ContentTemplate="{StaticResource S3LocationEditor}"
                                     Visibility="{Binding SourceIsS3, Converter={StaticResource Converter.Visible}}" />
+                    <ContentControl Focusable="False" IsTabStop="False" Content="{Binding SourceDrive}"
+                                    ContentTemplate="{StaticResource DriveLocationEditor}"
+                                    Visibility="{Binding SourceIsDrive, Converter={StaticResource Converter.Visible}}" />
                     <Grid Visibility="{Binding SourceIsFolder, Converter={StaticResource Converter.Visible}}">
                         <TextBox Style="{StaticResource TextBox.Path}" AutomationProperties.Name="{l:Loc plan.source.source}"
                                  Text="{Binding Source, UpdateSourceTrigger=PropertyChanged}" />
@@ -250,6 +321,9 @@
                                 <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.s3}"
                                              IsChecked="{Binding TargetIsS3, Mode=OneWay}"
                                              Command="{Binding ChooseTargetKindCommand}" CommandParameter="S3" />
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.kind.drive}"
+                                             IsChecked="{Binding TargetIsDrive, Mode=OneWay}"
+                                             Command="{Binding ChooseTargetKindCommand}" CommandParameter="Drive" />
                             </StackPanel>
                         </Border>
                         <TextBlock Style="{StaticResource TextBlock.Label}" VerticalAlignment="Bottom" Text="{l:Loc plan.source.target}" />
@@ -257,6 +331,9 @@
                     <ContentControl Focusable="False" IsTabStop="False" Content="{Binding TargetS3}"
                                     ContentTemplate="{StaticResource S3LocationEditor}"
                                     Visibility="{Binding TargetIsS3, Converter={StaticResource Converter.Visible}}" />
+                    <ContentControl Focusable="False" IsTabStop="False" Content="{Binding TargetDrive}"
+                                    ContentTemplate="{StaticResource DriveLocationEditor}"
+                                    Visibility="{Binding TargetIsDrive, Converter={StaticResource Converter.Visible}}" />
                     <Grid Visibility="{Binding TargetIsFolder, Converter={StaticResource Converter.Visible}}">
                         <TextBox Style="{StaticResource TextBox.Path}" AutomationProperties.Name="{l:Loc plan.source.target}"
                                  Text="{Binding Target, UpdateSourceTrigger=PropertyChanged}" />
@@ -271,7 +348,7 @@
                               ToolTip="{l:Loc plan.source.enabledToolTip}">
                         <TextBlock TextWrapping="Wrap" Text="{l:Loc plan.source.enabled}" />
                     </CheckBox>
-                    <!-- Hidden for an S3 target: there is no free-space information. -->
+                    <!-- Hidden for an S3 or Drive target: there is no free-space information. -->
                     <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,10,0,0" IsChecked="{Binding FreeSpaceByRetention}"
                               Visibility="{Binding ShowFreeSpaceOption, Converter={StaticResource Converter.Visible}}">
                         <TextBlock TextWrapping="Wrap"

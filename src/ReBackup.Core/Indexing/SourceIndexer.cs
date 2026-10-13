@@ -17,6 +17,12 @@ public sealed class IndexNode
     public required bool IsDirectory { get; init; }
     public long Size { get; init; }
     public DateTime LastWriteUtc { get; init; }
+
+    /// <summary>
+    /// The storage's change token (<see cref="StorageEntry.Stamp"/>) of a file listed with size 0, whose real size may only be known
+    /// by reading it; <c>null</c> for every other file, for folders, and when the storage has none.
+    /// </summary>
+    public string? Stamp { get; init; }
     public IReadOnlyList<IndexNode> Children { get; init; } = [];
 
     /// <summary>Why this folder could not be (fully) read, if so.</summary>
@@ -187,6 +193,8 @@ public static class SourceIndexer
                         IsDirectory = false,
                         Size = entry.Size,
                         LastWriteUtc = entry.ModifiedUtc,
+                        // Only a size of 0 may be "unknown until read" (a Google document): its stamp tells a change then.
+                        Stamp = entry.Size == 0 ? entry.Stamp : null,
                     });
                     if (childName.Equals(IgnoreOrigins.NestedFileName, StringComparison.OrdinalIgnoreCase))
                         await ReadIgnoreFileAsync(entry.Path, relativePath).ConfigureAwait(false);

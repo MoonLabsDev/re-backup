@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ReBackup.Storage.S3.Connections;
+namespace ReBackup.Storage;
 
 /// <summary>Protects secrets with Windows DPAPI, bound to the current Windows account.</summary>
 public static class SecretProtector
