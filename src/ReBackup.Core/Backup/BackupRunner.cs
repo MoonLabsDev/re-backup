@@ -49,11 +49,10 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>The target must have room for the included bytes times this factor.</summary>
     public const double FreeSpaceMargin = 1.05;
 
-    /// <summary>How many files are copied at the same time when the source or the target is S3 (spec 4).</summary>
+    /// <summary>How many files are copied at the same time when the source or the target is not a folder, e.g. S3 or Google Drive (spec 4).</summary>
     public const int ParallelS3Copies = 8;
 
     private const int BufferSize = 1024 * 1024;
-    private const string S3Kind = "s3";
     private const int MarkerDeleteAttempts = 5;
     private static readonly string NoLongerExists = CoreTexts.English("core.file.noLongerExists");
     private static readonly TimeSpan MarkerDeleteRetryDelay = TimeSpan.FromMilliseconds(200);
@@ -747,10 +746,11 @@ public sealed class BackupRunner : IBackupRunner
         return manifest;
     }
 
-    /// <summary>Whether the files are copied by <see cref="ParallelS3Copies"/> workers: when the source or the target is S3.</summary>
-    private static bool CopiesInParallel(BackupPlan plan) =>
-        string.Equals(plan.Source.Kind, S3Kind, StringComparison.Ordinal) ||
-        string.Equals(plan.Target.Kind, S3Kind, StringComparison.Ordinal);
+    /// <summary>
+    /// Whether the files are copied by <see cref="ParallelS3Copies"/> workers: when the source or the target is not a folder
+    /// (S3, Google Drive: remote storages whose calls take long and run well side by side).
+    /// </summary>
+    private static bool CopiesInParallel(BackupPlan plan) => !plan.Source.IsFileSystem || !plan.Target.IsFileSystem;
 
     /// <summary>
     /// Copies the files with <see cref="ParallelS3Copies"/> workers fed by a bounded channel (spec 4). Each file is
@@ -901,7 +901,8 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>
     /// Copies one file while hashing it; the copy gets the indexed time of the source. Returns no copy and a reason
     /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
-    /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed.
+    /// <c>Changed</c> tells that the source's time after the copy differs from what was indexed, or its size (listed or read)
+    /// does while its stamp does too or cannot tell (see <see cref="ChangedWhileCopied"/>).
     /// </summary>
     /// <param name="storageFailuresStop">
     /// A <see cref="StorageUnavailableException"/> opening the source file propagates instead of skipping the file (the
@@ -976,7 +977,7 @@ public sealed class BackupRunner : IBackupRunner
         try
         {
             var now = await source.StatAsync(node.RelativePath, cancellationToken).ConfigureAwait(false);
-            changed = now is null || size != node.Size || now.Size != node.Size || now.ModifiedUtc != node.LastWriteUtc;
+            changed = ChangedWhileCopied(node, now, size);
         }
         catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
@@ -985,6 +986,21 @@ public sealed class BackupRunner : IBackupRunner
 
         return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
             "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false);
+    }
+
+    /// <summary>
+    /// Whether the source file changed while it was copied: it is gone, its time differs from the indexed one, or its size (as
+    /// listed now, or the bytes read) differs from the indexed one. A size alone is no change when both the index and the stat
+    /// carry the same stamp: some storages only learn the size by reading (a Google document is listed with size 0 and exported
+    /// on read), and the unchanged stamp shows the content is the indexed one.
+    /// </summary>
+    private static bool ChangedWhileCopied(IndexNode node, StorageEntry? now, long bytesRead)
+    {
+        if (now is null || now.ModifiedUtc != node.LastWriteUtc)
+            return true;
+        if (bytesRead == node.Size && now.Size == node.Size)
+            return false;
+        return node.Stamp is null || now.Stamp is null || !string.Equals(now.Stamp, node.Stamp, StringComparison.Ordinal);
     }
 
     /// <summary>

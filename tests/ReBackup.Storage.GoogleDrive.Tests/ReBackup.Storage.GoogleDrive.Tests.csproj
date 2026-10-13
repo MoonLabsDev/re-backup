@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ReBackup.Storage.GoogleDrive\ReBackup.Storage.GoogleDrive.csproj" />
+    <ProjectReference Include="..\ReBackup.Storage.Tests\ReBackup.Storage.Tests.csproj" />
   </ItemGroup>
 
 </Project>

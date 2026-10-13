@@ -14,7 +14,7 @@ using ReBackup.Storage.InMemory;
 namespace ReBackup.Core.Tests.Backup;
 
 /// <summary>
-/// Runs from or to S3 copy with <see cref="BackupRunner.ParallelS3Copies"/> workers (spec 4); folder to folder stays one
+/// Runs from or to anything but a folder (S3, Google Drive) copy with <see cref="BackupRunner.ParallelS3Copies"/> workers (spec 4); folder to folder stays one
 /// file at a time. The storages hold copies in flight at known points (no sleeps): a hook waits until enough copies have
 /// arrived, and the guard timeout only turns a hang into a failure.
 /// </summary>
@@ -51,13 +51,20 @@ public class BackupRunnerParallelTests
         {
             Id = "p1",
             Name = "Projects",
-            Source = new StorageLocation(sourceKind, "", "conn-1"),
-            Target = new StorageLocation(targetKind, "", "conn-2"),
+            Source = Location(sourceKind, Path.GetTempPath(), "conn-1"),
+            Target = Location(targetKind, FolderTarget, "conn-2"),
         };
         var storages = new TestStorageFactory(location => location == plan.Source ? source : target);
         return new BackupRunner(storages, _time, host: "TESTHOST")
             .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual), progress, cancellationToken);
     }
+
+    /// <summary>A folder target outside the source folder (the runner checks that a folder source exists, not the target).</summary>
+    private static readonly string FolderTarget = Path.Combine(Path.GetPathRoot(Path.GetTempPath())!, "rebackup-parallel-test-target");
+
+    /// <summary>A folder location needs a real folder as source; other kinds address their storage through the connection.</summary>
+    private static StorageLocation Location(string kind, string folder, string connectionId) =>
+        kind == StorageLocation.FileSystemKind ? StorageLocation.FileSystem(folder) : new StorageLocation(kind, "", connectionId);
 
     private BackupManifest Manifest() =>
         JsonSerializer.Deserialize<BackupManifest>(_targetFiles.ReadAllBytes($"{Version}/re-manifest.json"), JsonDefaults.Options)!;
@@ -81,7 +88,10 @@ public class BackupRunnerParallelTests
     [InlineData("s3", "mem")]
     [InlineData("mem", "s3")]
     [InlineData("s3", "s3")]
-    public async Task Copies_with_eight_workers_when_source_or_target_is_s3(string sourceKind, string targetKind)
+    [InlineData("fs", "gdrive")]
+    [InlineData("gdrive", "fs")]
+    [InlineData("gdrive", "s3")]
+    public async Task Copies_with_eight_workers_when_source_or_target_is_not_a_folder(string sourceKind, string targetKind)
     {
         var allHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var source = new GatedStorage(_sourceFiles) { BeforeOpen = HoldUntil(BackupRunner.ParallelS3Copies, _ => true, allHeld) };
@@ -130,7 +140,7 @@ public class BackupRunnerParallelTests
             },
         };
 
-        var entry = await Run("mem", "mem", source, _targetFiles);
+        var entry = await Run("fs", "fs", source, _targetFiles);
 
         entry.Status.Should().Be(RunStatus.Completed, entry.Reason);
         secondOpen.Task.IsCompleted.Should().BeFalse("no file is opened while another is copied");

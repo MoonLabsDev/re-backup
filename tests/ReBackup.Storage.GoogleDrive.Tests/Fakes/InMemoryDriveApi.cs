@@ -5,6 +5,8 @@ namespace ReBackup.Storage.GoogleDrive.Tests.Fakes;
 /// <summary>
 /// An in-memory Google Drive: folders and files by ID, same-name siblings allowed, Google files that export to fixed content.
 /// <see cref="OnCall"/> runs before every call (operation name, the ID or parent ID it is about) and may throw or change the drive.
+/// <see cref="RootId"/> is a folder in My Drive (no drive ID); <see cref="AddSharedDrive"/> adds a shared drive whose root folder has
+/// the drive's ID, and everything below a shared drive carries that drive ID.
 /// </summary>
 internal sealed class InMemoryDriveApi : IDriveApi
 {
@@ -20,7 +22,7 @@ internal sealed class InMemoryDriveApi : IDriveApi
 
     public InMemoryDriveApi()
     {
-        _nodes[RootId] = new Node(RootId, "Root", DriveMimeTypes.Folder, null, [], DateTime.UnixEpoch, 1, null);
+        _nodes[RootId] = new Node(RootId, "Root", DriveMimeTypes.Folder, null, [], DateTime.UnixEpoch, 1, null, null);
     }
 
     /// <summary>Runs before every call with the operation ("list", "get", "createFolder", "upload", "update", "delete", "download", "export", "sharedDrives") and its ID.</summary>
@@ -47,9 +49,14 @@ internal sealed class InMemoryDriveApi : IDriveApi
     public string AddGoogleFile(string parentId, string name, string mimeType, byte[]? export = null) =>
         Add(parentId, name, mimeType, export ?? []);
 
+    /// <summary>Adds a shared drive the account is a member of: listed by <see cref="ListSharedDrivesAsync"/>, its root folder has ID <paramref name="id"/>.</summary>
     public void AddSharedDrive(string id, string name)
     {
-        lock (_gate) _sharedDrives.Add(new SharedDrive(id, name));
+        lock (_gate)
+        {
+            _sharedDrives.Add(new SharedDrive(id, name));
+            _nodes[id] = new Node(id, name, DriveMimeTypes.Folder, null, [], DateTime.UnixEpoch, _nextVersion++, null, id);
+        }
     }
 
     /// <summary>The children of the folder, for assertions (no call is counted).</summary>
@@ -188,7 +195,7 @@ internal sealed class InMemoryDriveApi : IDriveApi
         {
             if (!_nodes.TryGetValue(parentId, out var parent) || parent.MimeType != DriveMimeTypes.Folder) throw NotFound();
             var id = "id" + ++_nextId;
-            _nodes[id] = new Node(id, name, mimeType, parentId, content ?? [], modifiedUtc ?? Now, _nextVersion++, _nextId);
+            _nodes[id] = new Node(id, name, mimeType, parentId, content ?? [], modifiedUtc ?? Now, _nextVersion++, _nextId, parent.DriveId);
             return id;
         }
     }
@@ -208,8 +215,10 @@ internal sealed class InMemoryDriveApi : IDriveApi
 
     private static DriveApiException NotFound() => new(404, "notFound");
 
-    private sealed class Node(string id, string name, string mimeType, string? parentId, byte[] content, DateTime modifiedUtc, long version, int? order)
+    private sealed class Node(string id, string name, string mimeType, string? parentId, byte[] content, DateTime modifiedUtc, long version, int? order,
+        string? driveId)
     {
+        public string? DriveId { get; } = driveId;
         public string Id { get; } = id;
         public string Name { get; } = name;
         public string MimeType { get; } = mimeType;
@@ -223,7 +232,7 @@ internal sealed class InMemoryDriveApi : IDriveApi
         {
             var isFile = !DriveMimeTypes.IsGoogleType(MimeType);
             return new DriveItem(Id, Name, MimeType, isFile ? Content.Length : null, ModifiedUtc,
-                isFile ? Convert.ToHexStringLower(MD5.HashData(Content)) : null, Version);
+                isFile ? Convert.ToHexStringLower(MD5.HashData(Content)) : null, Version, DriveId);
         }
     }
 }

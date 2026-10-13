@@ -8,7 +8,9 @@ namespace ReBackup.Storage.GoogleDrive;
 /// <param name="ModifiedUtc">The modified time (UTC).</param>
 /// <param name="Md5">The MD5 of the content (hex); <c>null</c> for folders and Google files.</param>
 /// <param name="Version">Drive's version number, which grows with every change.</param>
-public sealed record DriveItem(string Id, string Name, string MimeType, long? Size, DateTime ModifiedUtc, string? Md5, long Version)
+/// <param name="DriveId">The shared drive the item lives in; <c>null</c> for an item in someone's My Drive.</param>
+public sealed record DriveItem(string Id, string Name, string MimeType, long? Size, DateTime ModifiedUtc, string? Md5, long Version,
+    string? DriveId = null)
 {
     public bool IsFolder => MimeType == DriveMimeTypes.Folder;
 }

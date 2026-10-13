@@ -17,6 +17,9 @@ public sealed class IndexNode
     public required bool IsDirectory { get; init; }
     public long Size { get; init; }
     public DateTime LastWriteUtc { get; init; }
+
+    /// <summary>The storage's change token of a file as listed (<see cref="StorageEntry.Stamp"/>); <c>null</c> for folders or when unknown.</summary>
+    public string? Stamp { get; init; }
     public IReadOnlyList<IndexNode> Children { get; init; } = [];
 
     /// <summary>Why this folder could not be (fully) read, if so.</summary>
@@ -187,6 +190,7 @@ public static class SourceIndexer
                         IsDirectory = false,
                         Size = entry.Size,
                         LastWriteUtc = entry.ModifiedUtc,
+                        Stamp = entry.Stamp,
                     });
                     if (childName.Equals(IgnoreOrigins.NestedFileName, StringComparison.OrdinalIgnoreCase))
                         await ReadIgnoreFileAsync(entry.Path, relativePath).ConfigureAwait(false);
