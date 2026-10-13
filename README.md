@@ -296,7 +296,8 @@ account that a connection uses.
 only write to a shared drive (Google Workspace); a plan whose Drive target is in someone's My Drive cannot be saved.
 Give the service account the **Manager** role on that shared drive: ReBackup deletes old versions **permanently**
 (they do not go to the trash), and on a shared drive only a Manager may do that. With *Content manager* it can write
-backups but only trash files, so retention fails. A Drive *source* can be a shared drive or a folder in My Drive
+backups but only trash files: every run ends as an error (the new version's pending marker cannot be deleted), and
+retention fails as well. A Drive *source* can be a shared drive or a folder in My Drive
 shared with the account; reading needs no more than the Viewer role.
 
 **Keep the target out of the source.** A plan whose Drive target is the same as its source or lies inside it cannot be
@@ -316,7 +317,8 @@ them, and a restore or a write to such a path fails naming it.
 
 Versions on Drive have exactly the format of versions in a folder (the version folder, `re-manifest.json` and the
 markers), so retention, the Versions tab and restore work the same. When the source or the target is Drive, eight
-files are copied at a time. "When the target is full…" is not offered for Drive targets (ReBackup cannot see how much
+files are copied at a time. Each file sent to Drive is first buffered in a temporary file in `%TEMP%` (deleted when
+it is sent), so the system drive needs free room for the eight largest files being copied at once. "When the target is full…" is not offered for Drive targets (ReBackup cannot see how much
 room a shared drive has left); a full shared drive ends the run as an error. Drive limits the rate of requests;
 ReBackup waits and retries, so a large first backup can take a while.
 

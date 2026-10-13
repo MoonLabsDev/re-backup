@@ -177,11 +177,11 @@ public static class PlanValidator
         }
     }
 
-    /// <summary>Whether two Drive connections open the same root (the same folder or shared drive).</summary>
     /// <summary>Whether the location is a whole shared drive: its root is the shared drive itself and its path is empty.</summary>
     private static bool IsWholeSharedDrive(DriveRoot root, string path) =>
         path.Length == 0 && string.Equals(root.RootId, root.SharedDriveId, StringComparison.Ordinal);
 
+    /// <summary>Whether two Drive connections open the same root (the same folder or shared drive).</summary>
     private static bool SameRoot(DriveRoot a, DriveRoot b) =>
         string.Equals(a.RootId, b.RootId, StringComparison.Ordinal) &&
         string.Equals(a.SharedDriveId, b.SharedDriveId, StringComparison.Ordinal);

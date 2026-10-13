@@ -162,7 +162,7 @@ public sealed class DriveConnectionTester
         {
             StorageAccessDeniedException => new DriveTestResult(DriveTestOutcome.AccessDenied, step switch
             {
-                Step.Write => $"The service account {email} may not write to {place}. Give it the Content manager or Manager role on the shared drive.",
+                Step.Write => $"The service account {email} may not write to {place}. Give it the Manager role on the shared drive.",
                 Step.Delete => $"The service account {email} can write to {place} but may not delete files. ReBackup deletes old versions permanently, " +
                                "which on a shared drive needs the Manager role.",
                 _ => $"The service account {email} may not open {place}, or its key is not valid. Share the folder or shared drive with {email}.",
