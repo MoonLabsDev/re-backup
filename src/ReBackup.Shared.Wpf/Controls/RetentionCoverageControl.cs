@@ -85,6 +85,10 @@ public sealed class RetentionCoverageControl : FrameworkElement
         nameof(SelectedId), typeof(string), typeof(RetentionCoverageControl),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    public static readonly DependencyProperty SelectedDateProperty = DependencyProperty.Register(
+        nameof(SelectedDate), typeof(DateTime?), typeof(RetentionCoverageControl),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
     public static readonly DependencyProperty PresentColoringProperty = DependencyProperty.Register(
         nameof(PresentColoring), typeof(CoveragePresentColoring), typeof(RetentionCoverageControl),
         new FrameworkPropertyMetadata(CoveragePresentColoring.Status, FrameworkPropertyMetadataOptions.AffectsRender));
@@ -136,6 +140,16 @@ public sealed class RetentionCoverageControl : FrameworkElement
         set => SetValue(SelectedIdProperty, value);
     }
 
+    /// <summary>
+    /// The time of the selection, for when no slot holds <see cref="SelectedId"/> (e.g. a run whose version is not the
+    /// one its slot keeps): the slots that contain its date are highlighted, without a ring.
+    /// </summary>
+    public DateTime? SelectedDate
+    {
+        get => (DateTime?)GetValue(SelectedDateProperty);
+        set => SetValue(SelectedDateProperty, value);
+    }
+
     /// <summary>How cells with a version (without warnings) are filled: the accent colour, or the lane's period colour.</summary>
     public CoveragePresentColoring PresentColoring
     {
@@ -172,19 +186,22 @@ public sealed class RetentionCoverageControl : FrameworkElement
     }
 
     /// <summary>
-    /// Where the selection of <paramref name="selectedId"/> is drawn: a ring around each drawn cell that holds the
-    /// version, the lanes whose "+N" label is ringed instead, and in every lane a full-height band behind the drawn slot
-    /// that contains the version's date. <see cref="CoverageSelectionLayout.None"/> when no slot holds the version.
+    /// Where the selection of <paramref name="selectedId"/> (compared ignoring case) is drawn: a ring around each drawn
+    /// cell that holds the version, the lanes whose "+N" label is ringed instead, and in every lane a full-height band
+    /// behind the drawn slot that contains the version's date. When no slot holds the version, only the bands of
+    /// <paramref name="selectedDate"/>'s date are drawn; <see cref="CoverageSelectionLayout.None"/> without either.
     /// </summary>
-    public static CoverageSelectionLayout SelectionLayout(Size size, IReadOnlyList<CoverageLane> lanes, string? selectedId)
+    public static CoverageSelectionLayout SelectionLayout(Size size, IReadOnlyList<CoverageLane> lanes, string? selectedId,
+        DateTime? selectedDate = null)
     {
-        if (selectedId is null)
-            return CoverageSelectionLayout.None;
-        var version = lanes.SelectMany(l => l.Slots).Select(s => s.Version).FirstOrDefault(v => v?.Id == selectedId);
-        if (version is null)
+        var version = selectedId is null
+            ? null
+            : lanes.SelectMany(l => l.Slots).Select(s => s.Version)
+                .FirstOrDefault(v => v is not null && IsSelected(v, selectedId));
+        if ((version?.LocalTime ?? selectedDate) is not { } time)
             return CoverageSelectionLayout.None;
 
-        var date = DateOnly.FromDateTime(version.LocalTime);
+        var date = DateOnly.FromDateTime(time);
         var outset = RingGap + RingThickness / 2;
         var rings = new List<Rect>();
         var hiddenLanes = new List<int>();
@@ -199,7 +216,7 @@ public sealed class RetentionCoverageControl : FrameworkElement
             {
                 var slot = slots[s];
                 var drawn = visible > 0 && s >= hidden;
-                if (slot.Version?.Id == selectedId)
+                if (version is not null && slot.Version is { } held && IsSelected(held, selectedId!))
                 {
                     if (drawn)
                         rings.Add(Rect.Inflate(Cell(i, s - hidden, pitch, left), outset, outset));
@@ -215,6 +232,9 @@ public sealed class RetentionCoverageControl : FrameworkElement
         }
         return new CoverageSelectionLayout(rings, hiddenLanes, bands);
     }
+
+    private static bool IsSelected(CoverageVersion version, string selectedId) =>
+        string.Equals(version.Id, selectedId, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The fill of a Present cell: <paramref name="status"/>, or the period's colour from <paramref name="periods"/>.</summary>
     public static Brush PresentBrush(RetentionPeriod period, CoveragePresentColoring coloring, Brush status, IReadOnlyList<Brush> periods) =>
@@ -317,7 +337,7 @@ public sealed class RetentionCoverageControl : FrameworkElement
         drawingContext.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, lanes.Count * LaneHeight));
 
         // The selected version's column behind the cells; its rings over them, at the end.
-        var selection = SelectionLayout(new Size(ActualWidth, ActualHeight), lanes, SelectedId);
+        var selection = SelectionLayout(new Size(ActualWidth, ActualHeight), lanes, SelectedId, SelectedDate);
         foreach (var band in selection.Bands)
             drawingContext.DrawRectangle(paint.Band, null, band);
 

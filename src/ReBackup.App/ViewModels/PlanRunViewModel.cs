@@ -210,6 +210,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     /// </summary>
     public void LoadHistory(IReadOnlyList<RunLogEntry> entries, string? target = null)
     {
+        HistoryLoading?.Invoke();
         Entries = entries;
         History.Clear();
         for (var i = entries.Count - 1; i >= 0; i--)
@@ -220,6 +221,9 @@ public sealed partial class PlanRunViewModel : ObservableObject
         UpdateCard();
         HistoryLoaded?.Invoke();
     }
+
+    /// <summary>Raised at the start of every <see cref="LoadHistory"/>, before the rows are replaced.</summary>
+    public event Action? HistoryLoading;
 
     /// <summary>Raised at the end of every <see cref="LoadHistory"/>.</summary>
     public event Action? HistoryLoaded;

@@ -127,6 +127,7 @@
                                                    LaneLabels="{Binding Versions.CoverageLabels}"
                                                    SelectCommand="{Binding Versions.SelectCoverageCommand}"
                                                    SelectedId="{Binding Versions.SelectedVersion.Name}"
+                                                   SelectedDate="{Binding Versions.SelectedVersion.Info.LocalTime}"
                                                    SlotText="{Binding Versions.CoverageSlotText}"
                                                    Visibility="{Binding Versions.HasCoverage, Converter={StaticResource BoolToVisibility}}" />
                 <TextBlock Text="{Binding Versions.NoRulesText}">

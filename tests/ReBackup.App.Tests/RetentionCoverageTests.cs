@@ -496,16 +496,70 @@ public class RetentionCoverageTests : IDisposable
     }
 
     [Fact]
-    public async Task Reloading_the_history_lets_a_gone_run_go_and_reads_the_log_again()
+    public async Task Reloading_the_history_drops_a_run_that_is_gone_and_reads_the_log_again()
     {
         var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
         var coverage = editor.HistoryCoverage;
         coverage.SelectedRun = editor.Run.History.Single(r => r.VersionName == logged);
 
-        editor.Run.LoadHistory([Run(logged, RunStatus.Completed)]);
+        editor.Run.LoadHistory([Run(logged, RunStatus.Completed)]);   // another start: not the same run
 
         coverage.SelectedRun.Should().BeNull();
         coverage.CoverageLanes[0].Slots[0].State.Should().Be(SlotState.Present);   // the warning is gone from the log
+    }
+
+    [Fact]
+    public async Task Reloading_the_same_runs_keeps_the_selected_run()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+        var before = coverage.SelectedRun = editor.Run.History.Single(r => r.VersionName == logged);
+
+        editor.Run.LoadHistory(editor.Run.Entries.ToList());
+
+        coverage.SelectedRun.Should().NotBeNull().And.NotBeSameAs(before);
+        coverage.SelectedRun.Should().BeSameAs(editor.Run.History.Single(r => r.VersionName == logged));
+        coverage.SelectedId.Should().Be(logged);
+    }
+
+    [Fact]
+    public async Task The_selected_run_gives_the_date_to_mark()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+        coverage.SelectedDate.Should().BeNull();
+
+        coverage.SelectedRun = editor.Run.History.Single(r => r.VersionName == logged);
+        coverage.SelectedDate.Should().Be(DaysAgo(2));                     // the time in the version's name
+
+        coverage.SelectedRun = editor.Run.History.Single(r => !r.HasVersion);
+        coverage.SelectedDate.Should().Be(DaysAgo(1));                     // the start of a run without a version
+    }
+
+    [Fact]
+    public async Task Saving_new_rules_rebuilds_the_history_coverage()
+    {
+        var (editor, _, _) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+
+        editor.AddRetentionRuleCommand.Execute(null);
+        coverage.CoverageLanes.Should().ContainSingle("unsaved rules do not count");
+        editor.TrySave(_fixture.Store).Should().BeTrue();
+
+        coverage.CoverageLanes.Should().HaveCount(2);
+        coverage.CoverageLabels.Should().Equal("Daily · 3", "Daily · 7");
+    }
+
+    [Fact]
+    public async Task Rules_read_again_from_disk_rebuild_the_history_coverage()
+    {
+        var (editor, _, _) = await HistoryPlanAsync([Daily(3)]);
+        var plan = editor.SavedPlan();
+        plan.Retention = [Daily(5)];
+
+        editor.ReplaceSaved(plan);
+
+        editor.HistoryCoverage.CoverageLabels.Should().Equal("Daily · 5");
     }
 
     private sealed class LambdaStorageFactory(Func<StorageLocation, IStorage> open) : IStorageFactory

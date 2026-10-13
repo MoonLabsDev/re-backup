@@ -65,6 +65,8 @@ public static class RetentionCoverage
 - Selection: every drawn cell of the `SelectedId` version gets a 2 px ring in `Color.Text`, 2 px away from the cell;
   behind the cells, every lane gets a faint full-height band (translucent `Color.Text`) over its drawn slot that
   contains the version's date. A version whose cell is hidden behind the "+N" label rings that label instead.
+  Ids are compared ignoring case. `SelectedDate` (`DateTime?`): when no slot holds `SelectedId`, the bands mark the
+  slots that contain that date, without a ring (History: the run's version time or start; Versions: the version's time).
 - Each lane has its own scale: equal-width cells, newest on the right edge. Cell width = available width / slot
   count, at least 2 px; 1 px gap when cells are ≥ 6 px. If the slots do not fit at 2 px, the newest that fit are
   drawn and a muted "+N" label marks the left edge.

@@ -110,6 +110,8 @@ public class MainWindowSmokeTests
             PathOf(RetentionCoverageControl.SlotTextProperty).Should().Be(prefix + "CoverageSlotText");
             PathOf(RetentionCoverageControl.SelectedIdProperty).Should()
                 .Be(tab == "Retention" ? "RetentionPreview.SelectedNowRow.Name" : "Versions.SelectedVersion.Name");
+            if (tab == "Versions")
+                PathOf(RetentionCoverageControl.SelectedDateProperty).Should().Be("Versions.SelectedVersion.Info.LocalTime");
         });
     }
 
@@ -134,6 +136,7 @@ public class MainWindowSmokeTests
             PathOf(control, RetentionCoverageControl.LaneLabelsProperty).Should().Be("HistoryCoverage.CoverageLabels");
             PathOf(control, RetentionCoverageControl.SelectCommandProperty).Should().Be("HistoryCoverage.SelectCoverageCommand");
             PathOf(control, RetentionCoverageControl.SelectedIdProperty).Should().Be("HistoryCoverage.SelectedId");
+            PathOf(control, RetentionCoverageControl.SelectedDateProperty).Should().Be("HistoryCoverage.SelectedDate");
             PathOf(control, RetentionCoverageControl.SlotTextProperty).Should().Be("HistoryCoverage.CoverageSlotText");
             var grid = FindAll<DataGrid>(view).Should().ContainSingle().Subject;
             PathOf(grid, Selector.SelectedItemProperty).Should().Be("HistoryCoverage.SelectedRun");

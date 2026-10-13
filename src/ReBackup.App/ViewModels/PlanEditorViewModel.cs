@@ -542,6 +542,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         }
         IsDirty = false;
         IsNew = false;
+        HistoryCoverage.OnSavedPlanChanged();
         return true;
     }
 
@@ -559,6 +560,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         LoadFrom(_saved);
         IsDirty = false;
         Validate();
+        HistoryCoverage.OnSavedPlanChanged();
     }
 
     /// <summary>The file was deleted on disk while this editor had unsaved edits; saving recreates it.</summary>

@@ -53,6 +53,7 @@
                                                    LaneLabels="{Binding HistoryCoverage.CoverageLabels}"
                                                    SelectCommand="{Binding HistoryCoverage.SelectCoverageCommand}"
                                                    SelectedId="{Binding HistoryCoverage.SelectedId}"
+                                                   SelectedDate="{Binding HistoryCoverage.SelectedDate}"
                                                    SlotText="{Binding HistoryCoverage.CoverageSlotText}"
                                                    Visibility="{Binding HistoryCoverage.HasCoverage, Converter={StaticResource BoolToVisibility}}" />
                 <TextBlock Text="{Binding HistoryCoverage.NoRulesText}">

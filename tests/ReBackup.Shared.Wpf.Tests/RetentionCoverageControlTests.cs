@@ -213,6 +213,38 @@ public class RetentionCoverageControlTests
     }
 
     [Fact]
+    public void The_selected_id_is_compared_ignoring_case()
+    {
+        var layout = RetentionCoverageControl.SelectionLayout(new Size(600, 52), DailyAndWeekly(), "V2");
+
+        layout.Rings.Should().HaveCount(2);
+        layout.Bands.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void A_selected_date_without_a_kept_version_marks_its_slots_without_a_ring()
+    {
+        // A run of Oct 3 whose version no slot keeps: Oct 3 in the daily lane, Oct 1-8 in the weekly lane.
+        var layout = RetentionCoverageControl.SelectionLayout(new Size(600, 52), DailyAndWeekly(), "not-kept",
+            new DateTime(2026, 10, 3, 18, 0, 0));
+
+        layout.Rings.Should().BeEmpty();
+        layout.HiddenLanes.Should().BeEmpty();
+        layout.Bands.Should().HaveCount(2);
+        layout.Bands[0].X.Should().BeApproximately(170 + 2 * 84.4, 1e-9);
+        layout.Bands[1].Should().Be(new Rect(170, 26, 210, 26));
+    }
+
+    [Fact]
+    public void A_kept_version_wins_over_the_selected_date()
+    {
+        var layout = RetentionCoverageControl.SelectionLayout(new Size(600, 52), DailyAndWeekly(), "v4",
+            new DateTime(2026, 10, 2));
+
+        layout.Bands[0].X.Should().BeApproximately(170 + 3 * 84.4, 1e-9);   // Oct 4, the version's date
+    }
+
+    [Fact]
     public void Nothing_is_highlighted_without_a_selection_or_for_an_unknown_id()
     {
         RetentionCoverageControl.SelectionLayout(new Size(600, 52), DailyAndWeekly(), null)
