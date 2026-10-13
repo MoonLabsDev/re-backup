@@ -58,12 +58,19 @@ public static class RetentionCoverage
 
 - Dependency properties `Lanes` (`IReadOnlyList<CoverageLane>`), `LaneLabels` (`IReadOnlyList<string>`, the app's
   localized rule labels such as "Daily · 7"), `SelectCommand` (`ICommand`, parameter = version Id), `SelectedId`
-  (highlight ring on that slot).
-- One row per lane, 22 px, 170 px label column, label coloured with the period colour as in the existing timeline.
+  (the selected version, see below), `PresentColoring` (`CoveragePresentColoring.Status`, the default: present cells
+  in `Brush.Accent`; `Period`: present cells in the lane's period colour, the `Color.Chart.*` of its label — ReS3).
+- One row per lane, 26 px (18 px cells), 170 px label column, label coloured with the period colour as in the existing
+  timeline.
+- Selection: every drawn cell of the `SelectedId` version gets a 2 px ring in `Color.Text`, 2 px away from the cell;
+  behind the cells, every lane gets a faint full-height band (translucent `Color.Text`) over its drawn slot that
+  contains the version's date. A version whose cell is hidden behind the "+N" label rings that label instead.
+  Ids are compared ignoring case. `SelectedDate` (`DateTime?`): when no slot holds `SelectedId`, the bands mark the
+  slots that contain that date, without a ring (History: the run's version time or start; Versions: the version's time).
 - Each lane has its own scale: equal-width cells, newest on the right edge. Cell width = available width / slot
   count, at least 2 px; 1 px gap when cells are ≥ 6 px. If the slots do not fit at 2 px, the newest that fit are
   drawn and a muted "+N" label marks the left edge.
-- Colours: `Brush.Accent` (present), `Brush.Warning` (with warnings), `Brush.Danger` (missing), `Brush.TextFaint` at
+- Colours: `Brush.Accent` or the period colour (present, see `PresentColoring`), `Brush.Warning` (with warnings), `Brush.Danger` (missing), `Brush.TextFaint` at
   low opacity (before first), `Brush.TextFaint` outline only (pending). Re-resolved on theme change.
 - Tooltip per cell (localized via the app's text callback `Func<CoverageSlot, string>` property `SlotText`): period,
   and version date/size/"with warnings: n skipped" or "missing" / "before the first backup" / "not yet run".
@@ -76,7 +83,10 @@ public static class RetentionCoverage
   and the run log (`RunLog.ReadAll()` → map Version → Status/SkippedCount); recomputed whenever rules or versions
   change. Click → `SelectedNowRow` set and scrolled into view.
 - Versions tab: `VersionsViewModel` builds lanes from the owned versions it lists and the saved plan's rules. Click
-  → `SelectedVersion`.
+  → `SelectedVersion`; the selected version is the control's `SelectedId`.
+- History tab: `HistoryCoverageViewModel` lists the saved target's owned versions (`VersionCatalog`, no index sync)
+  and builds lanes with the saved rules and the run log. Selecting a run that wrote a version rings that version;
+  clicking a slot selects the run whose log entry names that version (nothing when no run in the history has it).
 - Not shown (card hidden / replaced by a muted line "No retention rules") when the plan has no rules; hidden when the
   target could not be loaded (the tab's existing error stays).
 
