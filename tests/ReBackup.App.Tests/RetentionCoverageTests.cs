@@ -242,7 +242,105 @@ public class RetentionCoverageTests : IDisposable
         preview.NoRulesText.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_unreachable_target_shows_no_coverage_and_no_hint(bool withRules)
+    {
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Target = StorageLocation.FileSystem(_target),
+            Retention = withRules ? [Daily(3)] : [],
+        };
+        var storages = new LambdaStorageFactory(_ => OfflineStorage.Create());
+        var preview = new RetentionPreviewViewModel(() => plan, () => null, new FakeFolderOpener(), storages, () => []);
+
+        await preview.RefreshCommand.ExecuteAsync(null);
+
+        preview.Error.Should().BeNull("an offline target is shown as missing, as before");
+        preview.EmptyText.Should().Be("The target folder does not exist (yet).");
+        preview.HasCoverage.Should().BeFalse();
+        preview.CoverageLanes.Should().BeEmpty();
+        preview.NoRulesText.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_target_that_is_not_created_yet_shows_the_lanes()
+    {
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Target = StorageLocation.FileSystem(_target),   // does not exist yet
+            Retention = [Daily(3)],
+        };
+        var preview = new RetentionPreviewViewModel(() => plan, () => null, new FakeFolderOpener(), new StorageFactory(), () => []);
+
+        await preview.RefreshCommand.ExecuteAsync(null);
+
+        preview.HasCoverage.Should().BeTrue();
+        preview.CoverageLanes.Should().ContainSingle().Which.Slots.Select(s => s.State).Should()
+            .Equal(SlotState.BeforeFirst, SlotState.BeforeFirst, SlotState.Pending);
+    }
+
+    [Fact]
+    public async Task A_finished_run_reloads_the_log_into_the_retention_coverage()
+    {
+        var plan = await PlanWithVersionsAsync([Daily(3)], DaysAgo(2), DaysAgo(1));
+        var vm = _fixture.Create();
+        var preview = vm.Plans.Single().RetentionPreview;
+        await preview.RefreshCommand.ExecuteAsync(null);
+        preview.CoverageLanes[0].Slots[0].State.Should().Be(SlotState.Present);
+
+        var warned = VersionName.Format(DaysAgo(2), "Projects");
+        new RunLog(_fixture.Paths.LogFileFor("p1")).Append(Run(warned, RunStatus.CompletedWithWarnings, skipped: 4));
+        _fixture.Queue.Enqueue(new BackupRequest(plan, [], RunTrigger.Manual)).Should().BeTrue();
+        await _fixture.Queue.WhenIdleAsync();
+
+        await WaitUntilAsync(() => preview.CoverageLanes.Count == 1 &&
+                                   preview.CoverageLanes[0].Slots[0].State == SlotState.PresentWithWarnings);
+        preview.CoverageSlotText(preview.CoverageLanes[0].Slots[0]).Should().EndWith("With warnings: 4 skipped");
+    }
+
+    /// <summary>A storage whose root cannot be reached: listing it throws <see cref="StorageUnavailableException"/>.</summary>
+    public class OfflineStorage : System.Reflection.DispatchProxy
+    {
+        public static IStorage Create() => Create<IStorage, OfflineStorage>();
+
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args) =>
+            targetMethod?.Name == nameof(IStorage.ListAsync)
+                ? Offline()
+                : throw new StorageUnavailableException("", "offline");
+
+        private static async IAsyncEnumerable<StorageEntry> Offline()
+        {
+            await Task.Yield();
+            throw new StorageUnavailableException("", "offline");
+#pragma warning disable CS0162 // an iterator needs a yield
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
+
     // ------------------------------------------------------------------ Versions tab
+
+    [Fact]
+    public async Task The_versions_tab_shows_the_warnings_of_the_run_log()
+    {
+        await PlanWithVersionsAsync([Daily(3)], DaysAgo(2), DaysAgo(1));
+        var warned = VersionName.Format(DaysAgo(2), "Projects");
+        new RunLog(_fixture.Paths.LogFileFor("p1")).Append(Run(warned, RunStatus.CompletedWithWarnings, skipped: 2));
+        var versions = _fixture.Create().Plans.Single().Versions;
+
+        await versions.RefreshCommand.ExecuteAsync(null);
+
+        var slot = versions.CoverageLanes.Should().ContainSingle().Subject.Slots[0];
+        slot.State.Should().Be(SlotState.PresentWithWarnings);
+        slot.Version!.Id.Should().Be(warned);
+        versions.CoverageSlotText(slot).Should().EndWith("With warnings: 2 skipped");
+    }
 
     [Fact]
     public async Task The_versions_tab_uses_the_saved_rules_and_a_click_selects_the_version()

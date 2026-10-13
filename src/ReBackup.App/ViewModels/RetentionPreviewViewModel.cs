@@ -38,6 +38,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private IReadOnlyList<VersionInfo>? _versions;
     private string? _versionsTarget;   // belongs to _versions: the target they were read from
     private bool _targetMissing;   // belongs to _versions: the target folder did not exist when they were read
+    private bool _targetUnreachable;   // belongs to _versions: the target could not be reached (not merely not created yet)
     private CancellationTokenSource? _loadCts;
     private CancellationTokenSource? _evaluateCts;
     private CancellationTokenSource? _simulateCts;
@@ -194,6 +195,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _versionsTarget = null;
         OnPropertyChanged(nameof(ShowEmpty));
         _targetMissing = false;
+        _targetUnreachable = false;
         IsLoading = false;
         ErrorText = null;
         NowRows.ReplaceAll([]);
@@ -258,7 +260,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         ErrorText = null;
         try
         {
-            var (versions, targetMissing) = await Task.Run(async () =>
+            var (versions, targetMissing, targetUnreachable) = await Task.Run(async () =>
             {
                 // Only a present target is listed; NotCreatedYet and Unreachable both show as "missing", as before.
                 var (state, storage) = await TargetStates.OpenAndProbeAsync(_storages, plan.Target, cts.Token);
@@ -266,13 +268,14 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 IReadOnlyList<VersionInfo> list = storage is null
                     ? []
                     : await VersionCatalog.ListAsync(storage, plan.Id, plan.Name, cts.Token);
-                return (list, missing);
+                return (list, missing, state == TargetState.Unreachable);
             }, cts.Token);
             if (!ReferenceEquals(_loadCts, cts))
                 return;
             _versions = versions;
             _versionsTarget = plan.Target.Path;
             _targetMissing = targetMissing;
+            _targetUnreachable = targetUnreachable;
             OnPropertyChanged(nameof(ShowEmpty));
             OnPropertyChanged(nameof(EmptyText));
             Evaluate();
@@ -287,6 +290,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 _versions = null;
                 _versionsTarget = null;
                 _targetMissing = false;
+                _targetUnreachable = false;
                 NowRows.ReplaceAll([]);
                 Now = LocText.Empty;
                 ClearSimulation();
@@ -327,7 +331,11 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         var selected = SelectedNowRow?.Name;
         NowRows.ReplaceAll(decisions.Reverse().Select(d => new RetentionNowRow(d, rules)));
         SelectedNowRow = NowRows.FirstOrDefault(r => r.Name.Equals(selected, StringComparison.OrdinalIgnoreCase));
-        ShowCoverage(versions, rules);
+        // An unreachable target (e.g. an offline NAS) lists no versions: its slots would all read "before the first backup".
+        if (_targetUnreachable)
+            ClearCoverage();
+        else
+            ShowCoverage(versions, rules);
 
         var managed = decisions.Where(d => d.Decision is not null).ToList();
         var deleted = managed.Where(d => d.Delete).ToList();
