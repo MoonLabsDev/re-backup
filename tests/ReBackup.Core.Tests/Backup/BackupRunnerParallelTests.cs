@@ -221,6 +221,25 @@ public class BackupRunnerParallelTests
     }
 
     [Fact]
+    public async Task Not_readable_files_are_skipped_with_their_message()
+    {
+        const string Message = "'f07.bin' is a Google file larger than the 10 MB export limit.";
+        var source = new GatedStorage(_sourceFiles)
+        {
+            BeforeOpen = (path, _) => path == "f07.bin"
+                ? throw new StorageIOException(path, Message) { NotReadable = true }
+                : Task.CompletedTask,
+        };
+
+        var entry = await Run("s3", "mem", source, _targetFiles);
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
+        entry.Skipped.Should().Equal(new SkippedEntry("f07.bin", Message));
+        entry.FilesCopied.Should().Be(FileCount - 1);
+        _targetFiles.Files.Should().NotContain($"{Version}/f07.bin");
+    }
+
+    [Fact]
     public async Task Storage_failure_stops_all_workers_and_cleans_up()
     {
         // Eight uploads are in flight when the connection drops for one of them.

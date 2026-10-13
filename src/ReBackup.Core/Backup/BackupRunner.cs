@@ -1027,8 +1027,11 @@ public sealed class BackupRunner : IBackupRunner
         StorageNotFoundException => NoLongerExists,
         StorageAccessDeniedException => CoreTexts.English("core.file.accessDenied"),
         StorageLockedException => CoreTexts.English("core.file.locked"),
-        // An archived object (S3 Glacier, Deep Archive) cannot be read before it is restored: skipped like a locked file.
-        StorageIOException { Archived: true } => CoreTexts.English("core.file.archived"),
+        // A file the storage cannot read is skipped like a locked one: an archived object (S3 Glacier, Deep Archive) before
+        // it is restored, or e.g. a Google document over the export limit (the storage's message says why).
+        StorageIOException { NotReadable: true } notReadable => notReadable.Archived
+            ? CoreTexts.English("core.file.archived")
+            : notReadable.Message,
         // Opening reads the source only, so any other failure here is the source file's own: e.g. a WSL symlink
         // (Windows cannot open it, error 1920). A source that is gone altogether is caught by the caller.
         StorageException storage => CoreTexts.English("core.file.cannotOpen",
