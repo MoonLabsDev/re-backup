@@ -7,6 +7,8 @@ namespace ReBackup.Storage.GoogleDrive;
 /// location's path is a folder below the connection's root (<c>""</c> = the root). One API client is kept per connection state
 /// (id, root, shared drive, key), so storages opened again reuse its connections and an edited connection gets a fresh client.
 /// Disposing the factory disposes those clients, so dispose it only after the storages it opened are no longer in use.
+/// The client of an edited connection's old state is not disposed when the new one is built: a storage opened before the edit
+/// (a running backup) may still use it. It stays cached until the factory is disposed, which is little for the few edits a session sees.
 /// </summary>
 /// <remarks>
 /// With <see cref="DriveConnectionStore.TryResolve"/> as the lookup, a key that cannot be decrypted on this Windows account or a

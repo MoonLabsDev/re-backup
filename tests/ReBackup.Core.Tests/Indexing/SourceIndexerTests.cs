@@ -54,6 +54,21 @@ public class SourceIndexerTests : IDisposable
     }
 
     [Fact]
+    public async Task Keeps_the_stamp_only_of_files_listed_with_size_0()
+    {
+        // A size of 0 may only mean "unknown until read" (a Google document); the stamp then tells whether it changed.
+        var storage = new InMemoryStorage();
+        storage.AddFile("empty.docx", [], new DateTime(2024, 1, 2, 3, 4, 5, DateTimeKind.Utc));
+        storage.AddFile("full.txt", "12345"u8.ToArray(), new DateTime(2024, 1, 2, 3, 4, 5, DateTimeKind.Utc));
+
+        var index = await SourceIndexer.BuildAsync(storage);
+
+        var empty = index.RootNode.Children.Single(c => c.Name == "empty.docx");
+        empty.Stamp.Should().NotBeNull().And.Be((await storage.StatAsync("empty.docx", CancellationToken.None))!.Stamp);
+        index.RootNode.Children.Single(c => c.Name == "full.txt").Stamp.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Collects_nested_ignore_files_with_their_folder()
     {
         var source = CreateSource();

@@ -901,8 +901,8 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>
     /// Copies one file while hashing it; the copy gets the indexed time of the source. Returns no copy and a reason
     /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
-    /// <c>Changed</c> tells that the source's time after the copy differs from what was indexed, or its size (listed or read)
-    /// does while its stamp does too or cannot tell (see <see cref="ChangedWhileCopied"/>).
+    /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed, except for a size
+    /// only known by reading (see <see cref="ChangedWhileCopied"/>).
     /// </summary>
     /// <param name="storageFailuresStop">
     /// A <see cref="StorageUnavailableException"/> opening the source file propagates instead of skipping the file (the
@@ -990,9 +990,9 @@ public sealed class BackupRunner : IBackupRunner
 
     /// <summary>
     /// Whether the source file changed while it was copied: it is gone, its time differs from the indexed one, or its size (as
-    /// listed now, or the bytes read) differs from the indexed one. A size alone is no change when both the index and the stat
-    /// carry the same stamp: some storages only learn the size by reading (a Google document is listed with size 0 and exported
-    /// on read), and the unchanged stamp shows the content is the indexed one.
+    /// listed now, or the bytes read) differs from the indexed one. The one exception is a size the storage does not know before
+    /// reading: a file listed with size 0 both times (a Google document is exported on read) whose stamp is the same before and
+    /// after is unchanged, however many bytes were read. Every other size difference is a change, whatever the stamps say.
     /// </summary>
     private static bool ChangedWhileCopied(IndexNode node, StorageEntry? now, long bytesRead)
     {
@@ -1000,7 +1000,8 @@ public sealed class BackupRunner : IBackupRunner
             return true;
         if (bytesRead == node.Size && now.Size == node.Size)
             return false;
-        return node.Stamp is null || now.Stamp is null || !string.Equals(now.Stamp, node.Stamp, StringComparison.Ordinal);
+        var sizeUnknown = node.Size == 0 && now.Size == 0;
+        return !(sizeUnknown && node.Stamp is not null && string.Equals(now.Stamp, node.Stamp, StringComparison.Ordinal));
     }
 
     /// <summary>

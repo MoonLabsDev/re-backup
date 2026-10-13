@@ -23,7 +23,9 @@ namespace ReBackup.Storage.GoogleDrive;
 /// Failures: Google's API errors become <see cref="DriveApiException"/> (HTTP status and the first error reason), a key Google
 /// refuses becomes one too (the token endpoint's status, its error code such as <c>invalid_grant</c> as reason); network errors
 /// stay <see cref="HttpRequestException"/> / <see cref="IOException"/>, and a request that times out (cancelled, but not by the
-/// caller) becomes <see cref="TimeoutException"/>.
+/// caller) becomes <see cref="TimeoutException"/>. The request timeout (5 minutes) covers a call until its response headers; the
+/// body of a download or export is read as it arrives, and each read of it times out on its own after
+/// <see cref="ReadIdleTimeout"/> without data (<see cref="TimeoutException"/> as well).
 /// </remarks>
 public sealed class GoogleDriveApi : IDriveApi, IDisposable
 {
@@ -40,6 +42,9 @@ public sealed class GoogleDriveApi : IDriveApi, IDisposable
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
 
     private readonly DriveService _service;
+
+    /// <summary>How long one read of a download or export body may wait for data before it throws <see cref="TimeoutException"/>.</summary>
+    internal TimeSpan ReadIdleTimeout { get; init; } = DriveResponseStream.DefaultIdleTimeout;
     private readonly string? _sharedDriveId;
 
     /// <summary>A client for the connection's key; listings search the connection's shared drive when it has one.</summary>
@@ -248,7 +253,10 @@ public sealed class GoogleDriveApi : IDriveApi, IDisposable
 
     // ---- downloads ----
 
-    /// <summary>The body of a GET as a stream (read as it arrives); disposing it releases the response.</summary>
+    /// <summary>
+    /// The body of a GET as a stream, read as it arrives: <see cref="DriveResponseStream"/> gives every read
+    /// <see cref="ReadIdleTimeout"/>, since the request timeout ends with the headers. Disposing it releases the response.
+    /// </summary>
     private Task<Stream> GetStreamAsync(string url, CancellationToken ct) =>
         CallAsync(async c =>
         {
@@ -256,7 +264,7 @@ public sealed class GoogleDriveApi : IDriveApi, IDisposable
             try
             {
                 await ThrowIfFailedAsync(response).ConfigureAwait(false);
-                return (Stream)new ResponseStream(await response.Content.ReadAsStreamAsync(c).ConfigureAwait(false), response);
+                return (Stream)new DriveResponseStream(await response.Content.ReadAsStreamAsync(c).ConfigureAwait(false), response, ReadIdleTimeout);
             }
             catch
             {
@@ -351,50 +359,5 @@ public sealed class GoogleDriveApi : IDriveApi, IDisposable
         public override void Flush() { }
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
-
-    /// <summary>A response body that disposes its response with it.</summary>
-    private sealed class ResponseStream(Stream inner, HttpResponseMessage response) : Stream
-    {
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
-
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            inner.ReadAsync(buffer, cancellationToken);
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            inner.ReadAsync(buffer, offset, count, cancellationToken);
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void Flush() { }
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                inner.Dispose();
-                response.Dispose();
-            }
-            base.Dispose(disposing);
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            await inner.DisposeAsync().ConfigureAwait(false);
-            response.Dispose();
-            await base.DisposeAsync().ConfigureAwait(false);
-        }
     }
 }

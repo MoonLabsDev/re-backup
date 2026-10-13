@@ -88,6 +88,32 @@ public class BackupRunnerUnknownSizeTests
         entry.Skipped.Should().ContainSingle().Which.Path.Should().Be("doc.docx");
     }
 
+    [Theory]
+    [InlineData("fs")]
+    [InlineData("gdrive")]
+    public async Task A_file_listed_with_a_known_size_that_reads_shorter_is_reported_whatever_its_stamp(string sourceKind)
+    {
+        // Listed and stat'ed with 1235 bytes, the same stamp and time before and after, but 1234 bytes read: changed.
+        var source = new ExportLikeStorage(_sourceFiles, "doc.docx") { ListedSize = 1235 };
+
+        var entry = await Run(source, sourceKind);
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
+        entry.Skipped.Should().ContainSingle().Which.Should().Be(
+            new SkippedEntry("doc.docx", "changed while it was copied; the copy may be inconsistent"));
+    }
+
+    [Fact]
+    public async Task A_file_listed_with_size_0_that_is_stat_with_a_size_afterwards_is_reported()
+    {
+        var source = new ExportLikeStorage(_sourceFiles, "doc.docx") { SizeAfterRead = 1234 };
+
+        var entry = await Run(source, "gdrive");
+
+        entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
+        entry.Skipped.Should().ContainSingle().Which.Path.Should().Be("doc.docx");
+    }
+
     [Fact]
     public async Task A_file_whose_size_differs_without_stamps_is_reported()
     {
@@ -100,7 +126,7 @@ public class BackupRunnerUnknownSizeTests
     }
 
     /// <summary>
-    /// Lists and stats <paramref name="path"/> with size 0 and a fixed stamp, as Drive does for a Google document, while reading
+    /// Lists and stats <paramref name="path"/> with size 0 (or <see cref="ListedSize"/>) and a fixed stamp, as Drive does for a Google document, while reading
     /// gives the whole content. After it was read, a stat may show another stamp or time.
     /// </summary>
     private sealed class ExportLikeStorage(InMemoryStorage inner, string path) : IStorage
@@ -113,6 +139,12 @@ public class BackupRunnerUnknownSizeTests
 
         public bool NoStamps { get; init; }
 
+        /// <summary>The size listed and stat'ed instead of 0.</summary>
+        public long ListedSize { get; init; }
+
+        /// <summary>The size a stat shows after the file was read.</summary>
+        public long? SizeAfterRead { get; init; }
+
         public StorageCapabilities Capabilities => inner.Capabilities;
 
         private StorageEntry Shown(StorageEntry entry)
@@ -121,7 +153,8 @@ public class BackupRunnerUnknownSizeTests
                 return NoStamps ? entry with { Stamp = null } : entry;
             var stamp = NoStamps ? null : _read && StampAfterRead is not null ? StampAfterRead : "v7";
             var time = _read && TimeAfterRead is { } t ? t : entry.ModifiedUtc;
-            return entry with { Size = 0, Stamp = stamp, ModifiedUtc = time };
+            var size = _read && SizeAfterRead is { } after ? after : ListedSize;
+            return entry with { Size = size, Stamp = stamp, ModifiedUtc = time };
         }
 
         public async Task<StorageEntry?> StatAsync(string p, CancellationToken ct) =>
