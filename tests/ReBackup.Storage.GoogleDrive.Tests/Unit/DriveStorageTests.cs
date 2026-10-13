@@ -567,28 +567,136 @@ public sealed class DriveStorageTests
         _time.PendingTimers.Should().Be(0);
     }
 
+    private Task WriteDrivenAsync(IStorage storage, string path, string text, CreateOptions? options = null) =>
+        DriveAsync(Task.Run(async () =>
+        {
+            await WriteAsync(storage, path, text, options);
+            return true;
+        }));
+
     [Fact]
-    public async Task Uploads_are_retried_on_rate_limits_only()
+    public async Task Uploads_are_retried_on_rate_limits()
     {
         var storage = Storage();
         var failures = 2;
         _api.OnCall = (operation, _, _) =>
             operation == "upload" && failures-- > 0 ? throw new DriveApiException(429, "rateLimitExceeded") : Task.CompletedTask;
-        await DriveAsync(Task.Run(async () =>
-        {
-            await WriteAsync(storage, "a.txt", "content");
-            return true;
-        }));
-        (await ReadAsync(storage, "a.txt")).Should().Be("content");
 
-        // A server error may have created the file unseen: no blind retry, which could leave two files of the same name.
-        _api.OnCall = (operation, _, _) => operation == "upload" ? throw new DriveApiException(503, "") : Task.CompletedTask;
-        var before = _api.Calls("upload");
-        await storage.Invoking(s => DriveAsync(Task.Run(async () =>
+        await WriteDrivenAsync(storage, "a.txt", "content");
+
+        (await ReadAsync(storage, "a.txt")).Should().Be("content");
+        _api.Calls("upload").Should().Be(3);
+        _api.Children(Root).Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_server_error_before_the_upload_is_retried(bool overwrite)
+    {
+        var storage = Storage();
+        var failures = 1;
+        _api.OnCall = (operation, _, _) =>
+            operation == "upload" && failures-- > 0 ? throw new DriveApiException(503, "") : Task.CompletedTask;
+
+        await WriteDrivenAsync(storage, "a.txt", "content", new CreateOptions(Overwrite: overwrite));
+
+        _api.Calls("upload").Should().Be(2);
+        _api.Children(Root).Should().ContainSingle();
+        (await ReadAsync(storage, "a.txt")).Should().Be("content");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_server_error_after_the_upload_landed_keeps_the_one_file(bool overwrite)
+    {
+        var storage = Storage();
+        var failures = 1;
+        _api.AfterCall = (operation, _, _) =>
+            operation == "upload" && failures-- > 0 ? throw new DriveApiException(503, "") : Task.CompletedTask;
+
+        await WriteDrivenAsync(storage, "a.txt", "content", new CreateOptions(Overwrite: overwrite));
+
+        _api.Calls("upload").Should().Be(1);
+        _api.Children(Root).Should().ContainSingle();
+        (await ReadAsync(storage, "a.txt")).Should().Be("content");
+    }
+
+    [Fact]
+    public async Task A_server_error_after_the_upload_with_other_content_there_is_not_taken_as_ours()
+    {
+        var storage = Storage();
+        _api.AfterCall = (operation, id, _) =>
         {
-            await WriteAsync(s, "b.txt", "content");
-            return true;
-        }))).Should().ThrowAsync<StorageUnavailableException>();
-        (_api.Calls("upload") - before).Should().Be(1);
+            if (operation != "upload") return Task.CompletedTask;
+            _api.Remove(id);
+            _api.AddFile(Root, "a.txt", Bytes("theirs"));
+            throw new DriveApiException(503, "");
+        };
+
+        await storage.Invoking(s => WriteDrivenAsync(s, "a.txt", "ours")).Should().ThrowAsync<StorageUnavailableException>();
+
+        _api.Calls("upload").Should().Be(1);
+        _api.Children(Root).Should().ContainSingle().Which.Size.Should().Be(6);
+    }
+
+    [Fact]
+    public async Task A_server_error_after_a_folder_was_created_keeps_the_one_folder()
+    {
+        var storage = Storage();
+        var failures = 1;
+        _api.AfterCall = (operation, _, _) =>
+            operation == "createFolder" && failures-- > 0 ? throw new DriveApiException(503, "") : Task.CompletedTask;
+
+        await WriteDrivenAsync(storage, "d/f.txt", "x");
+
+        _api.Calls("createFolder").Should().Be(1);
+        _api.Children(Root).Should().ContainSingle().Which.IsFolder.Should().BeTrue();
+        (await ReadAsync(storage, "d/f.txt")).Should().Be("x");
+    }
+
+    [Fact]
+    public async Task A_server_error_before_a_folder_create_is_retried()
+    {
+        var storage = Storage();
+        var failures = 1;
+        _api.OnCall = (operation, _, _) =>
+            operation == "createFolder" && failures-- > 0 ? throw new DriveApiException(500, "backendError") : Task.CompletedTask;
+
+        await WriteDrivenAsync(storage, "d/f.txt", "x");
+
+        _api.Calls("createFolder").Should().Be(2);
+        _api.Children(Root).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Server_errors_on_every_upload_attempt_end_as_unavailable()
+    {
+        var storage = Storage();
+        _api.OnCall = (operation, _, _) => operation == "upload" ? throw new DriveApiException(503, "") : Task.CompletedTask;
+
+        await storage.Invoking(s => WriteDrivenAsync(s, "a.txt", "content")).Should().ThrowAsync<StorageUnavailableException>();
+
+        _api.Calls("upload").Should().Be(DriveRetry.MaxAttempts);
+        _api.Children(Root).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Cancellation_while_waiting_to_repeat_an_upload_is_prompt()
+    {
+        var storage = Storage();
+        _api.OnCall = (operation, _, _) => operation == "upload" ? throw new DriveApiException(503, "") : Task.CompletedTask;
+        using var cts = new CancellationTokenSource();
+        var writer = await storage.CreateAsync("a.txt", new CreateOptions(), default);
+        await writer.WriteAsync(Bytes("x"));
+
+        var commit = writer.CommitAsync(cts.Token);
+        for (var i = 0; i < 500 && _time.PendingTimers == 0; i++) await Task.Delay(10);
+        _time.PendingTimers.Should().Be(1);
+        await cts.CancelAsync();
+
+        await commit.Invoking(c => c.WaitAsync(TimeSpan.FromSeconds(5))).Should().ThrowAsync<OperationCanceledException>();
+        await writer.DisposeAsync();
     }
 }

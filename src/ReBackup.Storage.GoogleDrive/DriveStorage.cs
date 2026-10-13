@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 
 namespace ReBackup.Storage.GoogleDrive;
 
@@ -22,6 +23,7 @@ public sealed class DriveStorage : IStorage
     private readonly IDriveApi _api;
     private readonly string _rootId;
     private readonly DriveRetry _retry;
+    private readonly TimeProvider _time;
 
     // Folder path (never "") → folder ID; only unambiguous folders.
     private readonly ConcurrentDictionary<string, string> _folders = new(StringComparer.Ordinal);
@@ -36,7 +38,8 @@ public sealed class DriveStorage : IStorage
         ArgumentException.ThrowIfNullOrEmpty(rootId);
         _api = api;
         _rootId = rootId;
-        _retry = new DriveRetry(time ?? TimeProvider.System);
+        _time = time ?? TimeProvider.System;
+        _retry = new DriveRetry(_time);
     }
 
     public StorageCapabilities Capabilities => StorageCapabilities.SetModifiedTime | StorageCapabilities.EmptyDirectories;
@@ -189,11 +192,16 @@ public sealed class DriveStorage : IStorage
 
     /// <summary>
     /// Writes a committed file: creates missing parent folders, then updates an existing file's content (same ID) or uploads a
-    /// new one. An exclusive create re-lists the parent after the upload: a second file of that name means a racing writer, and
-    /// ours is deleted again. The stamp of a conditional overwrite is compared right before the update (not atomic).
+    /// new one (see <see cref="UploadAsync"/> for how a failed upload is recovered). An exclusive create re-lists the parent
+    /// after the upload: a second file of that name means a racing writer, and ours is deleted again. The stamp of a
+    /// conditional overwrite is compared right before the update (not atomic).
     /// </summary>
-    internal Task CommitAsync(string path, CreateOptions options, Stream content, CancellationToken ct) =>
-        RunAsync(path, async () =>
+    internal async Task CommitAsync(string path, CreateOptions options, Stream content, CancellationToken ct)
+    {
+        content.Position = 0;
+        var md5 = Convert.ToHexStringLower(await MD5.HashDataAsync(content, ct).ConfigureAwait(false));
+        content.Position = 0;
+        await RunAsync(path, async () =>
         {
             var parentId = await EnsureFolderAsync(StoragePath.Parent(path), path, ct).ConfigureAwait(false);
             var name = StoragePath.Name(path);
@@ -214,12 +222,12 @@ public sealed class DriveStorage : IStorage
                     }, ct).ConfigureAwait(false);
                     return true;
                 }
-                await UploadAsync(parentId, name, content, options.ModifiedUtc, ct).ConfigureAwait(false);
+                await UploadAsync(parentId, name, content, md5, options.ModifiedUtc, ct).ConfigureAwait(false);
                 return true;
             }
 
             if (existing is not null) throw new StorageConflictException(path);
-            var created = await UploadAsync(parentId, name, content, options.ModifiedUtc, ct).ConfigureAwait(false);
+            var created = await UploadAsync(parentId, name, content, md5, options.ModifiedUtc, ct).ConfigureAwait(false);
             var now = await CandidatesAsync(parentId, name, ct).ConfigureAwait(false);
             if (now.Any(c => c.Item.Id != created.Id))
             {
@@ -234,7 +242,8 @@ public sealed class DriveStorage : IStorage
                 throw new StorageConflictException(path);
             }
             return true;
-        }, ct);
+        }, ct).ConfigureAwait(false);
+    }
 
     // ---- resolution ----
 
@@ -334,32 +343,54 @@ public sealed class DriveStorage : IStorage
         return id;
     }
 
-    /// <summary>
-    /// Creates a folder. Only rate limits are retried: a server error may have created it unseen, so the parent is checked
-    /// instead of trying blindly again (which could leave two folders of the same name).
-    /// </summary>
+    /// <summary>Creates a folder; after a server or network failure a single folder of that name found in the parent is taken as it.</summary>
     private async Task<Child> CreateFolderAsync(string parentId, string name, CancellationToken ct)
     {
-        try
-        {
-            var created = await OnFolderAsync(parentId, c => _api.CreateFolderAsync(parentId, name, c), ct, repeatable: false).ConfigureAwait(false);
-            return new Child(created, name, ChildKind.Folder, null);
-        }
-        catch (Exception ex) when (DriveErrors.IsServerOrNetworkFailure(ex, ct))
-        {
-            var now = await CandidatesAsync(parentId, name, ct).ConfigureAwait(false);
-            if (now is [{ Kind: ChildKind.Folder } made]) return made;
-            throw;
-        }
+        var created = await CreateCheckedAsync(parentId, name, c => _api.CreateFolderAsync(parentId, name, c),
+            now => now is [{ Kind: ChildKind.Folder } made] ? made.Item : null, ct).ConfigureAwait(false);
+        return new Child(created, name, ChildKind.Folder, null);
     }
 
-    /// <summary>Uploads a new file; like folders, retried on rate limits only.</summary>
-    private Task<DriveItem> UploadAsync(string parentId, string name, Stream content, DateTime? modifiedUtc, CancellationToken ct) =>
-        OnFolderAsync(parentId, c =>
+    /// <summary>
+    /// Uploads a new file; after a server or network failure a single file of that name in the parent whose MD5 equals
+    /// <paramref name="md5"/> (the content's) is taken as ours: the upload landed, only the answer was lost.
+    /// </summary>
+    private Task<DriveItem> UploadAsync(string parentId, string name, Stream content, string md5, DateTime? modifiedUtc, CancellationToken ct) =>
+        CreateCheckedAsync(parentId, name, c =>
+            {
+                content.Position = 0;
+                return _api.UploadAsync(parentId, name, content, modifiedUtc, c);
+            },
+            now => now is [{ Kind: ChildKind.File } file] && string.Equals(file.Item.Md5, md5, StringComparison.OrdinalIgnoreCase)
+                ? file.Item
+                : null,
+            ct);
+
+    /// <summary>
+    /// Runs a call that creates <paramref name="name"/> in the parent. Rate limits are retried as usual. A server or network
+    /// failure may have created the item unseen, so instead of repeating blindly the parent is listed by name:
+    /// <paramref name="ours"/> recognises the item as the one this call made (taken as the result); with nothing of that name the
+    /// call is repeated after the usual backoff, up to <see cref="DriveRetry.MaxAttempts"/> attempts; anything else (another
+    /// item of that name, or no attempts left) throws the failure. Blind repeats could leave two items of the same name.
+    /// </summary>
+    private async Task<DriveItem> CreateCheckedAsync(string parentId, string name, Func<CancellationToken, Task<DriveItem>> create,
+        Func<List<Child>, DriveItem?> ours, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
         {
-            content.Position = 0;
-            return _api.UploadAsync(parentId, name, content, modifiedUtc, c);
-        }, ct, repeatable: false);
+            try
+            {
+                return await OnFolderAsync(parentId, create, ct, repeatable: false).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (DriveErrors.IsServerOrNetworkFailure(ex, ct))
+            {
+                var now = await CandidatesAsync(parentId, name, ct).ConfigureAwait(false);
+                if (ours(now) is { } made) return made;
+                if (now.Count > 0 || attempt >= DriveRetry.MaxAttempts) throw;
+                await Task.Delay(DriveRetry.DelayFor(attempt), _time, ct).ConfigureAwait(false);
+            }
+        }
+    }
 
     /// <summary>The single item named <paramref name="name"/> in the folder; null when none; ambiguous names throw.</summary>
     private async Task<Child?> FindInAsync(string folderId, string folderPath, string name, string requestPath, CancellationToken ct)

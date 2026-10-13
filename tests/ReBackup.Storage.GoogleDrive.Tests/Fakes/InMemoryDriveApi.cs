@@ -26,6 +26,12 @@ internal sealed class InMemoryDriveApi : IDriveApi
     /// <summary>Runs before every call with the operation ("list", "get", "createFolder", "upload", "update", "delete", "download", "export", "sharedDrives") and its ID.</summary>
     public Func<string, string, CancellationToken, Task>? OnCall { get; set; }
 
+    /// <summary>
+    /// Runs after a call that changes the drive ("createFolder", "upload", "update", "delete") has taken effect, with the ID of
+    /// the item it made or changed; throwing here is a lost answer: the change stays.
+    /// </summary>
+    public Func<string, string, CancellationToken, Task>? AfterCall { get; set; }
+
     public DateTime Now { get; set; } = new(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
 
     public int Calls(string operation)
@@ -93,28 +99,35 @@ internal sealed class InMemoryDriveApi : IDriveApi
     public async Task<DriveItem> CreateFolderAsync(string parentId, string name, CancellationToken ct)
     {
         await Enter("createFolder", parentId, ct);
-        return Item(Add(parentId, name, DriveMimeTypes.Folder, null));
+        var id = Add(parentId, name, DriveMimeTypes.Folder, null);
+        await Leave("createFolder", id, ct);
+        return Item(id);
     }
 
     public async Task<DriveItem> UploadAsync(string parentId, string name, Stream content, DateTime? modifiedUtc, CancellationToken ct)
     {
         await Enter("upload", parentId, ct);
         var bytes = await ReadAllAsync(content, ct);
-        return Item(Add(parentId, name, "application/octet-stream", bytes, modifiedUtc));
+        var id = Add(parentId, name, "application/octet-stream", bytes, modifiedUtc);
+        await Leave("upload", id, ct);
+        return Item(id);
     }
 
     public async Task<DriveItem> UpdateContentAsync(string id, Stream content, DateTime? modifiedUtc, CancellationToken ct)
     {
         await Enter("update", id, ct);
         var bytes = await ReadAllAsync(content, ct);
+        DriveItem updated;
         lock (_gate)
         {
             if (!_nodes.TryGetValue(id, out var node) || node.MimeType == DriveMimeTypes.Folder) throw NotFound();
             node.Content = bytes;
             node.ModifiedUtc = modifiedUtc ?? Now;
             node.Version = _nextVersion++;
-            return node.ToItem();
+            updated = node.ToItem();
         }
+        await Leave("update", id, ct);
+        return updated;
     }
 
     public async Task DeleteAsync(string id, CancellationToken ct)
@@ -125,6 +138,7 @@ internal sealed class InMemoryDriveApi : IDriveApi
             if (!_nodes.ContainsKey(id)) throw NotFound();
             RemoveTree(id);
         }
+        await Leave("delete", id, ct);
     }
 
     public async Task<Stream> DownloadAsync(string id, CancellationToken ct)
@@ -161,6 +175,11 @@ internal sealed class InMemoryDriveApi : IDriveApi
         ct.ThrowIfCancellationRequested();
         lock (_gate) _calls[operation] = _calls.GetValueOrDefault(operation) + 1;
         if (OnCall is { } hook) await hook(operation, id, ct);
+    }
+
+    private async Task Leave(string operation, string id, CancellationToken ct)
+    {
+        if (AfterCall is { } hook) await hook(operation, id, ct);
     }
 
     private string Add(string parentId, string name, string mimeType, byte[]? content, DateTime? modifiedUtc = null)

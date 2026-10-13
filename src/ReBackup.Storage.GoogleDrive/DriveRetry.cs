@@ -12,7 +12,7 @@ internal sealed class DriveRetry(TimeProvider time)
 
     public static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(32);
 
-    /// <summary>Runs <paramref name="call"/>; <paramref name="repeatable"/> false retries rate limits only (a call that creates something).</summary>
+    /// <summary>Runs <paramref name="call"/>; <paramref name="repeatable"/> false retries rate limits only (a call that creates something: its caller checks what landed before repeating it).</summary>
     public async Task<T> RunAsync<T>(Func<CancellationToken, Task<T>> call, CancellationToken ct, bool repeatable = true)
     {
         for (var attempt = 1; ; attempt++)
