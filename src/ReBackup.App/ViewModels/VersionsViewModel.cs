@@ -7,6 +7,7 @@ using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Retention;
 using ReBackup.Storage;
 using ReBackup.Storage.FileSystem;
 
@@ -43,6 +44,7 @@ public sealed partial class VersionsViewModel : ObservableObject
     private readonly Func<bool> _isBackupActive;
     private readonly IFolderOpener _files;
     private readonly VersionsContext _context;
+    private readonly Func<IReadOnlyList<RunLogEntry>> _runLog;
     private CancellationTokenSource? _syncCts;
     private VersionIndex? _index;
     /// <summary>The location the shown rows were listed from (the restore reads the versions there).</summary>
@@ -60,8 +62,31 @@ public sealed partial class VersionsViewModel : ObservableObject
     private LocText _sync = LocText.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(Error))]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty), nameof(Error), nameof(HasCoverage), nameof(NoRulesText))]
     private LocText? _errorText;
+
+    /// <summary>The coverage timeline of the listed owned versions under the saved rules.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCoverage))]
+    private IReadOnlyList<CoverageLane> _coverageLanes = [];
+
+    /// <summary>The labels of <see cref="CoverageLanes"/>, e.g. "Daily · 7".</summary>
+    [ObservableProperty] private IReadOnlyList<string> _coverageLabels = [];
+
+    /// <summary>The target was listed and the saved plan has no rules: the hint replaces the timeline.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoRulesText))]
+    private bool _coverageWithoutRules;
+
+    /// <summary>True while the coverage timeline is shown; hidden when the target could not be read.</summary>
+    public bool HasCoverage => CoverageLanes.Count > 0 && Error is null;
+
+    /// <summary>"No retention rules" in place of the timeline; null while the hint is not shown.</summary>
+    public string? NoRulesText => CoverageWithoutRules && Error is null ? Loc.T("retention.coverage.noRules") : null;
+
+    /// <summary>The tool tip of a coverage cell.</summary>
+    public Func<CoverageSlot, string> CoverageSlotText => slot => CoverageBuilder.SlotText(slot,
+        name => VersionRows.FirstOrDefault(r => r.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Info.TotalBytes);
 
     public string SyncText => Sync.ToString();
 
@@ -75,6 +100,8 @@ public sealed partial class VersionsViewModel : ObservableObject
             row.Refresh();
         foreach (var row in ForeignRows)
             row.Refresh();
+        if (CoverageLanes.Count > 0)
+            CoverageLabels = CoverageLanes.Select(lane => CoverageBuilder.Label(lane.Rule)).ToList();
         OnRefreshTexts();
     }
 
@@ -86,9 +113,11 @@ public sealed partial class VersionsViewModel : ObservableObject
 
     /// <param name="savedPlan">The plan as saved; null while it is new (a new plan has no versions).</param>
     /// <param name="isBackupActive">True while a backup of this plan is queued or running.</param>
+    /// <param name="runLog">The plan's run log, oldest first: versions whose run ended with warnings show so in the coverage.</param>
     public VersionsViewModel(Func<BackupPlan?> savedPlan, Func<bool> isBackupActive, IFolderOpener files,
-        VersionsContext context)
+        VersionsContext context, Func<IReadOnlyList<RunLogEntry>>? runLog = null)
     {
+        _runLog = runLog ?? (() => []);
         _savedPlan = savedPlan;
         _isBackupActive = isBackupActive;
         _files = files;
@@ -148,7 +177,41 @@ public sealed partial class VersionsViewModel : ObservableObject
         SelectedVersion = null;
         VersionRows.ReplaceAll([]);
         ShowForeign([]);
+        ShowCoverage(null);
         OnPropertyChanged(nameof(ShowEmpty));
+    }
+
+    /// <summary>Selects the version a coverage slot holds (the tree loads it).</summary>
+    [RelayCommand]
+    private void SelectCoverage(string? id)
+    {
+        if (VersionRows.FirstOrDefault(r => r.Name.Equals(id, StringComparison.OrdinalIgnoreCase)) is { } row)
+            SelectedVersion = row;
+    }
+
+    /// <summary>
+    /// The coverage of the listed folders under the saved rules of <paramref name="plan"/>; none without a plan, and none
+    /// while the saved rules are not valid.
+    /// </summary>
+    private void ShowCoverage(BackupPlan? plan)
+    {
+        IReadOnlyList<CoverageLane> lanes = [];
+        IReadOnlyList<string> labels = [];
+        if (plan is not null)
+        {
+            try
+            {
+                (lanes, labels) = CoverageBuilder.Build(VersionRows.Select(r => r.Info).ToList(), plan.Retention, _runLog(),
+                    DateOnly.FromDateTime(DateTime.Now));
+            }
+            catch (ArgumentException)
+            {
+                (lanes, labels) = ([], []);
+            }
+        }
+        CoverageLabels = labels;
+        CoverageLanes = lanes;
+        CoverageWithoutRules = plan is not null && plan.Retention.Count == 0;
     }
 
     [RelayCommand]
@@ -191,7 +254,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             if (state == TargetState.Unreachable)
             {
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.
-                ShowFolders([], []);
+                ShowFolders([], [], plan);
                 ShowForeign([]);
                 Sync = LocText.Empty;
                 ErrorText = TargetUnavailable(plan.Target);
@@ -200,13 +263,13 @@ public sealed partial class VersionsViewModel : ObservableObject
             if (state == TargetState.NotCreatedYet)
             {
                 // The plan has not run yet (the first run creates the folder): nothing to list or index.
-                ShowFolders([], []);
+                ShowFolders([], [], plan);
                 ShowForeign([]);
                 Sync = LocText.Empty;
                 return;
             }
 
-            ShowFolders(folders, indexed);
+            ShowFolders(folders, indexed, plan);
             ShowForeign(foreign);
             Sync = LocText.Of("versions.sync.waiting");
             var progress = new Progress<IndexSyncProgress>(p =>
@@ -290,8 +353,11 @@ public sealed partial class VersionsViewModel : ObservableObject
     /// <summary>Runs after every successful sync; the tree reloads here (Versions tab, tree part).</summary>
     partial void OnIndexReady();
 
-    /// <summary>Shows the listed folders newest first, reusing rows by name so the selection stays.</summary>
-    private void ShowFolders(IReadOnlyList<VersionInfo> folders, IReadOnlyList<IndexedVersion> indexed)
+    /// <summary>
+    /// Shows the listed folders newest first, reusing rows by name so the selection stays, and their coverage under the
+    /// saved rules of <paramref name="plan"/>.
+    /// </summary>
+    private void ShowFolders(IReadOnlyList<VersionInfo> folders, IReadOnlyList<IndexedVersion> indexed, BackupPlan plan)
     {
         var known = VersionRows.ToDictionary(r => r.Name, StringComparer.OrdinalIgnoreCase);
         var byName = indexed.ToDictionary(v => v.Name, StringComparer.OrdinalIgnoreCase);
@@ -310,6 +376,7 @@ public sealed partial class VersionsViewModel : ObservableObject
         VersionRows.ReplaceAll(rows);
         SelectedVersion = rows.FirstOrDefault(r => r.Name.Equals(selectedName, StringComparison.OrdinalIgnoreCase))
                           ?? rows.FirstOrDefault();
+        ShowCoverage(plan);
         OnPropertyChanged(nameof(ShowEmpty));
     }
 

@@ -283,6 +283,40 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!-- ======================================== Coverage: the versions now, per rule slot -->
+                    <StackPanel>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RetentionPreview.HasCoverage}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Border Height="1" Margin="0,2,0,16" Background="{DynamicResource Brush.Border}" />
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,10"
+                                   Text="{l:Loc retention.coverage.title}" ToolTip="{l:Loc retention.coverage.titleToolTip}" />
+                        <controls:RetentionCoverageControl Margin="0,0,0,16"
+                                                           Lanes="{Binding RetentionPreview.CoverageLanes}"
+                                                           LaneLabels="{Binding RetentionPreview.CoverageLabels}"
+                                                           SelectCommand="{Binding RetentionPreview.SelectCoverageCommand}"
+                                                           SelectedId="{Binding RetentionPreview.SelectedNowRow.Name}"
+                                                           SlotText="{Binding RetentionPreview.CoverageSlotText}" />
+                    </StackPanel>
+                    <TextBlock Margin="0,0,0,12" Text="{Binding RetentionPreview.NoRulesText}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding RetentionPreview.NoRulesText}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
                     <!-- ======================================== Forecast -->
                     <Border Height="1" Margin="0,2,0,16" Background="{DynamicResource Brush.Border}" />
 
@@ -416,7 +450,8 @@
                     </TextBlock>
 
                     <Grid>
-                        <ListView Style="{StaticResource ListView.Table}" ItemsSource="{Binding RetentionPreview.NowRows}"
+                        <ListView x:Name="NowList" Style="{StaticResource ListView.Table}" ItemsSource="{Binding RetentionPreview.NowRows}"
+                                  SelectedItem="{Binding RetentionPreview.SelectedNowRow}" SelectionChanged="OnNowSelectionChanged"
                                   MinHeight="80" MaxHeight="360" SelectionMode="Single">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
