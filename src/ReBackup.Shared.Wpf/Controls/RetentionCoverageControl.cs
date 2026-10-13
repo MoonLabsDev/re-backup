@@ -8,6 +8,26 @@ using ReBackup.Shared.Wpf.Theme;
 
 namespace ReBackup.Shared.Wpf.Controls;
 
+/// <summary>How <see cref="RetentionCoverageControl"/> fills a cell that holds a version without warnings.</summary>
+public enum CoveragePresentColoring
+{
+    /// <summary>The accent colour (warnings in the warning colour).</summary>
+    Status,
+    /// <summary>The colour of the lane's period, as its label (warnings still in the warning colour).</summary>
+    Period,
+}
+
+/// <summary>
+/// Where the selection of a <see cref="RetentionCoverageControl"/> is drawn: <paramref name="Rings"/> (the pen's centre
+/// line) around the drawn cells of the selected version, <paramref name="HiddenLanes"/> whose "+N" label is ringed
+/// because that cell is not drawn, and the <paramref name="Bands"/> behind the slot that holds the version's date, in
+/// every lane.
+/// </summary>
+public sealed record CoverageSelectionLayout(IReadOnlyList<Rect> Rings, IReadOnlyList<int> HiddenLanes, IReadOnlyList<Rect> Bands)
+{
+    public static readonly CoverageSelectionLayout None = new([], [], []);
+}
+
 /// <summary>
 /// Draws, per retention rule, the slots the rule wants to keep: filled when a version exists, red when it is missing.
 /// Each lane has its own scale (equal-width cells, newest on the right edge).
@@ -15,11 +35,15 @@ namespace ReBackup.Shared.Wpf.Controls;
 public sealed class RetentionCoverageControl : FrameworkElement
 {
     private const double LabelWidth = 170;
-    private const double LaneHeight = 22;
+    private const double LaneHeight = 26;
     private const double RightPadding = 8;
     private const double MinCell = 2;
     private const double GapFrom = 6;
-    private const double CellInset = 4;
+    /// <summary>Room above and below a cell, together; the selection ring fits in it.</summary>
+    private const double CellInset = 8;
+    /// <summary>The selection ring: its thickness and the gap between it and the cell.</summary>
+    private const double RingThickness = 2;
+    private const double RingGap = 2;
 
     private static readonly Color[] LaneFallbacks =
     [
@@ -35,6 +59,7 @@ public sealed class RetentionCoverageControl : FrameworkElement
         public required Brush[] Lanes { get; init; }
         public required Brush Label { get; init; }
         public required Brush Present { get; init; }
+        public required Brush Band { get; init; }
         public required Brush Warning { get; init; }
         public required Brush Missing { get; init; }
         public required Brush BeforeFirst { get; init; }
@@ -59,6 +84,10 @@ public sealed class RetentionCoverageControl : FrameworkElement
     public static readonly DependencyProperty SelectedIdProperty = DependencyProperty.Register(
         nameof(SelectedId), typeof(string), typeof(RetentionCoverageControl),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty PresentColoringProperty = DependencyProperty.Register(
+        nameof(PresentColoring), typeof(CoveragePresentColoring), typeof(RetentionCoverageControl),
+        new FrameworkPropertyMetadata(CoveragePresentColoring.Status, FrameworkPropertyMetadataOptions.AffectsRender));
 
     public static readonly DependencyProperty SlotTextProperty = DependencyProperty.Register(
         nameof(SlotText), typeof(Func<CoverageSlot, string>), typeof(RetentionCoverageControl), new PropertyMetadata(null));
@@ -107,6 +136,13 @@ public sealed class RetentionCoverageControl : FrameworkElement
         set => SetValue(SelectedIdProperty, value);
     }
 
+    /// <summary>How cells with a version (without warnings) are filled: the accent colour, or the lane's period colour.</summary>
+    public CoveragePresentColoring PresentColoring
+    {
+        get => (CoveragePresentColoring)GetValue(PresentColoringProperty);
+        set => SetValue(PresentColoringProperty, value);
+    }
+
     /// <summary>The tooltip text of a cell.</summary>
     public Func<CoverageSlot, string>? SlotText
     {
@@ -127,6 +163,76 @@ public sealed class RetentionCoverageControl : FrameworkElement
 
     /// <summary>How many of a lane's newest slots fit; the rest is counted in the "+N" label.</summary>
     public static int VisibleSlots(Size size, int slotCount) => Geometry(size.Width, slotCount).Visible;
+
+    /// <summary>The rectangle of drawn cell <paramref name="index"/> (0 = oldest drawn) of lane <paramref name="lane"/>.</summary>
+    private static Rect Cell(int lane, int index, double pitch, double left)
+    {
+        var gap = pitch >= GapFrom ? 1 : 0;
+        return new Rect(left + index * pitch, lane * LaneHeight + CellInset / 2, pitch - gap, LaneHeight - CellInset);
+    }
+
+    /// <summary>
+    /// Where the selection of <paramref name="selectedId"/> is drawn: a ring around each drawn cell that holds the
+    /// version, the lanes whose "+N" label is ringed instead, and in every lane a full-height band behind the drawn slot
+    /// that contains the version's date. <see cref="CoverageSelectionLayout.None"/> when no slot holds the version.
+    /// </summary>
+    public static CoverageSelectionLayout SelectionLayout(Size size, IReadOnlyList<CoverageLane> lanes, string? selectedId)
+    {
+        if (selectedId is null)
+            return CoverageSelectionLayout.None;
+        var version = lanes.SelectMany(l => l.Slots).Select(s => s.Version).FirstOrDefault(v => v?.Id == selectedId);
+        if (version is null)
+            return CoverageSelectionLayout.None;
+
+        var date = DateOnly.FromDateTime(version.LocalTime);
+        var outset = RingGap + RingThickness / 2;
+        var rings = new List<Rect>();
+        var hiddenLanes = new List<int>();
+        var bands = new List<Rect>();
+        for (var i = 0; i < lanes.Count; i++)
+        {
+            var slots = lanes[i].Slots;
+            var (pitch, visible, right) = Geometry(size.Width, slots.Count);
+            var hidden = slots.Count - visible;
+            var left = right - visible * pitch;
+            for (var s = 0; s < slots.Count; s++)
+            {
+                var slot = slots[s];
+                var drawn = visible > 0 && s >= hidden;
+                if (slot.Version?.Id == selectedId)
+                {
+                    if (drawn)
+                        rings.Add(Rect.Inflate(Cell(i, s - hidden, pitch, left), outset, outset));
+                    else if (visible > 0 && !hiddenLanes.Contains(i))
+                        hiddenLanes.Add(i);
+                }
+                if (drawn && slot.Start <= date && date < slot.End)
+                {
+                    var cell = Cell(i, s - hidden, pitch, left);
+                    bands.Add(new Rect(cell.X, i * LaneHeight, cell.Width, LaneHeight));
+                }
+            }
+        }
+        return new CoverageSelectionLayout(rings, hiddenLanes, bands);
+    }
+
+    /// <summary>The fill of a Present cell: <paramref name="status"/>, or the period's colour from <paramref name="periods"/>.</summary>
+    public static Brush PresentBrush(RetentionPeriod period, CoveragePresentColoring coloring, Brush status, IReadOnlyList<Brush> periods) =>
+        coloring == CoveragePresentColoring.Period && (int)period >= 0 && (int)period < periods.Count ? periods[(int)period] : status;
+
+    /// <summary>The fill of a cell in <paramref name="state"/> of a lane of <paramref name="period"/>; null for an outlined (pending) cell.</summary>
+    private static Brush? Fill(SlotState state, RetentionPeriod period, CoveragePresentColoring coloring, Paint paint) => state switch
+    {
+        SlotState.Present => PresentBrush(period, coloring, paint.Present, paint.Lanes),
+        SlotState.PresentWithWarnings => paint.Warning,
+        SlotState.Missing => paint.Missing,
+        SlotState.BeforeFirst => paint.BeforeFirst,
+        _ => null,
+    };
+
+    /// <summary>The fill the control draws for a cell in <paramref name="state"/> of a lane of <paramref name="period"/> (null: outlined).</summary>
+    public Brush? CellFill(SlotState state, RetentionPeriod period) =>
+        Fill(state, period, PresentColoring, _paint ??= LoadPaint());
 
     /// <summary>The lane index and slot under <paramref name="p"/>, or null.</summary>
     public static int? HitTest(Size size, IReadOnlyList<CoverageLane> lanes, Point p, out CoverageSlot? slot)
@@ -206,11 +312,16 @@ public sealed class RetentionCoverageControl : FrameworkElement
         var paint = _paint ??= LoadPaint();
         var pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var labels = LaneLabels;
-        var selected = SelectedId;
 
         // Transparent backdrop so the whole control is hit-testable (tooltip, click).
         drawingContext.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, lanes.Count * LaneHeight));
 
+        // The selected version's column behind the cells; its rings over them, at the end.
+        var selection = SelectionLayout(new Size(ActualWidth, ActualHeight), lanes, SelectedId);
+        foreach (var band in selection.Bands)
+            drawingContext.DrawRectangle(paint.Band, null, band);
+
+        var coloring = PresentColoring;
         for (var i = 0; i < lanes.Count; i++)
         {
             var lane = lanes[i];
@@ -230,38 +341,32 @@ public sealed class RetentionCoverageControl : FrameworkElement
             if (hidden > 0)
             {
                 var more = Text("+" + hidden.ToString(Loc.Culture), 10, paint.Label, pixelsPerDip);
-                drawingContext.DrawText(more, new Point(LabelWidth - 4 - more.Width, top + LaneHeight / 2 - more.Height / 2));
+                var origin = new Point(LabelWidth - 4 - more.Width, top + LaneHeight / 2 - more.Height / 2);
+                drawingContext.DrawText(more, origin);
+                if (selection.HiddenLanes.Contains(i))
+                {
+                    // The selected version's cell is not drawn: the "+N" that counts it is ringed.
+                    var outset = RingGap + RingThickness / 2;
+                    var box = new Rect(origin.X, top + CellInset / 2, more.Width, LaneHeight - CellInset);
+                    drawingContext.DrawRectangle(null, paint.Selected, Rect.Inflate(box, outset, outset));
+                }
             }
 
-            var gap = pitch >= GapFrom ? 1 : 0;
             var left = right - visible * pitch;
             for (var s = 0; s < visible; s++)
             {
                 var slot = lane.Slots[hidden + s];
-                var cell = new Rect(left + s * pitch, top + CellInset / 2, pitch - gap, LaneHeight - CellInset);
-                switch (slot.State)
-                {
-                    case SlotState.Present:
-                        drawingContext.DrawRectangle(paint.Present, null, cell);
-                        break;
-                    case SlotState.PresentWithWarnings:
-                        drawingContext.DrawRectangle(paint.Warning, null, cell);
-                        break;
-                    case SlotState.Missing:
-                        drawingContext.DrawRectangle(paint.Missing, null, cell);
-                        break;
-                    case SlotState.BeforeFirst:
-                        drawingContext.DrawRectangle(paint.BeforeFirst, null, cell);
-                        break;
-                    case SlotState.Pending:
-                        drawingContext.DrawRectangle(null, paint.Pending,
-                            cell.Width > 1.5 ? new Rect(cell.X + 0.5, cell.Y + 0.5, cell.Width - 1, cell.Height - 1) : cell);
-                        break;
-                }
-                if (selected is not null && slot.Version?.Id == selected)
-                    drawingContext.DrawRectangle(null, paint.Selected, Rect.Inflate(cell, 1, 1));
+                var cell = Cell(i, s, pitch, left);
+                if (Fill(slot.State, lane.Rule.Period, coloring, paint) is { } fill)
+                    drawingContext.DrawRectangle(fill, null, cell);
+                else if (slot.State == SlotState.Pending)
+                    drawingContext.DrawRectangle(null, paint.Pending,
+                        cell.Width > 1.5 ? new Rect(cell.X + 0.5, cell.Y + 0.5, cell.Width - 1, cell.Height - 1) : cell);
             }
         }
+
+        foreach (var ring in selection.Rings)
+            drawingContext.DrawRectangle(null, paint.Selected, ring);
     }
 
     private static FormattedText Text(string text, double size, Brush brush, double pixelsPerDip) =>
@@ -290,7 +395,8 @@ public sealed class RetentionCoverageControl : FrameworkElement
             Missing = ThemeResources.Brush(Resolve("Color.Danger", Color.FromRgb(0xF2, 0x54, 0x5B))),
             BeforeFirst = ThemeResources.Brush(Color.FromArgb(0x59, faint.R, faint.G, faint.B)),
             Pending = ThemeResources.Pen(faint, 1),
-            Selected = ThemeResources.Pen(text, 1.5),
+            Band = ThemeResources.Brush(Color.FromArgb(0x1F, text.R, text.G, text.B)),
+            Selected = ThemeResources.Pen(text, RingThickness),
         };
     }
 }
