@@ -210,6 +210,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     /// </summary>
     public void LoadHistory(IReadOnlyList<RunLogEntry> entries, string? target = null)
     {
+        Entries = entries;
         History.Clear();
         for (var i = entries.Count - 1; i >= 0; i--)
             History.Add(new RunHistoryRow(entries[i], target));
@@ -218,6 +219,9 @@ public sealed partial class PlanRunViewModel : ObservableObject
         LastRun = History.Count == 0 ? null : History[0];
         UpdateCard();
     }
+
+    /// <summary>The entries of the last <see cref="LoadHistory"/>, oldest first (the coverage timeline reads them).</summary>
+    public IReadOnlyList<RunLogEntry> Entries { get; private set; } = [];
 
     /// <summary>The running check of the last <see cref="LoadHistory"/>; completes when its rows were updated.</summary>
     public Task VersionCheck { get; private set; } = Task.CompletedTask;

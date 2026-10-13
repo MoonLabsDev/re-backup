@@ -18,4 +18,11 @@ public partial class RetentionView : UserControl
         if (IsVisible && DataContext is PlanEditorViewModel editor)
             editor.RetentionPreview.EnsureLoaded();
     }
+
+    /// <summary>A version picked in the coverage timeline may be far down the table.</summary>
+    private void OnNowSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (NowList.SelectedItem is { } row)
+            NowList.ScrollIntoView(row);
+    }
 }

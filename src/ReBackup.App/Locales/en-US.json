@@ -627,6 +627,18 @@
     "reason": { "newest": "Newest", "noRules": "No rules" },
     "describe": { "weekly": "Weekly({day})", "monthly": "Monthly({day})", "yearly": "Yearly({date})" },
     "timeline": { "lane": "{rule}, keep {keep:N0}", "all": "All versions", "newest": "Newest" },
+    "coverage": {
+      "title": "COVERAGE",
+      "titleToolTip": "Which slots each rule wants to keep, and whether a version exists for each. Click a slot to select its version.",
+      "noRules": "No retention rules",
+      "lane": "{rule} · {keep:N0}",
+      "period": "{from} – {to}",
+      "warnings": "With warnings: {count:N0} skipped",
+      "warningsOnly": "With warnings",
+      "missing": "Missing",
+      "beforeFirst": "Before the first backup",
+      "pending": "Not yet run"
+    },
     "targetUnreadable": "The target folder could not be read: {error}"
   },
   "history": {

@@ -52,8 +52,12 @@ public partial class VersionsView : UserControl
 
     private void OnVersionSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        var list = (ListBox)sender;
         if (DataContext is PlanEditorViewModel editor)
-            editor.Versions.SetMarkedVersions(((ListBox)sender).SelectedItems.OfType<VersionRowViewModel>());
+            editor.Versions.SetMarkedVersions(list.SelectedItems.OfType<VersionRowViewModel>());
+        // A version picked in the coverage timeline may be far down the list.
+        if (list.SelectedItems.Count == 1)
+            list.ScrollIntoView(list.SelectedItem);
     }
 
     private void OnTreeSizeChanged(object sender, SizeChangedEventArgs e)

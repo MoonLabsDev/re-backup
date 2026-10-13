@@ -34,6 +34,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private readonly Func<long?> _fallbackVersionBytes;
     private readonly IFolderOpener _folders;
     private readonly IStorageFactory _storages;
+    private readonly Func<IReadOnlyList<RunLogEntry>> _runLog;
     private IReadOnlyList<VersionInfo>? _versions;
     private string? _versionsTarget;   // belongs to _versions: the target they were read from
     private bool _targetMissing;   // belongs to _versions: the target folder did not exist when they were read
@@ -43,7 +44,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
 
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Error))]
+    [NotifyPropertyChangedFor(nameof(Error), nameof(HasCoverage), nameof(NoRulesText))]
     private LocText? _errorText;
 
     [ObservableProperty]
@@ -89,6 +90,32 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private long? _forecastBytes;
 
     [ObservableProperty] private IReadOnlyList<TimelineLane> _timelineLanes = [];
+
+    /// <summary>The coverage timeline: per rule, its slots and whether a version holds each (the rules as edited).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCoverage))]
+    private IReadOnlyList<CoverageLane> _coverageLanes = [];
+
+    /// <summary>The labels of <see cref="CoverageLanes"/>, e.g. "Daily · 7".</summary>
+    [ObservableProperty] private IReadOnlyList<string> _coverageLabels = [];
+
+    /// <summary>The versions were read and the edited plan has no rules: the hint replaces the timeline.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoRulesText))]
+    private bool _coverageWithoutRules;
+
+    /// <summary>The row of the "now" table that is selected (a click on a coverage slot selects its version here).</summary>
+    [ObservableProperty] private RetentionNowRow? _selectedNowRow;
+
+    /// <summary>True while the coverage timeline is shown; hidden when the target could not be read.</summary>
+    public bool HasCoverage => CoverageLanes.Count > 0 && Error is null;
+
+    /// <summary>"No retention rules" in place of the timeline; null while the hint is not shown.</summary>
+    public string? NoRulesText => CoverageWithoutRules && Error is null ? Loc.T("retention.coverage.noRules") : null;
+
+    /// <summary>The tool tip of a coverage cell.</summary>
+    public Func<CoverageSlot, string> CoverageSlotText => slot => CoverageBuilder.SlotText(slot,
+        name => _versions?.FirstOrDefault(v => v.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.TotalBytes);
     [ObservableProperty] private DateTime _timelineFrom;
     [ObservableProperty] private DateTime _timelineTo;
 
@@ -96,10 +123,12 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     /// <param name="fallbackVersionBytes">Size of one version when the target has none yet; null when unknown.</param>
     /// <param name="folders">Opens a version folder in Explorer.</param>
     /// <param name="storages">Opens the plan's target.</param>
+    /// <param name="runLog">The plan's run log, oldest first: versions whose run ended with warnings show so in the coverage.</param>
     public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes, IFolderOpener folders,
-        IStorageFactory storages)
+        IStorageFactory storages, Func<IReadOnlyList<RunLogEntry>>? runLog = null)
     {
         _storages = storages;
+        _runLog = runLog ?? (() => []);
         _plan = plan;
         _fallbackVersionBytes = fallbackVersionBytes;
         _folders = folders;
@@ -170,6 +199,15 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         NowRows.ReplaceAll([]);
         Now = LocText.Of("retention.now.notLoaded");
         ClearSimulation();
+        ClearCoverage();
+    }
+
+    /// <summary>Selects the "now" row of the version a coverage slot holds.</summary>
+    [RelayCommand]
+    private void SelectCoverage(string? id)
+    {
+        if (NowRows.FirstOrDefault(r => r.Name.Equals(id, StringComparison.OrdinalIgnoreCase)) is { } row)
+            SelectedNowRow = row;
     }
 
     /// <summary>Applies the edited rules again after a short pause in typing. The target is not read again.</summary>
@@ -252,6 +290,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 NowRows.ReplaceAll([]);
                 Now = LocText.Empty;
                 ClearSimulation();
+                ClearCoverage();
                 ErrorText = LocText.Of("retention.targetUnreadable", ("error", ex.Message));
             }
         }
@@ -280,11 +319,15 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             NowRows.ReplaceAll([]);
             Now = LocText.Of("retention.now.fixRules");
             ClearSimulation();
+            ClearCoverage();
             Full = LocText.Of("retention.forecast.fixRules");
             return;
         }
 
+        var selected = SelectedNowRow?.Name;
         NowRows.ReplaceAll(decisions.Reverse().Select(d => new RetentionNowRow(d, rules)));
+        SelectedNowRow = NowRows.FirstOrDefault(r => r.Name.Equals(selected, StringComparison.OrdinalIgnoreCase));
+        ShowCoverage(versions, rules);
 
         var managed = decisions.Where(d => d.Decision is not null).ToList();
         var deleted = managed.Where(d => d.Delete).ToList();
@@ -300,6 +343,23 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 (unmanaged > 0 ? Loc.F("retention.now.unmanaged", ("count", unmanaged)) : ""));
 
         _ = SimulateAsync(versions, rules, plan.Triggers);
+    }
+
+    /// <summary>The coverage of the owned versions under the edited rules (already checked by the caller).</summary>
+    private void ShowCoverage(IReadOnlyList<VersionInfo> versions, IReadOnlyList<RetentionRule> rules)
+    {
+        var (lanes, labels) = CoverageBuilder.Build(versions, rules, _runLog(), DateOnly.FromDateTime(DateTime.Now));
+        CoverageLabels = labels;
+        CoverageLanes = lanes;
+        CoverageWithoutRules = rules.Count == 0;
+    }
+
+    private void ClearCoverage()
+    {
+        CoverageLanes = [];
+        CoverageLabels = [];
+        CoverageWithoutRules = false;
+        SelectedNowRow = null;
     }
 
     private void ClearSimulation()

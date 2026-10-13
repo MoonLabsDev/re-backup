@@ -83,6 +83,36 @@ public class MainWindowSmokeTests
         });
     }
 
+    [Theory]
+    [InlineData("Retention")]
+    [InlineData("Versions")]
+    public void The_retention_and_versions_views_load_with_the_coverage_timeline(string tab)
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddPlan("a", "Alpha");
+            var vm = fixture.Create();
+            FrameworkElement view = tab == "Retention"
+                ? new ReBackup.App.Views.RetentionView { DataContext = vm.Plans[0] }
+                : new ReBackup.App.Views.VersionsView { DataContext = vm.Plans[0] };
+            view.Measure(new Size(1280, 800));
+            view.Arrange(new Rect(new Size(1280, 800)));
+            view.UpdateLayout();
+
+            var prefix = tab == "Retention" ? "RetentionPreview." : "Versions.";
+            var control = FindAll<RetentionCoverageControl>(view).Should().ContainSingle().Subject;
+            string? PathOf(DependencyProperty property) => BindingOperations.GetBinding(control, property)?.Path.Path;
+            PathOf(RetentionCoverageControl.LanesProperty).Should().Be(prefix + "CoverageLanes");
+            PathOf(RetentionCoverageControl.LaneLabelsProperty).Should().Be(prefix + "CoverageLabels");
+            PathOf(RetentionCoverageControl.SelectCommandProperty).Should().Be(prefix + "SelectCoverageCommand");
+            PathOf(RetentionCoverageControl.SlotTextProperty).Should().Be(prefix + "CoverageSlotText");
+            PathOf(RetentionCoverageControl.SelectedIdProperty).Should()
+                .Be(tab == "Retention" ? "RetentionPreview.SelectedNowRow.Name" : "Versions.SelectedVersion.Name");
+        });
+    }
+
     [Fact]
     public void The_plan_view_shows_the_S3_fields_of_an_S3_target_and_hides_the_target_full_toggle()
     {

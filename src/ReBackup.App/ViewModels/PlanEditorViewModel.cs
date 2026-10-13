@@ -61,8 +61,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         TargetS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: true, () => TargetEdited(s3: true));
         Run = new PlanRunViewModel(versions.Storages);
         Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
-        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages);
-        Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions);
+        RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
+            () => Run.Entries);
+        Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries);
         Versions.VersionsDeleted += () => RetentionPreview.ReloadIfLoaded();
         Preview.PropertyChanged += (_, e) =>
         {

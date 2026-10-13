@@ -627,6 +627,18 @@
     "reason": { "newest": "Neueste", "noRules": "Keine Regeln" },
     "describe": { "weekly": "Wöchentlich({day})", "monthly": "Monatlich({day})", "yearly": "Jährlich({date})" },
     "timeline": { "lane": "{rule}, {keep:N0} behalten", "all": "Alle Versionen", "newest": "Neueste" },
+    "coverage": {
+      "title": "BESTAND",
+      "titleToolTip": "Welche Zeiträume jede Regel behalten will und ob es für jeden eine Version gibt. Ein Klick auf einen Zeitraum wählt seine Version aus.",
+      "noRules": "Keine Aufbewahrungsregeln",
+      "lane": "{rule} · {keep:N0}",
+      "period": "{from} – {to}",
+      "warnings": "Mit Warnungen: {count:N0} übersprungen",
+      "warningsOnly": "Mit Warnungen",
+      "missing": "Fehlt",
+      "beforeFirst": "Vor dem ersten Backup",
+      "pending": "Noch nicht gelaufen"
+    },
     "targetUnreadable": "Der Zielordner konnte nicht gelesen werden: {error}"
   },
   "history": {
