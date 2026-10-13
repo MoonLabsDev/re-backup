@@ -444,7 +444,8 @@
     "notAFolder": "Das ist eine Datei, kein Ordner.",
     "accessDenied": "Das Dienstkonto {email} darf das nicht öffnen, oder sein Schlüssel ist ungültig. Den Ordner oder die geteilte Ablage für {email} freigeben.",
     "notFound": "Nicht gefunden. Den Link prüfen oder den Ordner für {email} freigeben.",
-    "failed": "Google Drive war nicht erreichbar: {error}"
+    "failed": "Google Drive war nicht erreichbar: {error}",
+    "timeout": "Google Drive hat nicht rechtzeitig geantwortet. Die Verbindung prüfen und erneut versuchen."
   },
   "driveaccounts": {
     "title": "Google-Konten",

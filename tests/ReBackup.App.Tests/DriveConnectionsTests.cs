@@ -243,6 +243,20 @@ public class DriveConnectionsTests : IDisposable
     }
 
     [Fact]
+    public void The_account_dialog_refuses_a_file_over_64_KB_without_reading_it()
+    {
+        var keyFile = Path.Combine(_fixture.Root, "huge.json");
+        var key = MainViewModelFixture.ServiceAccountKey();
+        File.WriteAllText(keyFile, key[..^1] + ", \"padding\": \"" + new string('x', 64 * 1024) + "\" }");
+        var dialog = new DriveAccountDialogViewModel(null, _ => false, () => keyFile) { Name = "Backup" };
+
+        dialog.ChooseKeyCommand.Execute(null);
+
+        dialog.KeyError.Should().StartWith("This is not a Google service account key.", "a valid key padded past 64 KB is refused by size");
+        dialog.ClientEmail.Should().BeNull();
+    }
+
+    [Fact]
     public void The_account_dialog_refuses_a_name_another_account_has()
     {
         var dialog = new DriveAccountDialogViewModel(null, name => name == "Taken", () => null) { Name = "Taken" };
@@ -294,6 +308,8 @@ public class DriveConnectionsTests : IDisposable
     [InlineData("https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp", "1AbCdEfGhIjKlMnOp")]
     [InlineData("  1AbCdEfGhIjKlMnOp  ", "1AbCdEfGhIjKlMnOp")]
     [InlineData("https://example.com/drive/folders/1AbCdEfGhIjKlMnOp", null)]
+    [InlineData("drive.google.com/drive/folders/1AbCdEfGhIjKlMnOp", "1AbCdEfGhIjKlMnOp")]
+    [InlineData("https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOp?resourcekey=0-abc", "1AbCdEfGhIjKlMnOp")]
     [InlineData("not a link", null)]
     [InlineData("", null)]
     public void A_folder_link_or_ID_is_parsed(string text, string? expected)
@@ -334,6 +350,48 @@ public class DriveConnectionsTests : IDisposable
         dialog.FolderText = "nope";
         await dialog.SaveCommand.ExecuteAsync(null);
         dialog.Error.Should().Be("This is neither a Drive folder link nor a folder ID.");
+    }
+
+    [Fact]
+    public async Task A_listing_that_takes_too_long_says_so()
+    {
+        _fixture.Drive.SaveAccount(MainViewModelFixture.DriveAccountId, "Backup", MainViewModelFixture.ServiceAccountKey());
+        _fixture.DriveApi.Gate = new TaskCompletionSource();
+        var dialog = new DriveConnectionDialogViewModel(null, () => _fixture.Drive.Store.LoadAccounts(), _ => false,
+            _fixture.Drive.ApiForAccount, () => null) { CallTimeout = TimeSpan.FromMilliseconds(50) };
+
+        await dialog.LoadSharedDrivesCommand.ExecuteAsync(null);
+
+        dialog.Error.Should().Be("Google Drive did not answer in time. Check the connection and try again.");
+        dialog.IsBusy.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_network_timeout_says_so_as_well()
+    {
+        _fixture.Drive.SaveAccount(MainViewModelFixture.DriveAccountId, "Backup", MainViewModelFixture.ServiceAccountKey());
+        _fixture.DriveApi.Failure = new TimeoutException("socket");
+        var dialog = ConnectionDialog();
+
+        await dialog.LoadSharedDrivesCommand.ExecuteAsync(null);
+
+        dialog.Error.Should().Be("Google Drive did not answer in time. Check the connection and try again.");
+    }
+
+    [Fact]
+    public async Task Closing_the_dialog_cancels_a_running_listing_without_a_message()
+    {
+        _fixture.Drive.SaveAccount(MainViewModelFixture.DriveAccountId, "Backup", MainViewModelFixture.ServiceAccountKey());
+        _fixture.DriveApi.Gate = new TaskCompletionSource();
+        var dialog = ConnectionDialog();
+
+        var load = dialog.LoadSharedDrivesCommand.ExecuteAsync(null);
+        dialog.IsBusy.Should().BeTrue();
+        dialog.Cancel();
+        await load.WaitAsync(TimeSpan.FromSeconds(5));
+
+        dialog.Error.Should().BeNull();
+        dialog.IsBusy.Should().BeFalse();
     }
 
     [Fact]

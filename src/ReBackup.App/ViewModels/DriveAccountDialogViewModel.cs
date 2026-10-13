@@ -21,6 +21,9 @@ public sealed record DriveAccountInput(string Name, string? KeyJson)
 /// </summary>
 public sealed partial class DriveAccountDialogViewModel : ObservableObject
 {
+    /// <summary>Key files larger than this are refused without reading them.</summary>
+    public const long MaxKeyFileBytes = 64 * 1024;
+
     private readonly DriveAccount? _existing;
     private readonly Func<string, bool> _isNameTaken;
     private readonly Func<string?> _pickKeyFile;
@@ -83,6 +86,12 @@ public sealed partial class DriveAccountDialogViewModel : ObservableObject
         string json;
         try
         {
+            // A service-account key is a few KB; anything much larger is not one and is not read into memory.
+            if (new FileInfo(path).Length > MaxKeyFileBytes)
+            {
+                KeyError = Loc.T("driveaccounts.keyInvalid");
+                return;
+            }
             json = File.ReadAllText(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

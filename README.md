@@ -299,6 +299,13 @@ Give the service account the **Manager** role on that shared drive: ReBackup del
 backups but only trash files, so retention fails. A Drive *source* can be a shared drive or a folder in My Drive
 shared with the account; reading needs no more than the Viewer role.
 
+**Keep the target out of the source.** A plan whose Drive target is the same as its source or lies inside it cannot be
+saved when ReBackup can tell without asking Drive: both on the same connection root (compared by path), or one side is
+a whole shared drive (empty path) and the other is on that drive. Two *different folder* connections on one shared
+drive are not checked against each other (where one folder lies relative to the other is not known offline), nor is a
+folder connection against a path inside the whole-drive connection; make sure such a target does not lie inside the
+source, or every run backs up the previous backups again.
+
 **Google Docs, Sheets, Slides and Drawings** have no file of their own on Drive. A Drive source exports them on the
 way: Docs as `.docx`, Sheets as `.xlsx`, Slides as `.pptx` and Drawings as `.pdf` (the extension is added to the name).
 Google allows such exports up to **10 MB**; a larger document is skipped and listed in the run history (the run ends

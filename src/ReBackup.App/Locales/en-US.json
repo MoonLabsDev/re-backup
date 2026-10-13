@@ -444,7 +444,8 @@
     "notAFolder": "This is a file, not a folder.",
     "accessDenied": "The service account {email} may not open this, or its key is not valid. Share the folder or shared drive with {email}.",
     "notFound": "Not found. Check the link, or share the folder with {email}.",
-    "failed": "Google Drive could not be reached: {error}"
+    "failed": "Google Drive could not be reached: {error}",
+    "timeout": "Google Drive did not answer in time. Check the connection and try again."
   },
   "driveaccounts": {
     "title": "Google accounts",

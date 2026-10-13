@@ -23,6 +23,7 @@ public sealed partial class DriveConnectionDialogViewModel : ObservableObject
     private readonly Func<string, bool> _isNameTaken;
     private readonly Func<string, IDriveApi?> _apiForAccount;
     private readonly Func<DriveAccount?> _createAccount;
+    private readonly CancellationTokenSource _closed = new();
     private string? _driveToSelect;
     private int _loads;
 
@@ -233,6 +234,12 @@ public sealed partial class DriveConnectionDialogViewModel : ObservableObject
         SelectedAccount = match;
     }
 
+    /// <summary>How long one Drive call (listing the shared drives, looking a folder up) may take.</summary>
+    public TimeSpan CallTimeout { get; init; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>The dialog closed: a running Drive call is cancelled and reports nothing.</summary>
+    public void Cancel() => _closed.Cancel();
+
     /// <summary>
     /// A Drive call on the account's key; null with <see cref="Error"/> set when it failed (a key to enter again, access
     /// denied, not found or not shared, anything else with its reason).
@@ -248,8 +255,18 @@ public sealed partial class DriveConnectionDialogViewModel : ObservableObject
                 Error = Loc.T("driveconnections.accountNeedsKey");
                 return null;
             }
-            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_closed.Token);
+            timeout.CancelAfter(CallTimeout);
             return await call(api, timeout.Token);
+        }
+        catch (OperationCanceledException) when (_closed.IsCancellationRequested)
+        {
+            return null;   // the dialog was closed: nobody reads the outcome
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        {
+            Error = Loc.T("driveconnections.timeout");
+            return null;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -273,11 +290,13 @@ public sealed partial class DriveConnectionDialogViewModel : ObservableObject
 
     /// <summary>
     /// The folder ID in a Drive folder link (<c>https://drive.google.com/drive/folders/&lt;id&gt;</c>, also with <c>/u/0/</c> or a
-    /// query, or <c>…/open?id=&lt;id&gt;</c>) or the ID itself; null when the text is neither.
+    /// query, or <c>…/open?id=&lt;id&gt;</c>; with or without <c>https://</c>) or the ID itself; null when the text is neither.
     /// </summary>
     public static string? ParseFolderId(string? text)
     {
         var value = text?.Trim() ?? "";
+        if (value.StartsWith("drive.google.com/", StringComparison.OrdinalIgnoreCase))
+            value = "https://" + value;
         if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
         {
             if (!uri.Host.Equals("drive.google.com", StringComparison.OrdinalIgnoreCase))

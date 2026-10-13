@@ -483,4 +483,36 @@ public class PlanValidatorTests : IDisposable
         plan.Target = S3("", "c1");
         ValidateDrive(plan).Should().BeEmpty();
     }
+
+    // A whole shared drive holds every folder on it, whatever connection opens that folder.
+    [Fact]
+    public void A_folder_target_on_the_shared_drive_that_is_the_whole_source_is_reported()
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive("", "d1");
+        plan.Target = Drive("backups", "d2");
+
+        ValidateDrive(plan).Should().Equal("Target must not be inside the source.");
+    }
+
+    [Fact]
+    public void A_folder_source_on_the_shared_drive_that_is_the_whole_target_is_reported()
+    {
+        var plan = ValidPlan();
+        plan.Source = Drive("", "d2");
+        plan.Target = Drive("", "d1");
+
+        ValidateDrive(plan).Should().Equal("Source must not be inside the target.");
+    }
+
+    [Fact]
+    public void A_path_on_the_shared_drive_side_with_a_folder_root_on_the_same_drive_stays_valid()
+    {
+        // Where the folder root lies on the drive is not known without asking Drive.
+        var plan = ValidPlan();
+        plan.Source = Drive("photos", "d1");
+        plan.Target = Drive("", "d2");
+
+        ValidateDrive(plan).Should().BeEmpty();
+    }
 }

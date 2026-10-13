@@ -93,6 +93,15 @@ public static class PlanValidator
             targetInSource = IsSameOrInside(plan.Target.Path, plan.Source.Path);
             sourceInTarget = IsSameOrInside(plan.Source.Path, plan.Target.Path);
         }
+        else if (source.Drive is { } sourceDrive && target.Drive is { } targetDrive &&
+                 sourceDrive.SharedDriveId is { } sharedDrive &&
+                 string.Equals(sharedDrive, targetDrive.SharedDriveId, StringComparison.Ordinal))
+        {
+            // Different roots on one shared drive: without asking Drive, only a side that is the whole shared drive is
+            // known to hold the other (a folder root's place on the drive is not known here).
+            targetInSource = IsWholeSharedDrive(sourceDrive, plan.Source.Path);
+            sourceInTarget = IsWholeSharedDrive(targetDrive, plan.Target.Path);
+        }
         else
         {
             return;
@@ -169,6 +178,10 @@ public static class PlanValidator
     }
 
     /// <summary>Whether two Drive connections open the same root (the same folder or shared drive).</summary>
+    /// <summary>Whether the location is a whole shared drive: its root is the shared drive itself and its path is empty.</summary>
+    private static bool IsWholeSharedDrive(DriveRoot root, string path) =>
+        path.Length == 0 && string.Equals(root.RootId, root.SharedDriveId, StringComparison.Ordinal);
+
     private static bool SameRoot(DriveRoot a, DriveRoot b) =>
         string.Equals(a.RootId, b.RootId, StringComparison.Ordinal) &&
         string.Equals(a.SharedDriveId, b.SharedDriveId, StringComparison.Ordinal);

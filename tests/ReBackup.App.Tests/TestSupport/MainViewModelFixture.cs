@@ -308,11 +308,16 @@ public sealed class FakeDriveApi : IDriveApi
 
     public int Calls { get; private set; }
 
-    public Task<IReadOnlyList<SharedDrive>> ListSharedDrivesAsync(CancellationToken ct)
+    /// <summary>When set, listing the shared drives waits for it (or for its token).</summary>
+    public TaskCompletionSource? Gate { get; set; }
+
+    public async Task<IReadOnlyList<SharedDrive>> ListSharedDrivesAsync(CancellationToken ct)
     {
         Calls++;
         if (Failure is not null) throw Failure;
-        return Task.FromResult<IReadOnlyList<SharedDrive>>(SharedDrives.ToList());
+        if (Gate is { } gate)
+            await gate.Task.WaitAsync(ct);
+        return SharedDrives.ToList();
     }
 
     public Task<DriveItem> GetAsync(string id, CancellationToken ct)

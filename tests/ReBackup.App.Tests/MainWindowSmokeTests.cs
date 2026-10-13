@@ -149,7 +149,7 @@ public class MainWindowSmokeTests
     }
 
     [Fact]
-    public void Switching_the_plan_view_between_an_S3_plan_and_a_folder_plan_changes_neither()
+    public void Switching_the_plan_view_between_S3_Drive_and_folder_plans_changes_none()
     {
         RunOnSta(() =>
         {
@@ -164,8 +164,17 @@ public class MainWindowSmokeTests
                 Target = new ReBackup.Storage.StorageLocation("s3", "docs", "c1"),
             });
             fixture.AddPlan("b", "Beta");
+            fixture.AddDriveConnection("d1", "Team", "team", "team");
+            fixture.Store.Save(new ReBackup.Core.Plans.BackupPlan
+            {
+                Id = "c",
+                Name = "Gamma",
+                Source = new ReBackup.Storage.StorageLocation("gdrive", "photos", "d1"),
+                Target = new ReBackup.Storage.StorageLocation("gdrive", "backups", "d1"),
+            });
             var vm = fixture.Create();
             var (a, b) = (vm.Plans.Single(p => p.Id == "a"), vm.Plans.Single(p => p.Id == "b"));
+            var c = vm.Plans.Single(p => p.Id == "c");
             var view = new ReBackup.App.Views.PlanView();
             void Show(PlanEditorViewModel editor)
             {
@@ -176,13 +185,31 @@ public class MainWindowSmokeTests
             }
 
             Show(a);
+            Show(c);
             Show(b);
+            Show(c);
             Show(a);
+            Show(c);
             Show(b);
 
             a.SourceIsS3.Should().BeTrue();
             a.TargetIsS3.Should().BeTrue();
+            a.SourceIsDrive.Should().BeFalse();
+            a.TargetIsDrive.Should().BeFalse();
+            a.SourceS3.ConnectionId.Should().Be("c1");
+            a.TargetS3.ConnectionId.Should().Be("c1");
             a.IsDirty.Should().BeFalse();
+            c.SourceIsDrive.Should().BeTrue();
+            c.TargetIsDrive.Should().BeTrue();
+            c.SourceIsS3.Should().BeFalse();
+            c.TargetIsS3.Should().BeFalse();
+            c.SourceDrive.ConnectionId.Should().Be("d1");
+            c.TargetDrive.ConnectionId.Should().Be("d1");
+            c.SourceDrive.Path.Should().Be("photos");
+            c.TargetDrive.Path.Should().Be("backups");
+            c.IsDirty.Should().BeFalse();
+            b.SourceIsDrive.Should().BeFalse();
+            b.TargetIsDrive.Should().BeFalse();
             b.SourceIsS3.Should().BeFalse();
             b.TargetIsS3.Should().BeFalse();
             b.IsDirty.Should().BeFalse();

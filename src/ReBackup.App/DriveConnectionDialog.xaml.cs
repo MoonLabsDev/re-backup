@@ -45,6 +45,7 @@ public partial class DriveConnectionDialog : Window
     {
         _viewModel.Saved -= OnSaved;
         _viewModel.PropertyChanged -= OnViewModelChanged;
+        _viewModel.Cancel();   // a listing or folder lookup still running ends with the dialog
         base.OnClosed(e);
     }
 }
