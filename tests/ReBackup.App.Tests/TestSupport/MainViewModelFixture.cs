@@ -12,6 +12,8 @@ using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Shared.Settings;
 using ReBackup.Storage;
+using ReBackup.Storage.GoogleDrive;
+using ReBackup.Storage.GoogleDrive.Connections;
 using ReBackup.Storage.S3;
 using ReBackup.Storage.S3.Connections;
 
@@ -39,6 +41,55 @@ public sealed class MainViewModelFixture : IDisposable
                 await gate.Task.WaitAsync(ct);
             return [new S3CheckResult(S3Check.Bucket, S3CheckState.Ok, null, null)];
         });
+        Drive = new DriveConnections(Paths.DriveConnectionsFile, async (connection, path, asTarget, ct) =>
+        {
+            DriveTestRuns.Add((connection.Info.RootId, path, asTarget));
+            if (TestGate is { } gate)
+                await gate.Task.WaitAsync(ct);
+            return NextDriveTest ?? new DriveTestResult(DriveTestOutcome.Ok, "fine");
+        }, key =>
+        {
+            DriveApiKeys.Add(key);
+            return DriveApi;
+        });
+    }
+
+    /// <summary>The Google accounts and Drive connections in the configuration folder; "Test" records its runs in <see cref="DriveTestRuns"/>.</summary>
+    public DriveConnections Drive { get; }
+
+    /// <summary>The Drive connection tests run: root id, path and whether it was tested as a target.</summary>
+    public List<(string RootId, string Path, bool AsTarget)> DriveTestRuns { get; } = [];
+
+    /// <summary>What the next Drive connection tests return; Ok when null.</summary>
+    public DriveTestResult? NextDriveTest { get; set; }
+
+    /// <summary>The API the Drive connection dialog talks to, whatever the key.</summary>
+    public FakeDriveApi DriveApi { get; } = new();
+
+    /// <summary>The keys the API was built for.</summary>
+    public List<string> DriveApiKeys { get; } = [];
+
+    /// <summary>The id of the Google account <see cref="AddDriveConnection"/> stores its connections under.</summary>
+    public const string DriveAccountId = "gacc-1";
+
+    /// <summary>The e-mail of that account's key.</summary>
+    public const string DriveEmail = "backup@moonlabs.iam.gserviceaccount.com";
+
+    /// <summary>A service-account key file's JSON (the key itself is a placeholder; nothing is sent to Google).</summary>
+    public static string ServiceAccountKey(string email = DriveEmail) =>
+        System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["type"] = "service_account",
+            ["private_key"] = "not-a-real-key",
+            ["client_email"] = email,
+        });
+
+    /// <summary>Stores a Drive connection (and the one account it needs) and reloads the lists.</summary>
+    public void AddDriveConnection(string id, string name, string rootId, string? sharedDriveId, string? rootName = null)
+    {
+        if (Drive.Store.TryGetAccount(DriveAccountId) is null)
+            Drive.SaveAccount(DriveAccountId, "Backup", ServiceAccountKey());
+        Drive.Save(new DriveConnectionInfo(id, name, DriveAccountId, rootId, rootName ?? name, sharedDriveId));
     }
 
     /// <summary>When set, a connection test waits for it (or for its cancellation).</summary>
@@ -114,7 +165,7 @@ public sealed class MainViewModelFixture : IDisposable
         var versionIndex = new VersionIndexWorker(new VersionIndexSet(Path.Combine(Root, "index")));
         return new MainViewModel(Store, Paths, Settings, SaveSettings, () => LoadError, Dialogs, () => { }, queue, scheduler,
             action => action(), new ThemeToggleViewModel(() => ThemeMode.Dark, _ => { }),
-            new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages, S3);
+            new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages, S3, Drive);
     }
 
     /// <summary>The English labels, as the app registers them, so texts in the tests read as in the app.</summary>
@@ -193,6 +244,34 @@ public sealed class FakeDialogs : IDialogService
 
     public void ManageS3Accounts() => AccountDialogs++;
 
+    /// <summary>What the next Drive connection dialog returns (then null again: cancelled).</summary>
+    public DriveConnectionInfo? NextDriveConnection { get; set; }
+
+    /// <summary>The connections the Drive connection dialog was opened on (null = a new one).</summary>
+    public List<DriveConnectionInfo?> EditedDriveConnections { get; } = [];
+
+    /// <summary>What the next Google account dialog returns (then null again: cancelled).</summary>
+    public DriveAccountInput? NextDriveAccount { get; set; }
+
+    /// <summary>The accounts the Google account dialog was opened on (null = a new one).</summary>
+    public List<DriveAccount?> EditedDriveAccounts { get; } = [];
+
+    public DriveConnectionInfo? EditDriveConnection(DriveConnectionInfo? existing)
+    {
+        EditedDriveConnections.Add(existing);
+        var result = NextDriveConnection;
+        NextDriveConnection = null;
+        return result;
+    }
+
+    public DriveAccountInput? EditDriveAccount(DriveAccount? existing)
+    {
+        EditedDriveAccounts.Add(existing);
+        var result = NextDriveAccount;
+        NextDriveAccount = null;
+        return result;
+    }
+
     public bool? AskYesNoCancel(string title, string message) => YesNoCancelAnswer;
 
     public string? PickFolder(string title, string? initialFolder) => null;
@@ -215,4 +294,47 @@ public sealed class FakeFolderOpener : IFolderOpener
     public bool OpenFile(string versionFolder, string relativePath) => false;
 
     public bool ShowInExplorer(string versionFolder, string relativePath) => false;
+}
+
+/// <summary>A Drive API with shared drives and items set by the test; every other call fails.</summary>
+public sealed class FakeDriveApi : IDriveApi
+{
+    public List<SharedDrive> SharedDrives { get; } = [];
+
+    public Dictionary<string, DriveItem> Items { get; } = [];
+
+    /// <summary>Thrown by every call when set.</summary>
+    public Exception? Failure { get; set; }
+
+    public int Calls { get; private set; }
+
+    public Task<IReadOnlyList<SharedDrive>> ListSharedDrivesAsync(CancellationToken ct)
+    {
+        Calls++;
+        if (Failure is not null) throw Failure;
+        return Task.FromResult<IReadOnlyList<SharedDrive>>(SharedDrives.ToList());
+    }
+
+    public Task<DriveItem> GetAsync(string id, CancellationToken ct)
+    {
+        Calls++;
+        if (Failure is not null) throw Failure;
+        return Items.TryGetValue(id, out var item) ? Task.FromResult(item) : throw new DriveApiException(404, "notFound");
+    }
+
+    public Task<IReadOnlyList<DriveItem>> ListChildrenAsync(string folderId, CancellationToken ct, string? name = null) => throw new NotSupportedException();
+
+    public Task<DriveItem> CreateFolderAsync(string parentId, string name, CancellationToken ct) => throw new NotSupportedException();
+
+    public Task<DriveItem> UploadAsync(string parentId, string name, Stream content, DateTime? modifiedUtc, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<DriveItem> UpdateContentAsync(string id, Stream content, DateTime? modifiedUtc, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task DeleteAsync(string id, CancellationToken ct) => throw new NotSupportedException();
+
+    public Task<Stream> DownloadAsync(string id, CancellationToken ct) => throw new NotSupportedException();
+
+    public Task<Stream> ExportAsync(string id, string mimeType, CancellationToken ct) => throw new NotSupportedException();
 }

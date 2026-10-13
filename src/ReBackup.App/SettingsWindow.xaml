@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf"
         xmlns:appl="clr-namespace:ReBackup.App.Localization"
-        Title="{l:Loc settings.windowTitle}" Width="600" Height="830" MinWidth="480" MinHeight="730"
+        Title="{l:Loc settings.windowTitle}" Width="600" Height="910" MinWidth="480" MinHeight="810"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Style="{StaticResource {x:Type Window}}">
     <Grid Margin="20,16">
@@ -41,22 +41,40 @@
             </DockPanel>
         </Border>
 
-        <!-- S3: the accounts (access keys) and the connections (bucket + account) plans can use; stored at once. -->
-        <Border Grid.Row="2" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="{l:Loc settings.s3.accounts}" Command="{Binding ManageS3AccountsCommand}"
-                            AutomationProperties.Name="{l:Loc settings.s3.accounts}" />
-                    <Button Margin="8,0,0,0" Content="{l:Loc settings.s3.connections}" Command="{Binding ManageS3ConnectionsCommand}"
-                            AutomationProperties.Name="{l:Loc settings.s3.connections}" />
-                </StackPanel>
-                <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="{l:Loc settings.s3.title}" />
-                    <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
-                               Text="{l:Loc settings.s3.note}" />
-                </StackPanel>
-            </DockPanel>
-        </Border>
+        <StackPanel Grid.Row="2">
+            <!-- S3: the accounts (access keys) and the connections (bucket + account) plans can use; stored at once. -->
+            <Border Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="{l:Loc settings.s3.accounts}" Command="{Binding ManageS3AccountsCommand}"
+                                AutomationProperties.Name="{l:Loc settings.s3.accounts}" />
+                        <Button Margin="8,0,0,0" Content="{l:Loc settings.s3.connections}" Command="{Binding ManageS3ConnectionsCommand}"
+                                AutomationProperties.Name="{l:Loc settings.s3.connections}" />
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="{l:Loc settings.s3.title}" />
+                        <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
+                                   Text="{l:Loc settings.s3.note}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+            <!-- Google Drive: the service accounts (key files) and the connections (shared drive or folder + account); stored at once. -->
+            <Border Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="{l:Loc settings.drive.accounts}" Command="{Binding ManageDriveAccountsCommand}"
+                                AutomationProperties.Name="{l:Loc settings.drive.accounts}" />
+                        <Button Margin="8,0,0,0" Content="{l:Loc settings.drive.connections}" Command="{Binding ManageDriveConnectionsCommand}"
+                                AutomationProperties.Name="{l:Loc settings.drive.connections}" />
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="{l:Loc settings.drive.title}" />
+                        <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
+                                   Text="{l:Loc settings.drive.note}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </StackPanel>
 
         <Border Grid.Row="3" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <StackPanel>

@@ -80,6 +80,12 @@
       "accounts": "S3-Konten…",
       "connections": "S3-Verbindungen…"
     },
+    "drive": {
+      "title": "GOOGLE DRIVE",
+      "note": "Google-Dienstkonten (Schlüsseldateien) und Verbindungen (eine geteilte Ablage oder ein Ordner mit Konto) für Drive-Quellen und -Ziele, gespeichert im Konfigurationsordner.",
+      "accounts": "Google-Konten…",
+      "connections": "Drive-Verbindungen…"
+    },
     "theme": {
       "title": "DESIGN",
       "name": "Design",
@@ -110,6 +116,14 @@
       "sourcePrefixInvalid": "Das Präfix der Quelle ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
       "targetPrefixInvalid": "Das Präfix des Ziels ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
       "connectionsUnreadable": "Die S3-Verbindungen konnten nicht gelesen werden: {error}",
+      "sourceDriveConnectionRequired": "Eine Google-Drive-Verbindung für die Quelle wählen.",
+      "targetDriveConnectionRequired": "Eine Google-Drive-Verbindung für das Ziel wählen.",
+      "sourceDriveConnectionMissing": "Die Google-Drive-Verbindung der Quelle existiert nicht mehr.",
+      "targetDriveConnectionMissing": "Die Google-Drive-Verbindung des Ziels existiert nicht mehr.",
+      "sourceDrivePathInvalid": "Der Pfad der Quelle ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
+      "targetDrivePathInvalid": "Der Pfad des Ziels ist ungültig: Ordnernamen mit einem einzelnen / trennen, kein / am Anfang oder Ende, keine \\-, .- oder ..-Teile.",
+      "targetNotSharedDrive": "Drive-Ziele müssen auf einer geteilten Ablage liegen.",
+      "driveConnectionsUnreadable": "Die Google-Drive-Verbindungen konnten nicht gelesen werden: {error}",
       "retentionRule": "Aufbewahrungsregel {index}: {problem}",
       "trigger": "Auslöser {index}: {problem}"
     },
@@ -405,6 +419,59 @@
     "describe": "{connection} · s3://{bucket}/{prefix}",
     "unknown": "S3-Verbindung nicht gefunden · {prefix}"
   },
+  "driveconnections": {
+    "title": "Drive-Verbindungen",
+    "titleNew": "Neue Drive-Verbindung",
+    "titleEdit": "Drive-Verbindung bearbeiten",
+    "note": "Pläne nutzen diese Verbindungen als Quelle oder Ziel. Gespeichert in drive-connections.json im Konfigurationsordner; Schlüssel funktionieren nur für dieses Windows-Konto.",
+    "column": { "root": "Geteilte Ablage oder Ordner" },
+    "empty": "Noch keine Verbindungen.",
+    "inUse": "„{name}“ wird von diesen Plänen verwendet und kann nicht gelöscht werden:",
+    "deleteConfirm": "Die Drive-Verbindung „{name}“ löschen?",
+    "saveFailed": "Die Google-Drive-Verbindungen konnten nicht gespeichert werden: {error}",
+    "loadFailed": "Die Google-Drive-Verbindungen konnten nicht gelesen werden: {error}",
+    "nameTaken": "Eine andere Verbindung hat bereits diesen Namen.",
+    "account": "Konto",
+    "newAccount": "Neues Konto…",
+    "accountNeedsKey": "Der Schlüssel dieses Kontos muss auf diesem PC neu gewählt werden (Einstellungen → Google-Konten…).",
+    "shareWith": "Die geteilte Ablage oder den Ordner für {email} freigeben.",
+    "sharedDrive": "Geteilte Ablage",
+    "refresh": "Aktualisieren",
+    "folder": "Ordner per Link oder ID",
+    "folderHint": "Der Link des Ordners (https://drive.google.com/drive/folders/…) oder seine ID. Backups können nur in einen Ordner auf einer geteilten Ablage geschrieben werden.",
+    "noSharedDrives": "{email} ist Mitglied keiner geteilten Ablage. Zu einer geteilten Ablage hinzufügen oder einen Ordner-Link verwenden.",
+    "folderInvalid": "Das ist weder ein Drive-Ordner-Link noch eine Ordner-ID.",
+    "notAFolder": "Das ist eine Datei, kein Ordner.",
+    "accessDenied": "Das Dienstkonto {email} darf das nicht öffnen, oder sein Schlüssel ist ungültig. Den Ordner oder die geteilte Ablage für {email} freigeben.",
+    "notFound": "Nicht gefunden. Den Link prüfen oder den Ordner für {email} freigeben.",
+    "failed": "Google Drive war nicht erreichbar: {error}"
+  },
+  "driveaccounts": {
+    "title": "Google-Konten",
+    "titleNew": "Neues Google-Konto",
+    "titleEdit": "Google-Konto bearbeiten",
+    "note": "Google-Dienstkonten mit ihrer Schlüsseldatei. DPAPI-geschützt gespeichert in drive-connections.json im Konfigurationsordner; Schlüssel funktionieren nur für dieses Windows-Konto.",
+    "dialogNote": "Ein Dienstkonto aus der Google Cloud Console (IAM → Dienstkonten → Schlüssel → Schlüssel hinzufügen → JSON). ReBackup liest seine E-Mail-Adresse aus der Schlüsseldatei.",
+    "column": { "email": "E-Mail des Dienstkontos" },
+    "empty": "Noch keine Konten.",
+    "needsKey": "Schlüssel nötig",
+    "needsKeyHint": "Der gespeicherte Schlüssel kann unter diesem Windows-Konto nicht gelesen werden: die Schlüsseldatei erneut wählen.",
+    "inUse": "„{name}“ wird von diesen Drive-Verbindungen verwendet und kann nicht gelöscht werden:",
+    "deleteConfirm": "Das Google-Konto „{name}“ löschen?",
+    "nameTaken": "Ein anderes Konto hat bereits diesen Namen.",
+    "key": "Schlüsseldatei",
+    "chooseKey": "Schlüsseldatei wählen…",
+    "chooseKeyTitle": "Schlüsseldatei des Dienstkontos wählen",
+    "keyFilter": "Dienstkonto-Schlüssel (*.json)",
+    "keyUnreadable": "Die Datei konnte nicht gelesen werden: {error}",
+    "keyInvalid": "Das ist kein Google-Dienstkonto-Schlüssel. Den JSON-Schlüssel eines Dienstkontos in der Google Cloud Console herunterladen.",
+    "email": "E-Mail des Dienstkontos",
+    "shareHint": "Ordner und geteilte Ablagen für diese Adresse freigeben. Für Backup-Ziele sie als Manager zur geteilten Ablage hinzufügen: ReBackup löscht alte Versionen endgültig, wofür diese Rolle nötig ist."
+  },
+  "drivelocation": {
+    "describe": "{connection} · gdrive://{root}/{path}",
+    "unknown": "Drive-Verbindung nicht gefunden · {path}"
+  },
   "plan": {
     "source": {
       "title": "QUELLE → ZIEL",
@@ -419,6 +486,7 @@
     "kind": {
       "folder": "Ordner",
       "s3": "S3",
+      "drive": "Drive",
       "sourceName": "Art der Quelle",
       "targetName": "Art des Ziels"
     },
@@ -431,6 +499,26 @@
       "test": "Testen",
       "connectionMissing": "Die S3-Verbindung existiert nicht mehr.",
       "needsSecret": "Das Secret des S3-Kontos dieser Verbindung muss auf diesem PC neu eingegeben werden (Einstellungen → S3-Konten…)."
+    },
+    "drive": {
+      "connection": "Drive-Verbindung",
+      "newConnection": "Neue Verbindung…",
+      "path": "Ordner",
+      "pathPlaceholder": "Backups/ReBackup",
+      "pathHint": "Leer = die geteilte Ablage oder der Ordner selbst.",
+      "run": "Testen",
+      "connectionMissing": "Die Google-Drive-Verbindung existiert nicht mehr.",
+      "needsKey": "Der Schlüssel des Google-Kontos dieser Verbindung muss auf diesem PC neu gewählt werden (Einstellungen → Google-Konten…).",
+      "result": {
+        "okSource": "Der Speicherort kann gelesen werden.",
+        "okTarget": "In den Speicherort kann geschrieben werden (eine Testdatei wurde geschrieben und gelöscht).",
+        "accessDenied": "Das Dienstkonto {email} darf hier nicht öffnen, schreiben oder löschen. Den Ordner oder die geteilte Ablage für {email} freigeben; ein Ziel braucht die Rolle Manager auf der geteilten Ablage.",
+        "notFound": "Nicht gefunden. Den Ordner prüfen oder ihn für {email} freigeben.",
+        "notSharedDrive": "Backups können nur auf eine geteilte Ablage geschrieben werden (ein Dienstkonto hat keinen eigenen Speicher). Eine geteilte Ablage wählen, in der {email} Mitglied ist.",
+        "error": "Der Test ist fehlgeschlagen: {error}",
+        "cancelled": "Der Test wurde abgebrochen.",
+        "failed": "Der Test konnte nicht ausgeführt werden."
+      }
     },
     "lastRun": {
       "title": "LETZTER LAUF",

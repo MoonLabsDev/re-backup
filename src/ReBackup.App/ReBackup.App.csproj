@@ -4,6 +4,8 @@
     <ProjectReference Include="..\ReBackup.Core\ReBackup.Core.csproj" />
     <ProjectReference Include="..\ReBackup.Shared\ReBackup.Shared.csproj" />
     <ProjectReference Include="..\ReBackup.Shared.Wpf\ReBackup.Shared.Wpf.csproj" />
+    <!-- Google Drive lives only in the App: ReS3 (through Shared.Wpf) must not pull the Google libraries. -->
+    <ProjectReference Include="..\ReBackup.Storage.GoogleDrive\ReBackup.Storage.GoogleDrive.csproj" />
   </ItemGroup>
 
   <ItemGroup>

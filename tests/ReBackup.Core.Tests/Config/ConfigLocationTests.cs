@@ -21,6 +21,7 @@ public class ConfigLocationTests : IDisposable
         paths.LogsDirectory.Should().Be(@"C:\cfg\logs");
         paths.SettingsFile.Should().Be(@"C:\cfg\settings.json");
         paths.ConnectionsFile.Should().Be(@"C:\cfg\connections.json");
+        paths.DriveConnectionsFile.Should().Be(@"C:\cfg\drive-connections.json");
         paths.LogFileFor("abc").Should().Be(@"C:\cfg\logs\abc.jsonl");
     }
 
@@ -74,6 +75,9 @@ public class ConfigLocationTests : IDisposable
         var withConnections = _tmp.CreateDir("c");
         File.WriteAllText(Path.Combine(withConnections, "connections.json"), "{}");
         ConfigLocation.ContainsConfiguration(withConnections).Should().BeTrue("copying over it would replace its connections");
+        var withDrive = _tmp.CreateDir("d");
+        File.WriteAllText(Path.Combine(withDrive, "drive-connections.json"), "{}");
+        ConfigLocation.ContainsConfiguration(withDrive).Should().BeTrue("copying over it would replace its Drive connections");
     }
 
     [Fact]
@@ -85,6 +89,7 @@ public class ConfigLocationTests : IDisposable
         _tmp.WriteFile(@"appdata\plans\p1.json", "plan");
         _tmp.WriteFile(@"appdata\logs\p1.jsonl", "log");
         _tmp.WriteFile(@"appdata\connections.json", "connections");
+        _tmp.WriteFile(@"appdata\drive-connections.json", "drive");
         var newRoot = _tmp.PathOf("newcfg");
 
         var moved = ConfigLocation.Move(appData, current, newRoot, ConfigMoveMode.CopyCurrent);
@@ -94,6 +99,7 @@ public class ConfigLocationTests : IDisposable
         File.ReadAllText(Path.Combine(moved.PlansDirectory, "p1.json")).Should().Be("plan");
         File.ReadAllText(moved.LogFileFor("p1")).Should().Be("log");
         File.ReadAllText(moved.ConnectionsFile).Should().Be("connections", "the plans' S3 connections move with them");
+        File.ReadAllText(moved.DriveConnectionsFile).Should().Be("drive", "the plans' Drive connections move with them");
         File.Exists(Path.Combine(appData, "plans", "p1.json")).Should().BeTrue("old files are kept");
         ConfigLocation.Resolve(appData).Root.Should().Be(newRoot);
     }

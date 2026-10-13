@@ -38,6 +38,16 @@ public static class CoreTexts
         ["core.plan.targetPrefixInvalid"] =
             "The target prefix is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
         ["core.plan.connectionsUnreadable"] = "The S3 connections could not be read: {error}",
+        ["core.plan.sourceDriveConnectionRequired"] = "Choose a Google Drive connection for the source.",
+        ["core.plan.targetDriveConnectionRequired"] = "Choose a Google Drive connection for the target.",
+        ["core.plan.sourceDriveConnectionMissing"] = "The source's Google Drive connection no longer exists.",
+        ["core.plan.targetDriveConnectionMissing"] = "The target's Google Drive connection no longer exists.",
+        ["core.plan.sourceDrivePathInvalid"] =
+            "The source path is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+        ["core.plan.targetDrivePathInvalid"] =
+            "The target path is not valid: separate folder names with a single /, with no / at the start or end and no \\, . or .. parts.",
+        ["core.plan.targetNotSharedDrive"] = "Drive targets must be on a shared drive.",
+        ["core.plan.driveConnectionsUnreadable"] = "The Google Drive connections could not be read: {error}",
         ["core.plan.retentionRule"] = "Retention rule {index}: {problem}",
         ["core.plan.trigger"] = "Trigger {index}: {problem}",
 

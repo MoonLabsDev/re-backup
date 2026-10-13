@@ -25,6 +25,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly string _initialLanguage;
     private readonly Action _manageS3Accounts;
     private readonly Action _manageS3Connections;
+    private readonly Action _manageDriveAccounts;
+    private readonly Action _manageDriveConnections;
     private readonly bool _ready;
     private bool _saved;
     private ConfigPaths _paths;
@@ -46,10 +48,13 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public SettingsViewModel(SettingsStore store, AppSettings settings, ConfigPaths paths, string appDataRoot,
         IDialogService dialogs, Func<bool> confirmRestart, Func<bool> isBackupActive, Action<ThemeMode> previewTheme,
-        string language, Action<string> previewLanguage, Action? manageS3Accounts = null, Action? manageS3Connections = null)
+        string language, Action<string> previewLanguage, Action? manageS3Accounts = null, Action? manageS3Connections = null,
+        Action? manageDriveAccounts = null, Action? manageDriveConnections = null)
     {
         _manageS3Accounts = manageS3Accounts ?? (() => { });
         _manageS3Connections = manageS3Connections ?? (() => { });
+        _manageDriveAccounts = manageDriveAccounts ?? (() => { });
+        _manageDriveConnections = manageDriveConnections ?? (() => { });
         _store = store;
         _settings = settings;
         _paths = paths;
@@ -231,4 +236,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>"S3 connections…": the list of connections; its changes are stored at once (not by OK).</summary>
     [RelayCommand]
     private void ManageS3Connections() => _manageS3Connections();
+
+    /// <summary>"Google accounts…": the service accounts; their changes are stored at once (not by OK).</summary>
+    [RelayCommand]
+    private void ManageDriveAccounts() => _manageDriveAccounts();
+
+    /// <summary>"Drive connections…": the list of Drive connections; its changes are stored at once (not by OK).</summary>
+    [RelayCommand]
+    private void ManageDriveConnections() => _manageDriveConnections();
 }

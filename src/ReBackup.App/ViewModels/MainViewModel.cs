@@ -41,6 +41,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Action<Action> _runOnUi;
     private readonly VersionsContext _versions;
     private readonly S3Connections _s3;
+    private readonly DriveConnections _drive;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedPlan))]
@@ -60,14 +61,16 @@ public sealed partial class MainViewModel : ObservableObject
         Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
-        IStorageFactory storages, S3Connections? s3 = null)
+        IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null)
     {
         _folders = folders;
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
+        _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
-            DescribeLocation: _s3.Describe);
+            DescribeLocation: DescribeLocation);
         // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
         _s3.Changed += (_, _) => RevalidateAll();
+        _drive.Changed += (_, _) => RevalidateAll();
         Theme = theme;
         Language = language;
         Loc.LanguageChanged += (_, _) => OnLanguageChanged();
@@ -91,7 +94,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var result = _store.LoadAll();
         foreach (var plan in PlanOrder.Apply(result.Plans, _settings.PlanOrder))
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3));
+            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3, _drive));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         SetStatus(LoadErrorText(result) ?? LocText.Of("shell.status.configuration", ("path", _paths.Root)));
@@ -248,7 +251,7 @@ public sealed partial class MainViewModel : ObservableObject
         // Plans that appeared go where the saved order puts them, the others to the end (by name).
         foreach (var plan in PlanOrder.Apply(loaded.Values, _settings.PlanOrder))
         {
-            var editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3);
+            var editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3, _drive);
             AddEditor(editor, PlanOrder.InsertionIndex(Plans, p => p.Id, plan.Id, _settings.PlanOrder));
         }
 
@@ -265,7 +268,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void NewPlan()
     {
         var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName(Loc.T("shell.plans.newName")) }, isNew: true, AllPlans, GlobalIgnoreDefaults,
-            _folders, _versions, _s3);
+            _folders, _versions, _s3, _drive);
         AddEditor(editor);
         RevalidateAll();
         SelectedPlan = editor;
@@ -511,16 +514,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Why the saved plan must not run on schedule: its validation with the connections as they are now (a connection
-    /// edited, deleted or unreadable since the plan was saved; an S3 target now inside its S3 source). English, as the run
-    /// log stores reasons. Null when it may run. Plans without an S3 side are left to the runner as before (it checks
-    /// folders itself and logs its own errors).
+    /// edited, deleted or unreadable since the plan was saved; an S3 or Drive target now inside its source; a Drive target
+    /// whose connection no longer points at a shared drive). English, as the run log stores reasons. Null when it may run.
+    /// Plans with folders on both sides are left to the runner as before (it checks folders itself and logs its own errors).
     /// </summary>
     private string? ScheduledRunBlocker(BackupPlan plan)
     {
-        if (plan.Source.Kind != PlanValidator.S3Kind && plan.Target.Kind != PlanValidator.S3Kind)
+        if (plan.Source.IsFileSystem && plan.Target.IsFileSystem)
             return null;
         var saved = Plans.Where(p => !p.IsNew).Select(p => p.SavedPlan()).ToList();
-        var errors = PlanValidator.Validate(plan, saved, _s3.BucketOf);
+        var errors = PlanValidator.Validate(plan, saved, _s3.BucketOf, _drive.RootOf);
         return errors.Count == 0 ? null : string.Join(" ", errors.Select(error => CoreTexts.English(error)));
     }
 
@@ -800,6 +803,23 @@ public sealed partial class MainViewModel : ObservableObject
 
     private static bool UsesConnection(BackupPlan plan, string connectionId) =>
         S3Connections.Uses(plan.Source, connectionId) || S3Connections.Uses(plan.Target, connectionId);
+
+    /// <summary>
+    /// The names of the plans whose source or target is on the Google Drive connection <paramref name="connectionId"/>, as
+    /// saved or as edited (a connection must not be deleted under either).
+    /// </summary>
+    public IReadOnlyList<string> PlansUsingDriveConnection(string connectionId) =>
+        Plans.Where(editor => (!editor.IsNew && UsesDriveConnection(editor.SavedPlan(), connectionId)) ||
+                              UsesDriveConnection(editor.ToPlan(), connectionId))
+            .Select(editor => string.IsNullOrWhiteSpace(editor.Name) ? Loc.T("common.unnamed") : editor.Name)
+            .ToList();
+
+    private static bool UsesDriveConnection(BackupPlan plan, string connectionId) =>
+        DriveConnections.Uses(plan.Source, connectionId) || DriveConnections.Uses(plan.Target, connectionId);
+
+    /// <summary>A location as the user reads it: a Drive location by its connection, root and path, any other as S3 describes it.</summary>
+    private string DescribeLocation(StorageLocation location) =>
+        location.Kind == PlanValidator.DriveKind ? _drive.Describe(location) : _s3.Describe(location);
 
     /// <summary>The same location: kind and connection, a folder's path case-insensitively, a storage path exactly.</summary>
     private static bool SameLocation(StorageLocation a, StorageLocation b) =>

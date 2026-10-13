@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 1.4.0" src="https://img.shields.io/badge/version-1.4.0-2BB3A3">
+  <img alt="Version 1.5.0" src="https://img.shields.io/badge/version-1.5.0-2BB3A3">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0F1216">
   <img alt=".NET 9 WPF" src="https://img.shields.io/badge/.NET%209-WPF-512BD4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-lightgrey">
@@ -36,6 +36,10 @@
   each one, plus how much space the deletions would free.
 - **Two-year forecast**: ReBackup simulates the plan's own schedule for two years and shows how many versions the
   target will hold, about how much space they need, and a timeline of which rule keeps which version.
+- **Coverage timeline**: the Retention and Versions tabs show, for each rule, the slots it wants to keep (days, weeks,
+  months, years) and whether a version exists for each: green present, yellow present with warnings (its run skipped
+  files), red missing, grey before the first backup or not yet run. A missing day stands out at a glance; click a slot
+  to select its version.
 
 ![Retention: rules, two-year forecast and the versions in the target](docs/images/retention.png)
 
@@ -61,7 +65,7 @@
 
 | Area | What you get |
 |---|---|
-| **Plans** | One source and one target per plan, each a folder or an **Amazon S3** location (connection + prefix), any number of plans. Turn off "Run on schedule" for manual-only plans. Optionally, when the target is full, delete the versions that retention would delete anyway before giving up. |
+| **Plans** | One source and one target per plan, each a folder, an **Amazon S3** location (connection + prefix) or a **Google Drive** location (shared drive or folder + path), any number of plans. Turn off "Run on schedule" for manual-only plans. Optionally, when the target is full, delete the versions that retention would delete anyway before giving up. |
 | **Schedules** | Triggers: **Daily** (time), **Weekly** (weekdays + time), **Monthly** (day 1–31, `0` = last day, `-1` = the day before it), **Interval** (every *n* hours between two times). Shows the next five runs. On startup, a plan that missed a trigger gets **one catch-up run** about a minute later. |
 | **Versions** | Every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. |
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
@@ -123,9 +127,9 @@ dotnet run --project src/ReBackup.App         # start the app
 `publish.ps1` publishes the app in Release as one file and copies it to `dist\`.
 
 ```powershell
-.\publish.ps1                       # dist\ReBackup-1.4.0-win-x64.exe, self-contained (.NET runtime included)
-.\publish.ps1 -Version 1.4.1        # override the version from Directory.Build.props
-.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.4.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
+.\publish.ps1                       # dist\ReBackup-1.5.0-win-x64.exe, self-contained (.NET runtime included)
+.\publish.ps1 -Version 1.5.1        # override the version from Directory.Build.props
+.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.5.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
 .\publish.ps1 -Runtime win-arm64    # for Windows on ARM
 ```
 
@@ -177,8 +181,9 @@ F:\Backups\Projects\
 | Plans | `%AppData%\ReBackup\plans\<plan-id>.json` |
 | Run history | `%AppData%\ReBackup\logs\<plan-id>.jsonl` (one JSON line per run) |
 | S3 accounts and connections | `%AppData%\ReBackup\connections.json` (secrets encrypted for your Windows account) |
+| Google accounts and Drive connections | `%AppData%\ReBackup\drive-connections.json` (service-account keys encrypted for your Windows account) |
 | Version index | `%LocalAppData%\ReBackup\index\<plan-id>.db` (SQLite cache, rebuilt from the manifests if deleted) |
-| Backups | the plan's target folder or S3 prefix |
+| Backups | the plan's target folder, S3 prefix or Drive folder |
 
 The configuration folder can be moved in **Settings** (for example to a synced folder); ReBackup then restarts and
 uses it. Plan files are plain JSON and are reloaded when they change on disk.
@@ -263,6 +268,58 @@ secret has to be entered again (the accounts dialog marks such an account; its c
 
 ---
 
+## Google Drive
+
+A plan's source and its target can also be a **Google Drive** location: the switch above the source and the target
+on the **Plan** tab reads **Folder | S3 | Drive**. A Drive location is a *connection* (a shared drive, or a folder,
+opened with a Google *service account*) and a *path* below it (for example `Backups/ReBackup`; empty means the shared
+drive or folder itself). "New connection…" creates a connection, "Test" checks it with the path (a source is only
+read; a target gets a small test file that is written and deleted). **Settings → Google accounts…** and **Drive
+connections…** manage them; a connection that a plan uses cannot be deleted (the refusal names the plans), nor an
+account that a connection uses.
+
+**Set up a service account.** ReBackup signs in to Drive as a service account, not as you:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project (or pick one) and enable the
+   **Google Drive API** for it.
+2. Under **IAM & Admin → Service accounts**, create a service account. It needs no project roles.
+3. On the service account, **Keys → Add key → Create new key → JSON** downloads its key file. Keep it safe: whoever has
+   it can open everything shared with the account.
+4. In ReBackup, **Settings → Google accounts… → Add…**, give the account a name and choose the key file. The dialog
+   shows the service account's e-mail (`…@….iam.gserviceaccount.com`).
+5. Share the shared drive or folder with that e-mail address, as you would with a person: for a **shared drive**, add
+   it as a member; for a folder, share the folder with it.
+6. **Settings → Drive connections… → Add…**: pick the account, then a shared drive from the list (the shared drives the
+   account is a member of), or paste a folder's link (`https://drive.google.com/drive/folders/…`) or its ID.
+
+**Targets must be on a shared drive, with the Manager role.** A service account has no storage of its own, so it can
+only write to a shared drive (Google Workspace); a plan whose Drive target is in someone's My Drive cannot be saved.
+Give the service account the **Manager** role on that shared drive: ReBackup deletes old versions **permanently**
+(they do not go to the trash), and on a shared drive only a Manager may do that. With *Content manager* it can write
+backups but only trash files, so retention fails. A Drive *source* can be a shared drive or a folder in My Drive
+shared with the account; reading needs no more than the Viewer role.
+
+**Google Docs, Sheets, Slides and Drawings** have no file of their own on Drive. A Drive source exports them on the
+way: Docs as `.docx`, Sheets as `.xlsx`, Slides as `.pptx` and Drawings as `.pdf` (the extension is added to the name).
+Google allows such exports up to **10 MB**; a larger document is skipped and listed in the run history (the run ends
+with warnings). Other Google types (Forms, Sites, shortcuts) and names that contain `/` are left out. A **restore** of an exported
+document writes the Office file (for example `Plan.docx`); it does not turn it back into a Google document. Two files
+with the same name in one Drive folder (Drive allows that) cannot be told apart by path: the source skips them and lists
+them, and a restore or a write to such a path fails naming it.
+
+Versions on Drive have exactly the format of versions in a folder (the version folder, `re-manifest.json` and the
+markers), so retention, the Versions tab and restore work the same. When the source or the target is Drive, eight
+files are copied at a time. "When the target is full…" is not offered for Drive targets (ReBackup cannot see how much
+room a shared drive has left); a full shared drive ends the run as an error. Drive limits the rate of requests;
+ReBackup waits and retries, so a large first backup can take a while.
+
+**Keys stay on your Windows account.** The key file's content is stored in `drive-connections.json` in the
+configuration folder, encrypted with Windows DPAPI for your Windows account. On another PC or account, the accounts
+dialog marks the account ("key needed"), its plans cannot reach Drive and fail until the key file is chosen again
+in **Settings → Google accounts…**.
+
+---
+
 ## FAQ and limits
 
 **Does it run without the app?**
@@ -287,7 +344,7 @@ the version's copy next to the existing file with the version's time in its name
 
 **Which systems?**
 Windows 10 and 11 only (WPF). Source and target can be any folder Windows can reach by path (another disk, a USB
-drive or a network share) or an Amazon S3 bucket and prefix.
+drive or a network share), an Amazon S3 bucket and prefix, or a Google Drive shared drive or folder.
 
 **Can a plan have several source folders?**
 No, one source per plan. Create one plan per folder.

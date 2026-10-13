@@ -19,6 +19,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     private readonly Func<IEnumerable<BackupPlan>> _allPlans;
     private readonly IFolderOpener _folders;
     private readonly S3Connections _s3;
+    private readonly DriveConnections _drive;
     private BackupPlan _saved;
     private bool _loading;
 
@@ -35,6 +36,16 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TargetIsFolder), nameof(ShowFreeSpaceOption))]
     private bool _targetIsS3;
+
+    /// <summary>The source is a Google Drive location (<see cref="SourceDrive"/>); never together with <see cref="SourceIsS3"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SourceIsFolder))]
+    private bool _sourceIsDrive;
+
+    /// <summary>The target is a Google Drive location (<see cref="TargetDrive"/>); never together with <see cref="TargetIsS3"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TargetIsFolder), nameof(ShowFreeSpaceOption))]
+    private bool _targetIsDrive;
     [ObservableProperty] private bool _enabled;
     [ObservableProperty] private bool _freeSpaceByRetention;
     [ObservableProperty] private string _ignorePatternsText = "";
@@ -50,15 +61,20 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _schedulerPaused;
 
     /// <param name="s3">The saved S3 connections: the pickers, validation and "Test".</param>
+    /// <param name="drive">The saved Google Drive connections: the pickers, validation and "Test".</param>
     public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
-        Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders, VersionsContext versions, S3Connections s3)
+        Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders, VersionsContext versions, S3Connections s3,
+        DriveConnections drive)
     {
         _saved = plan.Clone();
         _allPlans = allPlans;
         _folders = folders;
         _s3 = s3;
-        SourceS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: false, () => SourceEdited(s3: true));
-        TargetS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: true, () => TargetEdited(s3: true));
+        _drive = drive;
+        SourceS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: false, () => SourceEdited(LocationKind.S3));
+        TargetS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: true, () => TargetEdited(LocationKind.S3));
+        SourceDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: false, () => SourceEdited(LocationKind.Drive));
+        TargetDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: true, () => TargetEdited(LocationKind.Drive));
         Run = new PlanRunViewModel(versions.Storages);
         Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
@@ -89,33 +105,76 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     /// <summary>The S3 connection and prefix of the target; used while <see cref="TargetIsS3"/>.</summary>
     public S3LocationViewModel TargetS3 { get; }
 
+    /// <summary>The Drive connection and path of the source; used while <see cref="SourceIsDrive"/>.</summary>
+    public DriveLocationViewModel SourceDrive { get; }
+
+    /// <summary>The Drive connection and path of the target; used while <see cref="TargetIsDrive"/>.</summary>
+    public DriveLocationViewModel TargetDrive { get; }
+
     // The Folder segments of the switches; a segment that is unchecked leaves the kind as it is.
     public bool SourceIsFolder
     {
-        get => !SourceIsS3;
-        set { if (value) SourceIsS3 = false; }
+        get => !SourceIsS3 && !SourceIsDrive;
+        set { if (value) SourceKind = LocationKind.Folder; }
     }
 
     public bool TargetIsFolder
     {
-        get => !TargetIsS3;
-        set { if (value) TargetIsS3 = false; }
+        get => !TargetIsS3 && !TargetIsDrive;
+        set { if (value) TargetKind = LocationKind.Folder; }
     }
 
+    /// <summary>The kind of a side's location as the switch shows it.</summary>
+    private enum LocationKind { Folder, S3, Drive }
+
+    private LocationKind SourceKind
+    {
+        get => SourceIsS3 ? LocationKind.S3 : SourceIsDrive ? LocationKind.Drive : LocationKind.Folder;
+        set
+        {
+            // The kind that is left first, so the side never is two kinds at once.
+            if (value != LocationKind.S3) SourceIsS3 = false;
+            if (value != LocationKind.Drive) SourceIsDrive = false;
+            if (value == LocationKind.S3) SourceIsS3 = true;
+            if (value == LocationKind.Drive) SourceIsDrive = true;
+        }
+    }
+
+    private LocationKind TargetKind
+    {
+        get => TargetIsS3 ? LocationKind.S3 : TargetIsDrive ? LocationKind.Drive : LocationKind.Folder;
+        set
+        {
+            if (value != LocationKind.S3) TargetIsS3 = false;
+            if (value != LocationKind.Drive) TargetIsDrive = false;
+            if (value == LocationKind.S3) TargetIsS3 = true;
+            if (value == LocationKind.Drive) TargetIsDrive = true;
+        }
+    }
+
+    private static LocationKind ParseKind(string? kind) => kind switch
+    {
+        "S3" => LocationKind.S3,
+        "Drive" => LocationKind.Drive,
+        _ => LocationKind.Folder,
+    };
+
     /// <summary>
-    /// The Folder | S3 segments of the source ("Folder" or "S3"). The segments show the kind one-way and call this:
-    /// two-way radio bindings in the one Plan view, whose DataContext switches between plans, wrote one plan's kind
-    /// into another.
+    /// The Folder | S3 | Drive segments of the source ("Folder", "S3" or "Drive"). The segments show the kind one-way and
+    /// call this: two-way radio bindings in the one Plan view, whose DataContext switches between plans, wrote one plan's
+    /// kind into another.
     /// </summary>
     [RelayCommand]
-    private void ChooseSourceKind(string? kind) => SourceIsS3 = kind == "S3";
+    private void ChooseSourceKind(string? kind) => SourceKind = ParseKind(kind);
 
     /// <summary>Likewise for the target.</summary>
     [RelayCommand]
-    private void ChooseTargetKind(string? kind) => TargetIsS3 = kind == "S3";
+    private void ChooseTargetKind(string? kind) => TargetKind = ParseKind(kind);
 
-    /// <summary>"When the target is full, …" means nothing on S3 (no free-space information): shown for folders only.</summary>
-    public bool ShowFreeSpaceOption => !TargetIsS3;
+    /// <summary>
+    /// "When the target is full, …" means nothing on S3 or Drive (no free-space information): shown for folders only.
+    /// </summary>
+    public bool ShowFreeSpaceOption => TargetIsFolder;
 
     /// <summary>Queue state, progress and history of this plan.</summary>
     public PlanRunViewModel Run { get; }
@@ -162,34 +221,42 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Touch();
     }
 
-    partial void OnSourceChanged(string value) => SourceEdited(s3: false);
+    partial void OnSourceChanged(string value) => SourceEdited(LocationKind.Folder);
 
-    partial void OnTargetChanged(string value) => TargetEdited(s3: false);
+    partial void OnTargetChanged(string value) => TargetEdited(LocationKind.Folder);
 
-    partial void OnSourceIsS3Changed(bool value)
+    partial void OnSourceIsS3Changed(bool value) => SourceKindChanged();
+
+    partial void OnSourceIsDriveChanged(bool value) => SourceKindChanged();
+
+    partial void OnTargetIsS3Changed(bool value) => TargetKindChanged();
+
+    partial void OnTargetIsDriveChanged(bool value) => TargetKindChanged();
+
+    private void SourceKindChanged()
     {
         Preview.Invalidate();
         Touch();
     }
 
-    partial void OnTargetIsS3Changed(bool value)
+    private void TargetKindChanged()
     {
         RetentionPreview.Invalidate();
         Touch();
     }
 
-    /// <summary>The folder (<paramref name="s3"/> false) or the S3 half of the source was edited; only the half in use changes the preview.</summary>
-    private void SourceEdited(bool s3)
+    /// <summary>The folder, S3 or Drive half of the source was edited; only the half in use changes the preview.</summary>
+    private void SourceEdited(LocationKind half)
     {
-        if (s3 == SourceIsS3)
+        if (half == SourceKind)
             Preview.Invalidate();
         Touch();
     }
 
     /// <summary>Likewise for the target and the retention preview.</summary>
-    private void TargetEdited(bool s3)
+    private void TargetEdited(LocationKind half)
     {
-        if (s3 == TargetIsS3)
+        if (half == TargetKind)
             RetentionPreview.Invalidate();
         Touch();
     }
@@ -224,31 +291,44 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
 
     /// <summary>The source as edited.</summary>
-    private StorageLocation SourceLocation() => EditedLocation(SourceIsS3, SourceS3, Source, _saved.Source);
+    private StorageLocation SourceLocation() => EditedLocation(SourceKind, SourceS3, SourceDrive, Source, _saved.Source);
 
     /// <summary>
-    /// A side as edited: the S3 location, or the folder. A location of another kind (only possible by editing the plan
-    /// file) stays as loaded unless its text was edited.
+    /// A side as edited: the S3 or Drive location, or the folder. A location of another kind (only possible by editing the
+    /// plan file) stays as loaded unless its text was edited.
     /// </summary>
-    private static StorageLocation EditedLocation(bool isS3, S3LocationViewModel s3, string folder, StorageLocation saved)
+    private static StorageLocation EditedLocation(LocationKind kind, S3LocationViewModel s3, DriveLocationViewModel drive,
+        string folder, StorageLocation saved)
     {
-        if (isS3)
+        if (kind == LocationKind.S3)
             return s3.Location;
-        return saved.IsFileSystem || IsS3(saved) || folder != saved.Path ? StorageLocation.FileSystem(folder) : saved;
+        if (kind == LocationKind.Drive)
+            return drive.Location;
+        return saved.IsFileSystem || IsS3(saved) || IsDrive(saved) || folder != saved.Path ? StorageLocation.FileSystem(folder) : saved;
     }
 
-    /// <summary>The location a side shows: its S3 half or its folder, whichever is in use.</summary>
-    private static StorageLocation ShownLocation(bool isS3, S3LocationViewModel s3, string folder) =>
-        isS3 ? s3.Location : StorageLocation.FileSystem(folder);
+    /// <summary>The location a side shows: its S3 or Drive half or its folder, whichever is in use.</summary>
+    private static StorageLocation ShownLocation(LocationKind kind, S3LocationViewModel s3, DriveLocationViewModel drive, string folder) =>
+        kind switch
+        {
+            LocationKind.S3 => s3.Location,
+            LocationKind.Drive => drive.Location,
+            _ => StorageLocation.FileSystem(folder),
+        };
 
     private static bool IsS3(StorageLocation location) => location.Kind == PlanValidator.S3Kind;
+
+    private static bool IsDrive(StorageLocation location) => location.Kind == PlanValidator.DriveKind;
+
+    private static LocationKind KindOf(StorageLocation location) =>
+        IsS3(location) ? LocationKind.S3 : IsDrive(location) ? LocationKind.Drive : LocationKind.Folder;
 
     public BackupPlan ToPlan()
     {
         var plan = _saved.Clone();
         plan.Name = Name;
         plan.Source = SourceLocation();
-        plan.Target = EditedLocation(TargetIsS3, TargetS3, Target, _saved.Target);
+        plan.Target = EditedLocation(TargetKind, TargetS3, TargetDrive, Target, _saved.Target);
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
         plan.Ignore = CurrentIgnoreSettings();
@@ -409,7 +489,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
 
     public void Validate() =>
-        Errors = PlanValidator.Validate(ToPlan(), _allPlans(), _s3.BucketOf).Select(message => Loc.F(message)).ToList();
+        Errors = PlanValidator.Validate(ToPlan(), _allPlans(), _s3.BucketOf, _drive.RootOf).Select(message => Loc.F(message)).ToList();
 
     /// <summary>The language changed: the texts this editor builds in code are built again.</summary>
     public void RefreshTexts()
@@ -440,8 +520,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _loading = true;
         try
         {
-            if (SourceIsS3) Source = ""; else SourceS3.Load(null, "");
-            if (TargetIsS3) Target = ""; else TargetS3.Load(null, "");
+            if (!SourceIsFolder) Source = "";
+            if (!SourceIsS3) SourceS3.Load(null, "");
+            if (!SourceIsDrive) SourceDrive.Load(null, "");
+            if (!TargetIsFolder) Target = "";
+            if (!TargetIsS3) TargetS3.Load(null, "");
+            if (!TargetIsDrive) TargetDrive.Load(null, "");
         }
         finally
         {
@@ -484,18 +568,20 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     private void LoadFrom(BackupPlan plan)
     {
-        var sourceBefore = ShownLocation(SourceIsS3, SourceS3, Source);
-        var targetBefore = ShownLocation(TargetIsS3, TargetS3, Target);
+        var sourceBefore = ShownLocation(SourceKind, SourceS3, SourceDrive, Source);
+        var targetBefore = ShownLocation(TargetKind, TargetS3, TargetDrive, Target);
         _loading = true;
         try
         {
             Name = plan.Name;
-            SourceIsS3 = IsS3(plan.Source);
-            Source = SourceIsS3 ? "" : plan.Source.Path;
+            SourceKind = KindOf(plan.Source);
+            Source = SourceIsFolder ? plan.Source.Path : "";
             SourceS3.Load(SourceIsS3 ? plan.Source.ConnectionId : null, SourceIsS3 ? plan.Source.Path : "");
-            TargetIsS3 = IsS3(plan.Target);
-            Target = TargetIsS3 ? "" : plan.Target.Path;
+            SourceDrive.Load(SourceIsDrive ? plan.Source.ConnectionId : null, SourceIsDrive ? plan.Source.Path : "");
+            TargetKind = KindOf(plan.Target);
+            Target = TargetIsFolder ? plan.Target.Path : "";
             TargetS3.Load(TargetIsS3 ? plan.Target.ConnectionId : null, TargetIsS3 ? plan.Target.Path : "");
+            TargetDrive.Load(TargetIsDrive ? plan.Target.ConnectionId : null, TargetIsDrive ? plan.Target.Path : "");
             Enabled = plan.Enabled;
             FreeSpaceByRetention = plan.FreeSpaceByRetention;
             IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);
@@ -518,10 +604,10 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         {
             _loading = false;
         }
-        // Loading the S3 half is no edit, so a connection or prefix it changes would not invalidate the previews.
-        if (ShownLocation(SourceIsS3, SourceS3, Source) != sourceBefore)
+        // Loading the S3 or Drive half is no edit, so a connection or path it changes would not invalidate the previews.
+        if (ShownLocation(SourceKind, SourceS3, SourceDrive, Source) != sourceBefore)
             Preview.Invalidate();
-        if (ShownLocation(TargetIsS3, TargetS3, Target) != targetBefore)
+        if (ShownLocation(TargetKind, TargetS3, TargetDrive, Target) != targetBefore)
             RetentionPreview.Invalidate();
         OnPropertyChanged(nameof(HasNoRetentionRules));
         RefreshNextRuns();

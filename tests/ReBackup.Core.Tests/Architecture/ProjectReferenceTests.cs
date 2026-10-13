@@ -30,6 +30,11 @@ public class ProjectReferenceTests
     public void Library_does_not_reference_the_Drive_provider(string project) =>
         ProjectReferencesOf(project).Should().NotContain("ReBackup.Storage.GoogleDrive");
 
+    // The ReBackup app composes the Drive provider itself (its Drive dialogs live there, not in Shared.Wpf).
+    [Fact]
+    public void The_App_references_the_Drive_provider() =>
+        ProjectReferencesOf("ReBackup.App").Should().Contain("ReBackup.Storage.GoogleDrive");
+
     [Theory]
     [InlineData("ReBackup.Shared")]
     public void Library_has_no_package_references(string project) =>
