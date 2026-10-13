@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
+using Google.Apis.Drive.v3;
+using Google.Apis.Drive.v3.Data;
 
 namespace ReBackup.Storage.GoogleDrive.Tests.Unit;
 
@@ -46,5 +48,58 @@ public sealed class GoogleDriveApiTests
     public void Query_literals_escape_backslashes_and_quotes(string value, string expected)
     {
         GoogleDriveApi.Escape(value).Should().Be(expected);
+    }
+
+    [Fact]
+    public void A_listing_on_a_shared_drive_searches_that_drive_and_asks_whether_the_search_was_complete()
+    {
+        using var service = new DriveService();
+        var request = service.Files.List();
+
+        GoogleDriveApi.ConfigureList(request, "'p' in parents", "tok", "sd1");
+
+        request.Corpora.Should().Be("drive");
+        request.DriveId.Should().Be("sd1");
+        request.SupportsAllDrives.Should().BeTrue();
+        request.IncludeItemsFromAllDrives.Should().BeTrue();
+        request.Q.Should().Be("'p' in parents");
+        request.PageToken.Should().Be("tok");
+        request.Fields.Should().StartWith("nextPageToken,incompleteSearch,files(");
+    }
+
+    [Fact]
+    public void A_listing_in_my_drive_searches_the_accounts_own_view_not_all_drives()
+    {
+        using var service = new DriveService();
+        var request = service.Files.List();
+
+        GoogleDriveApi.ConfigureList(request, "'p' in parents", null, null);
+
+        request.Corpora.Should().Be("user");
+        request.DriveId.Should().BeNull();
+        request.SupportsAllDrives.Should().BeTrue();
+        request.IncludeItemsFromAllDrives.Should().BeTrue();
+        request.Fields.Should().Contain("incompleteSearch");
+    }
+
+    [Fact]
+    public void A_page_drive_reports_as_an_incomplete_search_fails_the_listing()
+    {
+        var act = () => GoogleDriveApi.EnsureComplete(new FileList { IncompleteSearch = true, Files = [] });
+
+        var ex = act.Should().Throw<DriveApiException>().Which;
+        ex.Status.Should().Be(503);
+        ex.Reason.Should().Be("incompleteSearch");
+        ex.Message.Should().Be("Drive could not search every drive; the listing may be incomplete.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(null)]
+    public void A_complete_page_passes(bool? incomplete)
+    {
+        var act = () => GoogleDriveApi.EnsureComplete(new FileList { IncompleteSearch = incomplete, Files = [] });
+
+        act.Should().NotThrow();
     }
 }

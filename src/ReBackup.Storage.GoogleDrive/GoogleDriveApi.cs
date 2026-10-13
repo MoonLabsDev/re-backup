@@ -15,7 +15,8 @@ namespace ReBackup.Storage.GoogleDrive;
 /// <summary>
 /// <see cref="IDriveApi"/> on Google's Drive v3 API with a service-account key (scope <c>drive</c>). Every call covers shared drives
 /// (<c>supportsAllDrives</c>, <c>includeItemsFromAllDrives</c>); listings search the connection's shared drive (<c>corpora=drive</c>)
-/// or, for a root in someone's My Drive, all drives the account sees. Files under 5 MB are sent in one request (multipart),
+/// or, for a root in someone's My Drive, what the account sees (<c>corpora=user</c>), and a page Drive reports as an incomplete
+/// search fails the listing (<see cref="DriveApiException"/> 503 <c>incompleteSearch</c>). Files under 5 MB are sent in one request (multipart),
 /// larger ones as a resumable upload that is resumed after a server or network failure before the call gives up. The client does
 /// not retry by itself: <see cref="DriveStorage"/> does (rate limits, server errors).
 /// </summary>
@@ -55,7 +56,7 @@ public sealed class GoogleDriveApi : IDriveApi, IDisposable
 
     /// <summary>
     /// A client for the service-account key <paramref name="keyJson"/>. Listings search the shared drive
-    /// <paramref name="sharedDriveId"/>, or every drive the account sees when it is <c>null</c>. A key that cannot be read throws
+    /// <paramref name="sharedDriveId"/>, or what the account sees (<c>corpora=user</c>) when it is <c>null</c>. A key that cannot be read throws
     /// <see cref="StorageAccessDeniedException"/> (never quoting it).
     /// </summary>
     public GoogleDriveApi(string keyJson, string? sharedDriveId = null)
@@ -92,23 +93,10 @@ public sealed class GoogleDriveApi : IDriveApi, IDisposable
         do
         {
             var request = _service.Files.List();
-            request.Q = query;
-            request.Fields = $"nextPageToken,files({ItemFields})";
-            request.PageSize = 1000;
-            request.PageToken = pageToken;
-            request.SupportsAllDrives = true;
-            request.IncludeItemsFromAllDrives = true;
-            if (_sharedDriveId is not null)
-            {
-                request.Corpora = "drive";
-                request.DriveId = _sharedDriveId;
-            }
-            else
-            {
-                request.Corpora = "allDrives";
-            }
+            ConfigureList(request, query, pageToken, _sharedDriveId);
 
             var page = await CallAsync(c => request.ExecuteAsync(c), ct).ConfigureAwait(false);
+            EnsureComplete(page);
             if (page.Files is not null)
                 items.AddRange(page.Files.Where(f => f.Trashed != true).Select(ToItem));
             pageToken = page.NextPageToken;
@@ -118,6 +106,42 @@ public sealed class GoogleDriveApi : IDriveApi, IDisposable
         if (items.Count == 0 && !(await GetAsync(folderId, ct).ConfigureAwait(false)).IsFolder)
             throw new DriveApiException(404, "notFound", "The item is not a folder.");
         return items;
+    }
+
+    /// <summary>
+    /// Sets up one page of a children listing: the shared drive <paramref name="sharedDriveId"/> (<c>corpora=drive</c>) when the
+    /// root is on one, otherwise the account's own view (<c>corpora=user</c>, which covers My Drive folders shared with it). Shared
+    /// drives stay supported as the API requires; <c>incompleteSearch</c> is asked for so <see cref="EnsureComplete"/> can check it.
+    /// </summary>
+    internal static void ConfigureList(FilesResource.ListRequest request, string query, string? pageToken, string? sharedDriveId)
+    {
+        request.Q = query;
+        request.Fields = $"nextPageToken,incompleteSearch,files({ItemFields})";
+        request.PageSize = 1000;
+        request.PageToken = pageToken;
+        request.SupportsAllDrives = true;
+        request.IncludeItemsFromAllDrives = true;
+        if (sharedDriveId is not null)
+        {
+            request.Corpora = "drive";
+            request.DriveId = sharedDriveId;
+        }
+        else
+        {
+            request.Corpora = "user";
+            request.DriveId = null;
+        }
+    }
+
+    /// <summary>
+    /// Throws <see cref="DriveApiException"/> (503, <c>incompleteSearch</c>) when Drive says a listing page did not search every
+    /// drive: a backup from such a listing would silently miss files, so the run errors instead.
+    /// </summary>
+    internal static void EnsureComplete(Google.Apis.Drive.v3.Data.FileList page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        if (page.IncompleteSearch == true)
+            throw new DriveApiException(503, "incompleteSearch", "Drive could not search every drive; the listing may be incomplete.");
     }
 
     public async Task<DriveItem> GetAsync(string id, CancellationToken ct)
