@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
              xmlns:core="clr-namespace:ReBackup.Core.Backup;assembly=ReBackup.Core"
+             xmlns:controls="clr-namespace:ReBackup.Shared.Wpf.Controls;assembly=ReBackup.Shared.Wpf"
              xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
@@ -24,14 +25,60 @@
         </Style>
     </UserControl.Resources>
     <Grid Margin="24,20">
-        <Border Style="{StaticResource Border.Card}" Padding="0,18,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ======================================================== COVERAGE (saved rules); a click selects the run -->
+        <Border Grid.Row="0" Margin="0,0,0,16" Padding="18,14">
+            <Border.Style>
+                <Style TargetType="Border" BasedOn="{StaticResource Border.Card}">
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding HistoryCoverage.HasCoverage}" Value="False" />
+                                <Condition Binding="{Binding HistoryCoverage.NoRulesText}" Value="{x:Null}" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <StackPanel>
+                <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,10"
+                           Text="{l:Loc retention.coverage.title}" ToolTip="{l:Loc retention.coverage.titleToolTip}" />
+                <controls:RetentionCoverageControl x:Name="Coverage"
+                                                   Lanes="{Binding HistoryCoverage.CoverageLanes}"
+                                                   LaneLabels="{Binding HistoryCoverage.CoverageLabels}"
+                                                   SelectCommand="{Binding HistoryCoverage.SelectCoverageCommand}"
+                                                   SelectedId="{Binding HistoryCoverage.SelectedId}"
+                                                   SlotText="{Binding HistoryCoverage.CoverageSlotText}"
+                                                   Visibility="{Binding HistoryCoverage.HasCoverage, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock Text="{Binding HistoryCoverage.NoRulesText}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HistoryCoverage.NoRulesText}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
+        <!-- ======================================================== RUNS -->
+        <Border Grid.Row="1" Style="{StaticResource Border.Card}" Padding="0,18,0,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="18,0,18,12">
                     <TextBlock Style="{StaticResource TextBlock.CardTitle}" Text="{l:Loc history.title}" />
                     <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
                                Text="{Binding Run.LastRunText}" />
                 </StackPanel>
-                <DataGrid ItemsSource="{Binding Run.History}" AutoGenerateColumns="False" IsReadOnly="True"
+                <DataGrid x:Name="RunsGrid" ItemsSource="{Binding Run.History}" AutoGenerateColumns="False" IsReadOnly="True"
+                          SelectedItem="{Binding HistoryCoverage.SelectedRun}" SelectionChanged="OnRunSelectionChanged"
                           Background="Transparent" BorderThickness="0,1,0,0"
                           HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Single"
                           CanUserResizeRows="False" RowDetailsVisibilityMode="VisibleWhenSelected">

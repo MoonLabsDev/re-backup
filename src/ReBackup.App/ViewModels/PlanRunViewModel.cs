@@ -218,7 +218,11 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
         LastRun = History.Count == 0 ? null : History[0];
         UpdateCard();
+        HistoryLoaded?.Invoke();
     }
+
+    /// <summary>Raised at the end of every <see cref="LoadHistory"/>.</summary>
+    public event Action? HistoryLoaded;
 
     /// <summary>The entries of the last <see cref="LoadHistory"/>, oldest first (the coverage timeline reads them).</summary>
     public IReadOnlyList<RunLogEntry> Entries { get; private set; } = [];

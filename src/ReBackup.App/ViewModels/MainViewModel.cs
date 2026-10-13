@@ -226,6 +226,7 @@ public sealed partial class MainViewModel : ObservableObject
                     {
                         LoadHistory(editor);
                         editor.Versions.OnSavedTargetChanged();
+                        editor.HistoryCoverage.OnSavedTargetChanged();
                     }
                 }
             }
@@ -239,10 +240,12 @@ public sealed partial class MainViewModel : ObservableObject
                 {
                     editor.MarkAsNew();
                     editor.Versions.Invalidate();   // no saved plan, so no versions
+                    editor.HistoryCoverage.Invalidate();
                 }
                 else
                 {
                     editor.Versions.Invalidate();   // stops its sync
+                    editor.HistoryCoverage.Invalidate();
                     Plans.Remove(editor);
                 }
             }
@@ -328,6 +331,7 @@ public sealed partial class MainViewModel : ObservableObject
         // Modal dialogs pump the dispatcher, so a reload may already have removed the editor.
         var index = Plans.IndexOf(editor);
         editor.Versions.Invalidate();   // stops its sync
+        editor.HistoryCoverage.Invalidate();
         if (index >= 0)
             Plans.RemoveAt(index);
         RevalidateAll();
@@ -433,6 +437,7 @@ public sealed partial class MainViewModel : ObservableObject
                 {
                     LoadHistory(editor);   // the folder buttons look in the new target
                     editor.Versions.OnSavedTargetChanged();
+                    editor.HistoryCoverage.OnSavedTargetChanged();
                 }
             }
             return saved;
@@ -707,6 +712,7 @@ public sealed partial class MainViewModel : ObservableObject
             LoadHistory(editor);
             editor.RetentionPreview.ReloadIfLoaded();
             editor.Versions.ReloadIfLoaded();
+            editor.HistoryCoverage.ReloadIfLoaded();
         }
         var planName = update.PlanName;
         var reason = result.Reason;

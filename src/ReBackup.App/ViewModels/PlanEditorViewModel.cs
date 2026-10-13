@@ -80,7 +80,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
             () => Run.Entries);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries);
-        Versions.VersionsDeleted += () => RetentionPreview.ReloadIfLoaded();
+        HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);
+        Versions.VersionsDeleted += () =>
+        {
+            RetentionPreview.ReloadIfLoaded();
+            HistoryCoverage.ReloadIfLoaded();
+        };
         Preview.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(IgnorePreviewViewModel.SelectedNode))
@@ -184,6 +189,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     /// <summary>The versions in the saved target, their index, comparison and restore.</summary>
     public VersionsViewModel Versions { get; }
+
+    /// <summary>The coverage timeline of the History tab, linked to its selected run.</summary>
+    public HistoryCoverageViewModel HistoryCoverage { get; }
 
     /// <summary>The retention rules as edited.</summary>
     public ObservableCollection<RetentionRuleViewModel> RetentionRuleRows { get; } = [];
@@ -505,6 +513,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Preview.RefreshTexts();
         RetentionPreview.RefreshTexts();
         Versions.RefreshTexts();
+        HistoryCoverage.RefreshTexts();
     }
 
     public bool TrySave(PlanStore store)

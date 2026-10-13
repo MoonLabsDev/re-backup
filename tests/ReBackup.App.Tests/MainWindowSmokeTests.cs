@@ -114,6 +114,33 @@ public class MainWindowSmokeTests
     }
 
     [Fact]
+    public void The_history_view_loads_with_the_coverage_timeline_linked_to_the_runs()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddPlan("a", "Alpha");
+            var vm = fixture.Create();
+            var view = new ReBackup.App.Views.HistoryView { DataContext = vm.Plans[0] };
+            view.Measure(new Size(1280, 800));
+            view.Arrange(new Rect(new Size(1280, 800)));
+            view.UpdateLayout();
+
+            var control = FindAll<RetentionCoverageControl>(view).Should().ContainSingle().Subject;
+            string? PathOf(DependencyObject target, DependencyProperty property) =>
+                BindingOperations.GetBinding(target, property)?.Path.Path;
+            PathOf(control, RetentionCoverageControl.LanesProperty).Should().Be("HistoryCoverage.CoverageLanes");
+            PathOf(control, RetentionCoverageControl.LaneLabelsProperty).Should().Be("HistoryCoverage.CoverageLabels");
+            PathOf(control, RetentionCoverageControl.SelectCommandProperty).Should().Be("HistoryCoverage.SelectCoverageCommand");
+            PathOf(control, RetentionCoverageControl.SelectedIdProperty).Should().Be("HistoryCoverage.SelectedId");
+            PathOf(control, RetentionCoverageControl.SlotTextProperty).Should().Be("HistoryCoverage.CoverageSlotText");
+            var grid = FindAll<DataGrid>(view).Should().ContainSingle().Subject;
+            PathOf(grid, Selector.SelectedItemProperty).Should().Be("HistoryCoverage.SelectedRun");
+        });
+    }
+
+    [Fact]
     public void The_plan_view_shows_the_S3_fields_of_an_S3_target_and_hides_the_target_full_toggle()
     {
         RunOnSta(() =>

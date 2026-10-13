@@ -395,6 +395,119 @@ public class RetentionCoverageTests : IDisposable
         versions.NoRulesText.Should().BeNull();
     }
 
+    // ------------------------------------------------------------------ History tab
+
+    /// <summary>A plan with versions 2 and 1 days ago; the log names the older one (with warnings) and a failed run.</summary>
+    private async Task<(PlanEditorViewModel Editor, string Logged, string Unlogged)> HistoryPlanAsync(
+        IReadOnlyList<RetentionRule> rules)
+    {
+        await PlanWithVersionsAsync(rules, DaysAgo(2), DaysAgo(1));
+        var logged = VersionName.Format(DaysAgo(2), "Projects");
+        var log = new RunLog(_fixture.Paths.LogFileFor("p1"));
+        log.Append(new RunLogEntry
+        {
+            Version = logged, Status = RunStatus.CompletedWithWarnings, SkippedCount = 1, StartUtc = DaysAgo(2).ToUniversalTime(),
+        });
+        log.Append(new RunLogEntry { Status = RunStatus.Error, Reason = "boom", StartUtc = DaysAgo(1).ToUniversalTime() });
+        var editor = _fixture.Create().Plans.Single();
+        await editor.HistoryCoverage.LoadAsync();
+        return (editor, logged, VersionName.Format(DaysAgo(1), "Projects"));
+    }
+
+    [Fact]
+    public async Task The_history_tab_shows_the_coverage_of_the_saved_rules_with_the_log_warnings()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+
+        coverage.HasCoverage.Should().BeTrue();
+        coverage.NoRulesText.Should().BeNull();
+        coverage.CoverageLabels.Should().Equal("Daily · 3");
+        var slots = coverage.CoverageLanes.Should().ContainSingle().Subject.Slots;
+        slots.Select(s => s.State).Should().Equal(SlotState.PresentWithWarnings, SlotState.Present, SlotState.Pending);
+        slots[0].Version!.Id.Should().Be(logged);
+        coverage.CoverageSlotText(slots[0]).Should().EndWith("With warnings: 1 skipped");
+    }
+
+    [Fact]
+    public async Task Selecting_a_run_rings_the_version_it_wrote()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+        coverage.SelectedId.Should().BeNull();
+
+        coverage.SelectedRun = editor.Run.History.Single(r => r.VersionName == logged);
+        coverage.SelectedId.Should().Be(logged);
+
+        coverage.SelectedRun = editor.Run.History.Single(r => !r.HasVersion);   // the failed run wrote none
+        coverage.SelectedId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Clicking_a_slot_selects_the_run_that_wrote_its_version()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+
+        coverage.SelectCoverageCommand.Execute(logged.ToUpperInvariant());
+
+        coverage.SelectedRun.Should().BeSameAs(editor.Run.History.Single(r => r.VersionName == logged));
+        coverage.SelectedId.Should().Be(logged);
+    }
+
+    [Fact]
+    public async Task Clicking_a_slot_whose_version_no_run_wrote_changes_nothing()
+    {
+        var (editor, logged, unlogged) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+        var selected = coverage.SelectedRun = editor.Run.History.Single(r => r.VersionName == logged);
+
+        coverage.SelectCoverageCommand.Execute(unlogged);
+
+        coverage.SelectedRun.Should().BeSameAs(selected);
+    }
+
+    [Fact]
+    public async Task The_history_tab_shows_the_hint_without_saved_rules()
+    {
+        var (editor, _, _) = await HistoryPlanAsync([]);
+
+        editor.HistoryCoverage.HasCoverage.Should().BeFalse();
+        editor.HistoryCoverage.NoRulesText.Should().Be("No retention rules");
+    }
+
+    [Fact]
+    public async Task The_history_tab_shows_no_coverage_for_an_unreachable_target()
+    {
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Target = StorageLocation.FileSystem(_target),
+            Retention = [Daily(3)],
+        };
+        var run = new PlanRunViewModel(new StorageFactory());
+        var coverage = new HistoryCoverageViewModel(() => plan, new LambdaStorageFactory(_ => OfflineStorage.Create()), run);
+
+        await coverage.LoadAsync();
+
+        coverage.HasCoverage.Should().BeFalse();
+        coverage.NoRulesText.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Reloading_the_history_lets_a_gone_run_go_and_reads_the_log_again()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var coverage = editor.HistoryCoverage;
+        coverage.SelectedRun = editor.Run.History.Single(r => r.VersionName == logged);
+
+        editor.Run.LoadHistory([Run(logged, RunStatus.Completed)]);
+
+        coverage.SelectedRun.Should().BeNull();
+        coverage.CoverageLanes[0].Slots[0].State.Should().Be(SlotState.Present);   // the warning is gone from the log
+    }
+
     private sealed class LambdaStorageFactory(Func<StorageLocation, IStorage> open) : IStorageFactory
     {
         public IStorage Open(StorageLocation location) => open(location);
