@@ -118,6 +118,21 @@ public class VersionIndexTests : IDisposable
     }
 
     [Fact]
+    public void ParseHash_folds_xxh128()
+    {
+        var a = VersionIndex.ParseHash("xxh128:0123456789abcdef0123456789abcdef");
+        var same = VersionIndex.ParseHash("xxh128:0123456789abcdef0123456789abcdef");
+        var other = VersionIndex.ParseHash("xxh128:0123456789abcdef0123456789abcdee");
+
+        a.Should().NotBeNull();
+        a.Should().Be(same);
+        a.Should().NotBe(other);
+        VersionIndex.ParseHash("xxh128:ffffffffffffffff0000000000000001").Should().Be(unchecked((long)0xffffffffffffffffUL ^ 1L));
+        VersionIndex.ParseHash("xxh128:xyz").Should().BeNull();
+        VersionIndex.ParseHash("xxh64:ffffffffffffffff").Should().Be(-1);
+    }
+
+    [Fact]
     public async Task Scans_a_folder_without_a_manifest()
     {
         var folder = Write(_target, "2026_09_30-14_05", [File("a.txt", "alpha"), File("sub/b.txt", "bravo!")], withManifest: false);
@@ -544,5 +559,95 @@ public class VersionIndexTests : IDisposable
             ("2026_09_29-14_05 Projects", IndexOrigin.Manifest), ("2026_09_30-14_05 Projects", IndexOrigin.Scan));
         FilesOf("2026_09_30-14_05 Projects").Should().Equal(("sub/y.txt", 2L, Mtime.Ticks, null));
         index.Sync(folders, storage).Should().BeEquivalentTo(new IndexSyncResult(0, 2, 0, []));
+    }
+
+    private const string PoolHashA = "xxh128:00112233445566778899aabbccddeeff";
+    private const string PoolHashB = "xxh128:fedcba9876543210000000000000abcd";
+
+    /// <summary>Adds a pool version folder: nothing but its manifest (format 3, xxh128 hashes).</summary>
+    private static void AddPoolVersion(InMemoryStorage storage, string minute, params ManifestFile[] files)
+    {
+        var manifest = new BackupManifest
+        {
+            FormatVersion = BackupManifest.PoolFormatVersion, PlanId = PlanId, PlanName = PlanName, Source = Source,
+            FileCount = files.Length, TotalBytes = files.Sum(f => f.Size), Files = [.. files],
+        };
+        storage.AddFile($"{minute} {PlanName}/re-manifest.json", JsonSerializer.SerializeToUtf8Bytes(manifest, JsonDefaults.Options));
+    }
+
+    private static ManifestFile PoolFile(string path, long size, string hash) => new(path, size, Mtime, hash);
+
+    [Fact]
+    public async Task Pool_version_without_manifest_is_damaged()
+    {
+        var storage = new InMemoryStorage();
+        AddPoolVersion(storage, "2026_09_29-14_05", PoolFile("x.txt", 3, PoolHashA));
+        storage.AddFile("2026_09_30-14_05 Projects/stray.txt", "abc"u8.ToArray(), Mtime);   // no manifest
+        storage.AddFile("2026_10_01-14_05 Projects/re-manifest.json", "{ not json"u8.ToArray());
+        var folders = await VersionCatalog.ListAsync(storage, PlanId, PlanName);
+        var index = VersionIndex.Open(_db);
+
+        index.Sync(folders, storage, scanFallback: false).Should().BeEquivalentTo(new IndexSyncResult(3, 0, 0, []));
+
+        index.Versions().Select(v => (v.Name, v.Origin, v.FileCount, v.TotalBytes)).Should().Equal(
+            ("2026_09_29-14_05 Projects", IndexOrigin.Manifest, 1, 3L),
+            ("2026_09_30-14_05 Projects", IndexOrigin.Damaged, 0, 0L),
+            ("2026_10_01-14_05 Projects", IndexOrigin.Damaged, 0, 0L));
+        Rows("SELECT COUNT(*) FROM files").Single()[0].Should().Be(1L);
+        index.Sync(folders, storage, scanFallback: false).Should().BeEquivalentTo(new IndexSyncResult(0, 3, 0, []));
+    }
+
+    [Fact]
+    public async Task Pool_manifest_imports_like_full()
+    {
+        var storage = new InMemoryStorage();
+        AddPoolVersion(storage, "2026_09_29-14_05", PoolFile("a.txt", 5, PoolHashA), PoolFile("sub/b.txt", 6, PoolHashB));
+        var folders = await VersionCatalog.ListAsync(storage, PlanId, PlanName);
+        var index = VersionIndex.Open(_db);
+
+        index.Sync(folders, storage, scanFallback: false);
+
+        var version = index.Versions().Should().ContainSingle().Subject;
+        version.Origin.Should().Be(IndexOrigin.Manifest);
+        version.Source.Should().Be(Source);
+        version.FileCount.Should().Be(2);
+        version.TotalBytes.Should().Be(11);
+        FilesOf(version.Name).Select(f => (f.Path, f.Size, f.Hash)).Should().Equal(
+            ("a.txt", 5L, VersionIndex.ParseHash(PoolHashA)), ("sub/b.txt", 6L, VersionIndex.ParseHash(PoolHashB)));
+        DirsOf(version.Name).Should().BeEquivalentTo(new Dictionary<string, (long, long)> { [""] = (11, 2), ["sub"] = (6, 1) });
+    }
+
+    [Fact]
+    public async Task Compare_works_on_xxh128()
+    {
+        var storage = new InMemoryStorage();
+        AddPoolVersion(storage, "2026_09_29-14_05", PoolFile("same.txt", 5, PoolHashA), PoolFile("changed.txt", 5, PoolHashA));
+        AddPoolVersion(storage, "2026_09_30-14_05", PoolFile("same.txt", 5, PoolHashA), PoolFile("changed.txt", 5, PoolHashB));
+        var index = VersionIndex.Open(_db);
+        index.Sync(await VersionCatalog.ListAsync(storage, PlanId, PlanName), storage, scanFallback: false);
+        var versions = index.Versions();
+
+        var statuses = index.Compare(versions[0].Id, versions[1].Id);
+
+        statuses[index.FindPath("same.txt", false)!.Value].Should().Be(DiffStatus.Unchanged);
+        statuses[index.FindPath("changed.txt", false)!.Value].Should().Be(DiffStatus.Changed);
+    }
+
+    [Fact]
+    public async Task UniqueBytes_excludes_shared_content()
+    {
+        var storage = new InMemoryStorage();
+        const string hashC = "xxh128:0123456789abcdef0123456789abcdef";
+        AddPoolVersion(storage, "2026_09_29-14_05",
+            PoolFile("shared.txt", 100, PoolHashA), PoolFile("old.txt", 10, PoolHashB), PoolFile("nohash.txt", 1, ""));
+        AddPoolVersion(storage, "2026_09_30-14_05",
+            PoolFile("renamed.txt", 100, PoolHashA), PoolFile("new.txt", 20, hashC), PoolFile("twin.txt", 20, hashC));
+        var index = VersionIndex.Open(_db);
+        index.Sync(await VersionCatalog.ListAsync(storage, PlanId, PlanName), storage, scanFallback: false);
+        var versions = index.Versions();
+
+        index.UniqueBytes(versions[0].Id).Should().Be(11, "the shared 100 bytes are not unique; the file without a hash is");
+        index.UniqueBytes(versions[1].Id).Should().Be(40, "two paths with the same new content both count");
+        index.UniqueBytes(-1).Should().Be(0);
     }
 }

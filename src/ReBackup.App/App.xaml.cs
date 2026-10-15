@@ -56,6 +56,8 @@ public partial class App : Application
     private readonly ContextMenu _trayMenu = new();
     private SingleInstance? _singleInstance;
     private ThemeToggleViewModel _themeToggle = null!;
+    private VersionIndexWorker _versionIndex = null!;
+    private TempOpener _tempOpener = null!;
 
     public App()
     {
@@ -94,6 +96,7 @@ public partial class App : Application
         }
 
         Loc.Instance.Apply(AppLanguages.Resolve(_settings.Language));
+        CleanUpInBackground();
 
         // The Run entry follows the exe that is running now (moved or updated installs would leave a stale path).
         try
@@ -188,10 +191,12 @@ public partial class App : Application
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var languageToggle = new LanguageToggleViewModel(() => Loc.Instance.Language, ChooseLanguage);
+            // Files and folders of versions that cannot be opened in place go through %TEMP%\ReBackup\open.
+            var tempOpener = new TempOpener();
             var mainViewModel = new MainViewModel(planStore, paths, settings, () => settingsStore.Save(settings),
                 () => settingsStore.LastLoadError, _dialogs, ShowSettings, queue, scheduler,
                 action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(),
-                versionIndex, storages, s3, drive);
+                versionIndex, storages, s3, drive, tempOpener);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
@@ -209,6 +214,8 @@ public partial class App : Application
             _drive = drive;
             _s3Storages = s3Storages;
             _storages = storages;
+            _versionIndex = versionIndex;
+            _tempOpener = tempOpener;
         }
         catch
         {
@@ -218,6 +225,32 @@ public partial class App : Application
 
         if (_settingsStore.LastLoadError is { } error)
             _dialogs.ShowError(Loc.T("settings.title"), Loc.F("app.settingsUnreadable", ("error", error)));
+    }
+
+    /// <summary>
+    /// On start, off the UI thread: deletes temporary copies of opened files older than a day, and the version indexes
+    /// of plans that no longer exist (a plan file that could not be read keeps its index).
+    /// </summary>
+    private void CleanUpInBackground()
+    {
+        var planIds = new HashSet<string>(_mainViewModel.Plans.Select(p => p.Id), StringComparer.OrdinalIgnoreCase);
+        var plansDirectory = _paths.PlansDirectory;
+        var indexes = _versionIndex.Indexes;
+        var tempOpener = _tempOpener;
+        _ = Task.Run(() =>
+        {
+            tempOpener.CleanUp(TimeSpan.FromDays(1));
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(plansDirectory, "*.json"))
+                    planIds.Add(Path.GetFileNameWithoutExtension(file));
+                indexes.PruneOrphans(planIds);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+            {
+                Trace.TraceWarning($"The version indexes of deleted plans could not be removed: {ex.Message}");
+            }
+        });
     }
 
     private void CreateTrayIcon()
@@ -378,7 +411,7 @@ public partial class App : Application
     private void ShowSettings()
     {
         var viewModel = new SettingsViewModel(_settingsStore, _settings, _paths, _appDataRoot, _dialogs,
-            () => ConfirmDiscardUnsaved() && ConfirmStopRestores(exit: false),
+            () => ConfirmDiscardUnsaved() && ConfirmStopRestores(exit: false) && ConfirmStopPoolJobs(exit: false),
             () => _queue.IsBusy, ThemeManager.Apply, Loc.Instance.Language, Loc.Instance.Apply,
             manageS3Accounts: () =>
             {
@@ -469,6 +502,7 @@ public partial class App : Application
     {
         _exitRequested = true;
         StopRestores();
+        StopPoolJobs();
         if (!StopBackups(TimeSpan.FromSeconds(15)))
         {
             // Keep the lock: a second copy must not run next to a backup that is still stopping.
@@ -509,6 +543,7 @@ public partial class App : Application
     {
         _exitRequested = true;
         _mainViewModel?.StopRestores(TimeSpan.FromSeconds(3));
+        _mainViewModel?.StopPoolJobs(TimeSpan.FromSeconds(3));
         if (_queue is not null)
             StopBackups(TimeSpan.FromSeconds(3));
         DisposeTray();
@@ -554,6 +589,27 @@ public partial class App : Application
             _dialogs.ShowInfo("ReBackup", Loc.T("app.restoreStuck"));
     }
 
+    /// <summary>True when no copy or verify runs, or the user agrees to stop the running ones to exit (or restart) ReBackup.</summary>
+    private bool ConfirmStopPoolJobs(bool exit)
+    {
+        if (!_mainViewModel.IsAnyPoolJobRunning)
+            return true;
+        if (!_window.IsVisible)
+            ShowMainWindow();
+        return _dialogs.ConfirmDefaultNo(Loc.T("app.poolJobRunning.title"),
+            exit ? Loc.T("app.poolJobRunning.exit") : Loc.T("app.poolJobRunning.restart"));
+    }
+
+    /// <summary>
+    /// Stops running copies and verifies and waits (bounded) until they have released their locks, so that the process
+    /// does not end with a lock or a half-written version on the target.
+    /// </summary>
+    private void StopPoolJobs()
+    {
+        if (!_mainViewModel.StopPoolJobs(TimeSpan.FromSeconds(10)))
+            _dialogs.ShowInfo("ReBackup", Loc.T("app.poolJobStuck"));
+    }
+
     private void ExitApp()
     {
         if (_exiting)
@@ -568,7 +624,7 @@ public partial class App : Application
             return;
         }
 
-        if (!ConfirmStopRestores(exit: true))
+        if (!ConfirmStopRestores(exit: true) || !ConfirmStopPoolJobs(exit: true))
         {
             _exiting = false;
             return;
@@ -581,6 +637,7 @@ public partial class App : Application
         }
 
         StopRestores();
+        StopPoolJobs();
         StopBackups(backupBusy ? TimeSpan.FromSeconds(15) : TimeSpan.Zero);
 
         _exitRequested = true;

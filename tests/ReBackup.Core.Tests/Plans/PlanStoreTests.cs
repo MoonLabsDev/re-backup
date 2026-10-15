@@ -43,6 +43,42 @@ public class PlanStoreTests : IDisposable
     }
 
     [Fact]
+    public void Plan_round_trips_incremental_settings()
+    {
+        var plan = new BackupPlan { Name = "Projects", Incremental = true, ChangeDetection = ChangeDetection.Safe };
+
+        var clone = plan.Clone();
+        clone.Incremental.Should().BeTrue();
+        clone.ChangeDetection.Should().Be(ChangeDetection.Safe);
+
+        using var store = NewStore();
+        store.Save(plan);
+        var loaded = store.LoadAll().Plans.Should().ContainSingle().Subject;
+        loaded.Incremental.Should().BeTrue();
+        loaded.ChangeDetection.Should().Be(ChangeDetection.Safe);
+
+        var old = JsonSerializer.Deserialize<BackupPlan>("""{ "id": "p1", "name": "Old" }""", JsonDefaults.Options)!;
+        old.Incremental.Should().BeFalse();
+        old.ChangeDetection.Should().Be(ChangeDetection.Fast);
+    }
+
+    [Fact]
+    public void Plan_round_trips_unfinished_copy_marker()
+    {
+        var plan = new BackupPlan { Name = "Copy", CopyFromPlanId = "source-id" };
+
+        plan.Clone().CopyFromPlanId.Should().Be("source-id");
+        using var store = NewStore();
+        store.Save(plan);
+        store.LoadAll().Plans.Should().ContainSingle().Which.CopyFromPlanId.Should().Be("source-id");
+
+        plan.CopyFromPlanId = null;
+        store.Save(plan);
+        File.ReadAllText(store.PathFor(plan.Id)).Should().NotContain("copyFromPlanId", "an ordinary plan file stays as it was");
+        store.LoadAll().Plans.Single().CopyFromPlanId.Should().BeNull();
+    }
+
+    [Fact]
     public void Save_writes_id_named_camelCase_file_without_temp_leftovers()
     {
         using var store = NewStore();

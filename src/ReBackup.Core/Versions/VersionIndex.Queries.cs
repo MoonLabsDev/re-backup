@@ -48,6 +48,22 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>
+    /// The bytes only this version holds: the sizes of its files whose content hash occurs in no other version (a file
+    /// without a hash counts as unique). What deleting the version would free in a pool.
+    /// </summary>
+    public long UniqueBytes(long versionId)
+    {
+        using var connection = OpenConnection();
+        using var command = Command(connection, null, """
+            SELECT COALESCE(SUM(f.size), 0) FROM files f
+            WHERE f.version_id = $v
+              AND (f.hash IS NULL OR NOT EXISTS (SELECT 1 FROM files o WHERE o.hash = f.hash AND o.version_id <> $v))
+            """);
+        command.Parameters.AddWithValue("$v", versionId);
+        return (long)command.ExecuteScalar()!;
+    }
+
+    /// <summary>
     /// The status of every file and folder of version A and version B (§11): Added = only in B, Deleted = only in A;
     /// files in both are compared by hash when both have one, otherwise by size and time. A folder in both is Changed
     /// when anything below it differs.

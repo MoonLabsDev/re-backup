@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
+using ReBackup.Core.Localization;
+using ReBackup.Core.Pool;
 using ReBackup.Storage;
 
 namespace ReBackup.Core.Backup;
@@ -65,11 +67,81 @@ public static class VersionDeleter
     /// Gets a report while the manifests are read (for the file counts), then when each version starts, then at most every <see cref="ProgressInterval"/> while its files are
     /// deleted, and when it ends; on the deleting thread.
     /// </param>
+    /// <param name="pool">
+    /// The plan is incremental (spec 5): the target's lock is taken (operation <c>"delete"</c>, host
+    /// <paramref name="machineName"/>) before anything else, the versions are deleted, the pool is collected
+    /// (<see cref="PoolCollector"/>) and the lock is released. While another holder has the lock nothing is changed and every
+    /// version is <see cref="VersionDeletionOutcome.Failed"/> with the <c>core.run.targetLocked</c> text. Collection problems
+    /// and a lock that cannot be released are traced only: the versions are deleted all the same, and the next collection
+    /// continues.
+    /// </param>
     public static async Task<IReadOnlyList<VersionDeletion>> DeleteAsync(IStorage target, string planId, string planName,
         IReadOnlyList<string> versionNames, IProgress<VersionDeletionProgress>? progress = null, CancellationToken ct = default,
-        string? machineName = null)
+        string? machineName = null, bool pool = false)
     {
         var host = machineName ?? Environment.MachineName;
+        if (!pool)
+            return await DeleteVersionsAsync(target, planId, planName, versionNames, progress, host, ct).ConfigureAwait(false);
+
+        TargetLock? held;
+        try
+        {
+            held = await TargetLock.TryAcquireAsync(target, host, LockOperation, TimeProvider.System, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return [];   // as without the lock: the versions not started are left out of the result
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            return versionNames.Select(name => new VersionDeletion(name, VersionDeletionOutcome.Failed, ex.Message)).ToList();
+        }
+        if (held is null)
+        {
+            var locked = await TargetLock.LockedMessageAsync(target, CancellationToken.None).ConfigureAwait(false);
+            return versionNames.Select(name => new VersionDeletion(name, VersionDeletionOutcome.Failed, locked)).ToList();
+        }
+
+        try
+        {
+            var results = await DeleteVersionsAsync(target, planId, planName, versionNames, progress, host, ct).ConfigureAwait(false);
+            try
+            {
+                var collected = await PoolCollector.CollectAsync(target, planId, planName, ct).ConfigureAwait(false);
+                if (collected.SkippedReason is { } reason)
+                    Trace.TraceWarning($"The pool of plan {planId} was not collected: {reason}");
+            }
+            catch (OperationCanceledException)
+            {
+                // The next collection continues.
+            }
+            catch (Exception ex) when (ex is StorageException or ArgumentException)
+            {
+                Trace.TraceWarning(CoreTexts.English("core.gc.failed", ("error", ex.Message)));
+            }
+            return results;
+        }
+        finally
+        {
+            try
+            {
+                await held.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is StorageException or ArgumentException)
+            {
+                Trace.TraceWarning(CoreTexts.English("core.run.lockReleaseFailed", ("error", ex.Message)));
+            }
+        }
+    }
+
+    /// <summary>What a lock holder is doing while it deletes versions by hand (<see cref="LockInfo.Operation"/>).</summary>
+    private const string LockOperation = "delete";
+
+    /// <summary>The deletion itself, as <see cref="DeleteAsync"/> describes it, without lock or collection.</summary>
+    private static async Task<IReadOnlyList<VersionDeletion>> DeleteVersionsAsync(IStorage target, string planId,
+        string planName, IReadOnlyList<string> versionNames, IProgress<VersionDeletionProgress>? progress, string host,
+        CancellationToken ct)
+    {
         long filesTotal = 0;
         if (progress is not null)
         {

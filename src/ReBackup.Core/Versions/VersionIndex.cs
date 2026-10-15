@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
+using ReBackup.Core.Pool;
 using ReBackup.Storage;
 using ReBackup.Storage.FileSystem;
 
@@ -46,6 +47,7 @@ public sealed partial class VersionIndex
                                              mtime_ticks INTEGER NOT NULL, hash INTEGER,
                                              PRIMARY KEY (version_id, path_id)) WITHOUT ROWID;
         CREATE INDEX IF NOT EXISTS files_path ON files(path_id, version_id);
+        CREATE INDEX IF NOT EXISTS files_hash ON files(hash, version_id);
         CREATE TABLE IF NOT EXISTS dirs     (version_id INTEGER NOT NULL, path_id INTEGER NOT NULL, size INTEGER NOT NULL,
                                              files INTEGER NOT NULL,
                                              PRIMARY KEY (version_id, path_id)) WITHOUT ROWID;
@@ -99,8 +101,12 @@ public sealed partial class VersionIndex
     /// version intact. When the target's root does not exist or cannot be reached (e.g. a NAS that is offline),
     /// nothing is removed or imported and an error is reported instead.
     /// </summary>
+    /// <param name="scanFallback">
+    /// True (full plans): a version without a usable manifest is scanned from its files. False (pool plans, whose version
+    /// folders hold nothing but the manifest): such a version is indexed as <see cref="IndexOrigin.Damaged"/> with no files.
+    /// </param>
     public IndexSyncResult Sync(IReadOnlyList<VersionInfo> folders, IStorage target,
-        IProgress<IndexSyncProgress>? progress = null, CancellationToken ct = default)
+        IProgress<IndexSyncProgress>? progress = null, CancellationToken ct = default, bool scanFallback = true)
     {
         if (!IsReachable(target, ct))
         {
@@ -141,7 +147,7 @@ public sealed partial class VersionIndex
             progress?.Report(new IndexSyncProgress(current, folders.Count, folder.Name, 0, Finished: false));
             try
             {
-                var files = Import(target, folder, stamp, ct, count =>
+                var files = Import(target, folder, stamp, scanFallback, ct, count =>
                     progress?.Report(new IndexSyncProgress(current, folders.Count, folder.Name, count, Finished: false)));
                 imported++;
                 progress?.Report(new IndexSyncProgress(current, folders.Count, folder.Name, files, Finished: true));
@@ -252,8 +258,9 @@ public sealed partial class VersionIndex
         return string.Create(CultureInfo.InvariantCulture, $"s:{count}:{newest}");
     }
 
-    /// <summary>Imports one version (manifest when readable, otherwise a scan); returns the number of files.</summary>
-    private int Import(IStorage target, VersionInfo folder, string stamp, CancellationToken ct, Action<int> onProgress)
+    /// <summary>Imports one version (manifest when readable, otherwise a scan or, without <paramref name="scanFallback"/>, a damaged version); returns the number of files.</summary>
+    private int Import(IStorage target, VersionInfo folder, string stamp, bool scanFallback, CancellationToken ct,
+        Action<int> onProgress)
     {
         Stream? manifest = null;
         try
@@ -281,6 +288,9 @@ public sealed partial class VersionIndex
                 }
             }
         }
+
+        if (!scanFallback)
+            return ImportOnce(folder, stamp, IndexOrigin.Damaged, ct, onProgress, _ => null);
 
         return ImportOnce(folder, stamp, IndexOrigin.Scan, ct, onProgress, writer =>
         {
@@ -507,9 +517,19 @@ public sealed partial class VersionIndex
             (int)reader.GetInt64(first + 6),
             reader.GetInt64(first + 7));
 
-    /// <summary>"xxh64:" plus 16 hex digits as a signed 64-bit number; null for anything else.</summary>
+    /// <summary>
+    /// "xxh64:" plus 16 hex digits as a signed 64-bit number; "xxh128:" plus 32 hex digits folded to 64 bits
+    /// (high half xor low half); null for anything else. The index only compares and estimates, so the fold is enough.
+    /// </summary>
     public static long? ParseHash(string? hash)
     {
+        if (PoolLayout.TryParseHex(hash, out var hex128))
+        {
+            return UInt128.TryParse(hex128, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var wide)
+                ? unchecked((long)((ulong)(wide >> 64) ^ (ulong)wide))
+                : null;
+        }
+
         const string prefix = "xxh64:";
         if (hash is null || !hash.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || hash.Length != prefix.Length + 16)
             return null;

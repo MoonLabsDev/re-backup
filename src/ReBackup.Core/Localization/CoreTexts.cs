@@ -74,6 +74,7 @@ public static class CoreTexts
         ["core.run.freeSpacePlanGone"] = "Old versions were not deleted to free space: the plan no longer exists.",
         ["core.run.freeSpaceExamineFailed"] = "Old versions could not be examined to free space: {error}",
         ["core.run.freeSpaceDeleteFailed"] = "\"{version}\" could not be deleted to free space: {error}",
+        ["core.run.freeSpaceNoCollect"] = "Old versions were not deleted to free space, because the space they hold could not be freed now. {reason}",
         ["core.run.remainsFailed"] = "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
         ["core.run.removedRemainsLeft"] =
             "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
@@ -87,6 +88,27 @@ public static class CoreTexts
         ["core.run.takeOverUnexamined"] = "\"{name}\" could not be examined and was left as it is.",
         ["core.run.leftoverPartialWithManifest"] = "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
+        ["core.run.storeFullOnPool"] = "The target holds an incremental pool, but this plan is a full plan. Nothing was changed.",
+        ["core.run.storePoolOnFull"] = "This plan is incremental, but the target already holds full versions of it. Nothing was changed.",
+        ["core.run.storeOtherPlan"] = "The target's pool belongs to another plan. Nothing was changed.",
+        ["core.run.storeUnsupported"] = "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
+        ["core.run.storeNotEmpty"] = "This plan is incremental, but the target already holds backups of another plan. Choose an empty target. Nothing was changed.",
+        ["core.run.targetLocked"] = "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
+        ["core.run.lockReleaseFailed"] = "The target's lock could not be released: {error}",
+        ["core.run.copyRunning"] = "The plan is being copied (\"Copy plan…\"); the backup was not started.",
+        ["core.run.copyUnfinished"] = "The plan is an unfinished copy; finish it with \"Continue copy…\" first. The backup was not started.",
+
+        ["core.gc.skippedMarkers"] = "Unused backup content was not removed: a version is still being written or deleted.",
+        ["core.gc.manifestUnreadable"] = "Unused backup content was not removed: the manifest of \"{version}\" cannot be read.",
+        ["core.gc.failed"] = "Unused backup content could not be removed: {error}",
+
+        ["core.copy.overlaps"] = "The new target is the plan's target, lies inside it or holds it. Nothing was copied.",
+        ["core.copy.failed"] = "The copy stopped: {error}",
+        ["core.copy.versionFailed"] = "\"{version}\" was not copied: {error}",
+        ["core.copy.fileFailed"] = "\"{path}\" in \"{version}\" was not copied: {error}",
+        ["core.copy.manifestUnreadable"] = "\"{version}\" was not copied: its manifest cannot be read.",
+        ["core.copy.notOwned"] = "Folders named like versions of the plan that were not copied because they were renamed by hand, belong to another plan or have no manifest: {count}",
+        ["core.copy.folderTaken"] = "\"{version}\" was not copied: the new target already holds a folder \"{folder}\".",
 
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
         ["core.skip.reservedName"] = "the name is reserved for ReBackup's own files",
@@ -118,6 +140,8 @@ public static class CoreTexts
         ["core.restore.fileInPlaceOfFolder"] = "a file stands where the folder \"{folder}\" belongs",
         ["core.restore.notAPath"] = "\"{path}\" is not a path inside the version.",
         ["core.restore.accessDenied"] = "access denied (read-only, or in use by another program)",
+        ["core.restore.contentMismatch"] = "the content does not match its checksum in the backup (the backup copy is damaged)",
+        ["core.restore.blobMissing"] = "its content is missing from the backup's pool (the backup is damaged)",
 
         ["core.index.targetUnavailable"] = "The target folder \"{folder}\" is not available.",
 

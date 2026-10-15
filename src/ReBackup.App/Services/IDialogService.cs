@@ -48,6 +48,14 @@ public interface IDialogService
     /// </summary>
     DriveConnectionInfo? EditDriveConnection(DriveConnectionInfo? existing);
 
+    /// <summary>
+    /// The "Copy plan…" dialog on <paramref name="viewModel"/>; returns when it is closed (a copy still running is stopped).
+    /// </summary>
+    void ShowCopyPlan(CopyPlanViewModel viewModel);
+
+    /// <summary>The "Verify backup…" dialog on <paramref name="viewModel"/>; returns when it is closed (a verify still running is stopped).</summary>
+    void ShowVerify(VerifyViewModel viewModel);
+
     /// <summary>The Google account dialog on <paramref name="existing"/> (null = a new account): name and key, not yet stored; null when cancelled.</summary>
     DriveAccountInput? EditDriveAccount(DriveAccount? existing);
 }

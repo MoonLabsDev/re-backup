@@ -77,7 +77,11 @@
         <!-- The actions on the selected entry: toolbar buttons and the tree's context menu use the same commands. -->
         <ContextMenu x:Key="Menu.Entry">
             <MenuItem Header="{l:Loc common.open}" Command="{Binding Versions.OpenSelectedCommand}" />
-            <MenuItem Header="{l:Loc versions.toolbar.showInExplorer}" Command="{Binding Versions.ShowSelectedInExplorerCommand}" />
+            <MenuItem Header="{l:Loc versions.toolbar.showInExplorer}" Command="{Binding Versions.ShowSelectedInExplorerCommand}"
+                      Visibility="{Binding Versions.ShowExplorerActions, Converter={StaticResource BoolToVisibility}}" />
+            <!-- Incremental plans: a folder is copied into a temporary folder and shown there (its version folder holds no files). -->
+            <MenuItem Header="{l:Loc versions.toolbar.restoreToTemp}" Command="{Binding Versions.RestoreSelectedToTempCommand}"
+                      Visibility="{Binding Versions.ShowTempRestore, Converter={StaticResource BoolToVisibility}}" />
             <Separator />
             <MenuItem Header="{l:Loc versions.menu.restoreOriginal}" Command="{Binding Versions.RestoreToOriginalCommand}" />
             <MenuItem Header="{l:Loc versions.toolbar.restoreTo}" Command="{Binding Versions.RestoreToCommand}" />
@@ -85,6 +89,8 @@
 
         <!-- The version list's menu: acts on the marked versions. -->
         <ContextMenu x:Key="Menu.Version">
+            <MenuItem Header="{l:Loc versions.menu.restoreToTemp}" Command="{Binding Versions.RestoreVersionToTempCommand}"
+                      Visibility="{Binding Versions.ShowTempRestore, Converter={StaticResource BoolToVisibility}}" />
             <MenuItem Header="{l:Loc versions.delete.menu}" Command="{Binding Versions.DeleteVersionsCommand}" />
         </ContextMenu>
 
@@ -241,8 +247,17 @@
                                     <DockPanel Margin="0,2,0,0">
                                         <TextBlock DockPanel.Dock="Right" FontSize="11" Foreground="{DynamicResource Brush.TextFaint}"
                                                    Text="{Binding IndexStateText}" />
+                                        <!-- A pool version whose manifest is missing or unreadable: nothing to restore. -->
+                                        <TextBlock DockPanel.Dock="Right" Style="{StaticResource TextBlock.Icon}" Margin="0,0,6,0" FontSize="11"
+                                                   Foreground="{DynamicResource Brush.Warning}" Text="{StaticResource Icon.Warning}"
+                                                   ToolTip="{Binding DamagedToolTip}" AutomationProperties.Name="{Binding DamagedToolTip}"
+                                                   Visibility="{Binding IsDamaged, Converter={StaticResource BoolToVisibility}}" />
                                         <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{Binding FilesText}" />
                                     </DockPanel>
+                                    <!-- Incremental plans: what only this version uses in the pool. -->
+                                    <TextBlock Style="{StaticResource TextBlock.Line}" Margin="0,2,0,0" HorizontalAlignment="Right" FontSize="11"
+                                               Foreground="{DynamicResource Brush.TextFaint}" Typography.NumeralAlignment="Tabular"
+                                               Text="{Binding ExclusiveSizeText}" ToolTip="{l:Loc versions.exclusive.toolTip}" />
                                     <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="{DynamicResource Brush.Warning}"
                                                TextWrapping="Wrap" Text="{Binding ReasonText}">
                                         <TextBlock.Style>
@@ -302,7 +317,12 @@
                                     Command="{Binding Versions.OpenSelectedCommand}" />
                             <Button Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.Explorer}"
                                     ToolTip="{l:Loc versions.toolbar.showInExplorer}" AutomationProperties.Name="{l:Loc versions.toolbar.showInExplorer}"
-                                    Command="{Binding Versions.ShowSelectedInExplorerCommand}" />
+                                    Command="{Binding Versions.ShowSelectedInExplorerCommand}"
+                                    Visibility="{Binding Versions.ShowExplorerActions, Converter={StaticResource BoolToVisibility}}" />
+                            <Button Style="{StaticResource Button.Icon}" Content="{StaticResource Icon.OpenFolder}"
+                                    ToolTip="{l:Loc versions.toolbar.restoreToTempToolTip}" AutomationProperties.Name="{l:Loc versions.toolbar.restoreToTemp}"
+                                    Command="{Binding Versions.RestoreSelectedToTempCommand}"
+                                    Visibility="{Binding Versions.ShowTempRestore, Converter={StaticResource BoolToVisibility}}" />
                             <Button Margin="6,0,0,0" AutomationProperties.Name="{l:Loc versions.toolbar.restoreOriginal}"
                                     ToolTip="{l:Loc versions.toolbar.restoreOriginalToolTip}"
                                     Command="{Binding Versions.RestoreToOriginalCommand}">

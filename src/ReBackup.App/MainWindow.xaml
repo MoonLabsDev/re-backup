@@ -411,6 +411,16 @@
                         <ContextMenu>
                             <MenuItem Header="{l:Loc shell.plans.moveUp}" InputGestureText="Alt+↑" Command="{Binding MoveUpCommand}" />
                             <MenuItem Header="{l:Loc shell.plans.moveDown}" InputGestureText="Alt+↓" Command="{Binding MoveDownCommand}" />
+                            <Separator />
+                            <MenuItem Header="{l:Loc shell.plans.copy}" Command="{Binding CopyPlanCommand}" />
+                            <MenuItem Header="{l:Loc shell.plans.continueCopy}" Command="{Binding ContinueCopyCommand}"
+                                      Visibility="{Binding SelectedPlan.IsCopyUnfinished, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
+                            <!-- Incremental plans only: their target has a pool to verify. -->
+                            <MenuItem Header="{l:Loc shell.plans.verify}" Command="{Binding VerifyBackupCommand}"
+                                      Visibility="{Binding SelectedPlan.ShowPoolActions, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
+                            <!-- Incremental plans, and full plans whose target a copy left locked. -->
+                            <MenuItem Header="{l:Loc shell.plans.releaseLock}" Command="{Binding ReleaseLockCommand}"
+                                      Visibility="{Binding SelectedPlan.ShowReleaseLock, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
                         </ContextMenu>
                     </ListBox.ContextMenu>
                     <ListBox.ItemTemplate>
@@ -451,6 +461,10 @@
                                                TextTrimming="CharacterEllipsis" Text="{Binding Versions.RestoreText}"
                                                ToolTip="{Binding Versions.RestoreText}"
                                                Visibility="{Binding Versions.IsRestoring, Converter={StaticResource BoolToVisibility}}" />
+                                    <!-- "Copy plan…" has not finished copying into this plan: it stays disabled until "Continue copy…". -->
+                                    <TextBlock Margin="0,3,0,0" FontSize="12" Foreground="{DynamicResource Brush.Warning}"
+                                               TextTrimming="CharacterEllipsis" Text="{l:Loc plan.copyUnfinished.card}"
+                                               Visibility="{Binding IsCopyUnfinished, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
 
                                 <!-- Run now while idle, cancel while running, remove from the queue while queued. -->

@@ -509,7 +509,8 @@
                                                             Margin="0,0,6,0"
                                                             ToolTip="{l:Loc retention.now.openInExplorer}" AutomationProperties.Name="{l:Loc retention.now.openFolder}"
                                                             Command="{Binding DataContext.RetentionPreview.OpenVersionFolderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}">
+                                                            CommandParameter="{Binding}"
+                                                            Visibility="{Binding DataContext.IncrementalIsFull, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVisibility}}">
 <Image Style="{StaticResource Image.FolderColored}" />
 </Button>
                                                     <TextBlock VerticalAlignment="Center" Text="{Binding Name}" ToolTip="{Binding Name}"

@@ -167,7 +167,7 @@ public class MainWindowSmokeTests
             var combos = FindAll<ComboBox>(view).Where(c => ReferenceEquals(c.ItemsSource, editor.TargetS3.Connections)).ToList();
             combos.Should().NotBeEmpty("the target's connection picker shows the saved connections");
             combos.Should().ContainSingle(c => Shown(c)).Which.SelectedValue.Should().Be("c1");
-            FindAll<RadioButton>(view).Should().HaveCount(6, "Folder | S3 | Drive for the source and for the target");
+            KindSwitches(view).Should().HaveCount(6, "Folder | S3 | Drive for the source and for the target");
             var freeSpace = FindAll<CheckBox>(view)
                 .Single(c => BindingOperations.GetBinding(c, ToggleButton.IsCheckedProperty)?.Path.Path == "FreeSpaceByRetention");
             Shown(freeSpace).Should().BeFalse();
@@ -243,7 +243,7 @@ public class MainWindowSmokeTests
             b.SourceIsS3.Should().BeFalse();
             b.TargetIsS3.Should().BeFalse();
             b.IsDirty.Should().BeFalse();
-            FindAll<RadioButton>(view).Where(r => r.IsChecked == true).Should().HaveCount(2, "Folder for B's source and target");
+            KindSwitches(view).Where(r => r.IsChecked == true).Should().HaveCount(2, "Folder for B's source and target");
         });
     }
 
@@ -271,7 +271,7 @@ public class MainWindowSmokeTests
             var combos = FindAll<ComboBox>(view).Where(c => ReferenceEquals(c.ItemsSource, editor.TargetDrive.Connections)).ToList();
             combos.Should().ContainSingle(c => Shown(c)).Which.SelectedValue.Should().Be("d1");
             FindAll<TextBox>(view).Where(Shown).Select(t => t.Text).Should().Contain("docs", "the path is shown");
-            FindAll<RadioButton>(view).Where(r => r.IsChecked == true).Select(r => r.CommandParameter)
+            KindSwitches(view).Where(r => r.IsChecked == true).Select(r => r.CommandParameter)
                 .Should().Equal("Folder", "Drive");
             var freeSpace = FindAll<CheckBox>(view)
                 .Single(c => BindingOperations.GetBinding(c, ToggleButton.IsCheckedProperty)?.Path.Path == "FreeSpaceByRetention");
@@ -345,6 +345,43 @@ public class MainWindowSmokeTests
         });
     }
 
+    [Fact]
+    public void The_copy_and_verify_dialogs_load_and_the_plan_menu_offers_them()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddConnection("c1", "Offsite", "offsite");
+            fixture.Store.Save(new ReBackup.Core.Plans.BackupPlan
+            {
+                Id = "a",
+                Name = "Alpha",
+                Target = new ReBackup.Storage.StorageLocation("s3", "docs", "c1"),
+                Incremental = true,
+            });
+            var vm = fixture.Create();
+            var window = new MainWindow { DataContext = vm };
+            var list = FindAll<ListBox>(Layout(window)).Single(l => ReferenceEquals(l.ItemsSource, vm.Plans));
+            list.ContextMenu!.Items.OfType<MenuItem>()
+                .Select(item => BindingOperations.GetBinding(item, MenuItem.CommandProperty)?.Path.Path)
+                .Should().Contain([nameof(MainViewModel.CopyPlanCommand), nameof(MainViewModel.VerifyBackupCommand),
+                    nameof(MainViewModel.ReleaseLockCommand)]);
+
+            vm.CopyPlanCommand.Execute(vm.Plans[0]);
+            var copy = fixture.Dialogs.CopyDialogs.Single();
+            copy.ChooseTargetKindCommand.Execute("S3");
+            var copyContent = Layout(new ReBackup.App.Views.CopyPlanDialog(copy));
+            FindAll<ComboBox>(copyContent).Should().Contain(c => ReferenceEquals(c.ItemsSource, copy.TargetS3.Connections) && Shown(c),
+                "the dialog reuses the Plan tab's target picker");
+            KindSwitches(copyContent).Should().HaveCount(3);
+
+            vm.VerifyBackupCommand.Execute(vm.Plans[0]);
+            var verifyContent = Layout(new ReBackup.App.Views.VerifyDialog(fixture.Dialogs.VerifyDialogs.Single()));
+            FindAll<RadioButton>(verifyContent).Select(r => r.CommandParameter).Should().Equal("Quick", "Thorough");
+        });
+    }
+
     /// <summary>Whether the element and all its ancestors are Visible (IsVisible needs a shown window).</summary>
     private static bool Shown(DependencyObject element)
     {
@@ -372,6 +409,10 @@ public class MainWindowSmokeTests
             return;
         new App().InitializeComponent();
     }
+
+    /// <summary>The Folder | S3 | Drive segments of the source and target (not the storage format or compare switches).</summary>
+    private static IEnumerable<RadioButton> KindSwitches(DependencyObject root) =>
+        FindAll<RadioButton>(root).Where(r => r.CommandParameter is "Folder" or "S3" or "Drive");
 
     private static IEnumerable<T> FindAll<T>(DependencyObject root) where T : DependencyObject
     {

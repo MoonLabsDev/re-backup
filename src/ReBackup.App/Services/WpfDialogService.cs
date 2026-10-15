@@ -3,6 +3,7 @@ using System.Windows;
 using Microsoft.Win32;
 using System.Text.Json;
 using ReBackup.App.ViewModels;
+using ReBackup.App.Views;
 using ReBackup.Core.Versions;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Shared.Wpf.S3;
@@ -114,6 +115,10 @@ public sealed class WpfDialogService(Func<S3ConnectionStore?> connections, Func<
             PickKeyFile);
         return ShowOwned(new DriveAccountDialog(viewModel)) == true ? viewModel.Result : null;
     }
+
+    public void ShowCopyPlan(CopyPlanViewModel viewModel) => ShowOwned(new CopyPlanDialog(viewModel));
+
+    public void ShowVerify(VerifyViewModel viewModel) => ShowOwned(new VerifyDialog(viewModel));
 
     /// <summary>"New account…" in the connection dialog: the account dialog, then the account is stored.</summary>
     private DriveAccount? CreateDriveAccount(DriveConnections store)

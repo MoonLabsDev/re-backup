@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
+using ReBackup.App.Services;
 using ReBackup.Core.Versions;
 using ReBackup.Shared.IO;
 using ReBackup.Storage;
@@ -11,7 +11,10 @@ using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.App.ViewModels;
 
-/// <summary>The Versions tab: Open, Show in Explorer and the two restores of the selected entry.</summary>
+/// <summary>
+/// The Versions tab: Open, Show in Explorer, the two restores of the selected entry and, for incremental plans,
+/// "Restore to temp and open" of a folder or a whole version.
+/// </summary>
 public sealed partial class VersionsViewModel
 {
     /// <summary>Paths and reasons listed in a confirmation's message (the failures dialog lists them all).</summary>
@@ -20,20 +23,8 @@ public sealed partial class VersionsViewModel
     /// <summary>The progress line is updated at most this often (a restore of small files reports thousands per second).</summary>
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
-    /// <summary>
-    /// Types Windows runs rather than shows when they are opened: "Open" on one of them asks first, since it would start
-    /// a program or script from the backup. Windows' own list (<see cref="AssocIsDangerous"/>) is asked as well.
-    /// </summary>
-    private static readonly HashSet<string> RunnableExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".exe", ".com", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".jse", ".wsf", ".msi", ".scr", ".lnk", ".url", ".reg",
-        ".hta", ".cpl",
-        // further types the shell executes in the same way
-        ".pif", ".vbe", ".wsh", ".msc", ".msp", ".jar", ".psm1", ".appref-ms", ".application", ".scf",
-        ".ws", ".vb", ".chm", ".py", ".pyw", ".pyz", ".settingcontent-ms", ".library-ms", ".search-ms", ".sct", ".shb",
-        ".shs", ".website", ".diagcab", ".appinstaller", ".msix", ".appx", ".gadget", ".ps1xml", ".psd1", ".mst", ".ins",
-        ".isp",
-    };
+    /// <summary>A folder or version larger than this (1 GB) is copied into the temp folder only after a confirmation.</summary>
+    public const long TempRestoreConfirmBytes = 1_073_741_824;
 
     private CancellationTokenSource? _restoreCts;
 
@@ -42,7 +33,7 @@ public sealed partial class VersionsViewModel
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RestoreToOriginalCommand), nameof(RestoreToCommand), nameof(CancelRestoreCommand),
-        nameof(DeleteVersionsCommand))]
+        nameof(DeleteVersionsCommand), nameof(RestoreSelectedToTempCommand), nameof(RestoreVersionToTempCommand))]
     private bool _isRestoring;
 
     /// <summary>"Restoring 120 of 300 files · 34 %" while a restore runs (Versions tab and plan card).</summary>
@@ -60,6 +51,13 @@ public sealed partial class VersionsViewModel
         ShowSelectedInExplorerCommand.NotifyCanExecuteChanged();
         RestoreToOriginalCommand.NotifyCanExecuteChanged();
         RestoreToCommand.NotifyCanExecuteChanged();
+        RestoreSelectedToTempCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnVersionStatesChanged()
+    {
+        OnTreeSelectionChanged();
+        RestoreVersionToTempCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -80,23 +78,37 @@ public sealed partial class VersionsViewModel
         }
     }
 
-    private bool CanOpenSelected() => Selection is { Node.IsDirectory: false };
+    // A damaged version (a pool version without a usable manifest) has nothing to open or restore.
+    private bool CanOpenSelected() => Selection is { Node.IsDirectory: false, Version.IsDamaged: false };
 
-    private bool CanActOnSelected() => Selection is not null;
+    private bool CanActOnSelected() => ShowExplorerActions && Selection is not null;
 
-    private bool CanRestore() => !IsRestoring && !IsDeleting && Selection is not null;
+    private bool CanRestore() => !IsRestoring && !IsDeleting && Selection is { Version.IsDamaged: false };
+
+    private bool CanRestoreSelectedToTemp() =>
+        ShowTempRestore && !IsRestoring && !IsDeleting && Selection is { Node.IsDirectory: true, Version.IsDamaged: false };
+
+    private bool CanRestoreVersionToTemp() =>
+        ShowTempRestore && !IsRestoring && !IsDeleting && SelectedVersion is { IsDamaged: false };
 
     /// <summary>
-    /// Opens the copy of the selected file in the version folder with its program (meant read-only). A program, script
-    /// or shortcut is never started from a backup: its folder is shown in Explorer instead, with the file selected.
+    /// Opens the copy of the selected file in the version folder with its program (meant read-only); when the version
+    /// holds no files to open there (incremental plans, targets that are no folder), through a temporary copy. A
+    /// program, script or shortcut is never started from a backup: its folder is shown in Explorer instead, with the
+    /// file selected.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanOpenSelected))]
     private async Task OpenSelectedAsync()
     {
         if (Current() is not { Node.IsDirectory: false } selection)
             return;
-        var (folder, path) = (FolderOf(selection.Version) ?? "", selection.Node.Path);
-        if (IsRunnable(Path.GetExtension(selection.Node.Name)))
+        if (FolderOf(selection.Version) is not { } folder)
+        {
+            await OpenThroughTempAsync(selection.Version, selection.Node.Path, selection.Node.Name, isFolder: false);
+            return;
+        }
+        var path = selection.Node.Path;
+        if (RunnableFiles.IsRunnable(Path.GetExtension(selection.Node.Name)))
         {
             if (!await Task.Run(() => _files.ShowInExplorer(folder, path)))
                 _context.ReportStatus(LocText.Of("restore.notInVersion", ("path", path)));
@@ -106,6 +118,99 @@ public sealed partial class VersionsViewModel
         }
         if (!await Task.Run(() => _files.OpenFile(folder, path)))
             _context.ReportStatus(LocText.Of("restore.cannotOpen", ("path", path)));
+    }
+
+    /// <summary>Copies the selected folder into the temp folder and opens it in Explorer (incremental plans).</summary>
+    [RelayCommand(CanExecute = nameof(CanRestoreSelectedToTemp))]
+    private async Task RestoreSelectedToTempAsync()
+    {
+        if (Current() is not { Node.IsDirectory: true, Version.IsDamaged: false } selection)
+            return;
+        var (node, version) = selection;
+        await RestoreToTempAsync(version, node.Path, node.Name, node.Stats?.Size ?? 0);
+    }
+
+    /// <summary>Copies the selected version into the temp folder and opens it in Explorer (incremental plans).</summary>
+    [RelayCommand(CanExecute = nameof(CanRestoreVersionToTemp))]
+    private async Task RestoreVersionToTempAsync()
+    {
+        if (SelectedVersion is not { IsDamaged: false } row)
+            return;
+        await RestoreToTempAsync(row, "", row.Name, row.Info.TotalBytes ?? row.Indexed?.TotalBytes ?? 0);
+    }
+
+    /// <summary>"Restore to temp and open" of a folder ("" = the whole version), asking first above 1 GB.</summary>
+    private async Task RestoreToTempAsync(VersionRowViewModel version, string relative, string name, long bytes)
+    {
+        if (IsRestoring)
+            return;
+        if (bytes > TempRestoreConfirmBytes && !_context.Dialogs.ConfirmDefaultNo(Loc.T("restore.temp.title"),
+                Loc.F("restore.temp.confirmLarge", ("item", LocText.Of("restore.item", ("path", name))),
+                    ("size", Formats.Bytes(bytes)))))
+            return;
+        await OpenThroughTempAsync(version, relative, name, isFolder: true);
+    }
+
+    /// <summary>
+    /// Copies the entry into the temp folder (verified) and opens it, like a restore: the restore buttons are off and
+    /// "Cancel" stops it meanwhile. The outcome goes to the footer.
+    /// </summary>
+    private async Task OpenThroughTempAsync(VersionRowViewModel version, string relative, string name, bool isFolder)
+    {
+        if (IsRestoring)
+            return;
+        if (_context.TempOpener is not { } temp || _versionsLocation is not { } location)
+        {
+            _context.ReportStatus(LocText.Of("restore.cannotOpen", ("path", relative)));
+            return;
+        }
+        var versionPath = version.Info.Path;
+        var cts = _restoreCts = new CancellationTokenSource();
+        IsRestoring = true;
+        RestoreFraction = 0;
+        RestoreProgress = LocText.Of("restore.temp.preparing", ("name", name));
+        _context.ReportStatus(RestoreProgress);
+        LocText outcome;
+        try
+        {
+            var run = Task.Run(async () =>
+            {
+                var versions = await VersionViews.OpenAsync(_context.Storages.Open(location), versionPath, cts.Token);
+                return isFolder
+                    ? await temp.OpenFolderAsync(versions, versionPath, relative, cts.Token)
+                    : await temp.OpenFileAsync(versions, versionPath, relative, cts.Token);
+            });
+            _restoreRun = run;
+            var opened = await run;
+            outcome = !opened ? LocText.Of("restore.temp.notOpened", ("name", name))
+                : !isFolder && RunnableFiles.IsRunnable(Path.GetExtension(name)) ? LocText.Of("restore.runnable", ("name", name))
+                : LocText.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = LocText.Of("restore.temp.canceled", ("name", name));
+        }
+        catch (Exception ex)
+        {
+            // e.g. the entry is gone, or the target cannot be read
+            var reason = ex is ArgumentException { ParamName: { } param }
+                ? ex.Message.Replace($" (Parameter '{param}')", "", StringComparison.Ordinal)
+                : ex.Message;
+            outcome = new LocText(() => Loc.F("restore.temp.failed", ("name", name), ("error", Loc.Known(reason))));
+        }
+        finally
+        {
+            if (ReferenceEquals(_restoreCts, cts))
+            {
+                _restoreCts = null;
+                _restoreRun = null;
+                IsRestoring = false;
+                RestoreProgress = LocText.Empty;
+                RestoreFraction = 0;
+            }
+            cts.Dispose();
+        }
+        _context.ReportStatus(outcome);
     }
 
     /// <summary>Shows the selected entry in Explorer, selected in its folder.</summary>
@@ -239,9 +344,12 @@ public sealed partial class VersionsViewModel
                     return;
                 }
                 var factory = _context.Storages;
-                var versions = factory.Open(versionsLocation);
+                var targetStorage = factory.Open(versionsLocation);
                 var destination = factory.Open(destinationLocation);
-                plan = await Task.Run(() => Restorer.PlanAsync(versions, versionPath, [relative], destination, mode, cts.Token),
+                // A pool version is read through its manifest (its files are in the pool); a full one from its folder.
+                plan = await Task.Run(async () => await Restorer.PlanAsync(
+                        await VersionViews.OpenAsync(targetStorage, versionPath, cts.Token), versionPath, [relative], destination,
+                        mode, cts.Token),
                     cts.Token);
             }
             catch (OperationCanceledException)
@@ -379,27 +487,6 @@ public sealed partial class VersionsViewModel
             return null;   // Restorer.PlanAsync rejects such a path with its own message
         }
     }
-
-    private static bool IsRunnable(string extension)
-    {
-        if (extension.Length == 0)
-            return false;
-        if (RunnableExtensions.Contains(extension))
-            return true;
-        try
-        {
-            return AssocIsDangerous(extension);
-        }
-        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>Windows' list of file types that are dangerous to open (shlwapi, Windows XP SP2 and later).</summary>
-    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AssocIsDangerous(string pszAssoc);
 
     /// <summary>"Restore canceled; nothing was written.", with the parts of the version that could not be read.</summary>
     private static LocText CanceledNothing(RestorePlan plan)

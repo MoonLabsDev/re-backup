@@ -157,9 +157,12 @@ public sealed class MainViewModelFixture : IDisposable
         return plan;
     }
 
+    /// <summary>What <see cref="Create"/> opens locations with; the real folders and storages when null.</summary>
+    public IStorageFactory? Storages { get; set; }
+
     public MainViewModel Create()
     {
-        var storages = new StorageFactory();
+        var storages = Storages ?? new StorageFactory();
         var queue = Queue = new BackupQueue(new BackupRunner(storages), planId => new RunLog(Paths.LogFileFor(planId)));
         var scheduler = new Scheduler((_, _) => { });
         var versionIndex = new VersionIndexWorker(new VersionIndexSet(Path.Combine(Root, "index")));
@@ -210,6 +213,19 @@ public sealed class FakeDialogs : IDialogService
     public bool? YesNoCancelAnswer { get; set; } = false;
 
     public List<string> Errors { get; } = [];
+
+    /// <summary>The messages shown with <see cref="ShowInfo"/>.</summary>
+    public List<string> Infos { get; } = [];
+
+    /// <summary>The "Copy plan…" dialogs opened; the test drives them.</summary>
+    public List<CopyPlanViewModel> CopyDialogs { get; } = [];
+
+    /// <summary>The "Verify backup…" dialogs opened; the test drives them.</summary>
+    public List<VerifyViewModel> VerifyDialogs { get; } = [];
+
+    public void ShowCopyPlan(CopyPlanViewModel viewModel) => CopyDialogs.Add(viewModel);
+
+    public void ShowVerify(VerifyViewModel viewModel) => VerifyDialogs.Add(viewModel);
 
     /// <summary>The questions asked (Confirm and ConfirmDefaultNo).</summary>
     public List<string> Confirms { get; } = [];
@@ -278,7 +294,7 @@ public sealed class FakeDialogs : IDialogService
 
     public void ShowError(string title, string message) => Errors.Add(message);
 
-    public void ShowInfo(string title, string message) { }
+    public void ShowInfo(string title, string message) => Infos.Add(message);
 
     public ConflictPolicy? AskConflictPolicy(string title, string message, IReadOnlyList<string>? details = null) => null;
 
@@ -287,13 +303,28 @@ public sealed class FakeDialogs : IDialogService
     public bool ConfirmFailures(string title, string message, IReadOnlyList<string> lines, string confirmText) => false;
 }
 
+/// <summary>Opens nothing (every call answers false) and records the files it was asked to open or show.</summary>
 public sealed class FakeFolderOpener : IFolderOpener
 {
+    public List<(string Folder, string Path)> OpenedFiles { get; } = [];
+
+    public List<(string Folder, string Path)> Shown { get; } = [];
+
     public Task<bool> OpenVersionFolderAsync(string? target, string? versionName) => Task.FromResult(false);
 
-    public bool OpenFile(string versionFolder, string relativePath) => false;
+    public bool OpenFile(string versionFolder, string relativePath)
+    {
+        lock (OpenedFiles)
+            OpenedFiles.Add((versionFolder, relativePath));
+        return false;
+    }
 
-    public bool ShowInExplorer(string versionFolder, string relativePath) => false;
+    public bool ShowInExplorer(string versionFolder, string relativePath)
+    {
+        lock (Shown)
+            Shown.Add((versionFolder, relativePath));
+        return false;
+    }
 }
 
 /// <summary>A Drive API with shared drives and items set by the test; every other call fails.</summary>

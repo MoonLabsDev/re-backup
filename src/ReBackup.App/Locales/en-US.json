@@ -150,6 +150,7 @@
       "freeSpacePlanGone": "Old versions were not deleted to free space: the plan no longer exists.",
       "freeSpaceExamineFailed": "Old versions could not be examined to free space: {error}",
       "freeSpaceDeleteFailed": "\"{version}\" could not be deleted to free space: {error}",
+      "freeSpaceNoCollect": "Old versions were not deleted to free space, because the space they hold could not be freed now. {reason}",
       "remainsFailed": "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
       "removedRemainsLeft": "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
       "unfinishedFailed": "An unfinished backup could not be deleted (\"{name}\"): {error}",
@@ -161,7 +162,30 @@
       "takeOverChanged": "\"{name}\" was not taken over: its marker has changed meanwhile.",
       "takeOverUnexamined": "\"{name}\" could not be examined and was left as it is.",
       "leftoverPartialWithManifest": "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
-      "indexFailed": "The version index could not be updated: {error}"
+      "indexFailed": "The version index could not be updated: {error}",
+      "storeFullOnPool": "The target holds an incremental pool, but this plan is a full plan. Nothing was changed.",
+      "storePoolOnFull": "This plan is incremental, but the target already holds full versions of it. Nothing was changed.",
+      "storeOtherPlan": "The target's pool belongs to another plan. Nothing was changed.",
+      "storeUnsupported": "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
+      "storeNotEmpty": "This plan is incremental, but the target already holds backups of another plan. Choose an empty target. Nothing was changed.",
+      "targetLocked": "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
+      "lockReleaseFailed": "The target's lock could not be released: {error}",
+      "copyRunning": "The plan is being copied (\"Copy plan…\"); the backup was not started.",
+      "copyUnfinished": "The plan is an unfinished copy; finish it with \"Continue copy…\" first. The backup was not started."
+    },
+    "gc": {
+      "skippedMarkers": "Unused backup content was not removed: a version is still being written or deleted.",
+      "manifestUnreadable": "Unused backup content was not removed: the manifest of \"{version}\" cannot be read.",
+      "failed": "Unused backup content could not be removed: {error}"
+    },
+    "copy": {
+      "overlaps": "The new target is the plan's target, lies inside it or holds it. Nothing was copied.",
+      "failed": "The copy stopped: {error}",
+      "versionFailed": "\"{version}\" was not copied: {error}",
+      "fileFailed": "\"{path}\" in \"{version}\" was not copied: {error}",
+      "manifestUnreadable": "\"{version}\" was not copied: its manifest cannot be read.",
+      "notOwned": "Folders named like versions of the plan that were not copied because they were renamed by hand, belong to another plan or have no manifest: {count}",
+      "folderTaken": "\"{version}\" was not copied: the new target already holds a folder \"{folder}\"."
     },
     "skip": {
       "ignoreFileUnreadable": "ignore file could not be read; its patterns were not applied",
@@ -195,7 +219,9 @@
       "destinationLink": "the destination folder is a link",
       "fileInPlaceOfFolder": "a file stands where the folder \"{folder}\" belongs",
       "notAPath": "\"{path}\" is not a path inside the version.",
-      "accessDenied": "access denied (read-only, or in use by another program)"
+      "accessDenied": "access denied (read-only, or in use by another program)",
+      "contentMismatch": "the content does not match its checksum in the backup (the backup copy is damaged)",
+      "blobMissing": "its content is missing from the backup's pool (the backup is damaged)"
     },
     "index": {
       "targetUnavailable": "The target folder \"{folder}\" is not available."
@@ -234,6 +260,10 @@
       "list": "Plans",
       "moveUp": "Move up",
       "moveDown": "Move down",
+      "copy": "Copy plan…",
+      "verify": "Verify backup…",
+      "releaseLock": "Release lock…",
+      "continueCopy": "Continue copy…",
       "deleteConfirm": "Delete plan \"{plan}\"?\n\nBackups already stored in the target are not touched.",
       "deleteHistory": "Also delete this plan's run history?",
       "historyNotDeleted": "The plan was deleted, but its run history could not be: {error}"
@@ -267,6 +297,12 @@
       },
       "deleteCancelBackup": "Cancel the backup of \"{plan}\" before deleting the plan.",
       "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "deleteWaitCopy": "Wait for the copy of \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "copyRunning": "\"{plan}\" is being copied; run it again once the copy has finished.",
+      "copying": "Copying \"{plan}\"…",
+      "copied": "The copy \"{plan}\" was added. It is disabled until you enable it.",
+      "copyAdded": "\"{plan}\" was added as an unfinished copy; the copy is running.",
+      "copyUnfinished": "\"{plan}\" is an unfinished copy. Finish it with \"Continue copy…\" before running it.",
       "saved": "Saved \"{plan}\".",
       "notSaved": "Not saved: fix the errors shown in the plan.",
       "scheduledInvalid": "The scheduled backup of \"{plan}\" was not started: {reason}",
@@ -397,6 +433,12 @@
       "exit": "A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and exit ReBackup?"
     },
     "restoreStuck": "A restore did not stop within 10 seconds. A file it was writing may be incomplete (a \"*.rebackup-tmp\" file next to it).",
+    "poolJobRunning": {
+      "title": "Copy or verify in progress",
+      "exit": "A copy or verify is running. It is stopped and its lock is released; an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and exit ReBackup?",
+      "restart": "A copy or verify is running. It is stopped and its lock is released; an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and restart ReBackup?"
+    },
+    "poolJobStuck": "A copy or verify did not stop within 10 seconds. Its lock may be left on the target; \"Release lock…\" removes it.",
     "backupRunning": {
       "title": "Backup in progress",
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
@@ -483,6 +525,36 @@
       "enabled": "Run on schedule",
       "enabledToolTip": "When off, the plan runs only when started by hand.",
       "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+    },
+    "copyUnfinished": {
+      "card": "Copy unfinished",
+      "banner": "This plan is an unfinished copy. It cannot be enabled or run until \"Continue copy…\" has finished the copy.",
+      "enable": "An unfinished copy cannot be enabled. Finish it with \"Continue copy…\" first.",
+      "rename": "An unfinished copy cannot be renamed. Finish it with \"Continue copy…\" first."
+    },
+    "lock": {
+      "banner": "Locked by {host} ({operation}) since {time}",
+      "unreadable": "Locked (unreadable lock file)",
+      "release": "Release lock…",
+      "releaseTitle": "Release lock",
+      "releaseConfirm": "Release the lock that {host} took for \"{operation}\" on {time}?\n\nOnly do this when nothing runs on the target any more, for example after a crash. A backup, deletion, verify or copy that still holds the lock could damage the backup.",
+      "releaseConfirmUnreadable": "The target's lock file cannot be read. Remove it?\n\nOnly do this when nothing runs on the target any more, for example after a crash.",
+      "changed": "The lock has changed meanwhile and was not released. Check who holds it now and try again.",
+      "released": "The lock of \"{plan}\" was released.",
+      "releaseFailed": "The lock could not be released: {error}"
+    },
+    "format": {
+      "title": "Storage format",
+      "full": "Full copies",
+      "incremental": "Incremental",
+      "hint": "Cannot be changed later – use \"Copy plan…\" instead."
+    },
+    "compare": {
+      "title": "Compare files",
+      "fast": "Fast",
+      "safe": "Safe",
+      "fastToolTip": "Unchanged files (path, size, modified time) are not read.",
+      "safeToolTip": "Every file is read and hashed; only new content is uploaded."
     },
     "kind": {
       "folder": "Folder",
@@ -764,6 +836,7 @@
       "toolTip": "Delete the selected versions (Del); several with Ctrl or Shift",
       "name": "Delete the selected versions",
       "backupRunning": "A backup of this plan is queued or running. Delete versions once it has finished.",
+      "copyRunning": "This plan is being copied. Delete versions once the copy has finished.",
       "confirm": "Delete this version for good?\n\n{versions}\n\nIts folder ({size}) is removed from the target and the version leaves the index. This cannot be undone.",
       "confirmMany": "Delete these {count} versions for good?\n\n{versions}{more}\n\nTogether {size}. Their folders are removed from the target and the versions leave the index. This cannot be undone.",
       "notManagedNote": {
@@ -815,7 +888,15 @@
       "notIndexed": "not indexed",
       "indexing": "indexing…",
       "indexed": "indexed",
-      "failed": "could not be indexed"
+      "failed": "could not be indexed",
+      "damaged": "damaged"
+    },
+    "damaged": {
+      "toolTip": "The manifest of this version is missing or cannot be read: its files cannot be restored or opened."
+    },
+    "exclusive": {
+      "text": "{size} exclusive",
+      "toolTip": "Space only this version uses in the pool: deleting it frees about this much"
     },
     "foreign": {
       "list": "Folders other computers are writing or deleting",
@@ -852,15 +933,18 @@
       "restoreTo": "Restore to…",
       "restoreToName": "Restore to a folder",
       "restoreToToolTip": "Copy the selection into a folder you choose",
+      "restoreToTemp": "Restore to temp and open",
+      "restoreToTempToolTip": "Copy the selected folder into a temporary folder and open it in Explorer",
       "cancelRestore": "Cancel the restore",
       "cancelRestoreToolTip": "Stop after the current file"
     },
-    "menu": { "restoreOriginal": "Restore to original location…" },
+    "menu": { "restoreOriginal": "Restore to original location…", "restoreToTemp": "Restore to temp and open" },
     "compare": { "notManaged": " (not managed)" },
     "tree": {
       "name": "Version tree",
       "selectVersion": "Select a version.",
       "notIndexed": "This version could not be indexed.",
+      "damaged": "This version is damaged: its manifest is missing or cannot be read, so its files cannot be restored.",
       "indexing": "Indexing…",
       "otherIndexing": "The version to compare with is being indexed…",
       "unreadable": "The version cannot be read from the index: {error}",
@@ -889,6 +973,14 @@
     "notInVersion": "\"{path}\" no longer exists in the version.",
     "runnable": "\"{name}\" is a program, script or shortcut; it is not run from a backup. Its folder is shown instead.",
     "cannotOpen": "\"{path}\" cannot be opened: it no longer exists in the version, or no program opens it.",
+    "temp": {
+      "title": "Restore to temp and open",
+      "preparing": "Copying \"{name}\" into a temporary folder…",
+      "confirmLarge": "{item} holds {size}. Copy it into a temporary folder and open it?\n\nTemporary copies are deleted a day later.",
+      "notOpened": "\"{name}\" was not opened: it could not be copied completely (a file may be damaged in the backup), or no program opens it.",
+      "failed": "\"{name}\" could not be opened: {error}",
+      "canceled": "Opening \"{name}\" was canceled."
+    },
     "canceling": "Canceling…",
     "cancelingAfterFile": "Canceling after the current file…",
     "reindexing": "The version is being indexed again; try once the tree has been reloaded.",
@@ -940,6 +1032,69 @@
       "failed": "{count:N0} failed",
       "finished": "Restore finished: {parts}.",
       "canceled": "Restore canceled: {parts}."
+    }
+  },
+  "copy": {
+    "title": "Copy plan",
+    "heading": "Copy \"{plan}\" to a new target",
+    "headingResume": "Continue copying \"{plan}\" into \"{copy}\"",
+    "hint": "All versions are copied, oldest first. The new plan gets all settings and retention rules and is created disabled. Nothing on the plan's own target is changed.",
+    "defaultName": "{plan} (copy)",
+    "start": "Copy",
+    "checking": "Checking the new target…",
+    "progress": "Version {current} of {count} · {version} · {done} of {total}",
+    "canceling": "Stopping after the current file…",
+    "canceled": "The copy was stopped. The plan stays an unfinished copy; \"Continue copy…\" continues where it stopped.",
+    "canceledBeforeStart": "The copy was stopped before it started. Nothing was written.",
+    "done": "Versions copied: {copied}. Already on the new target: {skipped}.",
+    "added": "The plan \"{plan}\" was added. It is disabled until you enable it.",
+    "failures": {
+      "one": "{count} problem, listed below.",
+      "other": "{count} problems, listed below."
+    },
+    "failuresName": "Problems of the copy",
+    "notFinished": "The copy did not finish; the plan \"{plan}\" stays an unfinished copy. \"Continue copy…\" tries again; see the problems below.",
+    "sourceGone": "\"{plan}\" is an unfinished copy of a plan that no longer exists, so the copy cannot be finished. You can delete \"{plan}\" with \"Delete plan\"; the backups already copied to its target are not touched.",
+    "notAdded": "The new plan could not be saved.",
+    "saveFailed": "The new plan could not be saved: {error}",
+    "checkFailed": "The targets could not be checked: {error}",
+    "backupRunning": "A backup of \"{plan}\" is queued or running. Copy the plan once it has finished.",
+    "alreadyCopying": "\"{plan}\" is being copied already.",
+    "refusal": {
+      "sameOrNested": "The new target is the plan's target, lies inside it or holds it. Choose another target.",
+      "targetNotEmpty": "The new target is not empty: it holds backups already. Choose an empty target.",
+      "sourceLocked": "The plan's target is in use (a backup, deletion, verify or another copy). Try again once it has finished."
+    }
+  },
+  "verify": {
+    "title": "Verify backup",
+    "heading": "Verify the backup of \"{plan}\"",
+    "hint": "Nothing is repaired. The plan's target is locked while the check runs.",
+    "mode": "Check",
+    "quick": "Quick",
+    "quickToolTip": "Checks that the content of every file of every version is in the backup",
+    "thorough": "Thorough",
+    "thoroughToolTip": "Also reads every content and checks that it is unchanged; takes as long as reading the whole backup",
+    "start": "Verify",
+    "starting": "Starting…",
+    "progress": "{done:N0} of {count:N0} · {current}",
+    "canceling": "Stopping…",
+    "canceled": "The verify was stopped.",
+    "healthy": "No problems found.",
+    "problems": {
+      "one": "{count} problem found:",
+      "other": "{count} problems found:"
+    },
+    "problemsName": "Problems found",
+    "problem": "Problem",
+    "failed": "The backup could not be verified: {error}",
+    "locked": "The target is in use by {host} ({operation}) since {time}. Nothing was verified.",
+    "lockedUnknown": "The target is in use. Nothing was verified.",
+    "lockNotReleased": "The target's lock could not be released: {error}",
+    "kind": {
+      "missing": "content missing",
+      "corrupt": "content damaged",
+      "manifestUnreadable": "manifest cannot be read"
     }
   },
   "dialog": {

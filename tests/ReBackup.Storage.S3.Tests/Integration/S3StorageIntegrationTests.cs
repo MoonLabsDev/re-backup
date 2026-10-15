@@ -118,6 +118,27 @@ public sealed class S3StorageIntegrationTests(S3ServerFixture server)
     }
 
     [SkippableFact]
+    public async Task Exclusive_create_conflicts_when_file_exists()
+    {
+        var storage = server.CreateStorage(NewPrefix());
+        await using (var first = await storage.CreateAsync("re-lock.json", new CreateOptions(Overwrite: false, Durable: true), Ct))
+        {
+            await first.WriteAsync("first"u8.ToArray(), Ct);
+            await first.CommitAsync(Ct);
+        }
+
+        var act = async () =>
+        {
+            await using var second = await storage.CreateAsync("re-lock.json", new CreateOptions(Overwrite: false, Durable: true), Ct);
+            await second.WriteAsync("second"u8.ToArray(), Ct);
+            await second.CommitAsync(Ct);
+        };
+
+        await act.Should().ThrowAsync<StorageConflictException>();
+        Encoding.UTF8.GetString(await ReadAllAsync(storage, "re-lock.json")).Should().Be("first");
+    }
+
+    [SkippableFact]
     public async Task Exclusive_multipart_commit_over_a_key_committed_in_between_is_a_conflict()
     {
         var prefix = NewPrefix();

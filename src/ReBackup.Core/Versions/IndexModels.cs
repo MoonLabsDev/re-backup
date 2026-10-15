@@ -3,8 +3,11 @@ using ReBackup.Storage;
 
 namespace ReBackup.Core.Versions;
 
-/// <summary>Where the index took a version's file list from.</summary>
-public enum IndexOrigin { Manifest, Scan }
+/// <summary>
+/// Where the index took a version's file list from. Damaged: a pool version whose manifest is missing or unreadable;
+/// it has no files (its folder holds nothing else to scan).
+/// </summary>
+public enum IndexOrigin { Manifest, Scan, Damaged }
 
 /// <summary>A version as the index knows it.</summary>
 public sealed record IndexedVersion(long Id, string Name, DateTime LocalTime, VersionOwnership Ownership, string? Source,

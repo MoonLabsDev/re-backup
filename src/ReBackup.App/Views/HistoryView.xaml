@@ -126,14 +126,26 @@
                         <DataGridTemplateColumn Width="48" CanUserResize="False" CanUserSort="False">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Button Style="{StaticResource Button.Icon}" Width="28" Height="26"
+                                    <Button Width="28" Height="26"
                                             HorizontalAlignment="Center"
                                             AutomationProperties.Name="{l:Loc history.openVersion.name}"
                                             ToolTip="{Binding OpenVersionToolTip}" ToolTipService.ShowOnDisabled="True"
-                                            Visibility="{Binding HasVersion, Converter={StaticResource BoolToVisibility}}"
                                             IsEnabled="{Binding CanOpenVersion}"
                                             Command="{Binding DataContext.OpenRunVersionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                             CommandParameter="{Binding}">
+                                        <!-- Hidden for incremental plans: their version folders hold only the manifest. -->
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource Button.Icon}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasVersion}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.IncrementalIsFull, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
 <Image Style="{StaticResource Image.FolderColored}" />
 </Button>
                                 </DataTemplate>

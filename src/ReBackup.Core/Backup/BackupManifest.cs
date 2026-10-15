@@ -9,6 +9,9 @@ public sealed class BackupManifest
     /// <summary>The format this program writes.</summary>
     public const int CurrentFormatVersion = 2;
 
+    /// <summary>The format of a version in an incremental plan's pool: its files are blobs in <c>re-pool</c>, referenced by hash.</summary>
+    public const int PoolFormatVersion = 3;
+
     public int FormatVersion { get; set; } = CurrentFormatVersion;
     public string PlanId { get; set; } = "";
     public string PlanName { get; set; } = "";

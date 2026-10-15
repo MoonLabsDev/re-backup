@@ -20,8 +20,17 @@ public sealed partial class VersionRowViewModel : ObservableObject
     /// replaced after every sync and cleared while the version is being imported again.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(SizeText), nameof(FilesText))]
+    [NotifyPropertyChangedFor(nameof(SizeText), nameof(FilesText), nameof(IsDamaged), nameof(DamagedToolTip),
+        nameof(IndexStateText))]
     private IndexedVersion? _indexed;
+
+    /// <summary>
+    /// What only this version uses in the pool (bytes of contents no other version refers to); null for versions of
+    /// full plans, and until the index has answered.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ExclusiveSizeText))]
+    private long? _exclusiveBytes;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SizeText), nameof(FilesText), nameof(DateText), nameof(IsManaged), nameof(ReasonText))]
@@ -34,6 +43,16 @@ public sealed partial class VersionRowViewModel : ObservableObject
     public string DateText => Formats.DateAndTime(Info.LocalTime);
 
     public string SizeText => (Info.TotalBytes ?? Indexed?.TotalBytes) is { } bytes ? Formats.Bytes(bytes) : "—";
+
+    /// <summary>"1.2 MB exclusive" for versions of incremental plans; empty otherwise.</summary>
+    public string ExclusiveSizeText =>
+        ExclusiveBytes is { } bytes ? Loc.F("versions.exclusive.text", ("size", Formats.Bytes(bytes))) : "";
+
+    /// <summary>A pool version whose manifest is missing or unreadable: it has no files to restore or open.</summary>
+    public bool IsDamaged => Indexed?.Origin == IndexOrigin.Damaged;
+
+    /// <summary>Why the row is flagged; empty for intact versions.</summary>
+    public string DamagedToolTip => IsDamaged ? Loc.T("versions.damaged.toolTip") : "";
 
     public string FilesText =>
         (Info.FileCount ?? Indexed?.FileCount) is { } count ? Loc.F("common.fileCount", ("count", count)) : "—";
@@ -53,6 +72,7 @@ public sealed partial class VersionRowViewModel : ObservableObject
 
     public string IndexStateText => IndexState switch
     {
+        IndexState.Indexed when IsDamaged => Loc.T("versions.index.damaged"),
         IndexState.Indexing => Loc.T("versions.index.indexing"),
         IndexState.Indexed => Loc.T("versions.index.indexed"),
         IndexState.Failed => Loc.T("versions.index.failed"),

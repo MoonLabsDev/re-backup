@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -61,13 +62,13 @@ public sealed partial class MainViewModel : ObservableObject
         Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
-        IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null)
+        IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null, ITempOpener? tempOpener = null)
     {
         _folders = folders;
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
         _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
-            DescribeLocation: DescribeLocation);
+            DescribeLocation: DescribeLocation, TempOpener: tempOpener);
         // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
         _s3.Changed += (_, _) => RevalidateAll();
         _drive.Changed += (_, _) => RevalidateAll();
@@ -160,10 +161,14 @@ public sealed partial class MainViewModel : ObservableObject
             editor.Preview.RequestReevaluate();
     }
 
-    /// <summary>Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid or already active plans.</summary>
+    /// <summary>
+    /// Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid, already active or copied plans and for
+    /// unfinished copies.
+    /// </summary>
     public IReadOnlyList<(string Id, string Name, bool CanRun)> RunnablePlans =>
         Plans.Where(p => !p.IsNew)
-            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive))
+            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive && !p.IsCopying &&
+                                         !p.IsCopyUnfinished))
             .ToList();
 
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
@@ -294,6 +299,11 @@ public sealed partial class MainViewModel : ObservableObject
             SetStatus(LocText.Of("shell.status.deleteWaitRestore", ("plan", editor.Name)));
             return;
         }
+        if (editor.IsCopying)
+        {
+            SetStatus(LocText.Of("shell.status.deleteWaitCopy", ("plan", editor.Name)));
+            return;
+        }
 
         if (!editor.IsNew)
         {
@@ -334,11 +344,30 @@ public sealed partial class MainViewModel : ObservableObject
         editor.HistoryCoverage.Invalidate();
         if (index >= 0)
             Plans.RemoveAt(index);
+        if (!editor.IsNew)
+            _ = DeleteIndexAsync(editor.Id);
         RevalidateAll();
         SelectedPlan = Plans.Count == 0 ? null : Plans[Math.Clamp(index, 0, Plans.Count - 1)];
         PublishPlans();
         if (!editor.IsNew)
             SavePlanOrder();   // drops the deleted plan's id
+    }
+
+    /// <summary>
+    /// Deletes a deleted plan's version index once the work queued on it (a sync that is being canceled) has ended. It
+    /// is a cache only: a failure is logged, and the next start removes the file as an orphan.
+    /// </summary>
+    private async Task DeleteIndexAsync(string planId)
+    {
+        try
+        {
+            await _versions.Worker.WhenIdle(planId);
+            await Task.Run(() => _versions.Indexes.Delete(planId));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Trace.TraceWarning($"The version index of the deleted plan {planId} could not be deleted: {ex.Message}");
+        }
     }
 
     /// <summary>Moves the plan (the selected one when null) one place up; disabled for the first plan.</summary>
@@ -485,7 +514,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings() => _openSettings();
 
-    /// <summary>Queues a run of the saved plan. False when it is dirty, invalid, unknown or already queued.</summary>
+    /// <summary>Queues a run of the saved plan. False when it is dirty, invalid, unknown, already queued or being copied.</summary>
     public bool RunPlan(string planId)
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase));
@@ -504,6 +533,17 @@ public sealed partial class MainViewModel : ObservableObject
             var plan = editor.SavedPlan();
             if (!plan.Enabled)
                 return;   // disabled after the scheduler decided
+            if (editor.IsCopying)
+            {
+                // "Copy plan…" reads its versions: no run may add or remove one meanwhile.
+                SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.copyRunning"));
+                return;
+            }
+            if (plan.CopyFromPlanId is not null)
+            {
+                SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.copyUnfinished"));
+                return;
+            }
             if (ScheduledRunBlocker(plan) is { } reason)
             {
                 SkipScheduledRun(editor, plan, trigger, reason);
@@ -680,6 +720,16 @@ public sealed partial class MainViewModel : ObservableObject
             SetStatus(LocText.Of("shell.status.saveFirst", ("plan", editor.Name)));
             return false;
         }
+        if (editor.IsCopying)
+        {
+            SetStatus(LocText.Of("shell.status.copyRunning", ("plan", editor.Name)));
+            return false;
+        }
+        if (editor.IsCopyUnfinished)
+        {
+            SetStatus(LocText.Of("shell.status.copyUnfinished", ("plan", editor.Name)));
+            return false;
+        }
 
         var request = new BackupRequest(editor.SavedPlan(), _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Manual);
         if (!_queue.Enqueue(request))
@@ -694,6 +744,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
         editor?.Run.Apply(update);
+        editor?.ReleaseLockCommand.NotifyCanExecuteChanged();   // not while its own run holds the lock
         if (update.Progress is null)
             RefreshQueuePositions();   // the queue changed: a job was added, started, removed or finished
         UpdateQueueStatus(update, editor?.Run);
@@ -713,6 +764,7 @@ public sealed partial class MainViewModel : ObservableObject
             editor.RetentionPreview.ReloadIfLoaded();
             editor.Versions.ReloadIfLoaded();
             editor.HistoryCoverage.ReloadIfLoaded();
+            _ = editor.RefreshLockAsync();
         }
         var planName = update.PlanName;
         var reason = result.Reason;

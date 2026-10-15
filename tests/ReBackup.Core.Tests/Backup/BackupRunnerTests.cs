@@ -608,6 +608,28 @@ public class BackupRunnerTests : IDisposable
         (await VersionCatalog.ListAsync(new FileSystemStorage(_target), "p1", "Projects")).Should().HaveCount(2);
     }
 
+    [Theory]
+    [InlineData("re-store.json", false)]
+    [InlineData("re-store.json", true)]
+    [InlineData("re-lock.json", false)]
+    [InlineData("re-lock.json", true)]
+    [InlineData("re-pool", false)]
+    [InlineData("re-pool", true)]
+    public async Task Source_root_entries_named_like_the_targets_pool_files_are_backed_up(string name, bool folder)
+    {
+        // These names live in the target's root, never inside a version folder: a pool mirrored by a full plan is kept.
+        var file = folder ? $"{name}/inner.txt" : name;
+        _tmp.WriteFile(folder ? $@"source\{name}\inner.txt" : $@"source\{name}", "content");
+
+        var entry = await Runner().RunAsync(Request(Plan()));
+
+        entry.Status.Should().Be(RunStatus.Completed);
+        entry.Skipped.Should().BeEmpty();
+        entry.FilesCopied.Should().Be(3);
+        File.ReadAllText(Path.Combine(VersionPath(), file.Replace('/', Path.DirectorySeparatorChar))).Should().Be("content");
+        (await VersionCatalog.ListAsync(new FileSystemStorage(_target), "p1", "Projects")).Should().ContainSingle();
+    }
+
     [Fact]
     public async Task Only_the_manifest_is_written_durably()
     {

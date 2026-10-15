@@ -78,39 +78,90 @@ public static class PlanValidator
             errors.Add(Message.Of("core.plan.targetNotSharedDrive"));
             target = null;
         }
-        if (source is null || target is null)
+        if (source is null || target is null ||
+            Nesting(plan.Source, source, plan.Target, target) is not (var targetInSource, var sourceInTarget))
             return;
-
-        bool targetInSource, sourceInTarget;
-        if (source.IsFolder && target.IsFolder)
-        {
-            targetInSource = PathUtil.IsSameOrInside(plan.Target.Path, plan.Source.Path);
-            sourceInTarget = PathUtil.IsSameOrInside(plan.Source.Path, plan.Target.Path);
-        }
-        else if ((source.Bucket is { } sourceBucket && target.Bucket is { } targetBucket && SameBucket(sourceBucket, targetBucket)) ||
-                 (source.Drive is { } sourceRoot && target.Drive is { } targetRoot && SameRoot(sourceRoot, targetRoot)))
-        {
-            targetInSource = IsSameOrInside(plan.Target.Path, plan.Source.Path);
-            sourceInTarget = IsSameOrInside(plan.Source.Path, plan.Target.Path);
-        }
-        else if (source.Drive is { } sourceDrive && target.Drive is { } targetDrive &&
-                 sourceDrive.SharedDriveId is { } sharedDrive &&
-                 string.Equals(sharedDrive, targetDrive.SharedDriveId, StringComparison.Ordinal))
-        {
-            // Different roots on one shared drive: without asking Drive, only a side that is the whole shared drive is
-            // known to hold the other (a folder root's place on the drive is not known here).
-            targetInSource = IsWholeSharedDrive(sourceDrive, plan.Source.Path);
-            sourceInTarget = IsWholeSharedDrive(targetDrive, plan.Target.Path);
-        }
-        else
-        {
-            return;
-        }
 
         if (targetInSource)
             errors.Add(Message.Of("core.plan.targetInsideSource"));
         else if (sourceInTarget)
             errors.Add(Message.Of("core.plan.sourceInsideTarget"));
+    }
+
+    /// <summary>
+    /// Whether two locations are the same or one lies inside the other, by the rules <see cref="Validate"/> applies to a
+    /// plan's source and target. Nothing is opened. A location that is not complete (no absolute folder path, no
+    /// connection) overlaps nothing. S3 and Drive locations are compared by the bucket or root the lookups give; without a
+    /// lookup, or when it does not know the connection or cannot be read, two locations on the same connection are still
+    /// compared by their paths.
+    /// </summary>
+    public static bool Overlaps(StorageLocation a, StorageLocation b, Func<string, ConnectionBucket?>? connections = null,
+        Func<string, DriveRoot?>? driveConnections = null)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+        return Resolve(a, connections, driveConnections) is { } first &&
+               Resolve(b, connections, driveConnections) is { } second &&
+               Nesting(a, first, b, second) is (var bInA, var aInB) && (bInA || aInB);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="targetLocation"/> is <paramref name="sourceLocation"/> or lies inside it, and the other way
+    /// round; null when the two cannot overlap (different kinds, buckets or roots).
+    /// </summary>
+    private static (bool TargetInSource, bool SourceInTarget)? Nesting(StorageLocation sourceLocation, CheckedLocation source,
+        StorageLocation targetLocation, CheckedLocation target)
+    {
+        if (source.IsFolder && target.IsFolder)
+            return (PathUtil.IsSameOrInside(targetLocation.Path, sourceLocation.Path),
+                PathUtil.IsSameOrInside(sourceLocation.Path, targetLocation.Path));
+        if ((source.Bucket is { } sourceBucket && target.Bucket is { } targetBucket && SameBucket(sourceBucket, targetBucket)) ||
+            (source.Drive is { } sourceRoot && target.Drive is { } targetRoot && SameRoot(sourceRoot, targetRoot)))
+            return (IsSameOrInside(targetLocation.Path, sourceLocation.Path),
+                IsSameOrInside(sourceLocation.Path, targetLocation.Path));
+        if (source.Drive is { } sourceDrive && target.Drive is { } targetDrive &&
+            sourceDrive.SharedDriveId is { } sharedDrive &&
+            string.Equals(sharedDrive, targetDrive.SharedDriveId, StringComparison.Ordinal))
+        {
+            // Different roots on one shared drive: without asking Drive, only a side that is the whole shared drive is
+            // known to hold the other (a folder root's place on the drive is not known here).
+            return (IsWholeSharedDrive(sourceDrive, sourceLocation.Path), IsWholeSharedDrive(targetDrive, targetLocation.Path));
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The location as <see cref="Overlaps"/> compares it; null when it is not complete. A connection the lookup does not
+    /// give stands for a bucket or root of its own, known only by the connection's id.
+    /// </summary>
+    private static CheckedLocation? Resolve(StorageLocation location, Func<string, ConnectionBucket?>? connections,
+        Func<string, DriveRoot?>? driveConnections)
+    {
+        if (location.IsFileSystem)
+            return !string.IsNullOrWhiteSpace(location.Path) && Path.IsPathFullyQualified(location.Path)
+                ? new CheckedLocation(true, null)
+                : null;
+        if (string.IsNullOrWhiteSpace(location.ConnectionId))
+            return null;
+        var unknown = "\0connection:" + location.ConnectionId;   // no real bucket name or Drive id looks like this
+        if (string.Equals(location.Kind, S3Kind, StringComparison.Ordinal))
+            return new CheckedLocation(false, TryLookUp(connections, location.ConnectionId) ?? new ConnectionBucket(unknown, ""));
+        if (string.Equals(location.Kind, DriveKind, StringComparison.Ordinal))
+            return new CheckedLocation(false, null, TryLookUp(driveConnections, location.ConnectionId) ?? new DriveRoot(unknown, null));
+        return null;
+    }
+
+    /// <summary>The lookup's answer; null without a lookup or when the connections cannot be read.</summary>
+    private static T? TryLookUp<T>(Func<string, T?>? lookup, string id) where T : class
+    {
+        try
+        {
+            return lookup?.Invoke(id);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
     }
 
     /// <summary>A location that passed its own checks: a folder, the bucket of an S3 location or the root of a Drive location.</summary>
