@@ -67,7 +67,7 @@
 |---|---|
 | **Plans** | One source and one target per plan, each a folder, an **Amazon S3** location (connection + prefix) or a **Google Drive** location (shared drive or folder + path), any number of plans. Turn off "Run on schedule" for manual-only plans. Optionally, when the target is full, delete the versions that retention would delete anyway before giving up. |
 | **Schedules** | Triggers: **Daily** (time), **Weekly** (weekdays + time), **Monthly** (day 1–31, `0` = last day, `-1` = the day before it), **Interval** (every *n* hours between two times). Shows the next five runs. On startup, a plan that missed a trigger gets **one catch-up run** about a minute later. |
-| **Versions** | Every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. |
+| **Versions** | By default, every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. Plans can instead be **incremental** (see [Storage formats](#storage-formats)). |
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
 | **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted, optionally changed only), and see a **file's history** across all versions. **Delete versions** by hand (one or several, after a confirmation); the index is cleaned up with them. Backed by a local SQLite index per plan. |
 | **Restore** | Restore a file, a folder or a whole version to its original location or to a folder of your choice. If files already exist you choose **Overwrite**, **Skip** or **Keep both** (or cancel). A restore **never deletes** anything at the destination. |
@@ -172,6 +172,49 @@ F:\Backups\Projects\
   2026_10_01-02_00 Projects\
   2026_10_01-17_46 Projects\
 ```
+
+### Storage formats
+
+A plan stores its versions in one of two formats. You choose it when you create the plan, and it **cannot be
+changed later**. To switch, use **Copy plan…**: it copies all versions of a plan to another, empty target in the
+other format and creates a new plan for it. The old plan and its target stay as they are until you delete them.
+
+| | Full copies | Incremental |
+|---|---|---|
+| A version is | a folder with all its files, `re-manifest.json` and nothing else | a folder with only `re-manifest.json`; the file contents live in a shared pool |
+| Space | every run stores every file again | every distinct content is stored once, however many versions use it |
+| Explorer | open any version like a normal folder | versions cannot be browsed (see below) |
+| Hash | xxHash64 | xxHash128 |
+
+An incremental target holds `re-store.json` (marks the target as a pool), `re-pool/` (the contents, named by their
+hash) and the version folders. Do not edit or copy these by hand; a target that is a pool cannot be used for a full
+copies plan, and the other way round.
+
+**Fast or Safe.** Incremental plans compare files in one of two ways, which you can change at any time. **Fast**
+(the default) does not read a file whose path, size and modified time are the same as in the previous version and
+whose content is still in the pool; only new or changed files are read. **Safe** reads and hashes every file on
+every run and uploads only content the pool does not have yet. Safe finds a change that kept size and modified time,
+at the cost of reading the whole source each time.
+
+**Deleting versions.** Delete versions as usual (by hand, or by retention). For an incremental plan that also
+removes the file contents no remaining version uses: the run that applies retention (and a deletion by hand) does this
+cleanup automatically at the end, and what another version still needs is never removed. If a `re-manifest.json` in the target's root cannot be read, cleanup is blocked until it is
+fixed, because ReBackup cannot tell what that version needs; the run says so and keeps everything.
+
+**Verify backup…** checks an incremental target: every file a version lists must be in the pool. The *thorough*
+check also reads every stored content and compares it with its hash, so it takes as long as reading the whole
+target. It changes nothing and lists what is missing or damaged.
+
+**Locked by …** While a run, a deletion, a verify or a copy works on an incremental target, it holds a lock (`re-lock.json`)
+so that two of them never change the pool at once; the plan then shows "Locked by *computer* (*what*) since *time*".
+It is released when the job ends. If the computer crashed or was switched off, nothing removes it: when you are sure
+nothing runs on the target any more, choose **Release lock…**.
+
+**Opening files of an incremental version.** Because a version has no files of its own, Explorer shows only its
+`re-manifest.json`. In the Versions tab, **Open** restores the file to a temporary folder
+(`%TEMP%\ReBackup\open\`), verifies it against its hash and opens it there; a file above 1 GB asks for confirmation first,
+and temporary files older than a day are removed when ReBackup starts. Restoring a file, a folder or a version works as
+for full copies.
 
 ### Where ReBackup keeps its data
 
@@ -343,9 +386,10 @@ Only if they can be read. ReBackup does not use Volume Shadow Copy (VSS): a file
 is skipped and listed in the run history.
 
 **Is the backup compressed or encrypted?**
-No. Each version is a full, uncompressed, unencrypted copy. That uses more space than incremental tools, but every
-version is an ordinary folder you can open without ReBackup. Use an encrypted drive (for example BitLocker) if the
-target needs protection.
+No. Neither storage format compresses or encrypts. With **full copies** (the default) each version is a full copy
+in an ordinary folder you can open without ReBackup. That uses more space; **incremental** plans store each distinct
+file content once (see [Storage formats](#storage-formats)) but their versions cannot be browsed in Explorer. Use an
+encrypted drive (for example BitLocker) if the target needs protection.
 
 **Can a restore overwrite or delete my files?**
 A restore never deletes anything. Existing files are overwritten only if you choose *Overwrite*; *Keep both* writes
