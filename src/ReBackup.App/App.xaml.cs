@@ -56,6 +56,8 @@ public partial class App : Application
     private readonly ContextMenu _trayMenu = new();
     private SingleInstance? _singleInstance;
     private ThemeToggleViewModel _themeToggle = null!;
+    private VersionIndexWorker _versionIndex = null!;
+    private TempOpener _tempOpener = null!;
 
     public App()
     {
@@ -94,6 +96,7 @@ public partial class App : Application
         }
 
         Loc.Instance.Apply(AppLanguages.Resolve(_settings.Language));
+        CleanUpInBackground();
 
         // The Run entry follows the exe that is running now (moved or updated installs would leave a stale path).
         try
@@ -188,10 +191,12 @@ public partial class App : Application
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var languageToggle = new LanguageToggleViewModel(() => Loc.Instance.Language, ChooseLanguage);
+            // Files and folders of versions that cannot be opened in place go through %TEMP%\ReBackup\open.
+            var tempOpener = new TempOpener();
             var mainViewModel = new MainViewModel(planStore, paths, settings, () => settingsStore.Save(settings),
                 () => settingsStore.LastLoadError, _dialogs, ShowSettings, queue, scheduler,
                 action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(),
-                versionIndex, storages, s3, drive);
+                versionIndex, storages, s3, drive, tempOpener);
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);
@@ -209,6 +214,8 @@ public partial class App : Application
             _drive = drive;
             _s3Storages = s3Storages;
             _storages = storages;
+            _versionIndex = versionIndex;
+            _tempOpener = tempOpener;
         }
         catch
         {
@@ -218,6 +225,32 @@ public partial class App : Application
 
         if (_settingsStore.LastLoadError is { } error)
             _dialogs.ShowError(Loc.T("settings.title"), Loc.F("app.settingsUnreadable", ("error", error)));
+    }
+
+    /// <summary>
+    /// On start, off the UI thread: deletes temporary copies of opened files older than a day, and the version indexes
+    /// of plans that no longer exist (a plan file that could not be read keeps its index).
+    /// </summary>
+    private void CleanUpInBackground()
+    {
+        var planIds = new HashSet<string>(_mainViewModel.Plans.Select(p => p.Id), StringComparer.OrdinalIgnoreCase);
+        var plansDirectory = _paths.PlansDirectory;
+        var indexes = _versionIndex.Indexes;
+        var tempOpener = _tempOpener;
+        _ = Task.Run(() =>
+        {
+            tempOpener.CleanUp(TimeSpan.FromDays(1));
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(plansDirectory, "*.json"))
+                    planIds.Add(Path.GetFileNameWithoutExtension(file));
+                indexes.PruneOrphans(planIds);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+            {
+                Trace.TraceWarning($"The version indexes of deleted plans could not be removed: {ex.Message}");
+            }
+        });
     }
 
     private void CreateTrayIcon()

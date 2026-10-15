@@ -23,7 +23,7 @@ public sealed partial class VersionsViewModel
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DeleteVersionsCommand), nameof(RestoreToOriginalCommand), nameof(RestoreToCommand),
-        nameof(CancelDeleteCommand))]
+        nameof(CancelDeleteCommand), nameof(RestoreSelectedToTempCommand), nameof(RestoreVersionToTempCommand))]
     private bool _isDeleting;
 
     /// <summary>"Deleting 1,200 of 50,000 files · version 1 of 3 · 4 min left" while a deletion runs.</summary>
@@ -134,7 +134,7 @@ public sealed partial class VersionsViewModel
         try
         {
             results = await Task.Run(() => VersionDeleter.DeleteAsync(_context.Storages.Open(plan.Target), plan.Id, plan.Name,
-                names, progress, cts.Token, _context.Host));
+                names, progress, cts.Token, _context.Host, pool: plan.Incremental));
             var gone = results.Where(r => r.Outcome is not (VersionDeletionOutcome.Failed or VersionDeletionOutcome.NotManaged))
                 .Select(r => r.Name)
                 .ToList();

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -61,13 +62,13 @@ public sealed partial class MainViewModel : ObservableObject
         Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
-        IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null)
+        IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null, ITempOpener? tempOpener = null)
     {
         _folders = folders;
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
         _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
-            DescribeLocation: DescribeLocation);
+            DescribeLocation: DescribeLocation, TempOpener: tempOpener);
         // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
         _s3.Changed += (_, _) => RevalidateAll();
         _drive.Changed += (_, _) => RevalidateAll();
@@ -334,11 +335,30 @@ public sealed partial class MainViewModel : ObservableObject
         editor.HistoryCoverage.Invalidate();
         if (index >= 0)
             Plans.RemoveAt(index);
+        if (!editor.IsNew)
+            _ = DeleteIndexAsync(editor.Id);
         RevalidateAll();
         SelectedPlan = Plans.Count == 0 ? null : Plans[Math.Clamp(index, 0, Plans.Count - 1)];
         PublishPlans();
         if (!editor.IsNew)
             SavePlanOrder();   // drops the deleted plan's id
+    }
+
+    /// <summary>
+    /// Deletes a deleted plan's version index once the work queued on it (a sync that is being canceled) has ended. It
+    /// is a cache only: a failure is logged, and the next start removes the file as an orphan.
+    /// </summary>
+    private async Task DeleteIndexAsync(string planId)
+    {
+        try
+        {
+            await _versions.Worker.WhenIdle(planId);
+            await Task.Run(() => _versions.Indexes.Delete(planId));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Trace.TraceWarning($"The version index of the deleted plan {planId} could not be deleted: {ex.Message}");
+        }
     }
 
     /// <summary>Moves the plan (the selected one when null) one place up; disabled for the first plan.</summary>

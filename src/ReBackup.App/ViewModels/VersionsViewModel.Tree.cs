@@ -94,6 +94,7 @@ public sealed partial class VersionsViewModel
 
     partial void OnSelectedVersionChanged(VersionRowViewModel? value)
     {
+        RestoreVersionToTempCommand.NotifyCanExecuteChanged();
         RebuildCompareChoices();
         SearchText = "";
         if (_suppressReload == 0)
@@ -227,6 +228,12 @@ public sealed partial class VersionsViewModel
         if (_index is not { } index || a.Indexed is not { } versionA)
         {
             Tree.ShowMessage(a.IndexState == IndexState.Failed ? LocText.Of("versions.tree.notIndexed") : LocText.Of("versions.tree.indexing"));
+            return;
+        }
+        if (versionA.Origin == IndexOrigin.Damaged)
+        {
+            // A pool version without a usable manifest: its files are not known.
+            Tree.ShowMessage(LocText.Of("versions.tree.damaged"));
             return;
         }
 

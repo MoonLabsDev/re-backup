@@ -849,7 +849,15 @@
       "notIndexed": "not indexed",
       "indexing": "indexing…",
       "indexed": "indexed",
-      "failed": "could not be indexed"
+      "failed": "could not be indexed",
+      "damaged": "damaged"
+    },
+    "damaged": {
+      "toolTip": "The manifest of this version is missing or cannot be read: its files cannot be restored or opened."
+    },
+    "exclusive": {
+      "text": "{size} exclusive",
+      "toolTip": "Space only this version uses in the pool: deleting it frees about this much"
     },
     "foreign": {
       "list": "Folders other computers are writing or deleting",
@@ -886,15 +894,18 @@
       "restoreTo": "Restore to…",
       "restoreToName": "Restore to a folder",
       "restoreToToolTip": "Copy the selection into a folder you choose",
+      "restoreToTemp": "Restore to temp and open",
+      "restoreToTempToolTip": "Copy the selected folder into a temporary folder and open it in Explorer",
       "cancelRestore": "Cancel the restore",
       "cancelRestoreToolTip": "Stop after the current file"
     },
-    "menu": { "restoreOriginal": "Restore to original location…" },
+    "menu": { "restoreOriginal": "Restore to original location…", "restoreToTemp": "Restore to temp and open" },
     "compare": { "notManaged": " (not managed)" },
     "tree": {
       "name": "Version tree",
       "selectVersion": "Select a version.",
       "notIndexed": "This version could not be indexed.",
+      "damaged": "This version is damaged: its manifest is missing or cannot be read, so its files cannot be restored.",
       "indexing": "Indexing…",
       "otherIndexing": "The version to compare with is being indexed…",
       "unreadable": "The version cannot be read from the index: {error}",
@@ -923,6 +934,14 @@
     "notInVersion": "\"{path}\" no longer exists in the version.",
     "runnable": "\"{name}\" is a program, script or shortcut; it is not run from a backup. Its folder is shown instead.",
     "cannotOpen": "\"{path}\" cannot be opened: it no longer exists in the version, or no program opens it.",
+    "temp": {
+      "title": "Restore to temp and open",
+      "preparing": "Copying \"{name}\" into a temporary folder…",
+      "confirmLarge": "{item} holds {size}. Copy it into a temporary folder and open it?\n\nTemporary copies are deleted a day later.",
+      "notOpened": "\"{name}\" was not opened: it could not be copied completely (a file may be damaged in the backup), or no program opens it.",
+      "failed": "\"{name}\" could not be opened: {error}",
+      "canceled": "Opening \"{name}\" was canceled."
+    },
     "canceling": "Canceling…",
     "cancelingAfterFile": "Canceling after the current file…",
     "reindexing": "The version is being indexed again; try once the tree has been reloaded.",

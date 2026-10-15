@@ -849,7 +849,15 @@
       "notIndexed": "nicht indiziert",
       "indexing": "wird indiziert …",
       "indexed": "indiziert",
-      "failed": "konnte nicht indiziert werden"
+      "failed": "konnte nicht indiziert werden",
+      "damaged": "beschädigt"
+    },
+    "damaged": {
+      "toolTip": "Das Manifest dieser Version fehlt oder ist nicht lesbar: Ihre Dateien können weder wiederhergestellt noch geöffnet werden."
+    },
+    "exclusive": {
+      "text": "{size} exklusiv",
+      "toolTip": "Platz, den nur diese Version im Pool belegt: Löschen gibt etwa so viel frei"
     },
     "foreign": {
       "list": "Ordner, die andere Computer schreiben oder löschen",
@@ -886,15 +894,18 @@
       "restoreTo": "Wiederherstellen nach …",
       "restoreToName": "In einen Ordner wiederherstellen",
       "restoreToToolTip": "Die Auswahl in einen gewählten Ordner kopieren",
+      "restoreToTemp": "Temporär wiederherstellen und öffnen",
+      "restoreToTempToolTip": "Den gewählten Ordner in einen temporären Ordner kopieren und im Explorer öffnen",
       "cancelRestore": "Wiederherstellung abbrechen",
       "cancelRestoreToolTip": "Nach der aktuellen Datei anhalten"
     },
-    "menu": { "restoreOriginal": "Am ursprünglichen Ort wiederherstellen …" },
+    "menu": { "restoreOriginal": "Am ursprünglichen Ort wiederherstellen …", "restoreToTemp": "Temporär wiederherstellen und öffnen" },
     "compare": { "notManaged": " (nicht verwaltet)" },
     "tree": {
       "name": "Versionsbaum",
       "selectVersion": "Eine Version auswählen.",
       "notIndexed": "Diese Version konnte nicht indiziert werden.",
+      "damaged": "Diese Version ist beschädigt: Ihr Manifest fehlt oder ist nicht lesbar, daher können ihre Dateien nicht wiederhergestellt werden.",
       "indexing": "Wird indiziert …",
       "otherIndexing": "Die Vergleichsversion wird indiziert …",
       "unreadable": "Die Version kann nicht aus dem Index gelesen werden: {error}",
@@ -923,6 +934,14 @@
     "notInVersion": "„{path}“ existiert nicht mehr in der Version.",
     "runnable": "„{name}“ ist ein Programm, Skript oder eine Verknüpfung und wird nicht aus einem Backup gestartet. Stattdessen wird sein Ordner gezeigt.",
     "cannotOpen": "„{path}“ kann nicht geöffnet werden: Es existiert nicht mehr in der Version, oder kein Programm öffnet es.",
+    "temp": {
+      "title": "Temporär wiederherstellen und öffnen",
+      "preparing": "„{name}“ wird in einen temporären Ordner kopiert …",
+      "confirmLarge": "{item} umfasst {size}. In einen temporären Ordner kopieren und öffnen?\n\nTemporäre Kopien werden nach einem Tag gelöscht.",
+      "notOpened": "„{name}“ wurde nicht geöffnet: Es konnte nicht vollständig kopiert werden (eine Datei im Backup ist womöglich beschädigt), oder kein Programm öffnet es.",
+      "failed": "„{name}“ kann nicht geöffnet werden: {error}",
+      "canceled": "Das Öffnen von „{name}“ wurde abgebrochen."
+    },
     "canceling": "Wird abgebrochen …",
     "cancelingAfterFile": "Abbruch nach der aktuellen Datei …",
     "reindexing": "Die Version wird neu indiziert; nach dem Neuladen des Baums erneut versuchen.",

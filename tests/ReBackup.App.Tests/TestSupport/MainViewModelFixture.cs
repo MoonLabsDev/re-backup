@@ -287,13 +287,28 @@ public sealed class FakeDialogs : IDialogService
     public bool ConfirmFailures(string title, string message, IReadOnlyList<string> lines, string confirmText) => false;
 }
 
+/// <summary>Opens nothing (every call answers false) and records the files it was asked to open or show.</summary>
 public sealed class FakeFolderOpener : IFolderOpener
 {
+    public List<(string Folder, string Path)> OpenedFiles { get; } = [];
+
+    public List<(string Folder, string Path)> Shown { get; } = [];
+
     public Task<bool> OpenVersionFolderAsync(string? target, string? versionName) => Task.FromResult(false);
 
-    public bool OpenFile(string versionFolder, string relativePath) => false;
+    public bool OpenFile(string versionFolder, string relativePath)
+    {
+        lock (OpenedFiles)
+            OpenedFiles.Add((versionFolder, relativePath));
+        return false;
+    }
 
-    public bool ShowInExplorer(string versionFolder, string relativePath) => false;
+    public bool ShowInExplorer(string versionFolder, string relativePath)
+    {
+        lock (Shown)
+            Shown.Add((versionFolder, relativePath));
+        return false;
+    }
 }
 
 /// <summary>A Drive API with shared drives and items set by the test; every other call fails.</summary>

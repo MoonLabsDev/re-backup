@@ -19,9 +19,12 @@ namespace ReBackup.App.ViewModels;
 /// <paramref name="MachineName"/> is this computer as markers name it (<see cref="Environment.MachineName"/> when null):
 /// folders that other computers marked are listed apart. <paramref name="DescribeLocation"/> names a location in
 /// messages (an S3 location by its connection, bucket and prefix); a folder's path, else <c>kind://path</c>, when null.
+/// <paramref name="TempOpener"/> opens files and folders of versions that cannot be opened in place (incremental plans,
+/// targets that are no folder) through a temporary copy; without it they are not opened.
 /// </summary>
 public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<LocText> ReportStatus,
-    IStorageFactory Storages, string? MachineName = null, Func<StorageLocation, string>? DescribeLocation = null)
+    IStorageFactory Storages, string? MachineName = null, Func<StorageLocation, string>? DescribeLocation = null,
+    ITempOpener? TempOpener = null)
 {
     /// <summary>This computer, as markers name it.</summary>
     public string Host => MachineName ?? Environment.MachineName;
@@ -131,6 +134,18 @@ public sealed partial class VersionsViewModel : ObservableObject
     /// <summary>The version folders of the target, newest first.</summary>
     public RangeObservableCollection<VersionRowViewModel> VersionRows { get; } = new();
 
+    /// <summary>
+    /// The saved plan is incremental: its version folders hold only the manifest (the files are in the pool), so they
+    /// are never shown in Explorer, and files and folders are opened through a temporary copy.
+    /// </summary>
+    private bool IsPoolPlan => _savedPlan()?.Incremental == true;
+
+    /// <summary>"Show in Explorer" (and the history's "show this copy"); hidden for incremental plans.</summary>
+    public bool ShowExplorerActions => !IsPoolPlan;
+
+    /// <summary>"Restore to temp and open" for folders and versions, in place of Explorer; incremental plans only.</summary>
+    public bool ShowTempRestore => IsPoolPlan;
+
     /// <summary>The target was read and holds no versions.</summary>
     public bool ShowEmpty => _loaded && VersionRows.Count == 0 && !IsSyncing && Error is null;
 
@@ -228,6 +243,8 @@ public sealed partial class VersionsViewModel : ObservableObject
         _syncCts?.Cancel();
         var cts = _syncCts = new CancellationTokenSource();
         _reloadRequested = false;
+        OnPropertyChanged(nameof(ShowExplorerActions));
+        OnPropertyChanged(nameof(ShowTempRestore));
         IsSyncing = true;
         ErrorText = null;
         Sync = LocText.Of("versions.sync.reading");
@@ -278,28 +295,33 @@ public sealed partial class VersionsViewModel : ObservableObject
                     OnSyncProgress(p);
             });
             // Queued behind other work on this plan's index (another sync, a finished run's version); the ids are
-            // read in the same step, after the sync, because a re-import gives a version a new id.
-            var (result, versions, targetGone) = await _context.Worker.RunAsync(plan.Id, planIndex =>
+            // read in the same step, after the sync, because a re-import gives a version a new id. A pool version
+            // without a usable manifest is not scanned (its folder holds no files): it is indexed as damaged.
+            var (result, versions, targetGone, exclusive) = await _context.Worker.RunAsync(plan.Id, planIndex =>
             {
-                var synced = planIndex.Sync(folders, target!, progress, cts.Token);
+                var synced = planIndex.Sync(folders, target!, progress, cts.Token, scanFallback: !plan.Incremental);
                 // Errors because the whole target went away (e.g. the NAS went offline mid-sync) are one message.
                 // The worker runs on a pool thread, so waiting for the probe blocks no UI thread.
                 var gone = synced.Errors.Count > 0 &&
                     TargetStates.ProbeAsync(target!, cts.Token).GetAwaiter().GetResult() != TargetState.Present;
-                return (synced, planIndex.Versions(), gone);
+                var indexedVersions = planIndex.Versions();
+                IReadOnlyDictionary<string, long>? unique = plan.Incremental
+                    ? indexedVersions.ToDictionary(v => v.Name, v => planIndex.UniqueBytes(v.Id), StringComparer.OrdinalIgnoreCase)
+                    : null;
+                return (synced, indexedVersions, gone, unique);
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
                 return;
 
             if (targetGone)
             {
-                ApplyIndexed(versions, []);
+                ApplyIndexed(versions, [], exclusive);
                 Sync = LocText.Empty;
                 ErrorText = TargetUnavailable(plan.Target);
                 return;
             }
 
-            ApplyIndexed(versions, result.Errors);
+            ApplyIndexed(versions, result.Errors, exclusive);
             var errors = result.Errors;
             Sync = errors.Count == 0
                 ? LocText.Empty
@@ -331,11 +353,12 @@ public sealed partial class VersionsViewModel : ObservableObject
 
     /// <summary>
     /// The full path of a listed version's folder for Explorer, which works on local folders only: null for a target
-    /// that is no file system location (or a name that is no path).
+    /// that is no file system location (or a name that is no path), and for incremental plans, whose version folders
+    /// hold no files.
     /// </summary>
     private string? FolderOf(VersionRowViewModel row)
     {
-        if (_versionsLocation is not { IsFileSystem: true } location)
+        if (IsPoolPlan || _versionsLocation is not { IsFileSystem: true } location)
             return null;
         try
         {
@@ -395,7 +418,9 @@ public sealed partial class VersionsViewModel : ObservableObject
                 ("version", progress.VersionName), ("files", Formats.Files(progress.FilesImported)));
     }
 
-    private void ApplyIndexed(IReadOnlyList<IndexedVersion> versions, IReadOnlyList<string> errors)
+    /// <param name="exclusive">The exclusive bytes of the indexed versions by name (incremental plans); null otherwise.</param>
+    private void ApplyIndexed(IReadOnlyList<IndexedVersion> versions, IReadOnlyList<string> errors,
+        IReadOnlyDictionary<string, long>? exclusive)
     {
         var byName = versions.ToDictionary(v => v.Name, StringComparer.OrdinalIgnoreCase);
         foreach (var row in VersionRows)
@@ -404,6 +429,11 @@ public sealed partial class VersionsViewModel : ObservableObject
             row.IndexState = row.Indexed is not null ? IndexState.Indexed
                 : errors.Any(e => e.StartsWith(row.Name + ":", StringComparison.OrdinalIgnoreCase)) ? IndexState.Failed
                 : IndexState.NotIndexed;
+            row.ExclusiveBytes = exclusive is not null && exclusive.TryGetValue(row.Name, out var bytes) ? bytes : null;
         }
+        OnVersionStatesChanged();   // a version may have turned out damaged
     }
+
+    /// <summary>Runs when the rows' index states changed (the actions on versions and entries hook in here).</summary>
+    partial void OnVersionStatesChanged();
 }
