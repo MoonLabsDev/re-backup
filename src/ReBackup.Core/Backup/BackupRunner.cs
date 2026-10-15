@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Hashing;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 using System.Text.Json;
@@ -45,7 +46,7 @@ public interface IBackupRunner
         CancellationToken cancellationToken = default);
 }
 
-public sealed class BackupRunner : IBackupRunner
+public sealed partial class BackupRunner : IBackupRunner
 {
     /// <summary>The target must have room for the included bytes times this factor.</summary>
     public const double FreeSpaceMargin = 1.05;
@@ -101,6 +102,8 @@ public sealed class BackupRunner : IBackupRunner
     /// manifest is written; only removing the marker makes the folder a version. A run that does not get there removes
     /// what it wrote, the marker last. What it cannot remove keeps the marker, and the next run of the plan removes it
     /// (<see cref="LeftoverCleaner"/>).
+    /// An incremental plan holds the target's lock from before the leftover cleanup until after retention, whatever the
+    /// outcome (spec 4); a lock that cannot be released is a warning.
     /// </remarks>
     public async Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -118,66 +121,76 @@ public sealed class BackupRunner : IBackupRunner
         string? reserved = null;   // the version folder that holds this run's pending marker
         BackupManifest? manifest = null;
         var completed = false;
+        var heldLock = new StrongBox<TargetLock?>();   // an incremental plan's target lock, held until the run ends
         try
-        {
-            var prepared = work = await Task.Run(() => PrepareAsync(request, entry, progress, cancellationToken), cancellationToken);
-            foreach (var skipped in prepared.Skipped)
-                entry.AddSkipped(skipped);
-
-            var versionName = reserved = await Task.Run(() => ReserveVersionNameAsync(plan, prepared.Target, cancellationToken),
-                cancellationToken);
-            manifest = await Task.Run(() => CopyAndFinishAsync(prepared, plan, versionName, entry, progress, cancellationToken),
-                cancellationToken);
-
-            entry.Version = versionName;
-            // A folder another computer is writing or deleting in the target was left alone: worth a look (spec 5).
-            entry.Status = entry.SkippedCount > 0 || prepared.MetForeignMarkers
-                ? RunStatus.CompletedWithWarnings
-                : RunStatus.Completed;
-            completed = true;
-        }
-        catch (OperationCanceledException)
-        {
-            entry.Status = RunStatus.Canceled;
-        }
-        catch (BackupAbortException ex)
-        {
-            entry.Status = ex.Status;
-            entry.Reason = ex.Message;
-        }
-        catch (StorageFullException)
-        {
-            entry.Status = RunStatus.Full;
-            entry.Reason = CoreTexts.English("core.run.targetFull");
-        }
-        catch (Exception ex)
-        {
-            entry.Status = RunStatus.Error;
-            entry.Reason = ex.Message;
-        }
-
-        if (!completed && work is not null && reserved is not null)
-        {
-            progress?.Report(new BackupProgress(BackupPhase.CleaningUp, 0, 0, 0, 0, ""));
-            var target = work.Target;
-            var name = reserved;
-            await Task.Run(() => RemoveUnfinishedAsync(target, name, entry));
-        }
-
-        if (completed && _indexSink is not null && manifest is not null)
-            await Task.Run(() => AddToIndex(plan, work!.Target, entry, entry.Version!, manifest));
-
-        if (completed)
         {
             try
             {
-                await Task.Run(() => ApplyRetentionAsync(plan, work!.Target, entry, progress, cancellationToken));
+                var prepared = work = await Task.Run(() => PrepareAsync(request, entry, heldLock, progress, cancellationToken),
+                    cancellationToken);
+                foreach (var skipped in prepared.Skipped)
+                    entry.AddSkipped(skipped);
+
+                var versionName = reserved = await Task.Run(() => ReserveVersionNameAsync(plan, prepared.Target, cancellationToken),
+                    cancellationToken);
+                manifest = await Task.Run(() => CopyAndFinishAsync(prepared, plan, versionName, entry, progress, cancellationToken),
+                    cancellationToken);
+
+                entry.Version = versionName;
+                // A folder another computer is writing or deleting in the target was left alone: worth a look (spec 5).
+                entry.Status = entry.SkippedCount > 0 || prepared.MetForeignMarkers
+                    ? RunStatus.CompletedWithWarnings
+                    : RunStatus.Completed;
+                completed = true;
+            }
+            catch (OperationCanceledException)
+            {
+                entry.Status = RunStatus.Canceled;
+            }
+            catch (BackupAbortException ex)
+            {
+                entry.Status = ex.Status;
+                entry.Reason = ex.Message;
+            }
+            catch (StorageFullException)
+            {
+                entry.Status = RunStatus.Full;
+                entry.Reason = CoreTexts.English("core.run.targetFull");
             }
             catch (Exception ex)
             {
-                // The backup itself is done; whatever goes wrong here must not turn it into a failure.
-                entry.Warnings.Add(CoreTexts.English("core.run.retentionFailed", ("error", ex.Message)));
+                entry.Status = RunStatus.Error;
+                entry.Reason = ex.Message;
             }
+
+            if (!completed && work is not null && reserved is not null)
+            {
+                progress?.Report(new BackupProgress(BackupPhase.CleaningUp, 0, 0, 0, 0, ""));
+                var target = work.Target;
+                var name = reserved;
+                await Task.Run(() => RemoveUnfinishedAsync(target, name, entry));
+            }
+
+            if (completed && _indexSink is not null && manifest is not null)
+                await Task.Run(() => AddToIndex(plan, work!.Target, entry, entry.Version!, manifest));
+
+            if (completed)
+            {
+                try
+                {
+                    await Task.Run(() => ApplyRetentionAsync(plan, work!.Target, entry, progress, cancellationToken));
+                }
+                catch (Exception ex)
+                {
+                    // The backup itself is done; whatever goes wrong here must not turn it into a failure.
+                    entry.Warnings.Add(CoreTexts.English("core.run.retentionFailed", ("error", ex.Message)));
+                }
+            }
+        }
+        finally
+        {
+            if (heldLock.Value is { } held)
+                await Task.Run(() => ReleaseLockAsync(held, entry));
         }
 
         entry.DurationMs = (long)_time.GetElapsedTime(started).TotalMilliseconds;
@@ -188,14 +201,16 @@ public sealed class BackupRunner : IBackupRunner
     /// <summary>
     /// Index, evaluate and preflight. Copies nothing yet, but changes the target: it creates the target folder,
     /// removes leftovers of earlier runs and, when the plan allows it and the space is short, deletes old versions
-    /// to make room.
+    /// to make room. Before any of that the target's storage format is checked against the plan; an incremental plan
+    /// first takes the target's lock (into <paramref name="heldLock"/>, which the caller releases) and creates the
+    /// pool's store file on an empty target (spec 4 steps 1–2).
     /// </summary>
     /// <remarks>
     /// The checks that need paths on a file system (a path is given, the source exists, source and target do not
     /// overlap) apply to <c>"fs"</c> locations only; for other kinds a missing source shows when it is indexed.
     /// </remarks>
-    private async Task<BackupWork> PrepareAsync(BackupRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress,
-        CancellationToken cancellationToken)
+    private async Task<BackupWork> PrepareAsync(BackupRequest request, RunLogEntry entry, StrongBox<TargetLock?> heldLock,
+        IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         var plan = request.Plan;
         // On other kinds an empty path is the storage's root (e.g. a whole bucket), not a missing one.
@@ -223,6 +238,7 @@ public sealed class BackupRunner : IBackupRunner
         var source = _storages.Open(plan.Source);
         var target = _storages.Open(plan.Target);
         await target.EnsureDirectoryAsync("", cancellationToken).ConfigureAwait(false);
+        await GuardTargetAsync(plan, target, heldLock, cancellationToken).ConfigureAwait(false);
         var metForeignMarkers = await DeleteLeftoversAsync(target, plan, entry, progress, cancellationToken).ConfigureAwait(false);
 
         var indexProgress = progress is null ? null : new IndexProgressAdapter(progress);
@@ -251,6 +267,10 @@ public sealed class BackupRunner : IBackupRunner
             plan.Source.IsFileSystem ? PathUtil.Normalize(plan.Source.Path) : plan.Source.Path)
         {
             MetForeignMarkers = metForeignMarkers,
+            Pool = plan.Incremental
+                ? new PoolRun(new PoolWriter(target), plan.ChangeDetection,
+                    await ReadPreviousManifestAsync(plan, target, cancellationToken).ConfigureAwait(false))
+                : null,
         };
         foreach (var path in index.UnreadableIgnoreFiles)
             work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.ignoreFileUnreadable")));
@@ -261,7 +281,7 @@ public sealed class BackupRunner : IBackupRunner
         if (!target.Capabilities.HasFlag(StorageCapabilities.FreeSpace) ||
             await target.GetFreeSpaceAsync(cancellationToken).ConfigureAwait(false) is not { } free)
             return work;
-        var required = (long)Math.Ceiling(work.TotalBytes * FreeSpaceMargin);
+        var required = (long)Math.Ceiling((work.Pool?.BytesToStore(work.Files) ?? work.TotalBytes) * FreeSpaceMargin);
         if (required > free && plan.FreeSpaceByRetention)
             free = await FreeSpaceByRetentionAsync(plan, target, required, free, entry, cancellationToken).ConfigureAwait(false);
         if (required > free)
@@ -596,7 +616,8 @@ public sealed class BackupRunner : IBackupRunner
 
     /// <summary>
     /// Creates the folders (on storages that have them), copies the files, writes the manifest and removes the pending
-    /// marker, which makes the folder a version (spec 6.1 steps 2–4).
+    /// marker, which makes the folder a version (spec 6.1 steps 2–4). For an incremental plan the files go into the pool
+    /// instead and the folder gets only the manifest (format 3), which lists every folder (spec 4 steps 4–6).
     /// </summary>
     /// <remarks>
     /// A name the target cannot hold (<see cref="ArgumentException"/>, e.g. one ending in a blank or a dot that WSL
@@ -612,7 +633,9 @@ public sealed class BackupRunner : IBackupRunner
         bool IsInUnaddressable(string path) =>
             unaddressable.Any(folder => path.StartsWith(folder + "/", StringComparison.Ordinal));
 
-        if (target.Capabilities.HasFlag(StorageCapabilities.EmptyDirectories))
+        if (work.Pool is { } pool)
+            await pool.Writer.LoadKnownAsync(cancellationToken).ConfigureAwait(false);
+        else if (target.Capabilities.HasFlag(StorageCapabilities.EmptyDirectories))
         {
             // Creating many folders on a network share takes a while, so it reports progress of its own.
             var foldersTotal = work.Directories.Count;
@@ -653,6 +676,7 @@ public sealed class BackupRunner : IBackupRunner
 
         var manifest = new BackupManifest
         {
+            FormatVersion = work.Pool is null ? BackupManifest.CurrentFormatVersion : BackupManifest.PoolFormatVersion,
             PlanId = plan.Id,
             PlanName = plan.Name,
             CreatedUtc = _time.GetUtcNow().UtcDateTime,
@@ -695,7 +719,7 @@ public sealed class BackupRunner : IBackupRunner
                 continue;
             }
 
-            var (copied, skipReason, changed, denied) = await CopyFileAsync(work.Source, target, versionName, file, buffer, count =>
+            var (copied, skipReason, changed, denied) = await StoreFileAsync(work, versionName, file, buffer, count =>
             {
                 bytesDone += count;
                 Report(BackupPhase.Copying, file.RelativePath, force: false);
@@ -829,7 +853,7 @@ public sealed class BackupRunner : IBackupRunner
             }
 
             long counted = 0;
-            var (copied, skipReason, changed, denied) = await CopyFileAsync(work.Source, work.Target, versionName, file, buffer,
+            var (copied, skipReason, changed, denied) = await StoreFileAsync(work, versionName, file, buffer,
                 count =>
                 {
                     // At most the indexed size, so that the total never runs ahead of it and never goes back.
@@ -903,6 +927,21 @@ public sealed class BackupRunner : IBackupRunner
     }
 
     /// <summary>
+    /// Stores one file the way the plan keeps its versions: into the pool (<see cref="CopyFileToPoolAsync"/>) or as a
+    /// copy in the version folder (<see cref="CopyFileAsync"/>).
+    /// </summary>
+    private static async Task<FileOutcome> StoreFileAsync(BackupWork work, string versionName, IndexNode node, byte[] buffer,
+        Action<int> onBytes, CancellationToken cancellationToken, bool storageFailuresStop = false)
+    {
+        if (work.Pool is { } pool)
+            return await CopyFileToPoolAsync(work.Source, pool, node, buffer, onBytes, cancellationToken, storageFailuresStop)
+                .ConfigureAwait(false);
+        var (copied, skipReason, changed, denied) = await CopyFileAsync(work.Source, work.Target, versionName, node, buffer,
+            onBytes, cancellationToken, storageFailuresStop).ConfigureAwait(false);
+        return new FileOutcome(copied, skipReason, changed, denied);
+    }
+
+    /// <summary>
     /// Copies one file while hashing it; the copy gets the indexed time of the source. Returns no copy and a reason
     /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
     /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed, except for a size
@@ -918,21 +957,10 @@ public sealed class BackupRunner : IBackupRunner
         IStorage target, string versionName, IndexNode node, byte[] buffer, Action<int> onBytes,
         CancellationToken cancellationToken, bool storageFailuresStop = false)
     {
-        Stream input;
-        try
-        {
-            input = await source.OpenReadAsync(node.RelativePath, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (!(storageFailuresStop && ex is StorageUnavailableException) &&
-                                   SourceSkipReason(ex) is { } reason)
-        {
-            // One file refused (its ACL, an object encrypted with a key the user may not use) is skipped; refused
-            // credentials refuse the root too, and then the run stops.
-            if (storageFailuresStop && ex is StorageAccessDeniedException && await IsSourceRefusedAsync(source, cancellationToken)
-                    .ConfigureAwait(false))
-                ExceptionDispatchInfo.Throw(ex);
-            return (null, reason, false, ex is StorageAccessDeniedException);
-        }
+        var (input, openFailure, openDenied) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
+            .ConfigureAwait(false);
+        if (input is null)
+            return (null, openFailure, false, openDenied);
 
         var hash = new XxHash64();
         long size = 0;
@@ -976,20 +1004,50 @@ public sealed class BackupRunner : IBackupRunner
             }
         }
 
-        // The source is opened shared, so it can change while it is read: compare with what was indexed.
-        bool changed;
+        var changed = await ChangedAfterReadAsync(source, node, size, cancellationToken).ConfigureAwait(false);
+        return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
+            "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false);
+    }
+
+    /// <summary>
+    /// Opens a source file for reading. A file that cannot be opened gives no stream, the reason to skip it and whether the
+    /// source refused it; see <see cref="CopyFileAsync"/> for <paramref name="storageFailuresStop"/>.
+    /// </summary>
+    private static async Task<(Stream? Input, string? SkipReason, bool Denied)> OpenSourceFileAsync(IStorage source,
+        IndexNode node, CancellationToken cancellationToken, bool storageFailuresStop)
+    {
+        try
+        {
+            return (await source.OpenReadAsync(node.RelativePath, cancellationToken).ConfigureAwait(false), null, false);
+        }
+        catch (Exception ex) when (!(storageFailuresStop && ex is StorageUnavailableException) &&
+                                   SourceSkipReason(ex) is { } reason)
+        {
+            // One file refused (its ACL, an object encrypted with a key the user may not use) is skipped; refused
+            // credentials refuse the root too, and then the run stops.
+            if (storageFailuresStop && ex is StorageAccessDeniedException && await IsSourceRefusedAsync(source, cancellationToken)
+                    .ConfigureAwait(false))
+                ExceptionDispatchInfo.Throw(ex);
+            return (null, reason, ex is StorageAccessDeniedException);
+        }
+    }
+
+    /// <summary>
+    /// The source is opened shared, so it can change while it is read: compares it with what was indexed
+    /// (<see cref="ChangedWhileCopied"/>). A file that cannot be examined any more counts as changed.
+    /// </summary>
+    private static async Task<bool> ChangedAfterReadAsync(IStorage source, IndexNode node, long bytesRead,
+        CancellationToken cancellationToken)
+    {
         try
         {
             var now = await source.StatAsync(node.RelativePath, cancellationToken).ConfigureAwait(false);
-            changed = ChangedWhileCopied(node, now, size);
+            return ChangedWhileCopied(node, now, bytesRead);
         }
         catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
-            changed = true;
+            return true;
         }
-
-        return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
-            "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false);
     }
 
     /// <summary>
@@ -1076,6 +1134,9 @@ public sealed class BackupRunner : IBackupRunner
 
         /// <summary>The leftover cleanup left folders that another computer marked.</summary>
         public bool MetForeignMarkers { get; init; }
+
+        /// <summary>For an incremental plan: the pool the files go into; null for a full plan.</summary>
+        public PoolRun? Pool { get; init; }
     }
 
     /// <summary>What copying one file gave: the copy, or the reason it was skipped (none for a file left out with its folder).</summary>

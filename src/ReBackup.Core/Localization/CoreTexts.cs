@@ -92,6 +92,7 @@ public static class CoreTexts
         ["core.run.storeOtherPlan"] = "The target's pool belongs to another plan. Nothing was changed.",
         ["core.run.storeUnsupported"] = "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
         ["core.run.targetLocked"] = "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
+        ["core.run.lockReleaseFailed"] = "The target's lock could not be released: {error}",
 
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
         ["core.skip.reservedName"] = "the name is reserved for ReBackup's own files",
