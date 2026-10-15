@@ -505,6 +505,19 @@
       "enabledToolTip": "When off, the plan runs only when started by hand.",
       "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
     },
+    "format": {
+      "title": "Storage format",
+      "full": "Full copies",
+      "incremental": "Incremental",
+      "hint": "Cannot be changed later – use \"Copy plan…\" instead."
+    },
+    "compare": {
+      "title": "Compare files",
+      "fast": "Fast",
+      "safe": "Safe",
+      "fastToolTip": "Unchanged files (path, size, modified time) are not read.",
+      "safeToolTip": "Every file is read and hashed; only new content is uploaded."
+    },
     "kind": {
       "folder": "Folder",
       "s3": "S3",

@@ -505,6 +505,19 @@
       "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
       "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
     },
+    "format": {
+      "title": "Speicherformat",
+      "full": "Volle Kopien",
+      "incremental": "Inkrementell",
+      "hint": "Später nicht mehr änderbar – dafür „Plan kopieren …“ verwenden."
+    },
+    "compare": {
+      "title": "Dateien vergleichen",
+      "fast": "Schnell",
+      "safe": "Sicher",
+      "fastToolTip": "Unveränderte Dateien (Pfad, Größe, Änderungszeit) werden nicht gelesen.",
+      "safeToolTip": "Jede Datei wird gelesen und gehasht; nur neue Inhalte werden hochgeladen."
+    },
     "kind": {
       "folder": "Ordner",
       "s3": "S3",

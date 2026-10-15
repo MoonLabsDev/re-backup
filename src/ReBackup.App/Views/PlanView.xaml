@@ -344,6 +344,40 @@
 </Button>
                     </Grid>
 
+                    <!-- Storage format: chosen when the plan is created, then fixed. -->
+                    <DockPanel Margin="0,16,0,0">
+                        <Border Style="{StaticResource Border.KindSwitch}" AutomationProperties.Name="{l:Loc plan.format.title}"
+                                IsEnabled="{Binding CanEditIncremental}">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.format.full}"
+                                             IsChecked="{Binding IncrementalIsFull, Mode=OneWay}"
+                                             Command="{Binding ChooseStorageFormatCommand}" CommandParameter="Full" />
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.format.incremental}"
+                                             IsChecked="{Binding Incremental, Mode=OneWay}"
+                                             Command="{Binding ChooseStorageFormatCommand}" CommandParameter="Incremental" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Style="{StaticResource TextBlock.Label}" VerticalAlignment="Bottom" Text="{l:Loc plan.format.title}" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" TextWrapping="Wrap" Text="{l:Loc plan.format.hint}"
+                               Visibility="{Binding ShowFormatHint, Converter={StaticResource Converter.Visible}}" />
+
+                    <DockPanel Margin="0,12,0,0" Visibility="{Binding ShowChangeDetection, Converter={StaticResource Converter.Visible}}">
+                        <Border Style="{StaticResource Border.KindSwitch}" AutomationProperties.Name="{l:Loc plan.compare.title}">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.compare.fast}"
+                                             ToolTip="{l:Loc plan.compare.fastToolTip}"
+                                             IsChecked="{Binding ChangeDetectionIsFast, Mode=OneWay}"
+                                             Command="{Binding ChooseChangeDetectionCommand}" CommandParameter="Fast" />
+                                <RadioButton Style="{StaticResource RadioButton.Kind}" Content="{l:Loc plan.compare.safe}"
+                                             ToolTip="{l:Loc plan.compare.safeToolTip}"
+                                             IsChecked="{Binding ChangeDetectionIsSafe, Mode=OneWay}"
+                                             Command="{Binding ChooseChangeDetectionCommand}" CommandParameter="Safe" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Style="{StaticResource TextBlock.Label}" VerticalAlignment="Bottom" Text="{l:Loc plan.compare.title}" />
+                    </DockPanel>
+
                     <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,16,0,0" IsChecked="{Binding Enabled}"
                               ToolTip="{l:Loc plan.source.enabledToolTip}">
                         <TextBlock TextWrapping="Wrap" Text="{l:Loc plan.source.enabled}" />

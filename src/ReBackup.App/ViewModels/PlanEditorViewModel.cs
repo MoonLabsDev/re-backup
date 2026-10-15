@@ -52,7 +52,17 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _useGlobalIgnoreDefaults;
     [ObservableProperty] private bool _honorNestedIgnoreFiles;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DisplayName))] private bool _isDirty;
-    [ObservableProperty] private bool _isNew;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditIncremental), nameof(ShowFormatHint))] private bool _isNew;
+
+    /// <summary>The target is an incremental pool (not full copies); fixed once the plan is saved.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowChangeDetection), nameof(IncrementalIsFull))]
+    private bool _incremental;
+
+    /// <summary>How an incremental run finds changed files (Fast: path, size, time; Safe: reads and hashes every file).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ChangeDetectionIsFast), nameof(ChangeDetectionIsSafe))]
+    private ChangeDetection _changeDetection;
     [ObservableProperty] private IReadOnlyList<string> _errors = [];
     [ObservableProperty] private IReadOnlyList<string> _nextRuns = [];
     [ObservableProperty] private string _nextRunsNote = "";
@@ -181,6 +191,35 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     /// </summary>
     public bool ShowFreeSpaceOption => TargetIsFolder;
 
+    /// <summary>The storage format can only be chosen while the plan is new; it cannot be changed later.</summary>
+    public bool CanEditIncremental => IsNew;
+
+    /// <summary>The "cannot be changed later" hint, shown once the choice is fixed.</summary>
+    public bool ShowFormatHint => !IsNew;
+
+    /// <summary>"Compare files" only means something for an incremental plan.</summary>
+    public bool ShowChangeDetection => Incremental;
+
+    // The segments of the switches show the choice one-way and call the commands (see ChooseSourceKind).
+    public bool IncrementalIsFull => !Incremental;
+
+    public bool ChangeDetectionIsFast => ChangeDetection == ChangeDetection.Fast;
+
+    public bool ChangeDetectionIsSafe => ChangeDetection == ChangeDetection.Safe;
+
+    /// <summary>The Full copies | Incremental segments ("Full" or "Incremental"); ignored once the plan is saved.</summary>
+    [RelayCommand]
+    private void ChooseStorageFormat(string? format)
+    {
+        if (CanEditIncremental)
+            Incremental = format == "Incremental";
+    }
+
+    /// <summary>The Fast | Safe segments ("Fast" or "Safe").</summary>
+    [RelayCommand]
+    private void ChooseChangeDetection(string? mode) =>
+        ChangeDetection = mode == "Safe" ? ChangeDetection.Safe : ChangeDetection.Fast;
+
     /// <summary>Queue state, progress and history of this plan.</summary>
     public PlanRunViewModel Run { get; }
 
@@ -276,6 +315,10 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
     partial void OnFreeSpaceByRetentionChanged(bool value) => Touch();
 
+    partial void OnIncrementalChanged(bool value) => Touch();
+
+    partial void OnChangeDetectionChanged(ChangeDetection value) => Touch();
+
     partial void OnIsDirtyChanged(bool value) => RefreshNextRuns();
 
     partial void OnSchedulerPausedChanged(bool value) => RefreshNextRuns();
@@ -339,6 +382,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         plan.Target = EditedLocation(TargetKind, TargetS3, TargetDrive, Target, _saved.Target);
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
+        plan.Incremental = Incremental;
+        plan.ChangeDetection = ChangeDetection;
         plan.Ignore = CurrentIgnoreSettings();
         plan.Retention = RetentionRuleRows.Select(row => row.ToRule()).ToList();
         plan.Triggers = TriggerRows.Select(row => row.ToTrigger()).ToList();
@@ -595,6 +640,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             TargetDrive.Load(TargetIsDrive ? plan.Target.ConnectionId : null, TargetIsDrive ? plan.Target.Path : "");
             Enabled = plan.Enabled;
             FreeSpaceByRetention = plan.FreeSpaceByRetention;
+            Incremental = plan.Incremental;
+            ChangeDetection = plan.ChangeDetection;
             IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);
             UseGlobalIgnoreDefaults = plan.Ignore.UseGlobalDefaults;
             HonorNestedIgnoreFiles = plan.Ignore.HonorNestedFiles;
