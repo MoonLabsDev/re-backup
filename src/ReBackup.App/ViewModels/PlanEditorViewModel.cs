@@ -553,6 +553,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         var errors = PlanValidator.Validate(ToPlan(), _allPlans(), _s3.BucketOf, _drive.RootOf).Select(message => Loc.F(message)).ToList();
         if (IsCopyUnfinished && Enabled)
             errors.Add(Loc.T("plan.copyUnfinished.enable"));
+        if (IsCopyUnfinished && !string.Equals(Name, _saved.Name, StringComparison.Ordinal))
+            errors.Add(Loc.T("plan.copyUnfinished.rename"));
         Errors = errors;
     }
 

@@ -528,7 +528,8 @@
     "copyUnfinished": {
       "card": "Kopie unfertig",
       "banner": "Dieser Plan ist eine unfertige Kopie. Er kann erst aktiviert oder ausgeführt werden, wenn „Kopieren fortsetzen …“ das Kopieren fertiggestellt hat.",
-      "enable": "Eine unfertige Kopie kann nicht aktiviert werden. Zuerst mit „Kopieren fortsetzen …“ fertigstellen."
+      "enable": "Eine unfertige Kopie kann nicht aktiviert werden. Zuerst mit „Kopieren fortsetzen …“ fertigstellen.",
+      "rename": "Eine unfertige Kopie kann nicht umbenannt werden. Zuerst mit „Kopieren fortsetzen …“ fertigstellen."
     },
     "lock": {
       "banner": "Gesperrt von {host} ({operation}) seit {time}",

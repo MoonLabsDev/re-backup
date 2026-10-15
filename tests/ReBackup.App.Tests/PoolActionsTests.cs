@@ -347,6 +347,11 @@ public class PoolActionsTests : IDisposable
         unfinished.Enabled = true;
         unfinished.Errors.Should().Contain(Loc.T("plan.copyUnfinished.enable"));
         unfinished.Revert();
+        // Nor renamed: "Continue copy…" finds the copy's versions on the target by its name.
+        unfinished.CanEditName.Should().BeFalse();
+        unfinished.Name = "Renamed";
+        unfinished.Errors.Should().Contain(Loc.T("plan.copyUnfinished.rename"));
+        unfinished.Revert();
 
         vm.ContinueCopyCommand.Execute(unfinished);
         var resume = _fixture.Dialogs.CopyDialogs.Should().HaveCount(2).And.Subject.Last();
@@ -364,6 +369,7 @@ public class PoolActionsTests : IDisposable
         vm.Plans.Should().HaveCount(2, "the copy's plan was added once");
         unfinished.IsCopyUnfinished.Should().BeFalse();
         unfinished.CanEnable.Should().BeTrue();
+        unfinished.CanEditName.Should().BeTrue();
         _fixture.Store.TryLoad(unfinished.Id)!.CopyFromPlanId.Should().BeNull();
         vm.RunnablePlans.Single(p => p.Id == unfinished.Id).CanRun.Should().BeTrue();
     }

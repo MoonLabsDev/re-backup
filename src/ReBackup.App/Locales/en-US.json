@@ -528,7 +528,8 @@
     "copyUnfinished": {
       "card": "Copy unfinished",
       "banner": "This plan is an unfinished copy. It cannot be enabled or run until \"Continue copy…\" has finished the copy.",
-      "enable": "An unfinished copy cannot be enabled. Finish it with \"Continue copy…\" first."
+      "enable": "An unfinished copy cannot be enabled. Finish it with \"Continue copy…\" first.",
+      "rename": "An unfinished copy cannot be renamed. Finish it with \"Continue copy…\" first."
     },
     "lock": {
       "banner": "Locked by {host} ({operation}) since {time}",

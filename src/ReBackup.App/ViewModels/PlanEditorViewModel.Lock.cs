@@ -46,6 +46,12 @@ public sealed partial class PlanEditorViewModel
     /// <summary>The "Enabled" switch can be turned on (not for an unfinished copy; it can always be turned off).</summary>
     public bool CanEnable => !IsCopyUnfinished || Enabled;
 
+    /// <summary>
+    /// The name can be edited: not for an unfinished copy, whose versions on the target carry its name ("Continue copy…"
+    /// would copy them again under a new one).
+    /// </summary>
+    public bool CanEditName => !IsCopyUnfinished;
+
     /// <summary>The saved plan is incremental: its target has a lock, can be verified and shows the lock banner.</summary>
     public bool ShowPoolActions => !IsNew && _saved.Incremental;
 
@@ -80,6 +86,7 @@ public sealed partial class PlanEditorViewModel
         OnPropertyChanged(nameof(ShowReleaseLock));
         OnPropertyChanged(nameof(IsCopyUnfinished));
         OnPropertyChanged(nameof(CanEnable));
+        OnPropertyChanged(nameof(CanEditName));
         _ = RefreshLockAsync();
     }
 
