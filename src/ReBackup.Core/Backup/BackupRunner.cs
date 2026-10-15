@@ -102,8 +102,8 @@ public sealed partial class BackupRunner : IBackupRunner
     /// manifest is written; only removing the marker makes the folder a version. A run that does not get there removes
     /// what it wrote, the marker last. What it cannot remove keeps the marker, and the next run of the plan removes it
     /// (<see cref="LeftoverCleaner"/>).
-    /// An incremental plan holds the target's lock from before the leftover cleanup until after retention, whatever the
-    /// outcome (spec 4); a lock that cannot be released is a warning.
+    /// An incremental plan holds the target's lock from before the leftover cleanup until after retention and garbage
+    /// collection, whatever the outcome (spec 4); a lock that cannot be released is a warning.
     /// </remarks>
     public async Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -185,6 +185,8 @@ public sealed partial class BackupRunner : IBackupRunner
                     // The backup itself is done; whatever goes wrong here must not turn it into a failure.
                     entry.Warnings.Add(CoreTexts.English("core.run.retentionFailed", ("error", ex.Message)));
                 }
+                if (plan.Incremental)
+                    await Task.Run(() => CollectGarbageAsync(plan, work!.Target, entry, cancellationToken));
             }
         }
         finally
@@ -295,7 +297,8 @@ public sealed partial class BackupRunner : IBackupRunner
     /// <summary>
     /// Makes room by deleting versions that retention would delete after this run anyway, oldest first. Nothing is
     /// deleted unless that can make the run fit, and the newest existing version always stays. Returns the free space;
-    /// <see cref="long.MaxValue"/> when the storage stops telling it.
+    /// <see cref="long.MaxValue"/> when the storage stops telling it. An incremental plan counts what each version alone
+    /// holds in the pool and collects afterwards (<see cref="FreePoolSpaceAsync"/>).
     /// </summary>
     private async Task<long> FreeSpaceByRetentionAsync(BackupPlan plan, IStorage target, long required, long free,
         RunLogEntry entry, CancellationToken cancellationToken)
@@ -303,10 +306,11 @@ public sealed partial class BackupRunner : IBackupRunner
         if (ResolveRules(plan, entry, "core.run.freeSpaceRulesUnreadable", "core.run.freeSpacePlanGone") is not { Count: > 0 } rules)
             return free;
 
+        IReadOnlyList<VersionInfo> versions;
         List<VersionInfo> candidates;
         try
         {
-            var versions = await VersionCatalog.ListAsync(target, plan.Id, plan.Name, cancellationToken).ConfigureAwait(false);
+            versions = await VersionCatalog.ListAsync(target, plan.Id, plan.Name, cancellationToken).ConfigureAwait(false);
             var newest = versions.LastOrDefault(v => v.IsOwned);
             candidates = RetentionPlanner.Decide(versions, rules, upcomingRun: _time.GetLocalNow().DateTime)
                 .Where(d => d.Delete && !ReferenceEquals(d.Version, newest))
@@ -319,6 +323,9 @@ public sealed partial class BackupRunner : IBackupRunner
             return free;
         }
 
+        if (plan.Incremental)
+            return await FreePoolSpaceAsync(plan, target, versions, candidates, required, free, entry, cancellationToken)
+                .ConfigureAwait(false);
         if (free + candidates.Sum(v => v.TotalBytes ?? 0) < required)
             return free;
 

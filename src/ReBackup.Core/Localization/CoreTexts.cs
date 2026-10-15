@@ -94,6 +94,10 @@ public static class CoreTexts
         ["core.run.targetLocked"] = "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
         ["core.run.lockReleaseFailed"] = "The target's lock could not be released: {error}",
 
+        ["core.gc.skippedMarkers"] = "Unused backup content was not removed: a version is still being written or deleted.",
+        ["core.gc.manifestUnreadable"] = "Unused backup content was not removed: the manifest of \"{version}\" cannot be read.",
+        ["core.gc.failed"] = "Unused backup content could not be removed: {error}",
+
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
         ["core.skip.reservedName"] = "the name is reserved for ReBackup's own files",
         // The text runs before the marker files wrote; kept so that their logs are still recognized and translated.

@@ -13,6 +13,7 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
 {
     private readonly object _gate = new();
     private readonly List<(string Path, CreateOptions Options)> _created = [];
+    private readonly List<IReadOnlyList<string>> _deleteBatches = [];
 
     /// <summary>Free space to report; the inner storage's when null.</summary>
     public Func<long?>? FreeSpace { get; init; }
@@ -45,6 +46,12 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
     public IReadOnlyList<(string Path, CreateOptions Options)> Creates
     {
         get { lock (_gate) return _created.ToList(); }
+    }
+
+    /// <summary>The path lists <see cref="DeleteAsync"/> was called with, one per call, in order.</summary>
+    public IReadOnlyList<IReadOnlyList<string>> DeleteBatches
+    {
+        get { lock (_gate) return _deleteBatches.ToList(); }
     }
 
     public StorageCapabilities Capabilities => inner.Capabilities;
@@ -80,6 +87,7 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
 
     public async Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct)
     {
+        lock (_gate) _deleteBatches.Add(paths.ToList());
         foreach (var path in paths)
         {
             Before?.Invoke("delete", path);

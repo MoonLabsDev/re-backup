@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using ReBackup.Core.Indexing;
@@ -19,8 +18,6 @@ public sealed partial class BackupRunner
     /// <summary>What a lock holder is doing while it runs a backup (<see cref="LockInfo.Operation"/>).</summary>
     private const string LockOperation = "backup";
 
-    private const string LockTimeFormat = "yyyy-MM-dd HH:mm 'UTC'";
-
     /// <summary>
     /// Checks the target's storage format against the plan before anything is written (spec 3, mode guard). An
     /// incremental plan first takes the target's lock into <paramref name="heldLock"/> and creates the pool's store file on
@@ -35,7 +32,7 @@ public sealed partial class BackupRunner
                 .ConfigureAwait(false);
             if (heldLock.Value is null)
                 throw new BackupAbortException(RunStatus.Error,
-                    await LockedMessageAsync(target, cancellationToken).ConfigureAwait(false));
+                    await TargetLock.LockedMessageAsync(target, cancellationToken).ConfigureAwait(false));
         }
 
         var outcome = await StoreGuard.CheckAsync(target, plan, createIfMissing: plan.Incremental, cancellationToken)
@@ -44,22 +41,70 @@ public sealed partial class BackupRunner
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English(StoreGuard.MessageKey(outcome)));
     }
 
-    /// <summary>Who holds the target, for the run log; question marks for what the lock file does not tell (any more).</summary>
-    private static async Task<string> LockedMessageAsync(IStorage target, CancellationToken cancellationToken)
+    /// <summary>
+    /// Garbage collection after retention (spec 6), under the run's lock: deletes the blobs no version references any more.
+    /// A skip or an abort, and whatever goes wrong, is a warning; the run stays as it is.
+    /// </summary>
+    private static async Task CollectGarbageAsync(BackupPlan plan, IStorage target, RunLogEntry entry,
+        CancellationToken cancellationToken)
     {
-        LockInfo? holder;
         try
         {
-            holder = await TargetLock.ReadAsync(target, cancellationToken).ConfigureAwait(false);
+            var result = await PoolCollector.CollectAsync(target, plan.Id, plan.Name, cancellationToken).ConfigureAwait(false);
+            if (result.SkippedReason is { } reason)
+                entry.Warnings.Add(reason);
         }
-        catch (Exception ex) when (ex is StorageException or JsonException)
+        catch (OperationCanceledException)
         {
-            holder = null;
+            // The next run collects.
         }
-        return CoreTexts.English("core.run.targetLocked",
-            ("host", holder?.Host ?? "?"),
-            ("operation", holder?.Operation ?? "?"),
-            ("since", holder is null ? "?" : holder.StartedUtc.ToString(LockTimeFormat, CultureInfo.InvariantCulture)));
+        catch (Exception ex)
+        {
+            entry.Warnings.Add(CoreTexts.English("core.gc.failed", ("error", ex.Message)));
+        }
+    }
+
+    /// <summary>
+    /// Frees space for an incremental plan (spec 5): deleting a version frees only the content no other version references,
+    /// so <paramref name="candidates"/> are deleted in order until their <see cref="PoolUsage.UniqueBytesAsync"/> covers the
+    /// shortfall, then the pool is collected and the free space read again. Nothing is deleted when all candidates together
+    /// cannot cover it. Returns the free space; <see cref="long.MaxValue"/> when the storage stops telling it.
+    /// </summary>
+    private async Task<long> FreePoolSpaceAsync(BackupPlan plan, IStorage target, IReadOnlyList<VersionInfo> versions,
+        List<VersionInfo> candidates, long required, long free, RunLogEntry entry, CancellationToken cancellationToken)
+    {
+        IReadOnlyDictionary<string, long> unique;
+        try
+        {
+            unique = await PoolUsage.UniqueBytesAsync(target, versions, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or ArgumentException)
+        {
+            entry.Warnings.Add(CoreTexts.English("core.run.freeSpaceExamineFailed", ("error", ex.Message)));
+            return free;
+        }
+
+        var shortfall = required - free;
+        if (candidates.Sum(v => unique.GetValueOrDefault(v.Name)) < shortfall)
+            return free;
+
+        long covered = 0;
+        var removed = false;
+        foreach (var version in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await TryRemoveVersionAsync(plan, target, version, entry, "core.run.freeSpaceDeleteFailed").ConfigureAwait(false))
+                continue;
+            removed = true;
+            covered += unique.GetValueOrDefault(version.Name);
+            if (covered >= shortfall)
+                break;
+        }
+        if (!removed)
+            return free;
+
+        await CollectGarbageAsync(plan, target, entry, cancellationToken).ConfigureAwait(false);
+        return await target.GetFreeSpaceAsync(cancellationToken).ConfigureAwait(false) ?? long.MaxValue;
     }
 
     /// <summary>Releases the run's lock. A target that cannot be reached any more leaves the lock in place: a warning, never a failure of the run.</summary>

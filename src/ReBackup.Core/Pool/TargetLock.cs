@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using ReBackup.Core.Localization;
 using ReBackup.Shared.Json;
 using ReBackup.Storage;
 
@@ -77,6 +79,27 @@ public sealed class TargetLock : IAsyncDisposable
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The English <c>core.run.targetLocked</c> text naming who holds the target; question marks for what the lock file
+    /// does not tell (any more). Never throws for an unreadable target.
+    /// </summary>
+    internal static async Task<string> LockedMessageAsync(IStorage target, CancellationToken ct)
+    {
+        LockInfo? holder;
+        try
+        {
+            holder = await ReadAsync(target, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is StorageException or JsonException)
+        {
+            holder = null;
+        }
+        return CoreTexts.English("core.run.targetLocked",
+            ("host", holder?.Host ?? "?"),
+            ("operation", holder?.Operation ?? "?"),
+            ("since", holder is null ? "?" : holder.StartedUtc.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
     }
 
     /// <summary>Removes the lock whoever holds it, for a lock left behind by a crashed run. No error when there is none.</summary>

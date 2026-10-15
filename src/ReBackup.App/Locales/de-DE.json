@@ -169,6 +169,11 @@
       "targetLocked": "Das Ziel wird seit {since} von {host} verwendet ({operation}). Es wurde nichts geändert.",
       "lockReleaseFailed": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}"
     },
+    "gc": {
+      "skippedMarkers": "Nicht mehr benötigte Backup-Inhalte wurden nicht entfernt: Eine Version wird noch geschrieben oder gelöscht.",
+      "manifestUnreadable": "Nicht mehr benötigte Backup-Inhalte wurden nicht entfernt: Das Manifest von „{version}“ kann nicht gelesen werden.",
+      "failed": "Nicht mehr benötigte Backup-Inhalte konnten nicht entfernt werden: {error}"
+    },
     "skip": {
       "ignoreFileUnreadable": "Ignorierdatei konnte nicht gelesen werden; ihre Muster wurden nicht angewendet",
       "reservedName": "der Name ist für ReBackups eigene Dateien reserviert",
