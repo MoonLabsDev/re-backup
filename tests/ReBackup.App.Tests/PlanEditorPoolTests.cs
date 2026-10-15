@@ -95,4 +95,16 @@ public class PlanEditorPoolTests : IDisposable
         editor.ChooseStorageFormatCommand.Execute("Full");
         editor.ShowChangeDetection.Should().BeFalse();
     }
+
+    [Fact]
+    public void Setting_Incremental_directly_on_a_saved_plan_is_not_persisted()
+    {
+        var editor = SavedPlan();
+
+        editor.Incremental = true;
+
+        editor.ToPlan().Incremental.Should().BeFalse();
+        editor.TrySave(_fixture.Store).Should().BeTrue();
+        _fixture.Store.TryLoad("p1")!.Incremental.Should().BeFalse();
+    }
 }

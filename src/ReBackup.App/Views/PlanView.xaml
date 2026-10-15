@@ -359,8 +359,7 @@
                         </Border>
                         <TextBlock Style="{StaticResource TextBlock.Label}" VerticalAlignment="Bottom" Text="{l:Loc plan.format.title}" />
                     </DockPanel>
-                    <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" TextWrapping="Wrap" Text="{l:Loc plan.format.hint}"
-                               Visibility="{Binding ShowFormatHint, Converter={StaticResource Converter.Visible}}" />
+                    <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" TextWrapping="Wrap" Text="{l:Loc plan.format.hint}" />
 
                     <DockPanel Margin="0,12,0,0" Visibility="{Binding ShowChangeDetection, Converter={StaticResource Converter.Visible}}">
                         <Border Style="{StaticResource Border.KindSwitch}" AutomationProperties.Name="{l:Loc plan.compare.title}">

@@ -52,7 +52,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _useGlobalIgnoreDefaults;
     [ObservableProperty] private bool _honorNestedIgnoreFiles;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DisplayName))] private bool _isDirty;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditIncremental), nameof(ShowFormatHint))] private bool _isNew;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditIncremental))] private bool _isNew;
 
     /// <summary>The target is an incremental pool (not full copies); fixed once the plan is saved.</summary>
     [ObservableProperty]
@@ -193,9 +193,6 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     /// <summary>The storage format can only be chosen while the plan is new; it cannot be changed later.</summary>
     public bool CanEditIncremental => IsNew;
-
-    /// <summary>The "cannot be changed later" hint, shown once the choice is fixed.</summary>
-    public bool ShowFormatHint => !IsNew;
 
     /// <summary>"Compare files" only means something for an incremental plan.</summary>
     public bool ShowChangeDetection => Incremental;
@@ -382,7 +379,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         plan.Target = EditedLocation(TargetKind, TargetS3, TargetDrive, Target, _saved.Target);
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
-        plan.Incremental = Incremental;
+        // The saved plan is the authority once it exists: the format cannot change after the first save.
+        plan.Incremental = IsNew ? Incremental : _saved.Incremental;
         plan.ChangeDetection = ChangeDetection;
         plan.Ignore = CurrentIgnoreSettings();
         plan.Retention = RetentionRuleRows.Select(row => row.ToRule()).ToList();
