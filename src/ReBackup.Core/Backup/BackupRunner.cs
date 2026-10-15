@@ -371,16 +371,15 @@ public sealed partial class BackupRunner : IBackupRunner
 
     /// <summary>
     /// Whether a source path, file or folder, would land on one of the names a version folder uses for itself: the
-    /// manifest, the markers and the pool's own names. Copied there, it would hide the version, be taken for its manifest, or clash with the
-    /// run's own marker. Only the root counts: deeper down these names are ordinary files.
+    /// manifest and the markers. Copied there, it would hide the version, be taken for its manifest, or clash with the
+    /// run's own marker. Only the root counts: deeper down these names are ordinary files. The pool's names
+    /// (<see cref="PoolLayout.StoreFile"/>, <see cref="PoolLayout.LockFile"/>, <see cref="PoolLayout.PoolFolder"/>) live
+    /// in the target's root, never inside a version folder, so a source that holds them (a mirrored pool) is backed up.
     /// </summary>
     private static bool IsReservedRootName(string path) =>
         path.Equals(VersionMarkerNames.Manifest, StringComparison.OrdinalIgnoreCase) ||
         path.Equals(VersionMarkerNames.Pending, StringComparison.OrdinalIgnoreCase) ||
-        path.Equals(VersionMarkerNames.Deleting, StringComparison.OrdinalIgnoreCase) ||
-        path.Equals(PoolLayout.StoreFile, StringComparison.OrdinalIgnoreCase) ||
-        path.Equals(PoolLayout.LockFile, StringComparison.OrdinalIgnoreCase) ||
-        path.Equals(PoolLayout.PoolFolder, StringComparison.OrdinalIgnoreCase);
+        path.Equals(VersionMarkerNames.Deleting, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Removes what earlier runs of this plan left behind (<see cref="LeftoverCleaner"/>): folders of runs that never
