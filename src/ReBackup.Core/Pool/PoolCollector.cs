@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Versions;
@@ -41,7 +40,7 @@ public static class PoolCollector
     public static async Task<CollectResult> CollectAsync(IStorage target, string planId, string planName,
         CancellationToken ct)
     {
-        var folders = await RootFoldersAsync(target, ct).ConfigureAwait(false);
+        var folders = await PoolManifests.RootFoldersAsync(target, ct).ConfigureAwait(false);
         if (await HasFoldersInTransitAsync(target, folders, ct).ConfigureAwait(false))
             return new CollectResult(0, 0, CoreTexts.English("core.gc.skippedMarkers"));
 
@@ -72,26 +71,6 @@ public static class PoolCollector
                 .ConfigureAwait(false);
         }
         return new CollectResult(deleted, freed, null);
-    }
-
-    /// <summary>The folders directly in the target's root that may be versions: no links, not the pool.</summary>
-    private static async Task<List<string>> RootFoldersAsync(IStorage target, CancellationToken ct)
-    {
-        var folders = new List<string>();
-        try
-        {
-            await foreach (var entry in target.ListAsync("", recursive: false, ct).ConfigureAwait(false))
-            {
-                if (entry.IsDirectory && !entry.IsLink &&
-                    !StoragePath.Name(entry.Path).Equals(PoolLayout.PoolFolder, StringComparison.OrdinalIgnoreCase))
-                    folders.Add(entry.Path);
-            }
-        }
-        catch (StorageNotFoundException)
-        {
-            // An empty target.
-        }
-        return folders;
     }
 
     /// <summary>
@@ -126,42 +105,12 @@ public static class PoolCollector
     /// false when the manifest could not be looked at or read, for whatever reason.
     /// </summary>
     private static async Task<bool> TryMarkAsync(IStorage target, string folder, HashSet<string> marked,
-        CancellationToken ct)
-    {
-        string manifest;
-        try
+        CancellationToken ct) =>
+        await PoolManifests.TryReadAsync(target, folder, file =>
         {
-            manifest = StoragePath.Combine(folder, VersionMarkerNames.Manifest);
-            if (await target.StatAsync(manifest, ct).ConfigureAwait(false) is null)
-                return true;
-        }
-        catch (ArgumentException)
-        {
-            return true;
-        }
-        catch (StorageException)
-        {
-            return false;
-        }
-
-        try
-        {
-            var stream = await target.OpenReadAsync(manifest, ct).ConfigureAwait(false);
-            await using (stream.ConfigureAwait(false))
-            {
-                ManifestStream.Read(stream, file =>
-                {
-                    if (PoolLayout.TryParseHex(file.Hash, out var hex))
-                        marked.Add(hex.ToLowerInvariant());
-                }, ct);
-            }
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or ArgumentException)
-        {
-            return false;   // StorageException is an IOException; a manifest that vanished meanwhile is unreadable too
-        }
-    }
+            if (PoolLayout.TryParseHex(file.Hash, out var hex))
+                marked.Add(hex.ToLowerInvariant());
+        }, ct).ConfigureAwait(false) != ManifestRead.Unreadable;
 
     /// <summary>
     /// Everything in the pool, and the blobs in it whose hash is not marked, with their sizes. A pool that does not exist

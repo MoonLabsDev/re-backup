@@ -18,6 +18,12 @@ public sealed class WrappedStorage(IStorage inner) : IStorage
     /// <summary>How often <see cref="OpenReadAsync"/> was called.</summary>
     public int Opens { get; private set; }
 
+    /// <summary>How often <see cref="CreateAsync"/> was called.</summary>
+    public int Creates { get; private set; }
+
+    /// <summary>How often <see cref="DeleteAsync"/> was called.</summary>
+    public int Deletes { get; private set; }
+
     public StorageCapabilities Capabilities => inner.Capabilities;
 
     public Task<StorageEntry?> StatAsync(string path, CancellationToken ct)
@@ -44,12 +50,14 @@ public sealed class WrappedStorage(IStorage inner) : IStorage
     public Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct)
     {
         ThrowIfUnavailable();
+        Creates++;
         return inner.CreateAsync(path, options, ct);
     }
 
     public Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct)
     {
         ThrowIfUnavailable();
+        Deletes++;
         return inner.DeleteAsync(paths, ct);
     }
 
