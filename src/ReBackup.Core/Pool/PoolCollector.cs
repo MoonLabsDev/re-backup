@@ -40,17 +40,9 @@ public static class PoolCollector
     public static async Task<CollectResult> CollectAsync(IStorage target, string planId, string planName,
         CancellationToken ct)
     {
-        var folders = await PoolManifests.RootFoldersAsync(target, ct).ConfigureAwait(false);
-        if (await HasFoldersInTransitAsync(target, folders, ct).ConfigureAwait(false))
-            return new CollectResult(0, 0, CoreTexts.English("core.gc.skippedMarkers"));
-
-        var marked = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var folder in folders)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (!await TryMarkAsync(target, folder, marked, ct).ConfigureAwait(false))
-                return new CollectResult(0, 0, CoreTexts.English("core.gc.manifestUnreadable", ("version", StoragePath.Name(folder))));
-        }
+        var (marked, skipped) = await MarkAsync(target, ct).ConfigureAwait(false);
+        if (skipped is not null)
+            return new CollectResult(0, 0, skipped);
 
         var (pool, doomed, bytes) = await ListPoolAsync(target, marked, ct).ConfigureAwait(false);
         var deleted = 0;
@@ -71,6 +63,36 @@ public static class PoolCollector
                 .ConfigureAwait(false);
         }
         return new CollectResult(deleted, freed, null);
+    }
+
+    /// <summary>
+    /// Whether a collection would sweep the pool now: null when it would, otherwise the English text (<c>core.gc.*</c>) of
+    /// why it would be skipped (a folder in transit, a manifest that cannot be read). It checks the preconditions and reads
+    /// every manifest as <see cref="CollectAsync"/> does, and deletes nothing. Used before deleting versions to free space,
+    /// which frees nothing unless the pool is collected afterwards.
+    /// </summary>
+    /// <exception cref="StorageException">The target cannot be listed.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="ct"/> was canceled.</exception>
+    public static async Task<string?> CanCollectAsync(IStorage target, CancellationToken ct) =>
+        (await MarkAsync(target, ct).ConfigureAwait(false)).Skipped;
+
+    /// <summary>
+    /// The preconditions and the mark phase: the hashes every manifest in the target's root names, or why the collection
+    /// is skipped (then the hashes are incomplete).
+    /// </summary>
+    private static async Task<(HashSet<string> Marked, string? Skipped)> MarkAsync(IStorage target, CancellationToken ct)
+    {
+        var marked = new HashSet<string>(StringComparer.Ordinal);
+        var folders = await PoolManifests.RootFoldersAsync(target, ct).ConfigureAwait(false);
+        if (await HasFoldersInTransitAsync(target, folders, ct).ConfigureAwait(false))
+            return (marked, CoreTexts.English("core.gc.skippedMarkers"));
+        foreach (var folder in folders)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!await TryMarkAsync(target, folder, marked, ct).ConfigureAwait(false))
+                return (marked, CoreTexts.English("core.gc.manifestUnreadable", ("version", StoragePath.Name(folder))));
+        }
+        return (marked, null);
     }
 
     /// <summary>

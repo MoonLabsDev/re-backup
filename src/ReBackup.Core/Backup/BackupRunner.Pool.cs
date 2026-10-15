@@ -68,7 +68,9 @@ public sealed partial class BackupRunner
     /// Frees space for an incremental plan (spec 5): deleting a version frees only the content no other version references,
     /// so <paramref name="candidates"/> are deleted in order until their <see cref="PoolUsage.UniqueBytesAsync"/> covers the
     /// shortfall, then the pool is collected and the free space read again. Nothing is deleted when all candidates together
-    /// cannot cover it. Returns the free space; <see cref="long.MaxValue"/> when the storage stops telling it.
+    /// cannot cover it, or when the pool could not be collected afterwards (<see cref="PoolCollector.CanCollectAsync"/>: a
+    /// folder in transit, a manifest that cannot be read), which is a warning. Returns the free space;
+    /// <see cref="long.MaxValue"/> when the storage stops telling it.
     /// </summary>
     private async Task<long> FreePoolSpaceAsync(BackupPlan plan, IStorage target, IReadOnlyList<VersionInfo> versions,
         List<VersionInfo> candidates, long required, long free, RunLogEntry entry, CancellationToken cancellationToken)
@@ -87,6 +89,22 @@ public sealed partial class BackupRunner
         var shortfall = required - free;
         if (candidates.Sum(v => unique.GetValueOrDefault(v.Name)) < shortfall)
             return free;
+        // Deleting versions frees nothing unless the pool is collected afterwards: check that first.
+        string? skipped;
+        try
+        {
+            skipped = await PoolCollector.CanCollectAsync(target, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            entry.Warnings.Add(CoreTexts.English("core.run.freeSpaceExamineFailed", ("error", ex.Message)));
+            return free;
+        }
+        if (skipped is not null)
+        {
+            entry.Warnings.Add(CoreTexts.English("core.run.freeSpaceNoCollect", ("reason", skipped)));
+            return free;
+        }
 
         long covered = 0;
         var removed = false;

@@ -150,6 +150,7 @@
       "freeSpacePlanGone": "Old versions were not deleted to free space: the plan no longer exists.",
       "freeSpaceExamineFailed": "Old versions could not be examined to free space: {error}",
       "freeSpaceDeleteFailed": "\"{version}\" could not be deleted to free space: {error}",
+      "freeSpaceNoCollect": "Old versions were not deleted to free space, because the space they hold could not be freed now. {reason}",
       "remainsFailed": "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
       "removedRemainsLeft": "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
       "unfinishedFailed": "An unfinished backup could not be deleted (\"{name}\"): {error}",

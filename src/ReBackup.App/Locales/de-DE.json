@@ -150,6 +150,7 @@
       "freeSpacePlanGone": "Alte Versionen wurden nicht gelöscht, um Platz zu schaffen: Den Plan gibt es nicht mehr.",
       "freeSpaceExamineFailed": "Alte Versionen konnten nicht geprüft werden, um Platz zu schaffen: {error}",
       "freeSpaceDeleteFailed": "„{version}“ konnte nicht gelöscht werden, um Platz zu schaffen: {error}",
+      "freeSpaceNoCollect": "Alte Versionen wurden nicht gelöscht, um Platz zu schaffen, weil sich ihr Platz gerade nicht freigeben ließ. {reason}",
       "remainsFailed": "Reste einer früheren Löschung konnten nicht gelöscht werden („{name}“): {error}",
       "removedRemainsLeft": "„{version}“ wurde aus den Versionen entfernt, seine Reste konnten aber noch nicht gelöscht werden: {error}",
       "unfinishedFailed": "Ein unfertiges Backup konnte nicht gelöscht werden („{name}“): {error}",

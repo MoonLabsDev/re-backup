@@ -47,6 +47,23 @@ public class PoolCollectorTests
     }
 
     [Fact]
+    public async Task CanCollect_tells_why_a_collection_would_be_skipped_and_deletes_nothing()
+    {
+        Version(V1, ("a.txt", "kept"));
+        AddBlob(_target, "orphan");
+        (await PoolCollector.CanCollectAsync(_target, CancellationToken.None)).Should().BeNull();
+
+        _target.AddFile($"{V2}/re-manifest.json", Bytes("{ not json"));
+        (await PoolCollector.CanCollectAsync(_target, CancellationToken.None))
+            .Should().Be(CoreTexts.English("core.gc.manifestUnreadable", ("version", V2)));
+
+        _target.AddFile($"{V3}/re-pending.json", Bytes("{}"));
+        (await PoolCollector.CanCollectAsync(_target, CancellationToken.None))
+            .Should().Be(CoreTexts.English("core.gc.skippedMarkers"));
+        Blobs(_target).Should().BeEquivalentTo([BlobOf("kept"), BlobOf("orphan")]);
+    }
+
+    [Fact]
     public async Task Blob_shared_with_kept_version_survives()
     {
         Version(V1, ("a.txt", "shared"), ("b.txt", "only-v1"));

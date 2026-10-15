@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Pool;
 using ReBackup.Core.Tests.TestSupport;
@@ -151,6 +152,37 @@ public class PoolFaultTests
         }
 
         completedWithoutFault.Should().BeTrue($"a run without a fault needs fewer than {MaxSteps} writes and deletes");
+    }
+
+    [Theory]
+    [InlineData("notes/re-manifest.json", "{ not a manifest")]
+    [InlineData("2026_10_14-09_00 Other/re-pending.json",
+        "{\"formatVersion\":1,\"planId\":\"other\",\"planName\":\"Other\",\"host\":\"OTHER-PC\"}")]
+    public async Task Freeing_space_deletes_nothing_when_the_pool_cannot_be_collected(string blocker, string content)
+    {
+        // Deleting a version frees nothing until the pool is collected: when collection would be skipped (a manifest
+        // that cannot be read, a folder in transit), no version is deleted for space and the run ends Full.
+        var scenario = new Scenario();
+        for (var day = 1; day <= 3; day++)
+            await scenario.CleanRunAsync(day);
+        scenario.Target.AddFile(blocker, Bytes(content));
+        scenario.SourceOfDay(4);
+        // Only the pool counts, so deleting a version's manifest frees nothing by itself: as on a real disk, where the
+        // manifests are tiny next to the content.
+        long PoolBytes() => scenario.Target.Files.Where(f => f.StartsWith(PoolLayout.PoolFolder + "/", StringComparison.Ordinal))
+            .Sum(f => (long)scenario.Target.ReadAllBytes(f).Length);
+        var capacity = PoolBytes() + 600;
+        var faulty = new FaultyStorage(scenario.Target) { FreeSpace = () => capacity - PoolBytes() };
+        scenario.Target.FreeSpace = 0;   // the storage tells its free space (the wrapper's)
+
+        var entry = await scenario.RunAsync(faulty);
+
+        entry.Status.Should().Be(RunStatus.Full, entry.Reason);
+        entry.RetentionDeleted.Should().BeEmpty();
+        var noCollect = CoreTexts.English("core.run.freeSpaceNoCollect", ("reason", ""));
+        entry.Warnings.Should().ContainSingle(w => w.StartsWith(noCollect, StringComparison.Ordinal));
+        (await VersionCatalog.ListAsync(scenario.Target, PlanId, PlanName)).Should().HaveCount(3);
+        await AssertListedVersionsRestoreAsync(scenario, "after the Full run");
     }
 
     private static async Task AssertListedVersionsRestoreAsync(Scenario scenario, string context)

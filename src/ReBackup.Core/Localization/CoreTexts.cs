@@ -74,6 +74,7 @@ public static class CoreTexts
         ["core.run.freeSpacePlanGone"] = "Old versions were not deleted to free space: the plan no longer exists.",
         ["core.run.freeSpaceExamineFailed"] = "Old versions could not be examined to free space: {error}",
         ["core.run.freeSpaceDeleteFailed"] = "\"{version}\" could not be deleted to free space: {error}",
+        ["core.run.freeSpaceNoCollect"] = "Old versions were not deleted to free space, because the space they hold could not be freed now. {reason}",
         ["core.run.remainsFailed"] = "Remains of an earlier removal could not be deleted (\"{name}\"): {error}",
         ["core.run.removedRemainsLeft"] =
             "\"{version}\" was removed from the versions, but its remains could not be deleted yet: {error}",
