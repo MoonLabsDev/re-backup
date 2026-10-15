@@ -165,7 +165,8 @@
       "storeFullOnPool": "Das Ziel enthält einen inkrementellen Pool, dieser Plan ist aber ein Vollplan. Es wurde nichts geändert.",
       "storePoolOnFull": "Dieser Plan ist inkrementell, das Ziel enthält aber bereits vollständige Versionen davon. Es wurde nichts geändert.",
       "storeOtherPlan": "Der Pool des Ziels gehört zu einem anderen Plan. Es wurde nichts geändert.",
-      "storeUnsupported": "Das Speicherformat des Ziels wird von dieser ReBackup-Version nicht unterstützt. Es wurde nichts geändert."
+      "storeUnsupported": "Das Speicherformat des Ziels wird von dieser ReBackup-Version nicht unterstützt. Es wurde nichts geändert.",
+      "targetLocked": "Das Ziel wird seit {since} von {host} verwendet ({operation}). Es wurde nichts geändert."
     },
     "skip": {
       "ignoreFileUnreadable": "Ignorierdatei konnte nicht gelesen werden; ihre Muster wurden nicht angewendet",

@@ -165,7 +165,8 @@
       "storeFullOnPool": "The target holds an incremental pool, but this plan is a full plan. Nothing was changed.",
       "storePoolOnFull": "This plan is incremental, but the target already holds full versions of it. Nothing was changed.",
       "storeOtherPlan": "The target's pool belongs to another plan. Nothing was changed.",
-      "storeUnsupported": "The target's storage format is not supported by this version of ReBackup. Nothing was changed."
+      "storeUnsupported": "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
+      "targetLocked": "The target is in use by {host} ({operation}) since {since}. Nothing was changed."
     },
     "skip": {
       "ignoreFileUnreadable": "ignore file could not be read; its patterns were not applied",

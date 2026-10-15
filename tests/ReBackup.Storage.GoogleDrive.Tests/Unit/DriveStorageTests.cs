@@ -301,6 +301,18 @@ public sealed class DriveStorageTests
     }
 
     [Fact]
+    public async Task Exclusive_create_conflicts_when_file_exists()
+    {
+        var storage = Storage();
+        await WriteAsync(storage, "re-lock.json", "first", new CreateOptions(Durable: true));
+
+        await storage.Invoking(s => WriteAsync(s, "re-lock.json", "second", new CreateOptions(Overwrite: false, Durable: true)))
+            .Should().ThrowAsync<StorageConflictException>();
+
+        (await ReadAsync(storage, "re-lock.json")).Should().Be("first");
+    }
+
+    [Fact]
     public async Task Exclusive_commit_conflicts_when_the_path_was_taken_meanwhile()
     {
         var storage = Storage();
