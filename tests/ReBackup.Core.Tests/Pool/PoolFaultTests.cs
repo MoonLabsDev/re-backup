@@ -4,6 +4,7 @@ using ReBackup.Core.Backup;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Pool;
 using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Core.Versions;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
@@ -172,7 +173,10 @@ public class PoolFaultTests
             Dictionary<string, string> restored;
             try
             {
-                restored = await RestoreAsync(scenario.Target, version.Path);
+                // The way the app restores: the target's version view, then the Restorer (which verifies every file).
+                var view = await VersionViews.OpenAsync(scenario.Target, version.Path, CancellationToken.None);
+                view.Should().BeOfType<PoolVersionView>(context);
+                restored = await RestoreFromAsync(view, version.Path);
             }
             catch (Exception ex) when (ex is IOException or ArgumentException)
             {

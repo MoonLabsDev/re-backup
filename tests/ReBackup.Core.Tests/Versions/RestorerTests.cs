@@ -2,6 +2,7 @@ using System.Text;
 using FluentAssertions;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
+using ReBackup.Core.Pool;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Core.Versions;
 using ReBackup.Storage;
@@ -600,5 +601,141 @@ public class RestorerTests : IDisposable
         result.Copied.Should().Be(1);
         result.Failures.Should().ContainSingle().Which.Path.Should().Be("docs/bad:name.txt");
         DestFiles().Should().Equal(@"docs\good.txt");
+    }
+
+    // Verified restore and pool versions (spec 7).
+
+    private const string PoolVersion = "2026_10_15-10_00 Projects";
+    private static readonly string Mismatch = CoreTexts.English("core.restore.contentMismatch");
+
+    /// <summary>A target holding an incremental plan's pool with one version: a.txt, docs/b.txt, docs/sub/c.txt.</summary>
+    private static InMemoryStorage PoolTarget()
+    {
+        var target = new InMemoryStorage();
+        target.AddFile(PoolLayout.StoreFile,
+            Encoding.UTF8.GetBytes("""{"format":"pool","hash":"xxh128","version":1,"planId":"p1"}"""));
+        PoolVersions.Write(target, PoolVersion, "p1", PlanName,
+            [("a.txt", "alpha"), ("docs/b.txt", "bravo"), ("docs/sub/c.txt", "charlie")],
+            directories: ["docs", "docs/sub", "docs/empty"]);
+        return target;
+    }
+
+    private async Task<RestoreResult> RestorePoolAsync(IStorage target, ConflictPolicy policy = ConflictPolicy.Overwrite)
+    {
+        var versions = await VersionViews.OpenAsync(target, PoolVersion, CancellationToken.None);
+        var plan = await Restorer.PlanAsync(versions, PoolVersion, [""], _destination, RestoreMode.Original);
+        return await Restorer.RunAsync(plan, policy);
+    }
+
+    [Fact]
+    public async Task Pool_version_restores_byte_exact()
+    {
+        var result = await RestorePoolAsync(PoolTarget());
+
+        result.Should().BeEquivalentTo(new RestoreResult(3, 0, 0, [], Canceled: false));
+        DestFiles().Should().Equal("a.txt", @"docs\b.txt", @"docs\sub\c.txt");
+        System.IO.File.ReadAllBytes(Dest("a.txt")).Should().Equal(PoolVersions.Bytes("alpha"));
+        System.IO.File.ReadAllBytes(Dest(@"docs\b.txt")).Should().Equal(PoolVersions.Bytes("bravo"));
+        System.IO.File.ReadAllBytes(Dest(@"docs\sub\c.txt")).Should().Equal(PoolVersions.Bytes("charlie"));
+        System.IO.File.GetLastWriteTimeUtc(Dest("a.txt")).Should().Be(PoolVersions.Mtime);
+        Directory.Exists(Dest(@"docs\empty")).Should().BeTrue("empty folders come from the manifest");
+    }
+
+    [Fact]
+    public async Task Corrupt_blob_fails_only_that_file()
+    {
+        var target = PoolTarget();
+        target.AddFile(PoolVersions.BlobOf("bravo"), PoolVersions.Bytes("BRAVO"));
+
+        var result = await RestorePoolAsync(target);
+
+        result.Copied.Should().Be(2);
+        result.Failures.Should().Equal(new RestoreFailure("docs/b.txt", Mismatch));
+        DestFiles().Should().Equal("a.txt", @"docs\sub\c.txt");
+    }
+
+    [Fact]
+    public async Task Missing_blob_fails_only_that_file()
+    {
+        var target = PoolTarget();
+        await target.DeleteAsync([PoolVersions.BlobOf("bravo")], CancellationToken.None);
+
+        var result = await RestorePoolAsync(target);
+
+        result.Copied.Should().Be(2);
+        result.Failures.Should().ContainSingle().Which.Path.Should().Be("docs/b.txt");
+        DestFiles().Should().Equal("a.txt", @"docs\sub\c.txt");
+    }
+
+    [Fact]
+    public async Task Full_version_with_tampered_file_fails_verification()
+    {
+        System.IO.File.WriteAllText(Path.Combine(_version, "docs", "b.txt"), "BRAVO");
+
+        var result = await RestoreAsync([""], ConflictPolicy.Overwrite);
+
+        result.Copied.Should().Be(2);
+        result.Failures.Should().Equal(new RestoreFailure("docs/b.txt", Mismatch));
+        DestFiles().Should().Equal("a.txt", @"docs\sub\c.txt");
+    }
+
+    [Theory]
+    [InlineData(ConflictPolicy.Overwrite)]
+    [InlineData(ConflictPolicy.KeepBoth)]
+    public async Task Mismatch_leaves_no_file_at_destination(ConflictPolicy policy)
+    {
+        System.IO.File.WriteAllText(Path.Combine(_version, "docs", "b.txt"), "BRAVO");
+        _tmp.WriteFile(@"dest\docs\b.txt", "mine");
+
+        var result = await RestoreAsync(["docs/b.txt"], policy);
+
+        result.Failures.Should().Equal(new RestoreFailure("docs/b.txt", Mismatch));
+        DestFiles().Should().Equal(@"docs\b.txt");
+        System.IO.File.ReadAllText(Dest(@"docs\b.txt")).Should().Be("mine", "a mismatching copy is never committed");
+    }
+
+    [Fact]
+    public async Task A_file_without_a_known_hash_is_copied_unverified()
+    {
+        // Older manifests may lack a hash; a hash of an unknown kind cannot be checked either.
+        var versions = new InMemoryStorage();
+        const string version = "2026_09_30-14_05 Projects";
+        versions.AddFile($"{version}/a.txt", Encoding.UTF8.GetBytes("alpha"));
+        versions.AddFile($"{version}/b.txt", Encoding.UTF8.GetBytes("bravo"));
+        versions.AddFile($"{version}/{VersionName.ManifestFileName}", Encoding.UTF8.GetBytes(Serialize(new BackupManifest
+        {
+            FormatVersion = 1, PlanId = PlanId, PlanName = PlanName, CreatedUtc = Mtime, Source = Source,
+            Files = [new ManifestFile("a.txt", 5, Mtime, ""), new ManifestFile("b.txt", 5, Mtime, "sha1:0123")],
+        })));
+
+        var plan = await Restorer.PlanAsync(versions, version, [""], _destination, RestoreMode.Original);
+        var result = await Restorer.RunAsync(plan, ConflictPolicy.Overwrite);
+
+        result.Should().BeEquivalentTo(new RestoreResult(2, 0, 0, [], Canceled: false));
+    }
+
+    [Theory]
+    [InlineData("2026_10_15-10_00 Projects")]
+    [InlineData("re-pool")]
+    [InlineData("re-pool/ab")]
+    public async Task Refuses_a_destination_inside_the_pool_version_or_the_pool(string below)
+    {
+        var target = _tmp.CreateDir("pool-target");
+        var memory = PoolTarget();
+        foreach (var file in memory.Files)
+        {
+            var path = Path.Combine(target, file.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            System.IO.File.WriteAllBytes(path, memory.ReadAllBytes(file));
+        }
+        Directory.CreateDirectory(Path.Combine(target, below));
+        var versions = await VersionViews.OpenAsync(new FileSystemStorage(target), PoolVersion, CancellationToken.None);
+
+        var plan = () => Restorer.PlanAsync(versions, PoolVersion, ["a.txt"],
+            new FileSystemStorage(Path.Combine(target, below)), RestoreMode.ToFolder);
+
+        await plan.Should().ThrowAsync<ArgumentException>();
+        var elsewhere = await Restorer.PlanAsync(versions, PoolVersion, ["a.txt"], _destination, RestoreMode.ToFolder);
+        elsewhere.Files.Should().ContainSingle();
     }
 }

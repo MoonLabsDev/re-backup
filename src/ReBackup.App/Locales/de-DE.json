@@ -206,7 +206,8 @@
       "destinationLink": "der Zielordner ist eine Verknüpfung",
       "fileInPlaceOfFolder": "an der Stelle des Ordners „{folder}“ steht eine Datei",
       "notAPath": "„{path}“ ist kein Pfad innerhalb der Version.",
-      "accessDenied": "Zugriff verweigert (schreibgeschützt oder von einem anderen Programm verwendet)"
+      "accessDenied": "Zugriff verweigert (schreibgeschützt oder von einem anderen Programm verwendet)",
+      "contentMismatch": "der Inhalt stimmt nicht mit seiner Prüfsumme im Backup überein (die Kopie im Backup ist beschädigt)"
     },
     "index": {
       "targetUnavailable": "Der Zielordner „{folder}“ ist nicht verfügbar."

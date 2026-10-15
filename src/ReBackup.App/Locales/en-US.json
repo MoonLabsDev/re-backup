@@ -206,7 +206,8 @@
       "destinationLink": "the destination folder is a link",
       "fileInPlaceOfFolder": "a file stands where the folder \"{folder}\" belongs",
       "notAPath": "\"{path}\" is not a path inside the version.",
-      "accessDenied": "access denied (read-only, or in use by another program)"
+      "accessDenied": "access denied (read-only, or in use by another program)",
+      "contentMismatch": "the content does not match its checksum in the backup (the backup copy is damaged)"
     },
     "index": {
       "targetUnavailable": "The target folder \"{folder}\" is not available."

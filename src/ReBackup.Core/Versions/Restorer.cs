@@ -1,7 +1,10 @@
+using System.Buffers;
 using System.Globalization;
+using System.IO.Hashing;
 using System.Text.Json;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
+using ReBackup.Core.Pool;
 using ReBackup.Shared.IO;
 using ReBackup.Storage;
 using ReBackup.Storage.FileSystem;
@@ -16,9 +19,10 @@ public enum ConflictPolicy { Overwrite, Skip, KeepBoth }
 
 /// <summary>
 /// One file to copy: its path in the versions' storage, where it goes in the destination storage, and the modified time
-/// it gets there (the manifest's, else the copy's; null when unknown).
+/// it gets there (the manifest's, else the copy's; null when unknown). <paramref name="Hash"/> is the manifest's hash of
+/// the content (<c>xxh64:</c> or <c>xxh128:</c>) the copy is verified against; null or of another kind: not verified.
 /// </summary>
-public sealed record RestoreFile(string Source, string Destination, long Size, DateTime? ModifiedUtc = null);
+public sealed record RestoreFile(string Source, string Destination, long Size, DateTime? ModifiedUtc = null, string? Hash = null);
 
 /// <summary>Everything a restore will do; made by <see cref="Restorer.PlanAsync"/>, nothing is written yet.</summary>
 public sealed class RestorePlan
@@ -97,8 +101,12 @@ public static class Restorer
         if (await versions.StatAsync(versionPath, ct).ConfigureAwait(false) is not { IsDirectory: true } versionEntry)
             throw new StorageNotFoundException(versionPath,
                 CoreTexts.English("core.restore.versionMissing", ("folder", DisplayPath(versions, versionPath))));
-        if (versions is FileSystemStorage fromFolder && destination is FileSystemStorage toFolder &&
-            PathUtil.IsSameOrInside(toFolder.RootPath, fromFolder.FullPathOf(versionPath)))
+        // A pool version's files live in the pool: the destination must be in neither.
+        var (store, offLimits) = versions is PoolVersionView view
+            ? (view.Target, new[] { versionPath, PoolLayout.PoolFolder })
+            : (versions, new[] { versionPath });
+        if (store is FileSystemStorage fromFolder && destination is FileSystemStorage toFolder &&
+            offLimits.Any(path => PathUtil.IsSameOrInside(toFolder.RootPath, fromFolder.FullPathOf(path))))
             throw new ArgumentException(CoreTexts.English("core.restore.destinationInVersion"), nameof(destination));
 
         var comparer = versions.Capabilities.HasFlag(StorageCapabilities.CaseSensitive)
@@ -148,7 +156,8 @@ public static class Restorer
             var modified = manifest is not null && manifest.Mtimes.TryGetValue(InVersion(source.Path), out var mtime)
                 ? mtime
                 : source.ModifiedUtc;
-            files.Add(new RestoreFile(source.Path, target, source.Size, modified));
+            var hash = manifest is not null && manifest.Hashes.TryGetValue(InVersion(source.Path), out var known) ? known : null;
+            files.Add(new RestoreFile(source.Path, target, source.Size, modified, hash));
         }
 
         foreach (var (relative, target, entry) in selected)
@@ -401,9 +410,10 @@ public static class Restorer
     /// <summary>
     /// Copies one file into a new file of the destination and commits it; with <paramref name="overwrite"/> false the
     /// create is exclusive (<see cref="StorageConflictException"/> when the name is taken, also at the commit). Disposing
-    /// the writer without a commit discards what was written. Cancellation is honoured by every read and between the
-    /// chunks, so it usually discards the file; only once the end of the source has been read does the commit run
-    /// without the token, so a file whose last read already returned is still committed.
+    /// the writer without a commit discards what was written. A file with a known hash is hashed while it is copied and
+    /// committed only when it matches (else <see cref="ContentMismatchException"/>). Cancellation is honoured by every
+    /// read and between the chunks, so it usually discards the file; only once the end of the source has been read does
+    /// the commit run without the token, so a file whose last read already returned is still committed.
     /// </summary>
     private static async Task CopyAsync(IStorage versions, RestoreFile file, IStorage destination, string target, bool overwrite,
         byte[] buffer, Action<int> onBytes, CancellationToken ct)
@@ -417,17 +427,40 @@ public static class Restorer
                 .ConfigureAwait(false);
             await using (output.ConfigureAwait(false))
             {
+                var hasher = HasherFor(file.Hash);
                 int read;
                 while ((read = await input.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
                     ct.ThrowIfCancellationRequested();
+                    hasher?.Append(buffer.AsSpan(0, read));
                     await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                     onBytes(read);
                 }
+                if (hasher is not null && !string.Equals(HashText(hasher), file.Hash, StringComparison.OrdinalIgnoreCase))
+                    throw new ContentMismatchException(file.Source);
                 await output.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
     }
+
+    /// <summary>The algorithm of a manifest hash: "xxh128:" plus 32 or "xxh64:" plus 16 hex digits; null for any other.</summary>
+    private static NonCryptographicHashAlgorithm? HasherFor(string? hash)
+    {
+        if (PoolLayout.TryParseHex(hash, out _))
+            return new XxHash128();
+        const string prefix = "xxh64:";
+        return hash is { Length: 22 } && hash.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               !hash.AsSpan(prefix.Length).ContainsAnyExcept(HexDigits)
+            ? new XxHash64()
+            : null;
+    }
+
+    private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdefABCDEF");
+
+    /// <summary>The hash in the manifest's notation.</summary>
+    private static string HashText(NonCryptographicHashAlgorithm hasher) => hasher is XxHash128 xxh128
+        ? PoolLayout.Format(xxh128.GetCurrentHashAsUInt128())
+        : "xxh64:" + Convert.ToHexStringLower(hasher.GetCurrentHash());
 
     /// <summary>
     /// The entry of <paramref name="relative"/> (not "") in the version, after checking every part of the path on the
@@ -505,17 +538,19 @@ public static class Restorer
         return entries;
     }
 
-    /// <summary>What the restore takes from a manifest: file times and folders (both version-relative), and the creation time.</summary>
-    private sealed record ManifestData(Dictionary<string, DateTime> Mtimes, List<string> Directories, DateTime CreatedUtc);
+    /// <summary>What the restore takes from a manifest: file times, file hashes and folders (all version-relative), and the creation time.</summary>
+    private sealed record ManifestData(Dictionary<string, DateTime> Mtimes, Dictionary<string, string> Hashes,
+        List<string> Directories, DateTime CreatedUtc);
 
     /// <summary>
-    /// The modified times of the manifest's files and its folders, both at or below the selected paths, and the version's
+    /// The modified times and hashes of the manifest's files and its folders, all at or below the selected paths, and the version's
     /// creation time. Null when the version has no readable manifest: the copies' own times are used then.
     /// </summary>
     private static async Task<ManifestData?> ReadManifestAsync(IStorage versions, string versionPath, List<string> selected,
         StringComparer comparer, CancellationToken ct)
     {
         var mtimes = new Dictionary<string, DateTime>(comparer);
+        var hashes = new Dictionary<string, string>(comparer);
         var directories = new List<string>();
         try
         {
@@ -527,8 +562,12 @@ public static class Restorer
                 summary = ManifestStream.Read(stream,
                     file =>
                     {
-                        if (file.MtimeUtc != default && IsSelected(file.Path))
+                        if (!IsSelected(file.Path))
+                            return;
+                        if (file.MtimeUtc != default)
                             mtimes[file.Path] = file.MtimeUtc;
+                        if (file.Hash.Length > 0)
+                            hashes[file.Path] = file.Hash;
                     },
                     folder =>
                     {
@@ -536,7 +575,7 @@ public static class Restorer
                             directories.Add(valid);
                     }, ct);
             }
-            return new ManifestData(mtimes, directories, summary.CreatedUtc);
+            return new ManifestData(mtimes, hashes, directories, summary.CreatedUtc);
         }
         catch (Exception ex) when (ex is StorageException or JsonException)
         {
@@ -595,6 +634,7 @@ public static class Restorer
 
     private static string Reason(Exception exception) => exception switch
     {
+        ContentMismatchException => CoreTexts.English("core.restore.contentMismatch"),
         StorageAccessDeniedException => CoreTexts.English("core.restore.accessDenied"),
         StorageLockedException => CoreTexts.English("core.file.locked"),
         // An archived object (S3 Glacier, Deep Archive) in the version cannot be read before it is restored.
@@ -610,4 +650,15 @@ public static class Restorer
 
     /// <summary>A file the restore does not write, with the reason (a link on the way or in its place, a file where a folder belongs, a folder in its place).</summary>
     private sealed class RefusedException(string message) : Exception(message);
+}
+
+/// <summary>
+/// A file read from a version does not match the hash its manifest records: the backup's copy is damaged. The restore
+/// does not commit it and reports the file as failed.
+/// </summary>
+public sealed class ContentMismatchException : StorageException
+{
+    /// <summary>Creates the exception for <paramref name="path"/>, the file in the versions' storage.</summary>
+    public ContentMismatchException(string path)
+        : base(path, CoreTexts.English("core.restore.contentMismatch"), null) { }
 }
