@@ -28,9 +28,20 @@ public enum CopyRefusal
 /// <summary>
 /// What a copy did: <paramref name="VersionsCopied"/> versions were written, <paramref name="VersionsSkipped"/> were on the
 /// new target already (an earlier copy that stopped). <paramref name="Failures"/> are English texts: whole versions and
-/// single files that were not copied, and why the copy could not start or stopped.
+/// single files that were not copied, and why the copy could not start or stopped. <paramref name="Stopped"/>: the copy
+/// could not start or stopped before it went through all versions (a lock, the store file, the new target full or not
+/// reachable any more). <paramref name="VersionsFailed"/>: versions that are not complete on the new target and are
+/// written by the next copy.
 /// </summary>
-public sealed record PlanCopyResult(int VersionsCopied, int VersionsSkipped, IReadOnlyList<string> Failures, bool Canceled);
+public sealed record PlanCopyResult(int VersionsCopied, int VersionsSkipped, IReadOnlyList<string> Failures, bool Canceled,
+    bool Stopped = false, int VersionsFailed = 0)
+{
+    /// <summary>
+    /// Every version of the plan is complete on the new target (single files may have failed): the copy was neither
+    /// canceled nor stopped and no version failed.
+    /// </summary>
+    public bool Finished => !Canceled && !Stopped && VersionsFailed == 0;
+}
 
 /// <summary>
 /// Progress of <see cref="PlanCopier.CopyAsync"/>: the <paramref name="Version"/>th (1-based) of <paramref name="VersionCount"/>
@@ -125,7 +136,9 @@ public sealed class PlanCopier
     /// Per version: pending marker, then every file is read through <see cref="VersionViews"/> and verified against the
     /// plan's manifest while it is written (a pool: <see cref="PoolWriter"/>, xxh128 known from a first read unless the
     /// manifest names it already; full: a plain file with its modified time, xxh64 while streaming). A file that cannot be
-    /// read or does not match is a failure and left out of the version; the version is still written. Then the manifest,
+    /// read or does not match is a failure and left out of the version; the version is still written. An error writing the
+    /// new target fails the whole version, which stays pending for the next copy; a full or unreachable target stops the
+    /// copy (<see cref="PlanCopyResult.Stopped"/>). Then the manifest,
     /// with the version's original time in its folder name and <see cref="BackupManifest.CreatedUtc"/> and the copy's
     /// id and name, and the marker is removed. A folder name keeps the original one when it carries the copy's name;
     /// otherwise it is the original time with the copy's name.
@@ -138,13 +151,13 @@ public sealed class PlanCopier
         var job = new Job();
         if (Overlap(source.Target, copy.Target))
         {
-            job.Failures.Add(CoreTexts.English("core.copy.overlaps"));
+            job.Stop(CoreTexts.English("core.copy.overlaps"));
             return job.Result(canceled: false);
         }
         // The name goes into every version folder's name: one that cannot be a folder name stops before anything is written.
         if (PlanValidator.NameErrors(copy.Name) is [var problem, ..])
         {
-            job.Failures.Add(CoreTexts.English("core.copy.failed", ("error", CoreTexts.English(problem))));
+            job.Stop(CoreTexts.English("core.copy.failed", ("error", CoreTexts.English(problem))));
             return job.Result(canceled: false);
         }
 
@@ -161,7 +174,7 @@ public sealed class PlanCopier
         }
         catch (Exception ex) when (ex is StorageException or JsonException)
         {
-            job.Failures.Add(CoreTexts.English("core.copy.failed", ("error", ex.Message)));
+            job.Stop(CoreTexts.English("core.copy.failed", ("error", ex.Message)));
         }
         finally
         {
@@ -178,7 +191,7 @@ public sealed class PlanCopier
         job.SourceLock = await TargetLock.TryAcquireAsync(from, _host, LockOperation, _time, ct).ConfigureAwait(false);
         if (job.SourceLock is null)
         {
-            job.Failures.Add(await TargetLock.LockedMessageAsync(from, ct).ConfigureAwait(false));
+            job.Stop(await TargetLock.LockedMessageAsync(from, ct).ConfigureAwait(false));
             return;
         }
         if (copy.Incremental)
@@ -186,7 +199,7 @@ public sealed class PlanCopier
             job.TargetLock = await TargetLock.TryAcquireAsync(to, _host, LockOperation, _time, ct).ConfigureAwait(false);
             if (job.TargetLock is null)
             {
-                job.Failures.Add(await TargetLock.LockedMessageAsync(to, ct).ConfigureAwait(false));
+                job.Stop(await TargetLock.LockedMessageAsync(to, ct).ConfigureAwait(false));
                 return;
             }
         }
@@ -194,7 +207,7 @@ public sealed class PlanCopier
         var outcome = await StoreGuard.CheckAsync(to, copy, createIfMissing: true, ct).ConfigureAwait(false);
         if (outcome is not (StoreGuardOutcome.Ok or StoreGuardOutcome.Created))
         {
-            job.Failures.Add(CoreTexts.English(StoreGuard.MessageKey(outcome)));
+            job.Stop(CoreTexts.English(StoreGuard.MessageKey(outcome)));
             return;
         }
         // What an earlier copy left unfinished. Its warnings name folders that are left alone; a version that needs
@@ -203,8 +216,12 @@ public sealed class PlanCopier
         await CopyVersionsAsync(from, to, source, copy, job, progress, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Copies the plan's versions one after the other; a version that fails is reported and the next one follows.</summary>
+    /// <summary>
+    /// Copies the plan's versions one after the other; a version that fails is reported, stays pending on the new target
+    /// (the next copy writes it) and the next one follows.
+    /// </summary>
     /// <exception cref="StorageUnavailableException">A target cannot be reached any more: the copy stops.</exception>
+    /// <exception cref="StorageFullException">The new target is full: the copy stops.</exception>
     private async Task CopyVersionsAsync(IStorage from, IStorage to, BackupPlan source, BackupPlan copy, Job job,
         IProgress<PlanCopyProgress>? progress, CancellationToken ct)
     {
@@ -243,6 +260,8 @@ public sealed class PlanCopier
             if (!first || await to.StatAsync(name, ct).ConfigureAwait(false) is not null)
             {
                 job.Failures.Add(CoreTexts.English("core.copy.folderTaken", ("version", version.Name), ("folder", name)));
+                if (first)
+                    job.VersionsFailed++;   // a folder on the new target is in the way: copied once it is gone
                 continue;
             }
 
@@ -254,15 +273,20 @@ public sealed class PlanCopier
                 job.Copied++;
             }
             catch (Exception ex) when (ex is StorageException or JsonException or ArgumentException &&
-                                       ex is not StorageUnavailableException)
+                                       ex is not (StorageUnavailableException or StorageFullException))
             {
-                // Its pending folder stays until the next copy cleans it up.
+                // Its pending folder stays until the next copy cleans it up and writes the version again.
+                job.VersionsFailed++;
                 job.Failures.Add(CoreTexts.English("core.copy.versionFailed", ("version", version.Name), ("error", ex.Message)));
             }
         }
     }
 
-    /// <summary>One version: pending marker, folders, files, manifest, marker removed.</summary>
+    /// <summary>
+    /// One version: pending marker, folders, files, manifest, marker removed. A file of the plan that cannot be read or does
+    /// not match its manifest fails alone (<see cref="SourceFileException"/>); any error writing the new target fails the
+    /// whole version, which then stays pending.
+    /// </summary>
     private async Task CopyVersionAsync(IStorage from, IStorage to, VersionInfo version, string name, BackupPlan copy,
         PoolWriter? pool, byte[] buffer, Job job, Action<long, long> report, CancellationToken ct)
     {
@@ -320,7 +344,7 @@ public sealed class PlanCopier
                         .ConfigureAwait(false)
                     : await CopyToPoolAsync(view, source, pool, file, buffer, OnBytes, ct).ConfigureAwait(false));
             }
-            catch (Exception ex) when (ex is StorageException or ArgumentException && ex is not StorageUnavailableException)
+            catch (Exception ex) when (ex is SourceFileException or ContentMismatchException or ArgumentException)
             {
                 job.Failures.Add(CoreTexts.English("core.copy.fileFailed", ("path", file.Path), ("version", version.Name),
                     ("error", ReasonOf(ex))));
@@ -355,7 +379,7 @@ public sealed class PlanCopier
     private static async Task<ManifestFile> CopyToFolderAsync(IStorage view, string source, IStorage to, string target,
         ManifestFile file, byte[] buffer, Action<int> onBytes, CancellationToken ct)
     {
-        var input = await view.OpenReadAsync(source, ct).ConfigureAwait(false);
+        var input = await OpenSourceAsync(view, source, ct).ConfigureAwait(false);
         await using (input.ConfigureAwait(false))
         {
             var verifier = Restorer.HasherFor(file.Hash);
@@ -404,7 +428,7 @@ public sealed class PlanCopier
         var verifier = Restorer.HasherFor(file.Hash);
         var hash = new XxHash128();
         long size = 0;
-        var input = await view.OpenReadAsync(source, ct).ConfigureAwait(false);
+        var input = await OpenSourceAsync(view, source, ct).ConfigureAwait(false);
         await using (input.ConfigureAwait(false))
         {
             int read;
@@ -428,11 +452,27 @@ public sealed class PlanCopier
     private static async Task PutAsync(IStorage view, string source, PoolWriter pool, string hash, byte[] buffer,
         Action<int>? onBytes, CancellationToken ct)
     {
-        var input = await view.OpenReadAsync(source, ct).ConfigureAwait(false);
+        var input = await OpenSourceAsync(view, source, ct).ConfigureAwait(false);
         await using (input.ConfigureAwait(false))
         {
             if (await pool.PutAsync(input, hash, buffer, onBytes, ct).ConfigureAwait(false) == PutOutcome.ContentChanged)
                 throw new ContentMismatchException(source);
+        }
+    }
+
+    /// <summary>
+    /// Opens a file of the plan's version; errors opening or reading it are <see cref="SourceFileException"/>, so they fail
+    /// only that file. A target that cannot be reached any more stays <see cref="StorageUnavailableException"/>.
+    /// </summary>
+    private static async Task<Stream> OpenSourceAsync(IStorage view, string source, CancellationToken ct)
+    {
+        try
+        {
+            return new SourceStream(await view.OpenReadAsync(source, ct).ConfigureAwait(false));
+        }
+        catch (IOException ex) when (ex is not StorageUnavailableException)
+        {
+            throw new SourceFileException(ex);
         }
     }
 
@@ -463,6 +503,7 @@ public sealed class PlanCopier
     /// <summary>Why a file failed, as the restore words it: the provider's own message where there is one.</summary>
     private static string ReasonOf(Exception exception) => exception switch
     {
+        SourceFileException { InnerException: { } inner } => ReasonOf(inner),
         ContentMismatchException => exception.Message,
         StorageNotFoundException => CoreTexts.English("core.file.noLongerExists"),
         StorageException { InnerException: { } inner } => inner.Message,
@@ -503,10 +544,88 @@ public sealed class PlanCopier
     {
         public int Copied;
         public int Skipped;
+        public int VersionsFailed;
+        public bool Stopped;
         public TargetLock? SourceLock;
         public TargetLock? TargetLock;
         public List<string> Failures { get; } = [];
 
-        public PlanCopyResult Result(bool canceled) => new(Copied, Skipped, Failures.ToList(), canceled);
+        /// <summary>The copy could not start or stops before the end, for this reason.</summary>
+        public void Stop(string reason)
+        {
+            Stopped = true;
+            Failures.Add(reason);
+        }
+
+        public PlanCopyResult Result(bool canceled) =>
+            new(Copied, Skipped, Failures.ToList(), canceled, Stopped && !canceled, VersionsFailed);
+    }
+
+    /// <summary>A file of the plan's version could not be opened or read; it fails alone.</summary>
+    private sealed class SourceFileException(IOException inner) : Exception(inner.Message, inner);
+
+    /// <summary>A file of the plan's version being read: read errors are <see cref="SourceFileException"/>.</summary>
+    private sealed class SourceStream(Stream inner) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            try
+            {
+                return inner.Read(buffer, offset, count);
+            }
+            catch (IOException ex) when (ex is not StorageUnavailableException)
+            {
+                throw new SourceFileException(ex);
+            }
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                return await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException ex) when (ex is not StorageUnavailableException)
+            {
+                throw new SourceFileException(ex);
+            }
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                inner.Dispose();
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await inner.DisposeAsync().ConfigureAwait(false);
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

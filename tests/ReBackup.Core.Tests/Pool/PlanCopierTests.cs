@@ -416,6 +416,92 @@ public class PlanCopierTests
                                           f == PoolVersions.BlobOf("beta"));
     }
 
+    private static readonly string[] Three = ["2026_01_01-10_00 Projects", "2026_01_02-10_00 Projects", "2026_01_03-10_00 Projects"];
+
+    /// <summary>Three full versions whose a.txt differs ("alpha 0" …), and the path the copy writes the second one's a.txt to.</summary>
+    private string ThreeVersions(bool incremental)
+    {
+        for (var i = 0; i < Three.Length; i++)
+            FullVersion(Three[i], ("a.txt", "alpha " + i), ("b.txt", "beta"));
+        return incremental ? PoolVersions.BlobOf("alpha 1") : $"{Three[1]}/a.txt";
+    }
+
+    /// <summary>Every version of the copy is listed as its own and restores to the source's files.</summary>
+    private async Task AllThreeRestore(BackupPlan copy)
+    {
+        (await VersionCatalog.ListAsync(_to, copy.Id, copy.Name)).Where(v => v.IsOwned).Select(v => v.Name)
+            .Should().Equal(Three);
+        for (var i = 0; i < Three.Length; i++)
+        {
+            var restored = copy.Incremental
+                ? await PoolVersions.RestoreAsync(_to, Three[i])
+                : new Dictionary<string, string> { ["a.txt"] = Text(_to, $"{Three[i]}/a.txt"), ["b.txt"] = Text(_to, $"{Three[i]}/b.txt") };
+            restored.Should().BeEquivalentTo(new Dictionary<string, string> { ["a.txt"] = "alpha " + i, ["b.txt"] = "beta" });
+        }
+        _to.Files.Should().NotContain(f => f.EndsWith(VersionMarkerNames.Pending, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task New_target_full_partway_stops_the_copy_and_leaves_the_version_pending(bool incremental)
+    {
+        var second = ThreeVersions(incremental);
+        var full = false;
+        _storages[CopyRoot] = new FaultyStorage(_to)
+        {
+            Before = (operation, path) => full |= operation == "create" && path == second,
+            DiskFullOnWrite = _ => full,
+        };
+        var copy = CopyPlan(incremental);
+
+        var result = await Copier().CopyAsync(_source, copy, null, CancellationToken.None);
+
+        result.Stopped.Should().BeTrue();
+        result.Finished.Should().BeFalse();
+        result.VersionsCopied.Should().Be(1);
+        result.Failures.Should().ContainSingle().Which.Should().StartWith("The copy stopped");
+        (await VersionCatalog.ListAsync(_to, copy.Id, copy.Name)).Where(v => v.IsOwned).Select(v => v.Name)
+            .Should().Equal(Three[0]);
+        _to.Files.Should().Contain(StoragePath.Combine(Three[1], VersionMarkerNames.Pending));
+
+        // Space freed: the copy is continued and finishes.
+        _storages[CopyRoot] = _to;
+        var resumed = await Copier().CopyAsync(_source, copy, null, CancellationToken.None);
+
+        resumed.Should().BeEquivalentTo(new PlanCopyResult(2, 1, [], false));
+        resumed.Finished.Should().BeTrue();
+        await AllThreeRestore(copy);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task New_target_write_error_fails_the_version_and_the_next_copy_writes_it(bool incremental)
+    {
+        var second = ThreeVersions(incremental);
+        var failing = true;
+        _storages[CopyRoot] = new FaultyStorage(_to) { FailCreate = path => failing && path == second };
+        var copy = CopyPlan(incremental);
+
+        var result = await Copier().CopyAsync(_source, copy, null, CancellationToken.None);
+
+        result.Stopped.Should().BeFalse();
+        result.VersionsFailed.Should().Be(1);
+        result.Finished.Should().BeFalse();
+        result.VersionsCopied.Should().Be(2);
+        result.Failures.Should().ContainSingle().Which.Should().StartWith($"\"{Three[1]}\" was not copied");
+        (await VersionCatalog.ListAsync(_to, copy.Id, copy.Name)).Where(v => v.IsOwned).Select(v => v.Name)
+            .Should().Equal(Three[0], Three[2]);
+        _to.Files.Should().Contain(StoragePath.Combine(Three[1], VersionMarkerNames.Pending));
+
+        failing = false;
+        var resumed = await Copier().CopyAsync(_source, copy, null, CancellationToken.None);
+
+        resumed.Should().BeEquivalentTo(new PlanCopyResult(1, 2, [], false));
+        await AllThreeRestore(copy);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

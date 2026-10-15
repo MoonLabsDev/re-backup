@@ -344,6 +344,36 @@ public class PoolActionsTests : IDisposable
     }
 
     [Fact]
+    public async Task Copy_that_stops_on_a_full_target_keeps_the_unfinished_mark_until_continued()
+    {
+        var vm = Create();
+        var source = vm.Plans.Single();
+        var full = new GatedStorage(_newTarget) { FullOnCreate = path => path.EndsWith("/a.txt", StringComparison.Ordinal) };
+        _storages.Storages[("dst", "")] = full;
+        vm.CopyPlanCommand.Execute(source);
+        var first = _fixture.Dialogs.CopyDialogs.Single();
+        ChooseNewTarget(first);
+
+        await first.StartCommand.ExecuteAsync(null);
+
+        first.Result!.Stopped.Should().BeTrue();
+        var unfinished = vm.Plans.Single(p => p != source);
+        first.Summary.Should().Be(Loc.F("copy.notFinished", ("plan", unfinished.Name)));
+        unfinished.IsCopyUnfinished.Should().BeTrue("the version is still pending on the new target");
+        _fixture.Store.TryLoad(unfinished.Id)!.CopyFromPlanId.Should().Be("p1");
+
+        full.FullOnCreate = _ => false;   // space freed
+        vm.ContinueCopyCommand.Execute(unfinished);
+        var resume = _fixture.Dialogs.CopyDialogs.Last();
+        await resume.StartCommand.ExecuteAsync(null);
+
+        resume.Result!.Finished.Should().BeTrue();
+        resume.Result.VersionsCopied.Should().Be(1);
+        unfinished.IsCopyUnfinished.Should().BeFalse();
+        _fixture.Store.TryLoad(unfinished.Id)!.CopyFromPlanId.Should().BeNull();
+    }
+
+    [Fact]
     public void Continue_copy_of_a_plan_whose_source_is_gone_says_so()
     {
         var vm = Create();

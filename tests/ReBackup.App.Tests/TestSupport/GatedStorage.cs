@@ -6,7 +6,8 @@ namespace ReBackup.App.Tests.TestSupport;
 
 /// <summary>
 /// An <see cref="InMemoryStorage"/> whose reads of the paths <see cref="Holds"/> picks wait for <see cref="Gate"/> (or for
-/// their token), so that a test can look at a job while it is in the middle of reading.
+/// their token), so that a test can look at a job while it is in the middle of reading; files <see cref="FullOnCreate"/>
+/// picks cannot be created.
 /// </summary>
 public sealed class GatedStorage(InMemoryStorage inner) : IStorage
 {
@@ -38,8 +39,11 @@ public sealed class GatedStorage(InMemoryStorage inner) : IStorage
         return await Inner.OpenReadAsync(path, ct);
     }
 
+    /// <summary>The paths whose creation finds the storage full; none by default.</summary>
+    public Func<string, bool> FullOnCreate { get; set; } = _ => false;
+
     public Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct) =>
-        Inner.CreateAsync(path, options, ct);
+        FullOnCreate(path) ? throw new StorageFullException(path) : Inner.CreateAsync(path, options, ct);
 
     public Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct) => Inner.DeleteAsync(paths, ct);
 

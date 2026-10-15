@@ -304,7 +304,7 @@ public sealed partial class CopyPlanViewModel : ObservableObject, IPoolJob
     {
         if (result.Canceled)
             return Loc.T("copy.canceled");
-        if (!Finished(result))
+        if (!result.Finished)
             return Loc.F("copy.notFinished", ("plan", copy.Name));
         var done = Loc.F("copy.done", ("copied", result.VersionsCopied), ("skipped", result.VersionsSkipped));
         if (!_hooks.FinishPlan(copy))
@@ -315,18 +315,6 @@ public sealed partial class CopyPlanViewModel : ObservableObject, IPoolJob
         return result.Failures.Count == 0
             ? done + "\n" + added
             : done + "\n" + added + "\n" + Loc.F("copy.failures", ("count", result.Failures.Count));
-    }
-
-    /// <summary>
-    /// The copy went through all versions: it did not stop (<c>core.copy.failed</c>: a target could not be reached any
-    /// more) and did not fail before the first version (a lock, the store file).
-    /// </summary>
-    private static bool Finished(PlanCopyResult result)
-    {
-        var stopped = CoreTexts.English("core.copy.failed", ("error", ""));
-        if (result.Failures.Any(failure => failure.StartsWith(stopped, StringComparison.Ordinal)))
-            return false;
-        return result.VersionsCopied + result.VersionsSkipped > 0 || result.Failures.Count == 0;
     }
 
     /// <summary>Stops the copy after the file being copied; started again, it continues.</summary>
