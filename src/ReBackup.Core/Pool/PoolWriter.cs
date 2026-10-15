@@ -81,6 +81,8 @@ public sealed class PoolWriter
     /// when the content hashes to the expected value, so a committed blob always matches its name; otherwise the write is
     /// discarded and the result is <see cref="PutOutcome.ContentChanged"/>. A blob that exists already (at create or at
     /// commit) is <see cref="PutOutcome.AlreadyPresent"/>. Blobs carry no modified time: they are shared between versions.
+    /// The blob is created durably (flushed before it becomes visible), so a committed blob survives a power loss intact.
+    /// Callers check <see cref="Contains"/> first to skip reading content the pool already holds.
     /// </summary>
     public async Task<PutOutcome> PutAsync(Stream input, string expectedHash, byte[] buffer, Action<int>? onBytes,
         CancellationToken ct)
@@ -89,7 +91,7 @@ public sealed class PoolWriter
         var path = PoolLayout.BlobPath(expectedHash);
         try
         {
-            var writer = await _target.CreateAsync(path, new CreateOptions(Overwrite: false), ct).ConfigureAwait(false);
+            var writer = await _target.CreateAsync(path, new CreateOptions(Overwrite: false, Durable: true), ct).ConfigureAwait(false);
             await using (writer.ConfigureAwait(false))
             {
                 var hash = new XxHash128();
