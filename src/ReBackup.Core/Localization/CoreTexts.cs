@@ -98,6 +98,13 @@ public static class CoreTexts
         ["core.gc.manifestUnreadable"] = "Unused backup content was not removed: the manifest of \"{version}\" cannot be read.",
         ["core.gc.failed"] = "Unused backup content could not be removed: {error}",
 
+        ["core.copy.overlaps"] = "The new target is the plan's target, lies inside it or holds it. Nothing was copied.",
+        ["core.copy.failed"] = "The copy stopped: {error}",
+        ["core.copy.versionFailed"] = "\"{version}\" was not copied: {error}",
+        ["core.copy.fileFailed"] = "\"{path}\" in \"{version}\" was not copied: {error}",
+        ["core.copy.manifestUnreadable"] = "\"{version}\" was not copied: its manifest cannot be read.",
+        ["core.copy.folderTaken"] = "\"{version}\" was not copied: the new target already holds a folder \"{folder}\".",
+
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
         ["core.skip.reservedName"] = "the name is reserved for ReBackup's own files",
         // The text runs before the marker files wrote; kept so that their logs are still recognized and translated.

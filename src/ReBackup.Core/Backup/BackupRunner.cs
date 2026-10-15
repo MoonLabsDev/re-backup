@@ -916,7 +916,7 @@ public sealed partial class BackupRunner : IBackupRunner
     /// Explorer can briefly hold a handle on it, so this is retried before giving up. It is not canceled: with the
     /// manifest written, finishing is the shortest way out.
     /// </summary>
-    private static async Task RemovePendingMarkerAsync(IStorage target, string versionName)
+    internal static async Task RemovePendingMarkerAsync(IStorage target, string versionName)
     {
         var marker = StoragePath.Combine(versionName, VersionMarkerNames.Pending);
         for (var attempt = 1; ; attempt++)

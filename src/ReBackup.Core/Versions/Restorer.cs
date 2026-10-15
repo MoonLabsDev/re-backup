@@ -444,7 +444,7 @@ public static class Restorer
     }
 
     /// <summary>The algorithm of a manifest hash: "xxh128:" plus 32 or "xxh64:" plus 16 hex digits; null for any other.</summary>
-    private static NonCryptographicHashAlgorithm? HasherFor(string? hash)
+    internal static NonCryptographicHashAlgorithm? HasherFor(string? hash)
     {
         if (PoolLayout.TryParseHex(hash, out _))
             return new XxHash128();
@@ -458,7 +458,7 @@ public static class Restorer
     private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdefABCDEF");
 
     /// <summary>The hash in the manifest's notation.</summary>
-    private static string HashText(NonCryptographicHashAlgorithm hasher) => hasher is XxHash128 xxh128
+    internal static string HashText(NonCryptographicHashAlgorithm hasher) => hasher is XxHash128 xxh128
         ? PoolLayout.Format(xxh128.GetCurrentHashAsUInt128())
         : "xxh64:" + Convert.ToHexStringLower(hasher.GetCurrentHash());
 
