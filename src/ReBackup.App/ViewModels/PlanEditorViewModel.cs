@@ -310,6 +310,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     partial void OnEnabledChanged(bool value)
     {
+        OnPropertyChanged(nameof(CanEnable));
         RefreshNextRuns();
         Touch();
     }
@@ -542,8 +543,13 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         NextRunsNote = string.Join(" ", parts);
     }
 
-    public void Validate() =>
-        Errors = PlanValidator.Validate(ToPlan(), _allPlans(), _s3.BucketOf, _drive.RootOf).Select(message => Loc.F(message)).ToList();
+    public void Validate()
+    {
+        var errors = PlanValidator.Validate(ToPlan(), _allPlans(), _s3.BucketOf, _drive.RootOf).Select(message => Loc.F(message)).ToList();
+        if (IsCopyUnfinished && Enabled)
+            errors.Add(Loc.T("plan.copyUnfinished.enable"));
+        Errors = errors;
+    }
 
     /// <summary>The language changed: the texts this editor builds in code are built again.</summary>
     public void RefreshTexts()

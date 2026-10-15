@@ -345,7 +345,6 @@ public class MainWindowSmokeTests
         });
     }
 
-    /// <summary>Whether the element and all its ancestors are Visible (IsVisible needs a shown window).</summary>
     [Fact]
     public void The_copy_and_verify_dialogs_load_and_the_plan_menu_offers_them()
     {
@@ -383,6 +382,7 @@ public class MainWindowSmokeTests
         });
     }
 
+    /// <summary>Whether the element and all its ancestors are Visible (IsVisible needs a shown window).</summary>
     private static bool Shown(DependencyObject element)
     {
         for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))

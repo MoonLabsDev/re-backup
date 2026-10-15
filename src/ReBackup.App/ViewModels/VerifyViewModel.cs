@@ -18,7 +18,7 @@ public sealed record VerifyProblemRow(string Version, string Path, string Proble
 /// content is also read and hashed again), with progress and the list of what is wrong. It holds the target's "verify"
 /// lock while it runs; a target someone else holds is not verified. Nothing is repaired.
 /// </summary>
-public sealed partial class VerifyViewModel : ObservableObject
+public sealed partial class VerifyViewModel : ObservableObject, IPoolJob
 {
     /// <summary>What a lock holder is doing while it verifies (<see cref="LockInfo.Operation"/>).</summary>
     private const string LockOperation = "verify";
@@ -27,7 +27,9 @@ public sealed partial class VerifyViewModel : ObservableObject
     private readonly IStorageFactory _storages;
     private readonly string _host;
     private readonly TimeProvider _time;
+    private readonly Action<bool> _running;
     private CancellationTokenSource? _cts;
+    private Task _work = Task.CompletedTask;
 
     /// <summary>Thorough (read and hash every content) rather than Quick.</summary>
     [ObservableProperty]
@@ -51,8 +53,10 @@ public sealed partial class VerifyViewModel : ObservableObject
 
     /// <param name="plan">The saved incremental plan whose target is verified.</param>
     /// <param name="host">This computer, as the lock names it.</param>
-    public VerifyViewModel(BackupPlan plan, IStorageFactory storages, string host, TimeProvider time)
+    /// <param name="running">Called with true when a verify starts and with false when it has ended.</param>
+    public VerifyViewModel(BackupPlan plan, IStorageFactory storages, string host, TimeProvider time, Action<bool>? running = null)
     {
+        _running = running ?? (_ => { });
         _plan = plan;
         _storages = storages;
         _host = host;
@@ -63,6 +67,9 @@ public sealed partial class VerifyViewModel : ObservableObject
     public string Heading => Loc.F("verify.heading", ("plan", _plan.Name));
 
     public bool IsQuick => !Thorough;
+
+    /// <summary>The verify's work off the UI thread; completed while none runs. Its lock is released when it ends.</summary>
+    public Task Work => _work;
 
     /// <summary>The mode can be chosen while nothing runs.</summary>
     public bool CanChoose => !IsRunning;
@@ -86,6 +93,7 @@ public sealed partial class VerifyViewModel : ObservableObject
     {
         var cts = _cts = new CancellationTokenSource();
         IsRunning = true;
+        _running(true);
         Problems.Clear();
         Message = null;
         Summary = null;
@@ -95,7 +103,9 @@ public sealed partial class VerifyViewModel : ObservableObject
         {
             var thorough = Thorough;
             var progress = Progress(cts);
-            var outcome = await Task.Run(() => RunAsync(thorough, progress, cts.Token));
+            var work = Task.Run(() => RunAsync(thorough, progress, cts.Token));
+            _work = work;
+            var outcome = await work;
             if (outcome.Message is not null)
             {
                 Message = outcome.Message;
@@ -120,6 +130,7 @@ public sealed partial class VerifyViewModel : ObservableObject
             IsRunning = false;
             ProgressText = null;
             ProgressFraction = 0;
+            _running(false);
         }
     }
 
@@ -134,8 +145,18 @@ public sealed partial class VerifyViewModel : ObservableObject
         }
     }
 
-    /// <summary>The dialog closes: a verify still running stops (and releases its lock).</summary>
-    public void Stop() => _cts?.Cancel();
+    /// <summary>The dialog closes or the app exits: a verify still running stops (and releases its lock).</summary>
+    public void Stop()
+    {
+        try
+        {
+            _cts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // It ended meanwhile.
+        }
+    }
 
     private sealed record Outcome(IReadOnlyList<PoolProblem> Problems, string? Message, string? ReleaseError);
 

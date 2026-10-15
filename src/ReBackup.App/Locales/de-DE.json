@@ -168,7 +168,8 @@
       "storeUnsupported": "Das Speicherformat des Ziels wird von dieser ReBackup-Version nicht unterstützt. Es wurde nichts geändert.",
       "targetLocked": "Das Ziel wird seit {since} von {host} verwendet ({operation}). Es wurde nichts geändert.",
       "lockReleaseFailed": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}",
-      "copyRunning": "Der Plan wird gerade kopiert („Plan kopieren …“); das Backup wurde nicht gestartet."
+      "copyRunning": "Der Plan wird gerade kopiert („Plan kopieren …“); das Backup wurde nicht gestartet.",
+      "copyUnfinished": "Der Plan ist eine unfertige Kopie; zuerst mit „Kopieren fortsetzen …“ fertigstellen. Das Backup wurde nicht gestartet."
     },
     "gc": {
       "skippedMarkers": "Nicht mehr benötigte Backup-Inhalte wurden nicht entfernt: Eine Version wird noch geschrieben oder gelöscht.",
@@ -259,6 +260,7 @@
       "copy": "Plan kopieren …",
       "verify": "Backup prüfen …",
       "releaseLock": "Sperre aufheben …",
+      "continueCopy": "Kopieren fortsetzen …",
       "deleteConfirm": "Plan „{plan}“ löschen?\n\nBereits im Ziel gespeicherte Backups bleiben unberührt.",
       "deleteHistory": "Auch den Laufverlauf dieses Plans löschen?",
       "historyNotDeleted": "Der Plan wurde gelöscht, sein Laufverlauf aber nicht: {error}"
@@ -296,6 +298,8 @@
       "copyRunning": "„{plan}“ wird gerade kopiert; nach dem Kopieren erneut ausführen.",
       "copying": "„{plan}“ wird kopiert …",
       "copied": "Die Kopie „{plan}“ wurde hinzugefügt. Sie ist deaktiviert, bis du sie aktivierst.",
+      "copyAdded": "„{plan}“ wurde als unfertige Kopie hinzugefügt; das Kopieren läuft.",
+      "copyUnfinished": "„{plan}“ ist eine unfertige Kopie. Vor dem Ausführen mit „Kopieren fortsetzen …“ fertigstellen.",
       "saved": "„{plan}“ gespeichert.",
       "notSaved": "Nicht gespeichert: Die im Plan angezeigten Fehler beheben.",
       "scheduledInvalid": "Das geplante Backup von „{plan}“ wurde nicht gestartet: {reason}",
@@ -426,6 +430,12 @@
       "exit": "Eine Wiederherstellung läuft. Bereits wiederhergestellte Dateien bleiben, der Rest wird nicht wiederhergestellt.\n\nAbbrechen und ReBackup beenden?"
     },
     "restoreStuck": "Eine Wiederherstellung wurde nicht innerhalb von 10 Sekunden beendet. Eine gerade geschriebene Datei ist möglicherweise unvollständig (daneben liegt eine Datei „*.rebackup-tmp“).",
+    "poolJobRunning": {
+      "title": "Kopieren oder Prüfen läuft",
+      "exit": "Ein Kopieren oder Prüfen läuft. Es wird angehalten und seine Sperre aufgehoben; eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup beenden?",
+      "restart": "Ein Kopieren oder Prüfen läuft. Es wird angehalten und seine Sperre aufgehoben; eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup neu starten?"
+    },
+    "poolJobStuck": "Ein Kopieren oder Prüfen hat nicht innerhalb von 10 Sekunden angehalten. Seine Sperre kann auf dem Ziel zurückgeblieben sein; „Sperre aufheben …“ entfernt sie.",
     "backupRunning": {
       "title": "Backup läuft",
       "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"
@@ -512,6 +522,11 @@
       "enabled": "Nach Zeitplan ausführen",
       "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
       "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+    },
+    "copyUnfinished": {
+      "card": "Kopie unfertig",
+      "banner": "Dieser Plan ist eine unfertige Kopie. Er kann erst aktiviert oder ausgeführt werden, wenn „Kopieren fortsetzen …“ das Kopieren fertiggestellt hat.",
+      "enable": "Eine unfertige Kopie kann nicht aktiviert werden. Zuerst mit „Kopieren fortsetzen …“ fertigstellen."
     },
     "lock": {
       "banner": "Gesperrt von {host} ({operation}) seit {time}",
@@ -1018,13 +1033,15 @@
   "copy": {
     "title": "Plan kopieren",
     "heading": "„{plan}“ auf ein neues Ziel kopieren",
+    "headingResume": "Kopieren von „{plan}“ nach „{copy}“ fortsetzen",
     "hint": "Alle Versionen werden kopiert, die älteste zuerst. Der neue Plan erhält alle Einstellungen und Aufbewahrungsregeln und wird deaktiviert angelegt. Am Ziel des Plans selbst ändert sich nichts.",
     "defaultName": "{plan} (Kopie)",
     "start": "Kopieren",
     "checking": "Neues Ziel wird geprüft …",
     "progress": "Version {current} von {count} · {version} · {done} von {total}",
     "canceling": "Wird nach der aktuellen Datei angehalten …",
-    "canceled": "Das Kopieren wurde angehalten. Mit gleichem Namen, Ziel und Format erneut starten, um dort weiterzumachen.",
+    "canceled": "Das Kopieren wurde angehalten. Der Plan bleibt eine unfertige Kopie; „Kopieren fortsetzen …“ macht dort weiter.",
+    "canceledBeforeStart": "Das Kopieren wurde vor dem Start angehalten. Es wurde nichts geschrieben.",
     "done": "Kopierte Versionen: {copied}. Bereits auf dem neuen Ziel: {skipped}.",
     "added": "Der Plan „{plan}“ wurde hinzugefügt. Er ist deaktiviert, bis du ihn aktivierst.",
     "failures": {
@@ -1032,7 +1049,8 @@
       "other": "{count} Probleme, unten aufgelistet."
     },
     "failuresName": "Probleme beim Kopieren",
-    "notCompleted": "Es wurde nichts kopiert und kein Plan hinzugefügt; siehe die Probleme unten.",
+    "notFinished": "Das Kopieren wurde nicht fertig; der Plan „{plan}“ bleibt eine unfertige Kopie. „Kopieren fortsetzen …“ versucht es erneut; siehe die Probleme unten.",
+    "sourceGone": "„{plan}“ ist eine unfertige Kopie eines Plans, den es nicht mehr gibt; das Kopieren lässt sich nicht fertigstellen. „{plan}“ kann mit „Plan löschen“ gelöscht werden; die bereits auf sein Ziel kopierten Backups bleiben erhalten.",
     "notAdded": "Der neue Plan konnte nicht gespeichert werden.",
     "saveFailed": "Der neue Plan konnte nicht gespeichert werden: {error}",
     "checkFailed": "Die Ziele konnten nicht geprüft werden: {error}",

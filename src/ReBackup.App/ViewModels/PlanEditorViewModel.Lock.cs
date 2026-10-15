@@ -22,8 +22,27 @@ public sealed partial class PlanEditorViewModel
 
     private bool _lockUnreadable;
 
-    /// <summary>"Copy plan…" copies this plan's versions right now: it does not run and its versions are not deleted.</summary>
-    [ObservableProperty] private bool _isCopying;
+    /// <summary>
+    /// "Copy plan…" copies this plan's versions (or into this plan) right now: it does not run, its versions are not
+    /// deleted and its lock is not released.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ReleaseLockCommand))]
+    private bool _isCopying;
+
+    /// <summary>"Verify backup…" checks this plan's target right now: its lock is not released.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ReleaseLockCommand))]
+    private bool _isVerifying;
+
+    /// <summary>
+    /// The saved plan is a copy "Copy plan…" has not finished (<see cref="BackupPlan.CopyFromPlanId"/>): it is not enabled
+    /// or run until "Continue copy…" finishes it.
+    /// </summary>
+    public bool IsCopyUnfinished => !IsNew && _saved.CopyFromPlanId is not null;
+
+    /// <summary>The "Enabled" switch can be turned on (not for an unfinished copy; it can always be turned off).</summary>
+    public bool CanEnable => !IsCopyUnfinished || Enabled;
 
     /// <summary>The saved plan is incremental: its target has a lock, can be verified and shows the lock banner.</summary>
     public bool ShowPoolActions => !IsNew && _saved.Incremental;
@@ -38,10 +57,20 @@ public sealed partial class PlanEditorViewModel
             ? Loc.F("plan.lock.banner", ("host", holder.Host), ("operation", holder.Operation), ("time", When(holder)))
             : null;
 
+    /// <summary>"Copy plan…" has finished copying into this plan: its saved file no longer carries the unfinished mark.</summary>
+    public void MarkCopyFinished()
+    {
+        _saved.CopyFromPlanId = null;
+        OnSavedPlanChanged();
+        Validate();
+    }
+
     /// <summary>The saved plan changed (saved, reloaded): whether it is incremental may have changed, and so its lock.</summary>
     private void OnSavedPlanChanged()
     {
         OnPropertyChanged(nameof(ShowPoolActions));
+        OnPropertyChanged(nameof(IsCopyUnfinished));
+        OnPropertyChanged(nameof(CanEnable));
         _ = RefreshLockAsync();
     }
 
@@ -92,13 +121,19 @@ public sealed partial class PlanEditorViewModel
     }
 
     /// <summary>
+    /// "Release lock…" is offered for someone else's lock: not while this app's own run, copy or verify of the plan holds
+    /// it (they release it themselves).
+    /// </summary>
+    private bool CanReleaseLock() => HasLock && !Run.IsActive && !IsCopying && !IsVerifying;
+
+    /// <summary>
     /// "Release lock…": after a confirmation naming the holder and its start time, removes the lock whoever holds it. Only
     /// the lock the user confirmed is removed: when another holder took the target meanwhile, the banner shows it instead.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(HasLock))]
+    [RelayCommand(CanExecute = nameof(CanReleaseLock))]
     private async Task ReleaseLockAsync()
     {
-        if (!HasLock || !ShowPoolActions)
+        if (!CanReleaseLock() || !ShowPoolActions)
             return;
         var shown = _lock;
         var title = Loc.T("plan.lock.releaseTitle");

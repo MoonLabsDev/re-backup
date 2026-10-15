@@ -31,6 +31,13 @@ public sealed class BackupPlan
     /// <summary>How an incremental run finds changed files. Ignored for full plans.</summary>
     public ChangeDetection ChangeDetection { get; set; } = ChangeDetection.Fast;
 
+    /// <summary>
+    /// While "Copy plan…" has not finished copying the versions of another plan into this one's target: that plan's id.
+    /// Such a plan is not enabled or run until "Continue copy…" finishes it. Null for every other plan (and not written).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CopyFromPlanId { get; set; }
+
     public IgnoreSettings Ignore { get; set; } = new();
 
     private List<RetentionRule> _retention = [];

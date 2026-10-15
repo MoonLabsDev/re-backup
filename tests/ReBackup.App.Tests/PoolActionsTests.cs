@@ -258,6 +258,9 @@ public class PoolActionsTests : IDisposable
         saved.Enabled.Should().BeFalse();
         saved.Incremental.Should().BeFalse();
         saved.Target.Should().Be(new StorageLocation("s3", "", "dst"));
+        saved.CopyFromPlanId.Should().BeNull("the copy has finished");
+        added.IsCopyUnfinished.Should().BeFalse();
+        added.IsCopying.Should().BeFalse();
         source.IsCopying.Should().BeFalse();
         SourceLocked.Should().BeFalse();
         copy.StartCommand.CanExecute(null).Should().BeFalse("the copy is done");
@@ -283,9 +286,180 @@ public class PoolActionsTests : IDisposable
         copy.IsRunning.Should().BeFalse();
         copy.Result!.Canceled.Should().BeTrue();
         copy.Summary.Should().Be(Loc.T("copy.canceled"));
-        vm.Plans.Should().ContainSingle("a canceled copy adds no plan");
         source.IsCopying.Should().BeFalse();
         SourceLocked.Should().BeFalse("the copier releases the source's lock");
+
+        // Saved before the first write, marked unfinished: the copy can be continued after the dialog has closed.
+        var unfinished = vm.Plans.Should().HaveCount(2).And.Subject.Single(p => p != source);
+        unfinished.IsCopyUnfinished.Should().BeTrue();
+        unfinished.IsCopying.Should().BeFalse();
+        unfinished.Enabled.Should().BeFalse();
+        _fixture.Store.TryLoad(unfinished.Id)!.CopyFromPlanId.Should().Be("p1");
+    }
+
+    [Fact]
+    public async Task Continue_copy_copies_the_rest_and_clears_the_mark()
+    {
+        var vm = Create();
+        var source = vm.Plans.Single();
+        vm.CopyPlanCommand.Execute(source);
+        var first = _fixture.Dialogs.CopyDialogs.Single();
+        ChooseNewTarget(first);
+        _gated.Holds = path => path.StartsWith(PoolLayout.PoolFolder + "/", StringComparison.Ordinal);
+        var running = first.StartCommand.ExecuteAsync(null);
+        await _gated.Reached.Task.WaitAsync(Timeout);
+        first.CancelCommand.Execute(null);
+        await running.WaitAsync(Timeout);
+        _gated.Holds = _ => false;
+        var unfinished = vm.Plans.Single(p => p != source);
+
+        // Neither run nor enabled while unfinished.
+        vm.RunNowCommand.Execute(unfinished);
+        _fixture.Queue.IsBusy.Should().BeFalse();
+        vm.StatusMessage.Should().Be(Loc.F("shell.status.copyUnfinished", ("plan", unfinished.Name)));
+        vm.RunnablePlans.Single(p => p.Id == unfinished.Id).CanRun.Should().BeFalse();
+        unfinished.CanEnable.Should().BeFalse();
+        unfinished.Enabled = true;
+        unfinished.Errors.Should().Contain(Loc.T("plan.copyUnfinished.enable"));
+        unfinished.Revert();
+
+        vm.ContinueCopyCommand.Execute(unfinished);
+        var resume = _fixture.Dialogs.CopyDialogs.Should().HaveCount(2).And.Subject.Last();
+        resume.IsResume.Should().BeTrue();
+        resume.CanEditSettings.Should().BeFalse();
+        resume.Name.Should().Be(unfinished.Name);
+        resume.TargetIsS3.Should().BeTrue();
+        await resume.StartCommand.ExecuteAsync(null);
+
+        resume.Message.Should().BeNull("a target holding the copy's own versions is no refusal here");
+        resume.Result!.Canceled.Should().BeFalse();
+        (resume.Result.VersionsCopied + resume.Result.VersionsSkipped).Should().Be(1);
+        resume.Result.Failures.Should().BeEmpty();
+        _newTarget.Files.Should().Contain(path => path.EndsWith("/a.txt")).And.Contain(path => path.EndsWith("/b.txt"));
+        vm.Plans.Should().HaveCount(2, "the copy's plan was added once");
+        unfinished.IsCopyUnfinished.Should().BeFalse();
+        unfinished.CanEnable.Should().BeTrue();
+        _fixture.Store.TryLoad(unfinished.Id)!.CopyFromPlanId.Should().BeNull();
+        vm.RunnablePlans.Single(p => p.Id == unfinished.Id).CanRun.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Continue_copy_of_a_plan_whose_source_is_gone_says_so()
+    {
+        var vm = Create();
+        _fixture.Store.Save(new BackupPlan
+        {
+            Id = "orphan",
+            Name = "Orphan",
+            Source = vm.Plans.Single().SavedPlan().Source,
+            Target = new StorageLocation("s3", "", "dst"),
+            Enabled = false,
+            CopyFromPlanId = "gone",
+        });
+        vm.ReloadFromDisk();
+        var orphan = vm.Plans.Single(p => p.Id == "orphan");
+        orphan.IsCopyUnfinished.Should().BeTrue();
+
+        vm.ContinueCopyCommand.Execute(orphan);
+
+        _fixture.Dialogs.CopyDialogs.Should().BeEmpty();
+        _fixture.Dialogs.Errors.Should().ContainSingle().Which.Should().Be(Loc.F("copy.sourceGone", ("plan", "Orphan")));
+        vm.SelectedPlan = orphan;
+        vm.DeletePlanCommand.Execute(null);
+        vm.Plans.Should().NotContain(orphan, "the unfinished copy can be deleted");
+    }
+
+    [Fact]
+    public async Task Copy_refuses_to_start_when_a_run_was_queued_while_the_dialog_was_open()
+    {
+        var vm = Create();
+        var source = vm.Plans.Single();
+        vm.CopyPlanCommand.Execute(source);
+        var copy = _fixture.Dialogs.CopyDialogs.Single();
+        ChooseNewTarget(copy);
+        _gated.Holds = path => path == PoolLayout.StoreFile;   // the run waits once it has taken the lock
+
+        vm.RunNowCommand.Execute(source);
+        source.Run.IsActive.Should().BeTrue();
+        await copy.StartCommand.ExecuteAsync(null);
+
+        copy.Message.Should().Be(Loc.F("copy.backupRunning", ("plan", "Projects")));
+        copy.Result.Should().BeNull();
+        source.IsCopying.Should().BeFalse();
+        vm.Plans.Should().ContainSingle();
+
+        _fixture.Queue.Cancel("p1");
+        _gated.Gate.SetResult();
+        await WaitUntilAsync(() => !_fixture.Queue.IsBusy);
+    }
+
+    [Fact]
+    public async Task Exit_stops_running_copies_and_verifies_and_releases_their_locks()
+    {
+        var vm = Create();
+        var source = vm.Plans.Single();
+        vm.CopyPlanCommand.Execute(source);
+        var copy = _fixture.Dialogs.CopyDialogs.Single();
+        ChooseNewTarget(copy);
+        copy.ChooseStorageFormatCommand.Execute("Incremental");   // the new target is locked as well
+        _gated.Holds = path => path.StartsWith(PoolLayout.PoolFolder + "/", StringComparison.Ordinal);
+        var copying = copy.StartCommand.ExecuteAsync(null);
+        await _gated.Reached.Task.WaitAsync(Timeout);
+        vm.IsAnyPoolJobRunning.Should().BeTrue();
+        _newTarget.Files.Should().Contain(PoolLayout.LockFile);
+
+        vm.StopPoolJobs(Timeout).Should().BeTrue();
+
+        SourceLocked.Should().BeFalse();
+        _newTarget.Files.Should().NotContain(PoolLayout.LockFile);
+        await copying.WaitAsync(Timeout);
+        vm.IsAnyPoolJobRunning.Should().BeFalse();
+
+        // A thorough verify that is reading the pool.
+        var verifyGate = new GatedStorage(_sourceTarget)
+        {
+            Holds = path => path.StartsWith(PoolLayout.PoolFolder + "/", StringComparison.Ordinal),
+        };
+        _storages.Storages[("src", "")] = verifyGate;
+        vm.VerifyBackupCommand.Execute(source);
+        var verify = _fixture.Dialogs.VerifyDialogs.Single();
+        verify.ChooseModeCommand.Execute("Thorough");
+        var verifying = verify.StartCommand.ExecuteAsync(null);
+        await verifyGate.Reached.Task.WaitAsync(Timeout);
+        vm.IsAnyPoolJobRunning.Should().BeTrue();
+        source.IsVerifying.Should().BeTrue();
+        SourceLocked.Should().BeTrue();
+
+        vm.StopPoolJobs(Timeout).Should().BeTrue();
+
+        SourceLocked.Should().BeFalse("the verify releases its lock before the app exits");
+        await verifying.WaitAsync(Timeout);
+        vm.IsAnyPoolJobRunning.Should().BeFalse();
+        source.IsVerifying.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Release_lock_is_not_offered_while_this_app_holds_the_lock()
+    {
+        var vm = Create();
+        var source = vm.Plans.Single();
+        vm.VerifyBackupCommand.Execute(source);
+        var verify = _fixture.Dialogs.VerifyDialogs.Single();
+        verify.ChooseModeCommand.Execute("Thorough");
+        _gated.Holds = path => path.StartsWith(PoolLayout.PoolFolder + "/", StringComparison.Ordinal);
+        var verifying = verify.StartCommand.ExecuteAsync(null);
+        await _gated.Reached.Task.WaitAsync(Timeout);
+        await source.RefreshLockAsync();
+
+        source.HasLock.Should().BeTrue();
+        source.ReleaseLockCommand.CanExecute(null).Should().BeFalse("this app's own verify holds it");
+        await source.ReleaseLockCommand.ExecuteAsync(null);
+        _fixture.Dialogs.Confirms.Should().BeEmpty();
+        SourceLocked.Should().BeTrue();
+
+        _gated.Gate.SetResult();
+        await verifying.WaitAsync(Timeout);
+        SourceLocked.Should().BeFalse();
     }
 
     [Fact]
@@ -309,7 +483,7 @@ public class PoolActionsTests : IDisposable
         vm.RunNowCommand.Execute(source);
         _fixture.Queue.IsBusy.Should().BeFalse("a manual run of the source is refused");
         vm.StatusMessage.Should().Be(Loc.F("shell.status.copyRunning", ("plan", "Projects")));
-        vm.RunnablePlans.Single().CanRun.Should().BeFalse();
+        vm.RunnablePlans.Should().HaveCount(2).And.OnlyContain(p => !p.CanRun, "neither the source nor its copy runs");
 
         await source.Versions.RefreshCommand.ExecuteAsync(null);
         source.Versions.SetMarkedVersions(source.Versions.VersionRows);
@@ -336,6 +510,17 @@ public class PoolActionsTests : IDisposable
 
         var copy = _fixture.Dialogs.CopyDialogs.Should().ContainSingle().Subject;
         copy.Incremental.Should().BeTrue("the copy of a full plan defaults to incremental");
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var until = DateTime.UtcNow + Timeout;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > until)
+                throw new TimeoutException("The condition was not met in time.");
+            await Task.Delay(20);
+        }
     }
 
     private static void ChooseNewTarget(CopyPlanViewModel copy)

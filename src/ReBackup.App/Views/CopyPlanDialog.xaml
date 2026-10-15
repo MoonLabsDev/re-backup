@@ -35,7 +35,7 @@
         <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,6" TextWrapping="Wrap" Text="{Binding Heading}" />
         <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Margin="0,0,0,14" TextWrapping="Wrap" Text="{l:Loc copy.hint}" />
 
-        <StackPanel IsEnabled="{Binding CanEdit}">
+        <StackPanel IsEnabled="{Binding CanEditSettings}">
             <TextBlock Style="{StaticResource TextBlock.Label}" Text="{l:Loc common.name}" />
             <TextBox MinHeight="34" AutomationProperties.Name="{l:Loc common.name}"
                      Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />

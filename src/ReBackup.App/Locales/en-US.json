@@ -168,7 +168,8 @@
       "storeUnsupported": "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
       "targetLocked": "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
       "lockReleaseFailed": "The target's lock could not be released: {error}",
-      "copyRunning": "The plan is being copied (\"Copy plan…\"); the backup was not started."
+      "copyRunning": "The plan is being copied (\"Copy plan…\"); the backup was not started.",
+      "copyUnfinished": "The plan is an unfinished copy; finish it with \"Continue copy…\" first. The backup was not started."
     },
     "gc": {
       "skippedMarkers": "Unused backup content was not removed: a version is still being written or deleted.",
@@ -259,6 +260,7 @@
       "copy": "Copy plan…",
       "verify": "Verify backup…",
       "releaseLock": "Release lock…",
+      "continueCopy": "Continue copy…",
       "deleteConfirm": "Delete plan \"{plan}\"?\n\nBackups already stored in the target are not touched.",
       "deleteHistory": "Also delete this plan's run history?",
       "historyNotDeleted": "The plan was deleted, but its run history could not be: {error}"
@@ -296,6 +298,8 @@
       "copyRunning": "\"{plan}\" is being copied; run it again once the copy has finished.",
       "copying": "Copying \"{plan}\"…",
       "copied": "The copy \"{plan}\" was added. It is disabled until you enable it.",
+      "copyAdded": "\"{plan}\" was added as an unfinished copy; the copy is running.",
+      "copyUnfinished": "\"{plan}\" is an unfinished copy. Finish it with \"Continue copy…\" before running it.",
       "saved": "Saved \"{plan}\".",
       "notSaved": "Not saved: fix the errors shown in the plan.",
       "scheduledInvalid": "The scheduled backup of \"{plan}\" was not started: {reason}",
@@ -426,6 +430,12 @@
       "exit": "A restore is running. Files restored so far stay; the rest is not restored.\n\nCancel it and exit ReBackup?"
     },
     "restoreStuck": "A restore did not stop within 10 seconds. A file it was writing may be incomplete (a \"*.rebackup-tmp\" file next to it).",
+    "poolJobRunning": {
+      "title": "Copy or verify in progress",
+      "exit": "A copy or verify is running. It is stopped and its lock is released; an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and exit ReBackup?",
+      "restart": "A copy or verify is running. It is stopped and its lock is released; an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and restart ReBackup?"
+    },
+    "poolJobStuck": "A copy or verify did not stop within 10 seconds. Its lock may be left on the target; \"Release lock…\" removes it.",
     "backupRunning": {
       "title": "Backup in progress",
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
@@ -512,6 +522,11 @@
       "enabled": "Run on schedule",
       "enabledToolTip": "When off, the plan runs only when started by hand.",
       "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+    },
+    "copyUnfinished": {
+      "card": "Copy unfinished",
+      "banner": "This plan is an unfinished copy. It cannot be enabled or run until \"Continue copy…\" has finished the copy.",
+      "enable": "An unfinished copy cannot be enabled. Finish it with \"Continue copy…\" first."
     },
     "lock": {
       "banner": "Locked by {host} ({operation}) since {time}",
@@ -1018,13 +1033,15 @@
   "copy": {
     "title": "Copy plan",
     "heading": "Copy \"{plan}\" to a new target",
+    "headingResume": "Continue copying \"{plan}\" into \"{copy}\"",
     "hint": "All versions are copied, oldest first. The new plan gets all settings and retention rules and is created disabled. Nothing on the plan's own target is changed.",
     "defaultName": "{plan} (copy)",
     "start": "Copy",
     "checking": "Checking the new target…",
     "progress": "Version {current} of {count} · {version} · {done} of {total}",
     "canceling": "Stopping after the current file…",
-    "canceled": "The copy was stopped. Start it again with the same name, target and format to continue where it stopped.",
+    "canceled": "The copy was stopped. The plan stays an unfinished copy; \"Continue copy…\" continues where it stopped.",
+    "canceledBeforeStart": "The copy was stopped before it started. Nothing was written.",
     "done": "Versions copied: {copied}. Already on the new target: {skipped}.",
     "added": "The plan \"{plan}\" was added. It is disabled until you enable it.",
     "failures": {
@@ -1032,7 +1049,8 @@
       "other": "{count} problems, listed below."
     },
     "failuresName": "Problems of the copy",
-    "notCompleted": "Nothing was copied and no plan was added; see the problems below.",
+    "notFinished": "The copy did not finish; the plan \"{plan}\" stays an unfinished copy. \"Continue copy…\" tries again; see the problems below.",
+    "sourceGone": "\"{plan}\" is an unfinished copy of a plan that no longer exists, so the copy cannot be finished. You can delete \"{plan}\" with \"Delete plan\"; the backups already copied to its target are not touched.",
     "notAdded": "The new plan could not be saved.",
     "saveFailed": "The new plan could not be saved: {error}",
     "checkFailed": "The targets could not be checked: {error}",

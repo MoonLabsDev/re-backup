@@ -161,10 +161,14 @@ public sealed partial class MainViewModel : ObservableObject
             editor.Preview.RequestReevaluate();
     }
 
-    /// <summary>Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid, already active or copied plans.</summary>
+    /// <summary>
+    /// Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid, already active or copied plans and for
+    /// unfinished copies.
+    /// </summary>
     public IReadOnlyList<(string Id, string Name, bool CanRun)> RunnablePlans =>
         Plans.Where(p => !p.IsNew)
-            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive && !p.IsCopying))
+            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive && !p.IsCopying &&
+                                         !p.IsCopyUnfinished))
             .ToList();
 
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
@@ -535,6 +539,11 @@ public sealed partial class MainViewModel : ObservableObject
                 SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.copyRunning"));
                 return;
             }
+            if (plan.CopyFromPlanId is not null)
+            {
+                SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.copyUnfinished"));
+                return;
+            }
             if (ScheduledRunBlocker(plan) is { } reason)
             {
                 SkipScheduledRun(editor, plan, trigger, reason);
@@ -716,6 +725,11 @@ public sealed partial class MainViewModel : ObservableObject
             SetStatus(LocText.Of("shell.status.copyRunning", ("plan", editor.Name)));
             return false;
         }
+        if (editor.IsCopyUnfinished)
+        {
+            SetStatus(LocText.Of("shell.status.copyUnfinished", ("plan", editor.Name)));
+            return false;
+        }
 
         var request = new BackupRequest(editor.SavedPlan(), _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Manual);
         if (!_queue.Enqueue(request))
@@ -730,6 +744,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
         editor?.Run.Apply(update);
+        editor?.ReleaseLockCommand.NotifyCanExecuteChanged();   // not while its own run holds the lock
         if (update.Progress is null)
             RefreshQueuePositions();   // the queue changed: a job was added, started, removed or finished
         UpdateQueueStatus(update, editor?.Run);
