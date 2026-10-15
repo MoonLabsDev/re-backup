@@ -90,7 +90,7 @@ public static class VersionDeleter
         }
         catch (OperationCanceledException)
         {
-            return [];
+            return [];   // as without the lock: the versions not started are left out of the result
         }
         catch (Exception ex) when (ex is StorageException or ArgumentException)
         {

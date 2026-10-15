@@ -89,6 +89,46 @@ public class PoolCollectorTests
     }
 
     [Fact]
+    public async Task Manifest_of_a_version_named_after_an_old_plan_name_that_cannot_be_opened_aborts_collection()
+    {
+        const string oldName = "2026_09_01-10_00 Old projects";
+        PoolVersions.Write(_target, oldName, PlanId, "Old projects", [("a.txt", "only-old")]);
+        Version(V1, ("a.txt", "kept"));
+        AddBlob(_target, "orphan");
+        var before = _target.Files.ToList();
+        var failing = new FaultyStorage(_target)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "open" && path == $"{oldName}/re-manifest.json")
+                    throw new StorageAccessDeniedException(path);
+            },
+        };
+
+        var result = await Collect(failing);
+
+        result.Should().Be(new CollectResult(0, 0, CoreTexts.English("core.gc.manifestUnreadable", ("version", oldName))));
+        _target.Files.Should().BeEquivalentTo(before);
+    }
+
+    [Theory]
+    [InlineData("2026_09_01-10_00 Old projects", "Old projects")]   // plan renamed: older versions keep the old name
+    [InlineData("2026_10_15-10_00 Projects copy", PlanName)]        // copied or renamed by hand
+    [InlineData("kept by hand", PlanName)]                          // no version name at all
+    public async Task Blobs_of_folders_the_catalog_does_not_list_as_owned_survive(string folder, string manifestPlanName)
+    {
+        PoolVersions.Write(_target, folder, PlanId, manifestPlanName, [("a.txt", "outside-catalog")]);
+        Version(V1, ("a.txt", "kept"));
+        AddBlob(_target, "orphan");
+
+        var result = await Collect();
+
+        result.Should().Be(new CollectResult(1, 6, null));
+        Blobs(_target).Should().BeEquivalentTo(BlobOf("outside-catalog"), BlobOf("kept"));
+        (await RestoreAsync(_target, folder)).Should().Equal(new Dictionary<string, string> { ["a.txt"] = "outside-catalog" });
+    }
+
+    [Fact]
     public async Task Pending_marker_skips_collection()
     {
         Version(V1, ("a.txt", "kept"));
@@ -342,6 +382,22 @@ public class PoolCollectorTests
         heldWhileDeleting.Operation.Should().Be("delete");
         Blobs(_target).Should().BeEquivalentTo(BlobOf("new content"), BlobOf("same-everywhere"));
         _target.Files.Should().NotContain(PoolLayout.LockFile);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Manual_delete_canceled_before_it_starts_changes_nothing(bool pool)
+    {
+        await RunDay(RunPlan(), "old content");
+        await RunDay(RunPlan(), "new content");
+        var before = _target.Files.ToList();
+
+        var results = await VersionDeleter.DeleteAsync(_target, PlanId, PlanName, [RunFirst], ct: new CancellationToken(true),
+            machineName: "TESTHOST", pool: pool);
+
+        results.Should().BeEmpty("versions that were not started are left out, with and without the lock");
+        _target.Files.Should().BeEquivalentTo(before);
     }
 
     [Fact]

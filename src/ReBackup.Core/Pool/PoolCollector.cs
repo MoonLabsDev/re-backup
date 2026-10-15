@@ -26,8 +26,10 @@ public static class PoolCollector
     /// <list type="number">
     /// <item>Skips (<c>core.gc.skippedMarkers</c>) while any folder in the target's root still carries a pending or
     /// deleting marker, whoever wrote it, or has a ".partial" / ".deleting" name: such a folder may reference blobs.</item>
-    /// <item>Marks the hashes of every version <see cref="VersionCatalog.ListAsync"/> lists, from the manifests on the
-    /// target. A version whose manifest cannot be read aborts (<c>core.gc.manifestUnreadable</c>).</item>
+    /// <item>Marks the hashes named by the <see cref="VersionMarkerNames.Manifest"/> of every folder in the target's root
+    /// that has one, read from the target, whatever plan id or folder name it carries: a plan that was renamed keeps its
+    /// old version names, and a folder renamed by hand still restores. Extra marks only keep blobs (the pool belongs to one
+    /// plan). A manifest that cannot be looked at or fully read aborts (<c>core.gc.manifestUnreadable</c>).</item>
     /// <item>Deletes every blob whose hash is not marked, in batches of <see cref="DeleteBatchSize"/>, then the
     /// <c>xx/yy</c> folders that became empty. Hashes compare in lower case. A file in the pool that is not a blob at its
     /// own path is left alone.</item>
@@ -39,16 +41,16 @@ public static class PoolCollector
     public static async Task<CollectResult> CollectAsync(IStorage target, string planId, string planName,
         CancellationToken ct)
     {
-        if (await HasFoldersInTransitAsync(target, ct).ConfigureAwait(false))
+        var folders = await RootFoldersAsync(target, ct).ConfigureAwait(false);
+        if (await HasFoldersInTransitAsync(target, folders, ct).ConfigureAwait(false))
             return new CollectResult(0, 0, CoreTexts.English("core.gc.skippedMarkers"));
 
         var marked = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var version in await VersionCatalog.ListAsync(target, planId, planName, ct).ConfigureAwait(false))
+        foreach (var folder in folders)
         {
-            if (version.Ownership == VersionOwnership.NoManifest)
-                continue;   // no manifest: it names no blob
-            if (!await TryMarkAsync(target, version.Path, marked, ct).ConfigureAwait(false))
-                return new CollectResult(0, 0, CoreTexts.English("core.gc.manifestUnreadable", ("version", version.Name)));
+            ct.ThrowIfCancellationRequested();
+            if (!await TryMarkAsync(target, folder, marked, ct).ConfigureAwait(false))
+                return new CollectResult(0, 0, CoreTexts.English("core.gc.manifestUnreadable", ("version", StoragePath.Name(folder))));
         }
 
         var (pool, doomed, bytes) = await ListPoolAsync(target, marked, ct).ConfigureAwait(false);
@@ -72,12 +74,8 @@ public static class PoolCollector
         return new CollectResult(deleted, freed, null);
     }
 
-    /// <summary>
-    /// Whether a folder in the target's root carries <see cref="VersionMarkerNames.Pending"/> or
-    /// <see cref="VersionMarkerNames.Deleting"/>, or has a ".partial" / ".deleting" name. Links and the pool are passed over;
-    /// a folder name the storage cannot address cannot hold a manifest either.
-    /// </summary>
-    private static async Task<bool> HasFoldersInTransitAsync(IStorage target, CancellationToken ct)
+    /// <summary>The folders directly in the target's root that may be versions: no links, not the pool.</summary>
+    private static async Task<List<string>> RootFoldersAsync(IStorage target, CancellationToken ct)
     {
         var folders = new List<string>();
         try
@@ -91,9 +89,18 @@ public static class PoolCollector
         }
         catch (StorageNotFoundException)
         {
-            return false;
+            // An empty target.
         }
+        return folders;
+    }
 
+    /// <summary>
+    /// Whether one of <paramref name="folders"/> carries <see cref="VersionMarkerNames.Pending"/> or
+    /// <see cref="VersionMarkerNames.Deleting"/>, or has a ".partial" / ".deleting" name. A folder name the storage cannot
+    /// address cannot hold a manifest either.
+    /// </summary>
+    private static async Task<bool> HasFoldersInTransitAsync(IStorage target, List<string> folders, CancellationToken ct)
+    {
         foreach (var folder in folders)
         {
             ct.ThrowIfCancellationRequested();
@@ -113,14 +120,33 @@ public static class PoolCollector
         return false;
     }
 
-    /// <summary>Adds the hashes the version's manifest names (lower case) to <paramref name="marked"/>; false when it cannot be read.</summary>
-    private static async Task<bool> TryMarkAsync(IStorage target, string versionPath, HashSet<string> marked,
+    /// <summary>
+    /// Adds the hashes the folder's manifest names (lower case) to <paramref name="marked"/>. True when the folder has no
+    /// manifest (or a name this storage cannot address, so nobody can read one there) or its manifest was read to the end;
+    /// false when the manifest could not be looked at or read, for whatever reason.
+    /// </summary>
+    private static async Task<bool> TryMarkAsync(IStorage target, string folder, HashSet<string> marked,
         CancellationToken ct)
     {
+        string manifest;
         try
         {
-            var stream = await target.OpenReadAsync(StoragePath.Combine(versionPath, VersionMarkerNames.Manifest), ct)
-                .ConfigureAwait(false);
+            manifest = StoragePath.Combine(folder, VersionMarkerNames.Manifest);
+            if (await target.StatAsync(manifest, ct).ConfigureAwait(false) is null)
+                return true;
+        }
+        catch (ArgumentException)
+        {
+            return true;
+        }
+        catch (StorageException)
+        {
+            return false;
+        }
+
+        try
+        {
+            var stream = await target.OpenReadAsync(manifest, ct).ConfigureAwait(false);
             await using (stream.ConfigureAwait(false))
             {
                 ManifestStream.Read(stream, file =>
@@ -133,7 +159,7 @@ public static class PoolCollector
         }
         catch (Exception ex) when (ex is IOException or JsonException or ArgumentException)
         {
-            return false;   // StorageException is an IOException; a vanished manifest is unreadable too
+            return false;   // StorageException is an IOException; a manifest that vanished meanwhile is unreadable too
         }
     }
 
