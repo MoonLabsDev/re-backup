@@ -582,6 +582,12 @@ public class BackupRunnerTests : IDisposable
     [InlineData("re-pending.json", true)]
     [InlineData("re-deleting.json", false)]
     [InlineData("re-deleting.json", true)]
+    [InlineData("re-store.json", false)]
+    [InlineData("re-store.json", true)]
+    [InlineData("re-lock.json", false)]
+    [InlineData("re-lock.json", true)]
+    [InlineData("re-pool", false)]
+    [InlineData("re-pool", true)]
     public async Task Source_root_entries_named_like_the_version_files_are_skipped_and_the_version_stays_visible(string name, bool folder)
     {
         // A marker of this very plan: copied into the version root it would hide the version or have it deleted.

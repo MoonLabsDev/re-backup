@@ -7,6 +7,7 @@ using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Pool;
 using ReBackup.Core.Retention;
 using ReBackup.Core.Versions;
 using ReBackup.Shared.IO;
@@ -343,13 +344,16 @@ public sealed class BackupRunner : IBackupRunner
 
     /// <summary>
     /// Whether a source path, file or folder, would land on one of the names a version folder uses for itself: the
-    /// manifest and the markers. Copied there, it would hide the version, be taken for its manifest, or clash with the
+    /// manifest, the markers and the pool's own names. Copied there, it would hide the version, be taken for its manifest, or clash with the
     /// run's own marker. Only the root counts: deeper down these names are ordinary files.
     /// </summary>
     private static bool IsReservedRootName(string path) =>
         path.Equals(VersionMarkerNames.Manifest, StringComparison.OrdinalIgnoreCase) ||
         path.Equals(VersionMarkerNames.Pending, StringComparison.OrdinalIgnoreCase) ||
-        path.Equals(VersionMarkerNames.Deleting, StringComparison.OrdinalIgnoreCase);
+        path.Equals(VersionMarkerNames.Deleting, StringComparison.OrdinalIgnoreCase) ||
+        path.Equals(PoolLayout.StoreFile, StringComparison.OrdinalIgnoreCase) ||
+        path.Equals(PoolLayout.LockFile, StringComparison.OrdinalIgnoreCase) ||
+        path.Equals(PoolLayout.PoolFolder, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Removes what earlier runs of this plan left behind (<see cref="LeftoverCleaner"/>): folders of runs that never

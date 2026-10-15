@@ -43,6 +43,26 @@ public class PlanStoreTests : IDisposable
     }
 
     [Fact]
+    public void Plan_round_trips_incremental_settings()
+    {
+        var plan = new BackupPlan { Name = "Projects", Incremental = true, ChangeDetection = ChangeDetection.Safe };
+
+        var clone = plan.Clone();
+        clone.Incremental.Should().BeTrue();
+        clone.ChangeDetection.Should().Be(ChangeDetection.Safe);
+
+        using var store = NewStore();
+        store.Save(plan);
+        var loaded = store.LoadAll().Plans.Should().ContainSingle().Subject;
+        loaded.Incremental.Should().BeTrue();
+        loaded.ChangeDetection.Should().Be(ChangeDetection.Safe);
+
+        var old = JsonSerializer.Deserialize<BackupPlan>("""{ "id": "p1", "name": "Old" }""", JsonDefaults.Options)!;
+        old.Incremental.Should().BeFalse();
+        old.ChangeDetection.Should().Be(ChangeDetection.Fast);
+    }
+
+    [Fact]
     public void Save_writes_id_named_camelCase_file_without_temp_leftovers()
     {
         using var store = NewStore();

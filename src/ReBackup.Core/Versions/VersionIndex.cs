@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
+using ReBackup.Core.Pool;
 using ReBackup.Storage;
 using ReBackup.Storage.FileSystem;
 
@@ -507,9 +508,19 @@ public sealed partial class VersionIndex
             (int)reader.GetInt64(first + 6),
             reader.GetInt64(first + 7));
 
-    /// <summary>"xxh64:" plus 16 hex digits as a signed 64-bit number; null for anything else.</summary>
+    /// <summary>
+    /// "xxh64:" plus 16 hex digits as a signed 64-bit number; "xxh128:" plus 32 hex digits folded to 64 bits
+    /// (high half xor low half); null for anything else. The index only compares and estimates, so the fold is enough.
+    /// </summary>
     public static long? ParseHash(string? hash)
     {
+        if (PoolLayout.TryParseHex(hash, out var hex128))
+        {
+            return UInt128.TryParse(hex128, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var wide)
+                ? unchecked((long)((ulong)(wide >> 64) ^ (ulong)wide))
+                : null;
+        }
+
         const string prefix = "xxh64:";
         if (hash is null || !hash.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || hash.Length != prefix.Length + 16)
             return null;

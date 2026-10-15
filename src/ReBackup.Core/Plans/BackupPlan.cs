@@ -7,6 +7,15 @@ using ReBackup.Storage;
 
 namespace ReBackup.Core.Plans;
 
+/// <summary>How an incremental run decides that a file is unchanged.</summary>
+public enum ChangeDetection
+{
+    /// <summary>Same size and modification time as in the previous version.</summary>
+    Fast,
+    /// <summary>Every file is read and hashed.</summary>
+    Safe,
+}
+
 public sealed class BackupPlan
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -15,6 +24,12 @@ public sealed class BackupPlan
     public StorageLocation Target { get; set; } = StorageLocation.FileSystem("");
     public bool Enabled { get; set; } = true;
     public bool FreeSpaceByRetention { get; set; }
+
+    /// <summary>Whether versions share unchanged files through a content-addressed pool in the target.</summary>
+    public bool Incremental { get; set; }
+
+    /// <summary>How an incremental run finds changed files. Ignored for full plans.</summary>
+    public ChangeDetection ChangeDetection { get; set; } = ChangeDetection.Fast;
 
     public IgnoreSettings Ignore { get; set; } = new();
 

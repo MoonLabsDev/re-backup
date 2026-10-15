@@ -118,6 +118,21 @@ public class VersionIndexTests : IDisposable
     }
 
     [Fact]
+    public void ParseHash_folds_xxh128()
+    {
+        var a = VersionIndex.ParseHash("xxh128:0123456789abcdef0123456789abcdef");
+        var same = VersionIndex.ParseHash("xxh128:0123456789abcdef0123456789abcdef");
+        var other = VersionIndex.ParseHash("xxh128:0123456789abcdef0123456789abcdee");
+
+        a.Should().NotBeNull();
+        a.Should().Be(same);
+        a.Should().NotBe(other);
+        VersionIndex.ParseHash("xxh128:ffffffffffffffff0000000000000001").Should().Be(unchecked((long)0xffffffffffffffffUL ^ 1L));
+        VersionIndex.ParseHash("xxh128:xyz").Should().BeNull();
+        VersionIndex.ParseHash("xxh64:ffffffffffffffff").Should().Be(-1);
+    }
+
+    [Fact]
     public async Task Scans_a_folder_without_a_manifest()
     {
         var folder = Write(_target, "2026_09_30-14_05", [File("a.txt", "alpha"), File("sub/b.txt", "bravo!")], withManifest: false);
