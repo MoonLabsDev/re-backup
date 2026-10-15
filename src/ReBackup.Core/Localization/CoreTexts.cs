@@ -87,6 +87,10 @@ public static class CoreTexts
         ["core.run.takeOverUnexamined"] = "\"{name}\" could not be examined and was left as it is.",
         ["core.run.leftoverPartialWithManifest"] = "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
         ["core.run.indexFailed"] = "The version index could not be updated: {error}",
+        ["core.run.storeFullOnPool"] = "The target holds an incremental pool, but this plan is a full plan. Nothing was changed.",
+        ["core.run.storePoolOnFull"] = "This plan is incremental, but the target already holds full versions of it. Nothing was changed.",
+        ["core.run.storeOtherPlan"] = "The target's pool belongs to another plan. Nothing was changed.",
+        ["core.run.storeUnsupported"] = "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
 
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
         ["core.skip.reservedName"] = "the name is reserved for ReBackup's own files",

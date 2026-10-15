@@ -161,7 +161,11 @@
       "takeOverChanged": "\"{name}\" was not taken over: its marker has changed meanwhile.",
       "takeOverUnexamined": "\"{name}\" could not be examined and was left as it is.",
       "leftoverPartialWithManifest": "\"{name}\" was left alone: it looks unfinished but holds a manifest.",
-      "indexFailed": "The version index could not be updated: {error}"
+      "indexFailed": "The version index could not be updated: {error}",
+      "storeFullOnPool": "The target holds an incremental pool, but this plan is a full plan. Nothing was changed.",
+      "storePoolOnFull": "This plan is incremental, but the target already holds full versions of it. Nothing was changed.",
+      "storeOtherPlan": "The target's pool belongs to another plan. Nothing was changed.",
+      "storeUnsupported": "The target's storage format is not supported by this version of ReBackup. Nothing was changed."
     },
     "skip": {
       "ignoreFileUnreadable": "ignore file could not be read; its patterns were not applied",
