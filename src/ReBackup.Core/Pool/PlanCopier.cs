@@ -96,8 +96,8 @@ public sealed class PlanCopier
 
     /// <summary>
     /// Whether <paramref name="newTarget"/> can take a copy of <paramref name="source"/>: not the plan's target, not inside
-    /// it and not holding it (<see cref="PlanValidator.Overlaps"/>); empty (no store file, no pool, no folder named like a
-    /// version); and the plan's target not locked. Nothing is written.
+    /// it and not holding it (<see cref="PlanValidator.Overlaps"/>); empty (<see cref="StoreGuard.IsEmptyAsync"/>: no store
+    /// file, no pool, no folder named like a version or holding a manifest); and the plan's target not locked. Nothing is written.
     /// </summary>
     /// <exception cref="StorageException">A target cannot be read.</exception>
     public async Task<CopyRefusal> CheckAsync(BackupPlan source, StorageLocation newTarget, CancellationToken ct)
@@ -106,7 +106,7 @@ public sealed class PlanCopier
         ArgumentNullException.ThrowIfNull(newTarget);
         if (Overlap(source.Target, newTarget))
             return CopyRefusal.SameOrNestedTarget;
-        if (!await IsEmptyAsync(_storages.Open(newTarget), ct).ConfigureAwait(false))
+        if (!await StoreGuard.IsEmptyAsync(_storages.Open(newTarget), ct).ConfigureAwait(false))
             return CopyRefusal.TargetNotEmpty;
         return await IsLockedAsync(_storages.Open(source.Target), ct).ConfigureAwait(false)
             ? CopyRefusal.SourceLocked
@@ -469,36 +469,6 @@ public sealed class PlanCopier
         ArgumentException { ParamName: { } name } => exception.Message.Replace($" (Parameter '{name}')", "", StringComparison.Ordinal),
         _ => exception.Message,
     };
-
-    /// <summary>
-    /// Whether a target holds anything of a plan: the store file, a pool folder, or a folder named like a version (also
-    /// one being written or deleted). A target that does not exist yet is empty.
-    /// </summary>
-    private static async Task<bool> IsEmptyAsync(IStorage target, CancellationToken ct)
-    {
-        if (await target.StatAsync(PoolLayout.StoreFile, ct).ConfigureAwait(false) is not null)
-            return false;
-        try
-        {
-            await foreach (var entry in target.ListAsync("", recursive: false, ct).ConfigureAwait(false))
-            {
-                if (!entry.IsDirectory)
-                    continue;
-                var name = StoragePath.Name(entry.Path);
-                foreach (var suffix in (ReadOnlySpan<string>)[VersionName.PartialSuffix, VersionName.DeletingSuffix])
-                    if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                        name = name[..^suffix.Length];
-                if (name.Equals(PoolLayout.PoolFolder, StringComparison.OrdinalIgnoreCase) ||
-                    VersionName.TryParseAny(name, out _, out _))
-                    return false;
-            }
-        }
-        catch (StorageNotFoundException)
-        {
-            // Not created yet.
-        }
-        return true;
-    }
 
     /// <summary>Whether the target has a lock file; one that cannot be parsed is held by someone too.</summary>
     private static async Task<bool> IsLockedAsync(IStorage target, CancellationToken ct)

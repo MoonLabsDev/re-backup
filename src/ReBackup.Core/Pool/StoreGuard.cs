@@ -29,6 +29,12 @@ public enum StoreGuardOutcome
 
     /// <summary>The store file or the target's layout is one this ReBackup does not know.</summary>
     UnsupportedFormat,
+
+    /// <summary>
+    /// An incremental plan points at a target without a store file that holds backups of another plan (a folder named
+    /// like a version, also one being written or deleted, or a folder with a manifest).
+    /// </summary>
+    TargetNotEmpty,
 }
 
 /// <summary>Makes sure a target holds the storage format a plan expects, before a run, a copy or a view touches it.</summary>
@@ -39,8 +45,8 @@ public static class StoreGuard
     private const int PoolVersion = 1;
 
     /// <summary>
-    /// Compares the target with the plan. For an incremental plan on an empty target (no store file, no versions of the
-    /// plan, no pool folder) the store file is written exclusively and durably when <paramref name="createIfMissing"/>
+    /// Compares the target with the plan. For an incremental plan on an empty target (no store file, no pool folder and
+    /// nothing <see cref="IsEmptyAsync"/> counts as a backup) the store file is written exclusively and durably when <paramref name="createIfMissing"/>
     /// is set; otherwise <see cref="StoreGuardOutcome.Created"/> is returned without writing anything. Nothing is
     /// written for any other outcome.
     /// </summary>
@@ -59,6 +65,9 @@ public static class StoreGuard
             return StoreGuardOutcome.PoolPlanOnFullTarget;
         if (await target.StatAsync(PoolLayout.PoolFolder, ct).ConfigureAwait(false) is not null)
             return StoreGuardOutcome.UnsupportedFormat;   // a pool folder without its descriptor: not ours to adopt
+        // Another plan's versions: a store file here would stop every run of that (full) plan.
+        if (!await IsEmptyAsync(target, ct).ConfigureAwait(false))
+            return StoreGuardOutcome.TargetNotEmpty;
         if (!createIfMissing)
             return StoreGuardOutcome.Created;
 
@@ -109,6 +118,7 @@ public static class StoreGuard
         StoreGuardOutcome.PoolPlanOnFullTarget => "core.run.storePoolOnFull",
         StoreGuardOutcome.OtherPlan => "core.run.storeOtherPlan",
         StoreGuardOutcome.UnsupportedFormat => "core.run.storeUnsupported",
+        StoreGuardOutcome.TargetNotEmpty => "core.run.storeNotEmpty",
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "This outcome has no message."),
     };
 
@@ -123,6 +133,43 @@ public static class StoreGuard
         {
             return new StoreDescriptor("", "", 0, "");
         }
+    }
+
+    /// <summary>
+    /// Whether a target holds nothing of any plan: no store file, no pool folder, no folder named like a version (also one
+    /// being written or deleted) and no folder with a manifest (<see cref="VersionMarkerNames.Manifest"/>, a version
+    /// renamed by hand). Other files and folders do not count. A target that does not exist yet is empty.
+    /// </summary>
+    /// <exception cref="StorageException">The target cannot be read.</exception>
+    internal static async Task<bool> IsEmptyAsync(IStorage target, CancellationToken ct)
+    {
+        if (await target.StatAsync(PoolLayout.StoreFile, ct).ConfigureAwait(false) is not null)
+            return false;
+        var folders = new List<string>();
+        try
+        {
+            await foreach (var entry in target.ListAsync("", recursive: false, ct).ConfigureAwait(false))
+            {
+                if (!entry.IsDirectory)
+                    continue;
+                var name = StoragePath.Name(entry.Path);
+                foreach (var suffix in (ReadOnlySpan<string>)[VersionName.PartialSuffix, VersionName.DeletingSuffix])
+                    if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                        name = name[..^suffix.Length];
+                if (name.Equals(PoolLayout.PoolFolder, StringComparison.OrdinalIgnoreCase) ||
+                    VersionName.TryParseAny(name, out _, out _))
+                    return false;
+                folders.Add(entry.Path);
+            }
+        }
+        catch (StorageNotFoundException)
+        {
+            return true;   // not created yet
+        }
+        foreach (var folder in folders)
+            if (await target.StatAsync(StoragePath.Combine(folder, VersionMarkerNames.Manifest), ct).ConfigureAwait(false) is not null)
+                return false;
+        return true;
     }
 
     private static StoreGuardOutcome Evaluate(StoreDescriptor store, BackupPlan plan)

@@ -324,6 +324,23 @@ public class BackupRunnerPoolTests
     }
 
     [Fact]
+    public async Task Incremental_plan_on_another_plans_full_target_aborts_and_the_full_plan_keeps_running()
+    {
+        var other = Plan(incremental: false);
+        other.Id = "p2";
+        other.Name = "Other";
+        await RunAndAdvance(other);
+        var before = _targetFiles.Files.ToList();
+
+        var entry = await Run(Plan());
+
+        entry.Status.Should().Be(RunStatus.Error);
+        entry.Reason.Should().Be(CoreTexts.English("core.run.storeNotEmpty"));
+        _targetFiles.Files.Should().BeEquivalentTo(before);
+        (await Run(other)).Status.Should().Be(RunStatus.Completed);
+    }
+
+    [Fact]
     public async Task Parallel_copy_path_writes_same_result()
     {
         var parallelTarget = new InMemoryStorage(StorageCapabilities.None);

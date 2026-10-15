@@ -166,6 +166,7 @@
       "storePoolOnFull": "Dieser Plan ist inkrementell, das Ziel enthält aber bereits vollständige Versionen davon. Es wurde nichts geändert.",
       "storeOtherPlan": "Der Pool des Ziels gehört zu einem anderen Plan. Es wurde nichts geändert.",
       "storeUnsupported": "Das Speicherformat des Ziels wird von dieser ReBackup-Version nicht unterstützt. Es wurde nichts geändert.",
+      "storeNotEmpty": "Dieser Plan ist inkrementell, das Ziel enthält aber bereits Sicherungen eines anderen Plans. Wähle ein leeres Ziel. Es wurde nichts geändert.",
       "targetLocked": "Das Ziel wird seit {since} von {host} verwendet ({operation}). Es wurde nichts geändert.",
       "lockReleaseFailed": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}",
       "copyRunning": "Der Plan wird gerade kopiert („Plan kopieren …“); das Backup wurde nicht gestartet.",

@@ -91,6 +91,7 @@ public static class CoreTexts
         ["core.run.storePoolOnFull"] = "This plan is incremental, but the target already holds full versions of it. Nothing was changed.",
         ["core.run.storeOtherPlan"] = "The target's pool belongs to another plan. Nothing was changed.",
         ["core.run.storeUnsupported"] = "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
+        ["core.run.storeNotEmpty"] = "This plan is incremental, but the target already holds backups of another plan. Choose an empty target. Nothing was changed.",
         ["core.run.targetLocked"] = "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
         ["core.run.lockReleaseFailed"] = "The target's lock could not be released: {error}",
         ["core.run.copyRunning"] = "The plan is being copied (\"Copy plan…\"); the backup was not started.",

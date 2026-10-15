@@ -149,6 +149,40 @@ public class StoreGuardTests
         Snapshot(target).Should().Equal(before);
     }
 
+    [Theory]
+    [InlineData("2026_01_01-10_00 Other/re-manifest.json")]
+    [InlineData("2026_01_01-10_00 Other.partial/a.txt")]
+    [InlineData("2026_01_01-10_00 Other.deleting/a.txt")]
+    [InlineData("renamed by hand/re-manifest.json")]
+    public async Task Pool_plan_on_target_with_another_plans_backups_aborts(string file)
+    {
+        // Another plan's full versions: a store file here would stop that plan's every run.
+        var target = new InMemoryStorage();
+        target.AddFile(file, Encoding.UTF8.GetBytes(
+            """{"formatVersion":2,"planId":"other","planName":"Other","createdUtc":"2026-01-01T10:00:00Z","files":[]}"""));
+        var before = Snapshot(target);
+
+        (await StoreGuard.CheckAsync(target, Plan(true), createIfMissing: false))
+            .Should().Be(StoreGuardOutcome.TargetNotEmpty);
+        var outcome = await StoreGuard.CheckAsync(target, Plan(true), createIfMissing: true);
+
+        outcome.Should().Be(StoreGuardOutcome.TargetNotEmpty);
+        Snapshot(target).Should().Equal(before);
+    }
+
+    [Fact]
+    public async Task Pool_plan_on_target_with_unrelated_files_gets_store()
+    {
+        var target = new InMemoryStorage();
+        target.AddFile("notes/readme.txt", [1]);
+        target.AddFile("photo.jpg", [2]);
+
+        var outcome = await StoreGuard.CheckAsync(target, Plan(true), createIfMissing: true);
+
+        outcome.Should().Be(StoreGuardOutcome.Created);
+        target.Files.Should().Contain(PoolLayout.StoreFile);
+    }
+
     [Fact]
     public async Task CheckAsync_without_create_writes_nothing()
     {
@@ -171,6 +205,7 @@ public class StoreGuardTests
     [InlineData(StoreGuardOutcome.PoolPlanOnFullTarget, "core.run.storePoolOnFull")]
     [InlineData(StoreGuardOutcome.OtherPlan, "core.run.storeOtherPlan")]
     [InlineData(StoreGuardOutcome.UnsupportedFormat, "core.run.storeUnsupported")]
+    [InlineData(StoreGuardOutcome.TargetNotEmpty, "core.run.storeNotEmpty")]
     public void MessageKey_names_the_locale_key(StoreGuardOutcome outcome, string key)
     {
         StoreGuard.MessageKey(outcome).Should().Be(key);
