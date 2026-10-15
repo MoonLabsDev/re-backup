@@ -89,7 +89,8 @@ public sealed partial class VersionsViewModel
 
     /// <summary>
     /// Confirm → delete the marked versions of the plan in the background (only those the plan manages) → take them out
-    /// of the index → read the target again. Refused while a backup of the plan is queued or running.
+    /// of the index → read the target again. Refused while a backup of the plan is queued or running, and while the plan
+    /// is copied ("Copy plan…").
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDeleteVersions))]
     private async Task DeleteVersionsAsync()
@@ -106,6 +107,11 @@ public sealed partial class VersionsViewModel
         if (_isBackupActive())
         {
             dialogs.ShowError(title, Loc.T("versions.delete.backupRunning"));
+            return;
+        }
+        if (_isCopyActive())
+        {
+            dialogs.ShowError(title, Loc.T("versions.delete.copyRunning"));
             return;
         }
 

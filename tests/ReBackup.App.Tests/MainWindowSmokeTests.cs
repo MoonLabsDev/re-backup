@@ -346,6 +346,43 @@ public class MainWindowSmokeTests
     }
 
     /// <summary>Whether the element and all its ancestors are Visible (IsVisible needs a shown window).</summary>
+    [Fact]
+    public void The_copy_and_verify_dialogs_load_and_the_plan_menu_offers_them()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddConnection("c1", "Offsite", "offsite");
+            fixture.Store.Save(new ReBackup.Core.Plans.BackupPlan
+            {
+                Id = "a",
+                Name = "Alpha",
+                Target = new ReBackup.Storage.StorageLocation("s3", "docs", "c1"),
+                Incremental = true,
+            });
+            var vm = fixture.Create();
+            var window = new MainWindow { DataContext = vm };
+            var list = FindAll<ListBox>(Layout(window)).Single(l => ReferenceEquals(l.ItemsSource, vm.Plans));
+            list.ContextMenu!.Items.OfType<MenuItem>()
+                .Select(item => BindingOperations.GetBinding(item, MenuItem.CommandProperty)?.Path.Path)
+                .Should().Contain([nameof(MainViewModel.CopyPlanCommand), nameof(MainViewModel.VerifyBackupCommand),
+                    nameof(MainViewModel.ReleaseLockCommand)]);
+
+            vm.CopyPlanCommand.Execute(vm.Plans[0]);
+            var copy = fixture.Dialogs.CopyDialogs.Single();
+            copy.ChooseTargetKindCommand.Execute("S3");
+            var copyContent = Layout(new ReBackup.App.Views.CopyPlanDialog(copy));
+            FindAll<ComboBox>(copyContent).Should().Contain(c => ReferenceEquals(c.ItemsSource, copy.TargetS3.Connections) && Shown(c),
+                "the dialog reuses the Plan tab's target picker");
+            KindSwitches(copyContent).Should().HaveCount(3);
+
+            vm.VerifyBackupCommand.Execute(vm.Plans[0]);
+            var verifyContent = Layout(new ReBackup.App.Views.VerifyDialog(fixture.Dialogs.VerifyDialogs.Single()));
+            FindAll<RadioButton>(verifyContent).Select(r => r.CommandParameter).Should().Equal("Quick", "Thorough");
+        });
+    }
+
     private static bool Shown(DependencyObject element)
     {
         for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))

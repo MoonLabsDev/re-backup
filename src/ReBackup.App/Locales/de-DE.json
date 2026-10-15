@@ -167,7 +167,8 @@
       "storeOtherPlan": "Der Pool des Ziels gehört zu einem anderen Plan. Es wurde nichts geändert.",
       "storeUnsupported": "Das Speicherformat des Ziels wird von dieser ReBackup-Version nicht unterstützt. Es wurde nichts geändert.",
       "targetLocked": "Das Ziel wird seit {since} von {host} verwendet ({operation}). Es wurde nichts geändert.",
-      "lockReleaseFailed": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}"
+      "lockReleaseFailed": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}",
+      "copyRunning": "Der Plan wird gerade kopiert („Plan kopieren …“); das Backup wurde nicht gestartet."
     },
     "gc": {
       "skippedMarkers": "Nicht mehr benötigte Backup-Inhalte wurden nicht entfernt: Eine Version wird noch geschrieben oder gelöscht.",
@@ -255,6 +256,9 @@
       "list": "Pläne",
       "moveUp": "Nach oben",
       "moveDown": "Nach unten",
+      "copy": "Plan kopieren …",
+      "verify": "Backup prüfen …",
+      "releaseLock": "Sperre aufheben …",
       "deleteConfirm": "Plan „{plan}“ löschen?\n\nBereits im Ziel gespeicherte Backups bleiben unberührt.",
       "deleteHistory": "Auch den Laufverlauf dieses Plans löschen?",
       "historyNotDeleted": "Der Plan wurde gelöscht, sein Laufverlauf aber nicht: {error}"
@@ -288,6 +292,10 @@
       },
       "deleteCancelBackup": "Vor dem Löschen des Plans das Backup von „{plan}“ abbrechen.",
       "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
+      "deleteWaitCopy": "Vor dem Löschen des Plans das Kopieren von „{plan}“ abwarten oder abbrechen.",
+      "copyRunning": "„{plan}“ wird gerade kopiert; nach dem Kopieren erneut ausführen.",
+      "copying": "„{plan}“ wird kopiert …",
+      "copied": "Die Kopie „{plan}“ wurde hinzugefügt. Sie ist deaktiviert, bis du sie aktivierst.",
       "saved": "„{plan}“ gespeichert.",
       "notSaved": "Nicht gespeichert: Die im Plan angezeigten Fehler beheben.",
       "scheduledInvalid": "Das geplante Backup von „{plan}“ wurde nicht gestartet: {reason}",
@@ -504,6 +512,17 @@
       "enabled": "Nach Zeitplan ausführen",
       "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
       "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+    },
+    "lock": {
+      "banner": "Gesperrt von {host} ({operation}) seit {time}",
+      "unreadable": "Gesperrt (Sperrdatei nicht lesbar)",
+      "release": "Sperre aufheben …",
+      "releaseTitle": "Sperre aufheben",
+      "releaseConfirm": "Die Sperre aufheben, die {host} am {time} für „{operation}“ gesetzt hat?\n\nNur tun, wenn auf dem Ziel nichts mehr läuft, etwa nach einem Absturz. Ein Backup, Löschen, Prüfen oder Kopieren, das die Sperre noch hält, könnte das Backup beschädigen.",
+      "releaseConfirmUnreadable": "Die Sperrdatei des Ziels ist nicht lesbar. Entfernen?\n\nNur tun, wenn auf dem Ziel nichts mehr läuft, etwa nach einem Absturz.",
+      "changed": "Die Sperre hat sich inzwischen geändert und wurde nicht aufgehoben. Prüfen, wer sie jetzt hält, und erneut versuchen.",
+      "released": "Die Sperre von „{plan}“ wurde aufgehoben.",
+      "releaseFailed": "Die Sperre konnte nicht aufgehoben werden: {error}"
     },
     "format": {
       "title": "Speicherformat",
@@ -798,6 +817,7 @@
       "toolTip": "Die ausgewählten Versionen löschen (Entf); mehrere mit Strg oder Umschalt",
       "name": "Die ausgewählten Versionen löschen",
       "backupRunning": "Ein Backup dieses Plans ist eingereiht oder läuft. Versionen erst löschen, wenn es fertig ist.",
+      "copyRunning": "Dieser Plan wird gerade kopiert. Versionen erst löschen, wenn das Kopieren fertig ist.",
       "confirm": "Diese Version endgültig löschen?\n\n{versions}\n\nIhr Ordner ({size}) wird aus dem Ziel entfernt und die Version aus dem Index. Das lässt sich nicht rückgängig machen.",
       "confirmMany": "Diese {count} Versionen endgültig löschen?\n\n{versions}{more}\n\nZusammen {size}. Ihre Ordner werden aus dem Ziel entfernt und die Versionen aus dem Index. Das lässt sich nicht rückgängig machen.",
       "notManagedNote": {
@@ -993,6 +1013,66 @@
       "failed": "{count:N0} fehlgeschlagen",
       "finished": "Wiederherstellung abgeschlossen: {parts}.",
       "canceled": "Wiederherstellung abgebrochen: {parts}."
+    }
+  },
+  "copy": {
+    "title": "Plan kopieren",
+    "heading": "„{plan}“ auf ein neues Ziel kopieren",
+    "hint": "Alle Versionen werden kopiert, die älteste zuerst. Der neue Plan erhält alle Einstellungen und Aufbewahrungsregeln und wird deaktiviert angelegt. Am Ziel des Plans selbst ändert sich nichts.",
+    "defaultName": "{plan} (Kopie)",
+    "start": "Kopieren",
+    "checking": "Neues Ziel wird geprüft …",
+    "progress": "Version {current} von {count} · {version} · {done} von {total}",
+    "canceling": "Wird nach der aktuellen Datei angehalten …",
+    "canceled": "Das Kopieren wurde angehalten. Mit gleichem Namen, Ziel und Format erneut starten, um dort weiterzumachen.",
+    "done": "Kopierte Versionen: {copied}. Bereits auf dem neuen Ziel: {skipped}.",
+    "added": "Der Plan „{plan}“ wurde hinzugefügt. Er ist deaktiviert, bis du ihn aktivierst.",
+    "failures": {
+      "one": "{count} Problem, unten aufgelistet.",
+      "other": "{count} Probleme, unten aufgelistet."
+    },
+    "failuresName": "Probleme beim Kopieren",
+    "notCompleted": "Es wurde nichts kopiert und kein Plan hinzugefügt; siehe die Probleme unten.",
+    "notAdded": "Der neue Plan konnte nicht gespeichert werden.",
+    "saveFailed": "Der neue Plan konnte nicht gespeichert werden: {error}",
+    "checkFailed": "Die Ziele konnten nicht geprüft werden: {error}",
+    "backupRunning": "Ein Backup von „{plan}“ ist eingereiht oder läuft. Den Plan erst kopieren, wenn es fertig ist.",
+    "alreadyCopying": "„{plan}“ wird bereits kopiert.",
+    "refusal": {
+      "sameOrNested": "Das neue Ziel ist das Ziel des Plans, liegt darin oder enthält es. Bitte ein anderes Ziel wählen.",
+      "targetNotEmpty": "Das neue Ziel ist nicht leer: Es enthält bereits Backups. Bitte ein leeres Ziel wählen.",
+      "sourceLocked": "Das Ziel des Plans wird gerade verwendet (Backup, Löschen, Prüfen oder eine andere Kopie). Erneut versuchen, wenn das fertig ist."
+    }
+  },
+  "verify": {
+    "title": "Backup prüfen",
+    "heading": "Backup von „{plan}“ prüfen",
+    "hint": "Es wird nichts repariert. Während der Prüfung ist das Ziel des Plans gesperrt.",
+    "mode": "Prüfung",
+    "quick": "Schnell",
+    "quickToolTip": "Prüft, ob der Inhalt jeder Datei jeder Version im Backup vorhanden ist",
+    "thorough": "Gründlich",
+    "thoroughToolTip": "Liest zusätzlich jeden Inhalt und prüft, ob er unverändert ist; dauert so lange wie das Lesen des ganzen Backups",
+    "start": "Prüfen",
+    "starting": "Wird gestartet …",
+    "progress": "{done:N0} von {count:N0} · {current}",
+    "canceling": "Wird angehalten …",
+    "canceled": "Die Prüfung wurde angehalten.",
+    "healthy": "Keine Probleme gefunden.",
+    "problems": {
+      "one": "{count} Problem gefunden:",
+      "other": "{count} Probleme gefunden:"
+    },
+    "problemsName": "Gefundene Probleme",
+    "problem": "Problem",
+    "failed": "Das Backup konnte nicht geprüft werden: {error}",
+    "locked": "Das Ziel wird seit {time} von {host} verwendet ({operation}). Es wurde nichts geprüft.",
+    "lockedUnknown": "Das Ziel wird gerade verwendet. Es wurde nichts geprüft.",
+    "lockNotReleased": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}",
+    "kind": {
+      "missing": "Inhalt fehlt",
+      "corrupt": "Inhalt beschädigt",
+      "manifestUnreadable": "Manifest nicht lesbar"
     }
   },
   "dialog": {

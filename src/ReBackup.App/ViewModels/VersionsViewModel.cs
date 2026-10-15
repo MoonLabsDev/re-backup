@@ -45,6 +45,7 @@ public sealed partial class VersionsViewModel : ObservableObject
 {
     private readonly Func<BackupPlan?> _savedPlan;
     private readonly Func<bool> _isBackupActive;
+    private readonly Func<bool> _isCopyActive;
     private readonly IFolderOpener _files;
     private readonly VersionsContext _context;
     private readonly Func<IReadOnlyList<RunLogEntry>> _runLog;
@@ -117,12 +118,14 @@ public sealed partial class VersionsViewModel : ObservableObject
     /// <param name="savedPlan">The plan as saved; null while it is new (a new plan has no versions).</param>
     /// <param name="isBackupActive">True while a backup of this plan is queued or running.</param>
     /// <param name="runLog">The plan's run log, oldest first: versions whose run ended with warnings show so in the coverage.</param>
+    /// <param name="isCopyActive">True while "Copy plan…" copies this plan's versions (none are deleted meanwhile).</param>
     public VersionsViewModel(Func<BackupPlan?> savedPlan, Func<bool> isBackupActive, IFolderOpener files,
-        VersionsContext context, Func<IReadOnlyList<RunLogEntry>>? runLog = null)
+        VersionsContext context, Func<IReadOnlyList<RunLogEntry>>? runLog = null, Func<bool>? isCopyActive = null)
     {
         _runLog = runLog ?? (() => []);
         _savedPlan = savedPlan;
         _isBackupActive = isBackupActive;
+        _isCopyActive = isCopyActive ?? (() => false);
         _files = files;
         _context = context;
         OnCreated();

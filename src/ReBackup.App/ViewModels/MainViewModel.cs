@@ -161,10 +161,10 @@ public sealed partial class MainViewModel : ObservableObject
             editor.Preview.RequestReevaluate();
     }
 
-    /// <summary>Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid or already active plans.</summary>
+    /// <summary>Saved plans for the tray menu; <c>CanRun</c> is false for unsaved, invalid, already active or copied plans.</summary>
     public IReadOnlyList<(string Id, string Name, bool CanRun)> RunnablePlans =>
         Plans.Where(p => !p.IsNew)
-            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive))
+            .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive && !p.IsCopying))
             .ToList();
 
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
@@ -293,6 +293,11 @@ public sealed partial class MainViewModel : ObservableObject
         if (editor.Versions.IsRestoring)
         {
             SetStatus(LocText.Of("shell.status.deleteWaitRestore", ("plan", editor.Name)));
+            return;
+        }
+        if (editor.IsCopying)
+        {
+            SetStatus(LocText.Of("shell.status.deleteWaitCopy", ("plan", editor.Name)));
             return;
         }
 
@@ -505,7 +510,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings() => _openSettings();
 
-    /// <summary>Queues a run of the saved plan. False when it is dirty, invalid, unknown or already queued.</summary>
+    /// <summary>Queues a run of the saved plan. False when it is dirty, invalid, unknown, already queued or being copied.</summary>
     public bool RunPlan(string planId)
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase));
@@ -524,6 +529,12 @@ public sealed partial class MainViewModel : ObservableObject
             var plan = editor.SavedPlan();
             if (!plan.Enabled)
                 return;   // disabled after the scheduler decided
+            if (editor.IsCopying)
+            {
+                // "Copy plan…" reads its versions: no run may add or remove one meanwhile.
+                SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.copyRunning"));
+                return;
+            }
             if (ScheduledRunBlocker(plan) is { } reason)
             {
                 SkipScheduledRun(editor, plan, trigger, reason);
@@ -700,6 +711,11 @@ public sealed partial class MainViewModel : ObservableObject
             SetStatus(LocText.Of("shell.status.saveFirst", ("plan", editor.Name)));
             return false;
         }
+        if (editor.IsCopying)
+        {
+            SetStatus(LocText.Of("shell.status.copyRunning", ("plan", editor.Name)));
+            return false;
+        }
 
         var request = new BackupRequest(editor.SavedPlan(), _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Manual);
         if (!_queue.Enqueue(request))
@@ -733,6 +749,7 @@ public sealed partial class MainViewModel : ObservableObject
             editor.RetentionPreview.ReloadIfLoaded();
             editor.Versions.ReloadIfLoaded();
             editor.HistoryCoverage.ReloadIfLoaded();
+            _ = editor.RefreshLockAsync();
         }
         var planName = update.PlanName;
         var reason = result.Reason;

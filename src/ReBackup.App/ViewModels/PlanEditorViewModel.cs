@@ -20,6 +20,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     private readonly IFolderOpener _folders;
     private readonly S3Connections _s3;
     private readonly DriveConnections _drive;
+    private readonly VersionsContext _context;
     private BackupPlan _saved;
     private bool _loading;
 
@@ -52,7 +53,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _useGlobalIgnoreDefaults;
     [ObservableProperty] private bool _honorNestedIgnoreFiles;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DisplayName))] private bool _isDirty;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditIncremental))] private bool _isNew;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditIncremental), nameof(ShowPoolActions))] private bool _isNew;
 
     /// <summary>The target is an incremental pool (not full copies); fixed once the plan is saved.</summary>
     [ObservableProperty]
@@ -81,6 +82,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         _folders = folders;
         _s3 = s3;
         _drive = drive;
+        _context = versions;
         SourceS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: false, () => SourceEdited(LocationKind.S3));
         TargetS3 = new S3LocationViewModel(s3, versions.Dialogs, isTarget: true, () => TargetEdited(LocationKind.S3));
         SourceDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: false, () => SourceEdited(LocationKind.Drive));
@@ -89,7 +91,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
             () => Run.Entries);
-        Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries);
+        Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries,
+            () => IsCopying);
         HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);
         Versions.VersionsDeleted += () =>
         {
@@ -557,6 +560,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         RetentionPreview.RefreshTexts();
         Versions.RefreshTexts();
         HistoryCoverage.RefreshTexts();
+        OnPropertyChanged(nameof(LockBanner));
     }
 
     public bool TrySave(PlanStore store)
@@ -586,6 +590,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         IsDirty = false;
         IsNew = false;
         HistoryCoverage.OnSavedPlanChanged();
+        OnSavedPlanChanged();
         return true;
     }
 
@@ -604,6 +609,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         IsDirty = false;
         Validate();
         HistoryCoverage.OnSavedPlanChanged();
+        OnSavedPlanChanged();
     }
 
     /// <summary>The file was deleted on disk while this editor had unsaved edits; saving recreates it.</summary>

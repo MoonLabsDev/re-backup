@@ -167,7 +167,8 @@
       "storeOtherPlan": "The target's pool belongs to another plan. Nothing was changed.",
       "storeUnsupported": "The target's storage format is not supported by this version of ReBackup. Nothing was changed.",
       "targetLocked": "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
-      "lockReleaseFailed": "The target's lock could not be released: {error}"
+      "lockReleaseFailed": "The target's lock could not be released: {error}",
+      "copyRunning": "The plan is being copied (\"Copy plan…\"); the backup was not started."
     },
     "gc": {
       "skippedMarkers": "Unused backup content was not removed: a version is still being written or deleted.",
@@ -255,6 +256,9 @@
       "list": "Plans",
       "moveUp": "Move up",
       "moveDown": "Move down",
+      "copy": "Copy plan…",
+      "verify": "Verify backup…",
+      "releaseLock": "Release lock…",
       "deleteConfirm": "Delete plan \"{plan}\"?\n\nBackups already stored in the target are not touched.",
       "deleteHistory": "Also delete this plan's run history?",
       "historyNotDeleted": "The plan was deleted, but its run history could not be: {error}"
@@ -288,6 +292,10 @@
       },
       "deleteCancelBackup": "Cancel the backup of \"{plan}\" before deleting the plan.",
       "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "deleteWaitCopy": "Wait for the copy of \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "copyRunning": "\"{plan}\" is being copied; run it again once the copy has finished.",
+      "copying": "Copying \"{plan}\"…",
+      "copied": "The copy \"{plan}\" was added. It is disabled until you enable it.",
       "saved": "Saved \"{plan}\".",
       "notSaved": "Not saved: fix the errors shown in the plan.",
       "scheduledInvalid": "The scheduled backup of \"{plan}\" was not started: {reason}",
@@ -504,6 +512,17 @@
       "enabled": "Run on schedule",
       "enabledToolTip": "When off, the plan runs only when started by hand.",
       "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+    },
+    "lock": {
+      "banner": "Locked by {host} ({operation}) since {time}",
+      "unreadable": "Locked (unreadable lock file)",
+      "release": "Release lock…",
+      "releaseTitle": "Release lock",
+      "releaseConfirm": "Release the lock that {host} took for \"{operation}\" on {time}?\n\nOnly do this when nothing runs on the target any more, for example after a crash. A backup, deletion, verify or copy that still holds the lock could damage the backup.",
+      "releaseConfirmUnreadable": "The target's lock file cannot be read. Remove it?\n\nOnly do this when nothing runs on the target any more, for example after a crash.",
+      "changed": "The lock has changed meanwhile and was not released. Check who holds it now and try again.",
+      "released": "The lock of \"{plan}\" was released.",
+      "releaseFailed": "The lock could not be released: {error}"
     },
     "format": {
       "title": "Storage format",
@@ -798,6 +817,7 @@
       "toolTip": "Delete the selected versions (Del); several with Ctrl or Shift",
       "name": "Delete the selected versions",
       "backupRunning": "A backup of this plan is queued or running. Delete versions once it has finished.",
+      "copyRunning": "This plan is being copied. Delete versions once the copy has finished.",
       "confirm": "Delete this version for good?\n\n{versions}\n\nIts folder ({size}) is removed from the target and the version leaves the index. This cannot be undone.",
       "confirmMany": "Delete these {count} versions for good?\n\n{versions}{more}\n\nTogether {size}. Their folders are removed from the target and the versions leave the index. This cannot be undone.",
       "notManagedNote": {
@@ -993,6 +1013,66 @@
       "failed": "{count:N0} failed",
       "finished": "Restore finished: {parts}.",
       "canceled": "Restore canceled: {parts}."
+    }
+  },
+  "copy": {
+    "title": "Copy plan",
+    "heading": "Copy \"{plan}\" to a new target",
+    "hint": "All versions are copied, oldest first. The new plan gets all settings and retention rules and is created disabled. Nothing on the plan's own target is changed.",
+    "defaultName": "{plan} (copy)",
+    "start": "Copy",
+    "checking": "Checking the new target…",
+    "progress": "Version {current} of {count} · {version} · {done} of {total}",
+    "canceling": "Stopping after the current file…",
+    "canceled": "The copy was stopped. Start it again with the same name, target and format to continue where it stopped.",
+    "done": "Versions copied: {copied}. Already on the new target: {skipped}.",
+    "added": "The plan \"{plan}\" was added. It is disabled until you enable it.",
+    "failures": {
+      "one": "{count} problem, listed below.",
+      "other": "{count} problems, listed below."
+    },
+    "failuresName": "Problems of the copy",
+    "notCompleted": "Nothing was copied and no plan was added; see the problems below.",
+    "notAdded": "The new plan could not be saved.",
+    "saveFailed": "The new plan could not be saved: {error}",
+    "checkFailed": "The targets could not be checked: {error}",
+    "backupRunning": "A backup of \"{plan}\" is queued or running. Copy the plan once it has finished.",
+    "alreadyCopying": "\"{plan}\" is being copied already.",
+    "refusal": {
+      "sameOrNested": "The new target is the plan's target, lies inside it or holds it. Choose another target.",
+      "targetNotEmpty": "The new target is not empty: it holds backups already. Choose an empty target.",
+      "sourceLocked": "The plan's target is in use (a backup, deletion, verify or another copy). Try again once it has finished."
+    }
+  },
+  "verify": {
+    "title": "Verify backup",
+    "heading": "Verify the backup of \"{plan}\"",
+    "hint": "Nothing is repaired. The plan's target is locked while the check runs.",
+    "mode": "Check",
+    "quick": "Quick",
+    "quickToolTip": "Checks that the content of every file of every version is in the backup",
+    "thorough": "Thorough",
+    "thoroughToolTip": "Also reads every content and checks that it is unchanged; takes as long as reading the whole backup",
+    "start": "Verify",
+    "starting": "Starting…",
+    "progress": "{done:N0} of {count:N0} · {current}",
+    "canceling": "Stopping…",
+    "canceled": "The verify was stopped.",
+    "healthy": "No problems found.",
+    "problems": {
+      "one": "{count} problem found:",
+      "other": "{count} problems found:"
+    },
+    "problemsName": "Problems found",
+    "problem": "Problem",
+    "failed": "The backup could not be verified: {error}",
+    "locked": "The target is in use by {host} ({operation}) since {time}. Nothing was verified.",
+    "lockedUnknown": "The target is in use. Nothing was verified.",
+    "lockNotReleased": "The target's lock could not be released: {error}",
+    "kind": {
+      "missing": "content missing",
+      "corrupt": "content damaged",
+      "manifestUnreadable": "manifest cannot be read"
     }
   },
   "dialog": {
