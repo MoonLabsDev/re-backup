@@ -180,6 +180,7 @@
       "versionFailed": "„{version}“ wurde nicht kopiert: {error}",
       "fileFailed": "„{path}“ in „{version}“ wurde nicht kopiert: {error}",
       "manifestUnreadable": "„{version}“ wurde nicht kopiert: Sein Manifest kann nicht gelesen werden.",
+      "notOwned": "Wie Versionen des Plans benannte Ordner, die nicht kopiert wurden, weil sie von Hand umbenannt wurden, zu einem anderen Plan gehören oder kein Manifest haben: {count}",
       "folderTaken": "„{version}“ wurde nicht kopiert: Das neue Ziel enthält bereits einen Ordner „{folder}“."
     },
     "skip": {

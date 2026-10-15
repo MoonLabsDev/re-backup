@@ -53,11 +53,19 @@ public sealed class PlanCopier
     private readonly IStorageFactory _storages;
     private readonly string _host;
     private readonly TimeProvider _time;
+    private readonly Func<string, ConnectionBucket?>? _connections;
+    private readonly Func<string, DriveRoot?>? _driveConnections;
 
     /// <param name="storages">Opens the plan's target and the new target.</param>
     /// <param name="host">This computer, as locks and markers name it.</param>
     /// <param name="time">The clock of locks and markers.</param>
-    public PlanCopier(IStorageFactory storages, string host, TimeProvider time)
+    /// <param name="connections">
+    /// Looks an S3 connection's bucket up by id, as for <see cref="PlanValidator.Validate"/>, so that two connections to one
+    /// bucket are compared by their prefixes (<see cref="PlanValidator.Overlaps"/>).
+    /// </param>
+    /// <param name="driveConnections">Looks a Google Drive connection's root up by id, likewise.</param>
+    public PlanCopier(IStorageFactory storages, string host, TimeProvider time,
+        Func<string, ConnectionBucket?>? connections = null, Func<string, DriveRoot?>? driveConnections = null)
     {
         ArgumentNullException.ThrowIfNull(storages);
         ArgumentNullException.ThrowIfNull(host);
@@ -65,6 +73,8 @@ public sealed class PlanCopier
         _storages = storages;
         _host = host;
         _time = time;
+        _connections = connections;
+        _driveConnections = driveConnections;
     }
 
     /// <summary>
@@ -94,7 +104,7 @@ public sealed class PlanCopier
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(newTarget);
-        if (PlanValidator.Overlaps(source.Target, newTarget))
+        if (Overlap(source.Target, newTarget))
             return CopyRefusal.SameOrNestedTarget;
         if (!await IsEmptyAsync(_storages.Open(newTarget), ct).ConfigureAwait(false))
             return CopyRefusal.TargetNotEmpty;
@@ -126,9 +136,15 @@ public sealed class PlanCopier
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(copy);
         var job = new Job();
-        if (PlanValidator.Overlaps(source.Target, copy.Target))
+        if (Overlap(source.Target, copy.Target))
         {
             job.Failures.Add(CoreTexts.English("core.copy.overlaps"));
+            return job.Result(canceled: false);
+        }
+        // The name goes into every version folder's name: one that cannot be a folder name stops before anything is written.
+        if (PlanValidator.NameErrors(copy.Name) is [var problem, ..])
+        {
+            job.Failures.Add(CoreTexts.English("core.copy.failed", ("error", CoreTexts.English(problem))));
             return job.Result(canceled: false);
         }
 
@@ -195,6 +211,11 @@ public sealed class PlanCopier
         var listed = await VersionCatalog.ListAsync(from, source.Id, source.Name, ct).ConfigureAwait(false);
         foreach (var unreadable in listed.Where(v => v.Ownership == VersionOwnership.Unreadable))
             job.Failures.Add(CoreTexts.English("core.copy.manifestUnreadable", ("version", unreadable.Name)));
+        // Renamed by hand, another plan's, or without a manifest: not versions of the plan, but named like them.
+        var notOwned = listed.Count(v => v.Ownership is VersionOwnership.Renamed or VersionOwnership.Foreign or
+            VersionOwnership.NoManifest);
+        if (notOwned > 0)
+            job.Failures.Add(CoreTexts.English("core.copy.notOwned", ("count", notOwned)));
         var versions = listed.Where(v => v.IsOwned).ToList();
         var complete = (await VersionCatalog.ListAsync(to, copy.Id, copy.Name, ct).ConfigureAwait(false))
             .Where(v => v.IsOwned)
@@ -429,6 +450,10 @@ public sealed class PlanCopier
         VersionName.TryParseAny(version.Name, out _, out var planName) && string.Equals(planName, copyName, StringComparison.Ordinal)
             ? version.Name
             : VersionName.Format(version.LocalTime, copyName);
+
+    /// <summary>Whether the two locations overlap, with the connection lookups this copier was given.</summary>
+    private bool Overlap(StorageLocation a, StorageLocation b) =>
+        PlanValidator.Overlaps(a, b, _connections, _driveConnections);
 
     private static bool IsReserved(string path) =>
         path.Equals(VersionMarkerNames.Manifest, StringComparison.OrdinalIgnoreCase) ||

@@ -180,6 +180,7 @@
       "versionFailed": "\"{version}\" was not copied: {error}",
       "fileFailed": "\"{path}\" in \"{version}\" was not copied: {error}",
       "manifestUnreadable": "\"{version}\" was not copied: its manifest cannot be read.",
+      "notOwned": "Folders named like versions of the plan that were not copied because they were renamed by hand, belong to another plan or have no manifest: {count}",
       "folderTaken": "\"{version}\" was not copied: the new target already holds a folder \"{folder}\"."
     },
     "skip": {

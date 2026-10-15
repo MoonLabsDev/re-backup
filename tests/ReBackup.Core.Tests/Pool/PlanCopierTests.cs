@@ -40,10 +40,10 @@ public class PlanCopierTests
         };
     }
 
-    private PlanCopier Copier() =>
+    private PlanCopier Copier(Func<string, ConnectionBucket?>? connections = null) =>
         new(new TestStorageFactory(location => _storages.TryGetValue(location.Path, out var storage)
             ? storage
-            : _storages[location.Path] = new InMemoryStorage()), Host, TimeProvider.System);
+            : _storages[location.Path] = new InMemoryStorage()), Host, TimeProvider.System, connections);
 
     private BackupPlan CopyPlan(bool incremental, string? name = null) =>
         PlanCopier.MakeCopy(_source, name ?? _source.Name, StorageLocation.FileSystem(CopyRoot), incremental);
@@ -118,6 +118,34 @@ public class PlanCopierTests
             .Should().Be(CopyRefusal.SameOrNestedTarget);
         (await copier.CheckAsync(_source, new StorageLocation(PlanValidator.S3Kind, "backups", "conn2"), CancellationToken.None))
             .Should().Be(CopyRefusal.None);
+    }
+
+    [Fact]
+    public async Task Refuses_nested_target_through_another_connection_to_the_same_bucket()
+    {
+        _source.Target = new StorageLocation(PlanValidator.S3Kind, "backups/projects", "conn1");
+        var buckets = new Dictionary<string, ConnectionBucket>
+        {
+            ["conn1"] = new("company-backups", "eu-central-1"),
+            ["conn2"] = new("company-backups", "eu-central-1"),
+            ["conn3"] = new("other-bucket", "eu-central-1"),
+        };
+        var copier = Copier(id => buckets.GetValueOrDefault(id));
+
+        (await copier.CheckAsync(_source, new StorageLocation(PlanValidator.S3Kind, "backups/projects/copy", "conn2"),
+            CancellationToken.None)).Should().Be(CopyRefusal.SameOrNestedTarget);
+        (await copier.CheckAsync(_source, new StorageLocation(PlanValidator.S3Kind, "backups", "conn2"),
+            CancellationToken.None)).Should().Be(CopyRefusal.SameOrNestedTarget);
+        (await copier.CheckAsync(_source, new StorageLocation(PlanValidator.S3Kind, "backups/projects2", "conn2"),
+            CancellationToken.None)).Should().Be(CopyRefusal.None);
+        (await copier.CheckAsync(_source, new StorageLocation(PlanValidator.S3Kind, "backups/projects", "conn3"),
+            CancellationToken.None)).Should().Be(CopyRefusal.None);
+
+        var copy = PlanCopier.MakeCopy(_source, "Projects", new StorageLocation(PlanValidator.S3Kind, "backups/projects/copy", "conn2"),
+            incremental: true);
+        var result = await copier.CopyAsync(_source, copy, null, CancellationToken.None);
+        result.Failures.Should().ContainSingle().Which.Should().Contain("Nothing was copied");
+        result.VersionsCopied.Should().Be(0);
     }
 
     [Fact]
@@ -277,8 +305,8 @@ public class PlanCopierTests
         var progress = new SyncProgress<PlanCopyProgress>(p =>
         {
             p.VersionCount.Should().Be(4);
-            if (p.Version == 3)
-                cancel.Cancel();
+            if (p.Version == 3 && p.BytesDone > 0)
+                cancel.Cancel();   // in the middle of version 3: its folder is half-written
         });
 
         var first = await Copier().CopyAsync(_source, copy, progress, cancel.Token);
@@ -288,6 +316,7 @@ public class PlanCopierTests
         _to.Files.Should().NotContain(PoolLayout.LockFile);
         _from.Files.Should().NotContain(PoolLayout.LockFile);
         (await VersionCatalog.ListAsync(_to, copy.Id, copy.Name)).Should().HaveCount(2);
+        _to.Files.Should().Contain(StoragePath.Combine(names[2], VersionMarkerNames.Pending));
 
         var second = await Copier().CopyAsync(_source, copy, null, CancellationToken.None);
 
@@ -296,6 +325,57 @@ public class PlanCopierTests
         _to.Files.Should().NotContain(f => f.EndsWith(VersionMarkerNames.Pending, StringComparison.Ordinal));
         (await PoolVersions.RestoreAsync(_to, names[3])).Should().BeEquivalentTo(
             new Dictionary<string, string> { ["a.txt"] = "alpha 3", ["b.txt"] = "beta" });
+    }
+
+    [Fact]
+    public async Task Resume_rewrites_a_half_written_version()
+    {
+        const string name = "2026_01_01-10_00 Projects";
+        FullVersion(name, ("a.txt", "alpha"), ("docs/b.txt", "beta"));
+        var copy = CopyPlan(incremental: false);
+        // What a copy that stopped after writing its manifest, before removing the marker, leaves behind.
+        await VersionMarkers.WritePendingAsync(_to, name,
+            new MarkerInfo(VersionMarkers.FormatVersion, copy.Id, copy.Name, DateTime.UtcNow, Host), CancellationToken.None);
+        _to.AddFile(StoragePath.Combine(name, "a.txt"), Encoding.UTF8.GetBytes("half"));
+        _to.AddFile(StoragePath.Combine(name, "stale.txt"), Encoding.UTF8.GetBytes("stale"));
+        _to.AddFile(StoragePath.Combine(name, VersionMarkerNames.Manifest), Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+            new BackupManifest { PlanId = copy.Id, PlanName = copy.Name, Files = [new ManifestFile("a.txt", 4, FileTime, Xxh64("half"))] },
+            JsonDefaults.Options)));
+
+        var result = await Copier().CopyAsync(_source, copy, null, CancellationToken.None);
+
+        result.Should().BeEquivalentTo(new PlanCopyResult(1, 0, [], false));
+        _to.Files.Where(f => f.StartsWith(name + "/", StringComparison.Ordinal)).Should().BeEquivalentTo(
+            $"{name}/a.txt", $"{name}/docs/b.txt", $"{name}/{VersionMarkerNames.Manifest}");
+        Text(_to, $"{name}/a.txt").Should().Be("alpha");
+        ManifestOf(_to, name).Files.Select(f => (f.Path, f.Hash)).Should().Equal(
+            ("a.txt", Xxh64("alpha")), ("docs/b.txt", Xxh64("beta")));
+        (await VersionCatalog.ListAsync(_to, copy.Id, copy.Name)).Should().ContainSingle().Which.IsOwned.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_copy_name_that_cannot_be_a_folder_name_is_refused_without_writing()
+    {
+        FullVersion("2026_01_01-10_00 Projects", ("a.txt", "alpha"));
+
+        var result = await Copier().CopyAsync(_source, CopyPlan(incremental: true, name: "Pro/jects"), null, CancellationToken.None);
+
+        result.VersionsCopied.Should().Be(0);
+        result.Failures.Should().ContainSingle();
+        _to.Files.Should().BeEmpty();
+        _from.Files.Should().NotContain(PoolLayout.LockFile);
+    }
+
+    [Fact]
+    public async Task Folders_that_are_not_versions_of_the_plan_are_reported()
+    {
+        FullVersion("2026_01_01-10_00 Projects", ("a.txt", "alpha"));
+        _from.AddFile("2026_01_02-10_00 Projects/a.txt", Encoding.UTF8.GetBytes("no manifest"));
+
+        var result = await Copier().CopyAsync(_source, CopyPlan(incremental: true), null, CancellationToken.None);
+
+        result.VersionsCopied.Should().Be(1);
+        result.Failures.Should().ContainSingle().Which.Should().StartWith("Folders named like versions").And.EndWith(": 1");
     }
 
     [Theory]

@@ -103,6 +103,7 @@ public static class CoreTexts
         ["core.copy.versionFailed"] = "\"{version}\" was not copied: {error}",
         ["core.copy.fileFailed"] = "\"{path}\" in \"{version}\" was not copied: {error}",
         ["core.copy.manifestUnreadable"] = "\"{version}\" was not copied: its manifest cannot be read.",
+        ["core.copy.notOwned"] = "Folders named like versions of the plan that were not copied because they were renamed by hand, belong to another plan or have no manifest: {count}",
         ["core.copy.folderTaken"] = "\"{version}\" was not copied: the new target already holds a folder \"{folder}\".",
 
         ["core.skip.ignoreFileUnreadable"] = "ignore file could not be read; its patterns were not applied",
