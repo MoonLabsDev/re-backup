@@ -179,6 +179,11 @@ A plan stores its versions in one of two formats. You choose it when you create 
 changed later**. To switch, use **Copy plan…**: it copies all versions of a plan to another, empty target in the
 other format and creates a new plan for it. The old plan and its target stay as they are until you delete them.
 
+A copy that is stopped, canceled or fails leaves the new plan marked **Copy unfinished**. It cannot be enabled or
+run until **Continue copy…** (in the plan's context menu) has finished it; versions that were already copied are
+skipped. If the plan it was copied from has been deleted meanwhile, the copy cannot be finished and the unfinished
+plan can only be deleted (the versions already copied to its target are not touched).
+
 | | Full copies | Incremental |
 |---|---|---|
 | A version is | a folder with all its files, `re-manifest.json` and nothing else | a folder with only `re-manifest.json`; the file contents live in a shared pool |
@@ -187,8 +192,8 @@ other format and creates a new plan for it. The old plan and its target stay as 
 | Hash | xxHash64 | xxHash128 |
 
 An incremental target holds `re-store.json` (marks the target as a pool), `re-pool/` (the contents, named by their
-hash) and the version folders. Do not edit or copy these by hand; a target that is a pool cannot be used for a full
-copies plan, and the other way round.
+hash) and the version folders. Do not edit or copy these outside ReBackup; a target that is a pool cannot be used for
+a full copies plan, and the other way round.
 
 **Fast or Safe.** Incremental plans compare files in one of two ways, which you can change at any time. **Fast**
 (the default) does not read a file whose path, size and modified time are the same as in the previous version and
@@ -205,8 +210,8 @@ fixed, because ReBackup cannot tell what that version needs; the run says so and
 check also reads every stored content and compares it with its hash, so it takes as long as reading the whole
 target. It changes nothing and lists what is missing or damaged.
 
-**Locked by …** While a run, a deletion, a verify or a copy works on an incremental target, it holds a lock (`re-lock.json`)
-so that two of them never change the pool at once; the plan then shows "Locked by *computer* (*what*) since *time*".
+**Locked by …** While a run, a deletion, a verify or a copy works on an incremental target, it holds a lock
+(`re-lock.json`) so that two of them never change the pool at once; the plan then shows "Locked by *computer* (*what*) since *time*".
 It is released when the job ends. If the computer crashed or was switched off, nothing removes it: when you are sure
 nothing runs on the target any more, choose **Release lock…**.
 
