@@ -9,8 +9,10 @@ using ReBackup.Storage;
 namespace ReBackup.App.ViewModels;
 
 /// <summary>
-/// The lock of an incremental plan's target (spec 11): "Locked by … since …" above the Plan tab while someone holds it,
-/// and "Release lock…" for a lock a crashed run left behind; and whether "Copy plan…" is copying this plan.
+/// The lock of a plan's target (spec 11): "Locked by … since …" above the Plan tab while someone holds it, and "Release
+/// lock…" for a lock a crashed run, delete or copy left behind; and whether "Copy plan…" is copying this plan. Incremental
+/// plans lock their target for runs, deletes and verifies; any saved plan's target is locked while it is copied, so the
+/// lock of every saved plan is read.
 /// </summary>
 public sealed partial class PlanEditorViewModel
 {
@@ -50,6 +52,12 @@ public sealed partial class PlanEditorViewModel
     /// <summary>Someone holds the saved target's lock (or the lock file cannot be read); the banner is shown.</summary>
     public bool HasLock => _lock is not null || _lockUnreadable;
 
+    /// <summary>
+    /// "Release lock…" is in the plan's menu: always for an incremental plan, for a full plan while its target has a lock
+    /// (one a copy of it left behind).
+    /// </summary>
+    public bool ShowReleaseLock => ShowPoolActions || HasLock;
+
     /// <summary>"Locked by {host} ({operation}) since {time}"; null while the target is not locked.</summary>
     public string? LockBanner => _lockUnreadable
         ? Loc.T("plan.lock.unreadable")
@@ -69,19 +77,20 @@ public sealed partial class PlanEditorViewModel
     private void OnSavedPlanChanged()
     {
         OnPropertyChanged(nameof(ShowPoolActions));
+        OnPropertyChanged(nameof(ShowReleaseLock));
         OnPropertyChanged(nameof(IsCopyUnfinished));
         OnPropertyChanged(nameof(CanEnable));
         _ = RefreshLockAsync();
     }
 
     /// <summary>
-    /// Reads the saved target's lock off the UI thread and shows who holds it. A full or unsaved plan has none; a target
-    /// that cannot be read shows no banner (the next run or action reports why).
+    /// Reads the saved target's lock off the UI thread and shows who holds it. An unsaved plan has none; a target that
+    /// cannot be read shows no banner (the next run or action reports why).
     /// </summary>
     public async Task RefreshLockAsync()
     {
         var read = ++_lockReads;
-        if (!ShowPoolActions)
+        if (IsNew)
         {
             ShowLock(null, unreadable: false);
             return;
@@ -116,15 +125,16 @@ public sealed partial class PlanEditorViewModel
         _lock = holder;
         _lockUnreadable = unreadable;
         OnPropertyChanged(nameof(HasLock));
+        OnPropertyChanged(nameof(ShowReleaseLock));
         OnPropertyChanged(nameof(LockBanner));
         ReleaseLockCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
-    /// "Release lock…" is offered for someone else's lock: not while this app's own run, copy or verify of the plan holds
-    /// it (they release it themselves).
+    /// "Release lock…" is offered for someone else's lock: not while this app's own run, copy, verify or delete (in the
+    /// Versions tab, with its garbage collection) of the plan holds it (they release it themselves).
     /// </summary>
-    private bool CanReleaseLock() => HasLock && !Run.IsActive && !IsCopying && !IsVerifying;
+    private bool CanReleaseLock() => HasLock && !Run.IsActive && !IsCopying && !IsVerifying && !Versions.IsDeleting;
 
     /// <summary>
     /// "Release lock…": after a confirmation naming the holder and its start time, removes the lock whoever holds it. Only
@@ -133,7 +143,7 @@ public sealed partial class PlanEditorViewModel
     [RelayCommand(CanExecute = nameof(CanReleaseLock))]
     private async Task ReleaseLockAsync()
     {
-        if (!CanReleaseLock() || !ShowPoolActions)
+        if (!CanReleaseLock() || IsNew)
             return;
         var shown = _lock;
         var title = Loc.T("plan.lock.releaseTitle");

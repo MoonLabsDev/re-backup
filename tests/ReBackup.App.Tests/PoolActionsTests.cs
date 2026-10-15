@@ -82,15 +82,40 @@ public class PoolActionsTests : IDisposable
     }
 
     [Fact]
-    public async Task Full_plan_shows_no_lock_banner()
+    public async Task Full_plan_shows_a_lock_a_copy_left_and_can_release_it()
     {
-        await TargetLock.TryAcquireAsync(_sourceTarget, "OTHER-PC", "backup", TimeProvider.System, CancellationToken.None);
-        var editor = Create(incremental: false).Plans.Single();
+        // A copy that crashed leaves its "copy" lock on the source plan's target, whatever the plan's mode.
+        await TargetLock.TryAcquireAsync(_sourceTarget, "OTHER-PC", "copy", TimeProvider.System, CancellationToken.None);
+        var vm = Create(incremental: false);
+        var editor = vm.Plans.Single();
 
         await editor.RefreshLockAsync();
 
-        editor.ShowPoolActions.Should().BeFalse();
+        editor.ShowPoolActions.Should().BeFalse("verify stays for incremental plans");
+        editor.HasLock.Should().BeTrue();
+        editor.ShowReleaseLock.Should().BeTrue();
+        editor.LockBanner.Should().Contain("OTHER-PC").And.Contain("copy");
+        _fixture.Dialogs.ConfirmAnswer = true;
+        await vm.ReleaseLockCommand.ExecuteAsync(editor);
+
+        SourceLocked.Should().BeFalse();
         editor.HasLock.Should().BeFalse();
+        editor.ShowReleaseLock.Should().BeFalse("a full plan without a lock has nothing to release");
+    }
+
+    [Fact]
+    public async Task Release_is_not_offered_while_the_versions_tab_deletes()
+    {
+        await TargetLock.TryAcquireAsync(_sourceTarget, Environment.MachineName, "delete", TimeProvider.System, CancellationToken.None);
+        var editor = Create().Plans.Single();
+        await editor.RefreshLockAsync();
+        editor.ReleaseLockCommand.CanExecute(null).Should().BeTrue();
+
+        editor.Versions.IsDeleting = true;   // this app's own delete and garbage collection hold the lock
+
+        editor.ReleaseLockCommand.CanExecute(null).Should().BeFalse();
+        editor.Versions.IsDeleting = false;
+        editor.ReleaseLockCommand.CanExecute(null).Should().BeTrue();
     }
 
     [Fact]

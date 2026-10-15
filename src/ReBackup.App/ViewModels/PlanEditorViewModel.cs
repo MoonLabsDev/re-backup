@@ -53,7 +53,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     [ObservableProperty] private bool _useGlobalIgnoreDefaults;
     [ObservableProperty] private bool _honorNestedIgnoreFiles;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(DisplayName))] private bool _isDirty;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditIncremental), nameof(ShowPoolActions))] private bool _isNew;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(CanEditIncremental), nameof(ShowPoolActions), nameof(ShowReleaseLock))] private bool _isNew;
 
     /// <summary>The target is an incremental pool (not full copies); fixed once the plan is saved.</summary>
     [ObservableProperty]
@@ -94,6 +94,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries,
             () => IsCopying);
         HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);
+        Versions.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(VersionsViewModel.IsDeleting))
+                ReleaseLockCommand.NotifyCanExecuteChanged();
+        };
         Versions.VersionsDeleted += () =>
         {
             RetentionPreview.ReloadIfLoaded();

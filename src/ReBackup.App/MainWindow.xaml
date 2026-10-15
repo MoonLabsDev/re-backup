@@ -415,11 +415,12 @@
                             <MenuItem Header="{l:Loc shell.plans.copy}" Command="{Binding CopyPlanCommand}" />
                             <MenuItem Header="{l:Loc shell.plans.continueCopy}" Command="{Binding ContinueCopyCommand}"
                                       Visibility="{Binding SelectedPlan.IsCopyUnfinished, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
-                            <!-- Incremental plans only: their target has a pool to verify and a lock. -->
+                            <!-- Incremental plans only: their target has a pool to verify. -->
                             <MenuItem Header="{l:Loc shell.plans.verify}" Command="{Binding VerifyBackupCommand}"
                                       Visibility="{Binding SelectedPlan.ShowPoolActions, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
+                            <!-- Incremental plans, and full plans whose target a copy left locked. -->
                             <MenuItem Header="{l:Loc shell.plans.releaseLock}" Command="{Binding ReleaseLockCommand}"
-                                      Visibility="{Binding SelectedPlan.ShowPoolActions, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
+                                      Visibility="{Binding SelectedPlan.ShowReleaseLock, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
                         </ContextMenu>
                     </ListBox.ContextMenu>
                     <ListBox.ItemTemplate>

@@ -245,8 +245,8 @@ public sealed partial class MainViewModel
         _ = editor.RefreshLockAsync();
     }
 
-    /// <summary>"Release lock…" of an incremental plan (asks first).</summary>
+    /// <summary>"Release lock…" of a saved plan whose target is locked (asks first).</summary>
     [RelayCommand]
     private Task ReleaseLockAsync(PlanEditorViewModel? editor) =>
-        (editor ?? SelectedPlan) is { ShowPoolActions: true } plan ? plan.ReleaseLockCommand.ExecuteAsync(null) : Task.CompletedTask;
+        (editor ?? SelectedPlan) is { ShowReleaseLock: true } plan ? plan.ReleaseLockCommand.ExecuteAsync(null) : Task.CompletedTask;
 }
