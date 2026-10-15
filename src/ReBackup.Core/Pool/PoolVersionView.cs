@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Localization;
 using ReBackup.Core.Versions;
 using ReBackup.Storage;
 
@@ -99,7 +100,11 @@ public sealed class PoolVersionView : IStorage
         }
     }
 
-    /// <summary>Below the version: the file's blob. Throws <see cref="StorageNotFoundException"/> for a path the manifest does not list as a file and for a missing blob.</summary>
+    /// <summary>
+    /// Below the version: the file's blob. Throws <see cref="StorageNotFoundException"/> for a path the manifest does not
+    /// list as a file and for a missing blob; the latter says so in its message (<c>core.restore.blobMissing</c>), which a
+    /// restore reports as the file's reason.
+    /// </summary>
     public async Task<Stream> OpenReadAsync(string path, CancellationToken ct)
     {
         if (InVersion(path) is not { } relative)
@@ -113,9 +118,10 @@ public sealed class PoolVersionView : IStorage
         {
             return await _target.OpenReadAsync(PoolLayout.BlobPath(file.Hash), ct).ConfigureAwait(false);
         }
-        catch (StorageNotFoundException ex)
+        catch (StorageNotFoundException)
         {
-            throw new StorageNotFoundException(path, null, ex);
+            // No inner exception: the restore reports an inner one's (provider) message instead of this one.
+            throw new StorageNotFoundException(path, CoreTexts.English("core.restore.blobMissing"));
         }
     }
 

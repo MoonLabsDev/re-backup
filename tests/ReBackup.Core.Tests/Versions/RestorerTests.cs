@@ -663,7 +663,7 @@ public class RestorerTests : IDisposable
         var result = await RestorePoolAsync(target);
 
         result.Copied.Should().Be(2);
-        result.Failures.Should().ContainSingle().Which.Path.Should().Be("docs/b.txt");
+        result.Failures.Should().Equal(new RestoreFailure("docs/b.txt", CoreTexts.English("core.restore.blobMissing")));
         DestFiles().Should().Equal("a.txt", @"docs\sub\c.txt");
     }
 

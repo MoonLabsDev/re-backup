@@ -141,6 +141,7 @@ public static class CoreTexts
         ["core.restore.notAPath"] = "\"{path}\" is not a path inside the version.",
         ["core.restore.accessDenied"] = "access denied (read-only, or in use by another program)",
         ["core.restore.contentMismatch"] = "the content does not match its checksum in the backup (the backup copy is damaged)",
+        ["core.restore.blobMissing"] = "its content is missing from the backup's pool (the backup is damaged)",
 
         ["core.index.targetUnavailable"] = "The target folder \"{folder}\" is not available.",
 

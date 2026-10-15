@@ -220,7 +220,8 @@
       "fileInPlaceOfFolder": "an der Stelle des Ordners „{folder}“ steht eine Datei",
       "notAPath": "„{path}“ ist kein Pfad innerhalb der Version.",
       "accessDenied": "Zugriff verweigert (schreibgeschützt oder von einem anderen Programm verwendet)",
-      "contentMismatch": "der Inhalt stimmt nicht mit seiner Prüfsumme im Backup überein (die Kopie im Backup ist beschädigt)"
+      "contentMismatch": "der Inhalt stimmt nicht mit seiner Prüfsumme im Backup überein (die Kopie im Backup ist beschädigt)",
+      "blobMissing": "sein Inhalt fehlt im Pool des Backups (das Backup ist beschädigt)"
     },
     "index": {
       "targetUnavailable": "Der Zielordner „{folder}“ ist nicht verfügbar."
