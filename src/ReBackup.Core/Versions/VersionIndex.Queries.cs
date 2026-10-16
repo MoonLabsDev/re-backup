@@ -82,6 +82,42 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>
+    /// What the pool needs for the given versions alone: each content hash among their files once (at its largest size,
+    /// as in <see cref="PoolStats"/>), a file without a hash on its own. Ids the index does not know are ignored; an
+    /// empty set is 0. The difference between two such sets is what deleting the versions in between would free.
+    /// </summary>
+    public long PoolBytesOf(IReadOnlyCollection<long> versionIds)
+    {
+        if (versionIds.Count == 0)
+            return 0;
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using (var create = Command(connection, transaction, "CREATE TEMP TABLE IF NOT EXISTS pool_ids (id INTEGER PRIMARY KEY)"))
+            create.ExecuteNonQuery();
+        using (var clear = Command(connection, transaction, "DELETE FROM pool_ids"))
+            clear.ExecuteNonQuery();
+        using (var insert = Command(connection, transaction, "INSERT OR IGNORE INTO pool_ids(id) VALUES ($id)"))
+        {
+            var id = insert.Parameters.Add("$id", SqliteType.Integer);
+            foreach (var versionId in versionIds)
+            {
+                id.Value = versionId;
+                insert.ExecuteNonQuery();
+            }
+        }
+
+        using var command = Command(connection, transaction, """
+            SELECT (SELECT COALESCE(SUM(size), 0) FROM (SELECT MAX(f.size) AS size FROM files f JOIN pool_ids i ON i.id = f.version_id
+                                                        WHERE f.hash IS NOT NULL GROUP BY f.hash))
+                 + (SELECT COALESCE(SUM(f.size), 0) FROM files f JOIN pool_ids i ON i.id = f.version_id WHERE f.hash IS NULL)
+            """);
+        var bytes = (long)command.ExecuteScalar()!;
+        transaction.Rollback();   // the temporary table goes with the connection anyway; nothing was written
+        return bytes;
+    }
+
+    /// <summary>
     /// The status of every file and folder of version A and version B (§11): Added = only in B, Deleted = only in A;
     /// files in both are compared by hash when both have one, otherwise by size and time. A folder in both is Changed
     /// when anything below it differs.

@@ -675,4 +675,50 @@ public class VersionIndexTests : IDisposable
     {
         VersionIndex.Open(_db).PoolStats().Should().Be((0L, 0L));
     }
+    /// <summary>Three pool versions: A shares 100 bytes with B, B shares 20 with C; files without a hash in A and C.</summary>
+    private async Task<(VersionIndex Index, IReadOnlyList<IndexedVersion> Versions)> ThreePoolVersionsAsync()
+    {
+        var storage = new InMemoryStorage();
+        const string hashC = "xxh128:0123456789abcdef0123456789abcdef";
+        AddPoolVersion(storage, "2026_09_28-14_05",
+            PoolFile("shared.txt", 100, PoolHashA), PoolFile("old.txt", 10, PoolHashB), PoolFile("nohash.txt", 1, ""));
+        AddPoolVersion(storage, "2026_09_29-14_05",
+            PoolFile("renamed.txt", 100, PoolHashA), PoolFile("new.txt", 20, hashC), PoolFile("twin.txt", 20, hashC));
+        AddPoolVersion(storage, "2026_09_30-14_05", PoolFile("new.txt", 20, hashC), PoolFile("nohash.txt", 1, ""));
+        var index = VersionIndex.Open(_db);
+        index.Sync(await VersionCatalog.ListAsync(storage, PlanId, PlanName), storage, scanFallback: false);
+        return (index, index.Versions());
+    }
+
+    [Fact]
+    public async Task PoolBytesOf_counts_shared_content_once_and_files_without_hash_each()
+    {
+        var (index, v) = await ThreePoolVersionsAsync();
+
+        index.PoolBytesOf([v[0].Id]).Should().Be(111);
+        index.PoolBytesOf([v[1].Id]).Should().Be(120, "the twin content counts once");
+        index.PoolBytesOf([v[0].Id, v[1].Id]).Should().Be(100 + 10 + 1 + 20, "the shared 100 bytes count once");
+        index.PoolBytesOf([v[1].Id, v[2].Id]).Should().Be(100 + 20 + 1, "only the file without a hash is new in C");
+        index.PoolBytesOf([v[0].Id, v[1].Id, v[2].Id]).Should().Be(100 + 10 + 1 + 20 + 1)
+            .And.Be(index.PoolStats().PoolBytes);
+    }
+
+    [Fact]
+    public async Task PoolBytesOf_an_empty_set_or_unknown_ids_is_zero()
+    {
+        var (index, v) = await ThreePoolVersionsAsync();
+
+        index.PoolBytesOf([]).Should().Be(0);
+        index.PoolBytesOf([-1, 9999]).Should().Be(0);
+        index.PoolBytesOf([v[2].Id, -1, v[2].Id]).Should().Be(21, "unknown and repeated ids are ignored");
+    }
+
+    [Fact]
+    public async Task PoolBytesOf_takes_a_large_set_of_ids()
+    {
+        var (index, v) = await ThreePoolVersionsAsync();
+        var ids = Enumerable.Range(100_000, 40_000).Select(i => (long)i).Concat(v.Select(x => x.Id)).ToList();
+
+        index.PoolBytesOf(ids).Should().Be(index.PoolStats().PoolBytes);
+    }
 }
