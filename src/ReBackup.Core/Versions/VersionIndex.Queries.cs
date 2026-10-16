@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 
@@ -79,6 +80,79 @@ public sealed partial class VersionIndex
         using var reader = command.ExecuteReader();
         reader.Read();
         return (reader.GetInt64(0), reader.GetInt64(1));
+    }
+
+    /// <summary>
+    /// What the pool needs for the given versions alone: each content hash among their files once (at its largest size,
+    /// as in <see cref="PoolStats"/>), a file without a hash on its own. Ids the index does not know are ignored; an
+    /// empty set is 0. The difference between two such sets is what deleting the versions in between would free.
+    /// </summary>
+    public long PoolBytesOf(IReadOnlyCollection<long> versionIds)
+    {
+        if (versionIds.Count == 0)
+            return 0;
+        using var connection = OpenConnection();
+        return PoolBytesOf(connection, null, versionIds);
+    }
+
+    /// <summary>
+    /// The pool numbers of an incremental plan's retention preview, all read from one snapshot of the index (a sync
+    /// beside it cannot give a version a new id half-way). Every list names versions; see <see cref="PoolNumbers"/>.
+    /// </summary>
+    public PoolNumbers PoolNumbersOf(PoolQuery query)
+    {
+        using var connection = OpenConnection();
+        // Deferred: a read transaction, so the statements below share one snapshot and no write lock is taken.
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var indexed = new Dictionary<string, IndexedVersion>(StringComparer.OrdinalIgnoreCase);
+        foreach (var version in ReadVersions(connection, transaction))
+            indexed[version.Name] = version;
+
+        long[] Ids(IEnumerable<string> names) =>
+            names.Where(indexed.ContainsKey).Select(name => indexed[name].Id).Distinct().ToArray();
+        long Bytes(IEnumerable<string> names) => PoolBytesOf(connection, transaction, Ids(names));
+
+        var notIndexed = query.All.Where(name => !indexed.ContainsKey(name)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var deleted = new HashSet<string>(query.Deleted, StringComparer.OrdinalIgnoreCase);
+        var kept = query.All.Where(name => !deleted.Contains(name)).ToList();
+
+        var pool = Bytes(query.Managed);
+        // A kept version the index lacks may share content with the deleted ones: then nothing is known.
+        long? freed = deleted.Count == 0 ? 0
+            : kept.Any(name => !indexed.ContainsKey(name)) ? null
+            : Math.Max(0, Bytes(query.All) - Bytes(kept));
+
+        // The forecast's versions: the owned ones that have files (a damaged version has none), oldest first.
+        long? forecastBase = null;
+        long growth = 0;
+        if (query.Owned.Count > 0 && indexed.ContainsKey(query.Owned[^1]))
+        {
+            var usable = query.Owned.Where(name => indexed.TryGetValue(name, out var v) && v.Origin != IndexOrigin.Damaged && v.FileCount > 0)
+                .ToList();
+            if (usable.Count > 0)
+            {
+                forecastBase = Bytes([usable[^1]]);
+                if (usable.Count >= 2)
+                    growth = Math.Max(0, (Bytes(usable) - forecastBase.Value) / (usable.Count - 1));
+            }
+        }
+        transaction.Commit();
+        return new PoolNumbers(pool, freed, forecastBase, growth, notIndexed);
+    }
+
+    private static long PoolBytesOf(SqliteConnection connection, SqliteTransaction? transaction, IReadOnlyCollection<long> versionIds)
+    {
+        if (versionIds.Count == 0)
+            return 0;
+        // The ids as one JSON array: any number of them in one parameter.
+        using var command = Command(connection, transaction, """
+            WITH ids(id) AS (SELECT DISTINCT value FROM json_each($ids))
+            SELECT (SELECT COALESCE(SUM(size), 0) FROM (SELECT MAX(f.size) AS size FROM ids JOIN files f ON f.version_id = ids.id
+                                                        WHERE f.hash IS NOT NULL GROUP BY f.hash))
+                 + (SELECT COALESCE(SUM(f.size), 0) FROM ids JOIN files f ON f.version_id = ids.id WHERE f.hash IS NULL)
+            """);
+        command.Parameters.AddWithValue("$ids", "[" + string.Join(',', versionIds.Select(id => id.ToString(CultureInfo.InvariantCulture))) + "]");
+        return (long)command.ExecuteScalar()!;
     }
 
     /// <summary>

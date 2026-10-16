@@ -675,4 +675,117 @@ public class VersionIndexTests : IDisposable
     {
         VersionIndex.Open(_db).PoolStats().Should().Be((0L, 0L));
     }
+
+    private const string VA = "2026_09_28-14_05 Projects";
+    private const string VB = "2026_09_29-14_05 Projects";
+    private const string VC = "2026_09_30-14_05 Projects";
+    private const string Damaged = "2026_10_01-14_05 Projects";
+
+    /// <summary>
+    /// Three pool versions: A shares 100 bytes with B, B shares 20 with C; files without a hash in A and C. With
+    /// <paramref name="damaged"/> a newer fourth version without a manifest (indexed as damaged, no files).
+    /// </summary>
+    private async Task<(VersionIndex Index, IReadOnlyList<IndexedVersion> Versions)> ThreePoolVersionsAsync(bool damaged = false)
+    {
+        var storage = new InMemoryStorage();
+        if (damaged)
+            storage.AddFile(Damaged + "/stray.txt", "abc"u8.ToArray(), Mtime);
+        const string hashC = "xxh128:0123456789abcdef0123456789abcdef";
+        AddPoolVersion(storage, "2026_09_28-14_05",
+            PoolFile("shared.txt", 100, PoolHashA), PoolFile("old.txt", 10, PoolHashB), PoolFile("nohash.txt", 1, ""));
+        AddPoolVersion(storage, "2026_09_29-14_05",
+            PoolFile("renamed.txt", 100, PoolHashA), PoolFile("new.txt", 20, hashC), PoolFile("twin.txt", 20, hashC));
+        AddPoolVersion(storage, "2026_09_30-14_05", PoolFile("new.txt", 20, hashC), PoolFile("nohash.txt", 1, ""));
+        var index = VersionIndex.Open(_db);
+        index.Sync(await VersionCatalog.ListAsync(storage, PlanId, PlanName), storage, scanFallback: false);
+        return (index, index.Versions());
+    }
+
+    [Fact]
+    public async Task PoolBytesOf_counts_shared_content_once_and_files_without_hash_each()
+    {
+        var (index, v) = await ThreePoolVersionsAsync();
+
+        index.PoolBytesOf([v[0].Id]).Should().Be(111);
+        index.PoolBytesOf([v[1].Id]).Should().Be(120, "the twin content counts once");
+        index.PoolBytesOf([v[0].Id, v[1].Id]).Should().Be(100 + 10 + 1 + 20, "the shared 100 bytes count once");
+        index.PoolBytesOf([v[1].Id, v[2].Id]).Should().Be(100 + 20 + 1, "only the file without a hash is new in C");
+        index.PoolBytesOf([v[0].Id, v[1].Id, v[2].Id]).Should().Be(100 + 10 + 1 + 20 + 1)
+            .And.Be(index.PoolStats().PoolBytes);
+    }
+
+    [Fact]
+    public async Task PoolNumbersOf_frees_what_only_deleted_versions_hold_and_forecasts_from_the_newest()
+    {
+        var (index, _) = await ThreePoolVersionsAsync();
+
+        var numbers = index.PoolNumbersOf(new PoolQuery([VA, VB, VC], [VA, VB, VC], [VA, VB], [VA, VB, VC]));
+
+        numbers.Pool.Should().Be(132);
+        numbers.Freed.Should().Be(132 - 21, "the 20 bytes B shares with the kept C stay");
+        numbers.ForecastBase.Should().Be(21);
+        numbers.Growth.Should().Be((132 - 21) / 2);
+        numbers.NotIndexed.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PoolNumbersOf_counts_unmanaged_versions_as_kept_but_not_in_the_pool_of_the_managed()
+    {
+        var (index, _) = await ThreePoolVersionsAsync();
+
+        // A is not managed (e.g. a foreign version): it is not deleted, so the 100 bytes it shares with B stay.
+        var numbers = index.PoolNumbersOf(new PoolQuery([VA, VB, VC], [VB, VC], [VB], [VB, VC]));
+
+        numbers.Pool.Should().Be(121);
+        numbers.Freed.Should().Be(0, "B's content is all in A or C");
+    }
+
+    [Fact]
+    public async Task PoolNumbersOf_names_versions_the_index_lacks()
+    {
+        var (index, _) = await ThreePoolVersionsAsync();
+        const string missing = "2026_10_02-14_05 Projects";
+
+        var deletedMissing = index.PoolNumbersOf(new PoolQuery([VA, VB, VC, missing], [VA, VB, VC, missing], [VA, VB, missing], [VA, VB, VC]));
+        deletedMissing.NotIndexed.Should().Equal(missing);
+        deletedMissing.Freed.Should().Be(111, "a lower bound: the missing deleted version's content is not known");
+        deletedMissing.ForecastBase.Should().Be(21);
+
+        var keptMissing = index.PoolNumbersOf(new PoolQuery([VA, VB, VC, missing], [VA, VB, VC, missing], [VA, VB], [VA, VB, VC, missing]));
+        keptMissing.Pool.Should().Be(132);
+        keptMissing.Freed.Should().BeNull("the missing kept version may hold the deleted content");
+        keptMissing.ForecastBase.Should().BeNull("the newest owned version is not indexed");
+    }
+
+    [Fact]
+    public async Task PoolNumbersOf_forecasts_from_versions_that_have_files()
+    {
+        var (index, _) = await ThreePoolVersionsAsync(damaged: true);
+
+        var numbers = index.PoolNumbersOf(new PoolQuery([VA, VB, VC, Damaged], [VA, VB, VC, Damaged], [], [VA, VB, VC, Damaged]));
+
+        numbers.Freed.Should().Be(0);
+        numbers.ForecastBase.Should().Be(21, "the damaged newest version has no files");
+        numbers.Growth.Should().Be((132 - 21) / 2);
+        index.PoolNumbersOf(new PoolQuery([], [], [], [])).Should().BeEquivalentTo(new PoolNumbers(0, 0, null, 0, []));
+    }
+
+    [Fact]
+    public async Task PoolBytesOf_an_empty_set_or_unknown_ids_is_zero()
+    {
+        var (index, v) = await ThreePoolVersionsAsync();
+
+        index.PoolBytesOf([]).Should().Be(0);
+        index.PoolBytesOf([-1, 9999]).Should().Be(0);
+        index.PoolBytesOf([v[2].Id, -1, v[2].Id]).Should().Be(21, "unknown and repeated ids are ignored");
+    }
+
+    [Fact]
+    public async Task PoolBytesOf_takes_a_large_set_of_ids()
+    {
+        var (index, v) = await ThreePoolVersionsAsync();
+        var ids = Enumerable.Range(100_000, 40_000).Select(i => (long)i).Concat(v.Select(x => x.Id)).ToList();
+
+        index.PoolBytesOf(ids).Should().Be(index.PoolStats().PoolBytes);
+    }
 }

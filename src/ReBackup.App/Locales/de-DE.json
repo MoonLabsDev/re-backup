@@ -759,7 +759,13 @@
         "other": "Mit {frequency} enthält das Ziel bis zu {count:N0} Versionen{size}.{cut}"
       },
       "size": ", etwa {size}",
+      "poolSize": ", etwa {size} im Pool",
+      "poolSpace": "≈ {size} (Pool, geschätzt)",
       "cut": " Die Simulation endete nach {runs:N0} Läufen."
+    },
+    "pool": {
+      "calculating": "wird berechnet …",
+      "atLeast": "≥ {size}"
     },
     "scheduleLabel": {
       "weekly": "einem Backup pro Woche",
@@ -787,7 +793,12 @@
         "one": "{count} Version, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)",
         "other": "{count:N0} Versionen, {size}  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)"
       },
+      "poolSummary": {
+        "one": "{count} Version, Pool {pool} ({size} als volle Kopien)  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)",
+        "other": "{count:N0} Versionen, Pool {pool} ({size} als volle Kopien)  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)"
+      },
       "unmanaged": "  ·  {count:N0} nicht verwaltet",
+      "notIndexed": "  ·  {count:N0} nicht indiziert",
       "openInExplorer": "Im Explorer öffnen",
       "openFolder": "Versionsordner öffnen"
     },

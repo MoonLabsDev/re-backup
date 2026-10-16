@@ -759,7 +759,13 @@
         "other": "With {frequency} the target holds up to {count:N0} versions{size}.{cut}"
       },
       "size": ", about {size}",
+      "poolSize": ", about {size} in the pool",
+      "poolSpace": "≈ {size} (pool, estimated)",
       "cut": " The simulation stopped after {runs:N0} runs."
+    },
+    "pool": {
+      "calculating": "calculating…",
+      "atLeast": "≥ {size}"
     },
     "scheduleLabel": {
       "weekly": "one backup a week",
@@ -787,7 +793,12 @@
         "one": "{count} version, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})",
         "other": "{count:N0} versions, {size}  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})"
       },
+      "poolSummary": {
+        "one": "{count} version, pool {pool} ({size} as full copies)  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})",
+        "other": "{count:N0} versions, pool {pool} ({size} as full copies)  →  the rules keep {keep:N0} and delete {delete:N0} (frees {freed})"
+      },
       "unmanaged": "  ·  {count:N0} not managed",
+      "notIndexed": "  ·  {count:N0} not indexed",
       "openInExplorer": "Open in Explorer",
       "openFolder": "Open the version folder"
     },

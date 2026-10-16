@@ -192,7 +192,12 @@ public sealed partial class VersionIndex
     public IReadOnlyList<IndexedVersion> Versions()
     {
         using var connection = OpenConnection();
-        using var command = Command(connection, null, """
+        return ReadVersions(connection, null);
+    }
+
+    private static List<IndexedVersion> ReadVersions(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = Command(connection, transaction, """
             SELECT id, name, local_time, ownership, source, origin, file_count, total_bytes
             FROM versions ORDER BY local_time, name
             """);
