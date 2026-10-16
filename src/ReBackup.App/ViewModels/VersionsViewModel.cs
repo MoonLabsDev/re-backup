@@ -345,6 +345,7 @@ public sealed partial class VersionsViewModel : ObservableObject
                 ? LocText.Empty
                 : LocText.Of("versions.sync.errors", ("count", errors.Count), ("errors", string.Join("; ", errors)));
             OnIndexReady();
+            IndexSynced?.Invoke();
         }
         catch (OperationCanceledException)
         {
@@ -393,6 +394,12 @@ public sealed partial class VersionsViewModel : ObservableObject
 
     /// <summary>Runs after every successful sync; the tree reloads here (Versions tab, tree part).</summary>
     partial void OnIndexReady();
+
+    /// <summary>
+    /// Raised on the UI thread after every successful sync of the plan's index, e.g. for the Retention tab's pool
+    /// numbers.
+    /// </summary>
+    public event Action? IndexSynced;
 
     /// <summary>
     /// Shows the listed folders newest first, reusing rows by name so the selection stays, and their coverage under the

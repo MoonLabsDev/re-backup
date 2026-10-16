@@ -89,10 +89,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         TargetDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: true, () => TargetEdited(LocationKind.Drive));
         Run = new PlanRunViewModel(versions.Storages);
         Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
+        // The pool numbers of an incremental plan come from the index the Versions tab keeps in sync; a new plan has none.
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
-            () => Run.Entries);
+            () => Run.Entries, poolIndex: plan => IsNew ? null : versions.Indexes.For(plan.Id), requestIndexSync: SyncIndex);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries,
             () => IsCopying);
+        Versions.IndexSynced += RetentionPreview.OnIndexSynced;
         HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);
         Versions.PropertyChanged += (_, e) =>
         {
@@ -121,6 +123,20 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         LoadFrom(_saved);
         IsDirty = isNew;
         Validate();
+    }
+
+    /// <summary>
+    /// The Retention tab needs versions the plan's index lacks: the Versions tab syncs it, after the sync that runs if
+    /// one does (it may have started before the versions were there).
+    /// </summary>
+    private void SyncIndex()
+    {
+        if (IsNew)
+            return;
+        if (Versions.IsSyncing)
+            Versions.ReloadIfLoaded();
+        else
+            Versions.EnsureLoaded();
     }
 
     /// <summary>Versions of the plan are deleted by hand, or an unfinished deletion is finished: the plan does not run meanwhile.</summary>
