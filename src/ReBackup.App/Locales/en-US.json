@@ -923,7 +923,7 @@
       "toolTip": "Space only this version uses in the pool: deleting it frees about this much"
     },
     "pool": {
-      "summary": "Pool {pool} · full copies would be {full} · {percent} % saved",
+      "summary": "Pool {pool} · full copies would be {full} · {percent} % saved",
       "fullSummary": "All versions together: {size} (full copies, no deduplication)",
       "fullSummaryToolTip": "From the local index: the space all versions take together; each is a full copy",
       "fullUsedName": "Space all versions take",

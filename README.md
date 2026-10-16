@@ -5,12 +5,12 @@
 <h1 align="center">ReBackup</h1>
 
 <p align="center">
-  A Windows backup manager for folders: plain full copies on a schedule, retention rules you can see the effect of,
-  and a preview that shows what goes into the backup before it runs.
+  A Windows backup manager for folders: plain full copies or deduplicated incremental versions on a schedule,
+  retention rules you can see the effect of, and a preview that shows what goes into the backup before it runs.
 </p>
 
 <p align="center">
-  <img alt="Version 1.5.0" src="https://img.shields.io/badge/version-1.5.0-2BB3A3">
+  <img alt="Version 2.0.0" src="https://img.shields.io/badge/version-2.0.0-2BB3A3">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0F1216">
   <img alt=".NET 9 WPF" src="https://img.shields.io/badge/.NET%209-WPF-512BD4">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-lightgrey">
@@ -43,6 +43,20 @@
 
 ![Retention: rules, two-year forecast and the versions in the target](docs/images/retention.png)
 
+### Incremental backups without chains
+
+- **Every version is complete.** An incremental plan stores each distinct file content once in a pool on the target;
+  a version is only its manifest. There is no chain of increments: retention can delete any version on its own, and a
+  restore never has to merge anything.
+- **See what it saves.** The Versions tab shows the pool size next to what full copies would need, with a bar for the
+  savings (*Pool 40 MB · full copies would be 340 MB · 88 % saved*). **Measure pool** lists the pool on the target and
+  shows its real size, including content no version references any more. Full plans show how much all their versions
+  take together.
+- **Safe by design.** Contents are written and verified before a manifest refers to them, cleanup never removes what a
+  remaining version needs, and every restore checks each file against its hash. Interrupted deletions resume when
+  ReBackup starts again. Switch a plan between full and incremental with **Copy plan…**. Details in
+  [Storage formats](#storage-formats).
+
 ### Ignore & Preview
 
 - **gitignore syntax**: `node_modules/`, `*.tmp`, `!keep.tmp`, `**`, anchored `/build/` and so on, matched without
@@ -69,7 +83,7 @@
 | **Schedules** | Triggers: **Daily** (time), **Weekly** (weekdays + time), **Monthly** (day 1–31, `0` = last day, `-1` = the day before it), **Interval** (every *n* hours between two times). Shows the next five runs. On startup, a plan that missed a trigger gets **one catch-up run** about a minute later. |
 | **Versions** | By default, every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. Plans can instead be **incremental** (see [Storage formats](#storage-formats)). |
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
-| **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted, optionally changed only), and see a **file's history** across all versions. **Delete versions** by hand (one or several, after a confirmation); the index is cleaned up with them. Backed by a local SQLite index per plan. |
+| **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted, optionally changed only), and see a **file's history** across all versions. **Delete versions** by hand (one or several, after a confirmation), with the progress of the deletion, the cleanup and the indexing shown in the tab and on the plan's card. A size header shows how much the versions need (and, for incremental plans, how much the pool saves). Backed by a local SQLite index per plan. |
 | **Restore** | Restore a file, a folder or a whole version to its original location or to a folder of your choice. If files already exist you choose **Overwrite**, **Skip** or **Keep both** (or cancel). A restore **never deletes** anything at the destination. |
 | **App** | **Dark and Light** theme, **English and German** (both switch at once, no restart), tray icon with Open, Run plan, Pause scheduler and Exit, a notification when a run ends, start with Windows, a single instance. |
 | **Distribution** | One self-contained `.exe` for Windows x64; no installer, no .NET runtime to install. |
@@ -77,8 +91,8 @@
 ### A closer look
 
 **Versions: compare, file history, restore.** Pick a version, compare it with another one, and select a file to
-see what happened to it in every version. Here the spreadsheet was locked by another program during one run, so
-that version does not have it.
+see what happened to it in every version. This is an incremental plan: the header above the versions shows the pool
+next to what full copies would take, and each version shows how much content only it holds (*exclusive*).
 
 ![Versions: the newest version compared with an older one, and the history of one file](docs/images/versions.png)
 
@@ -127,9 +141,9 @@ dotnet run --project src/ReBackup.App         # start the app
 `publish.ps1` publishes the app in Release as one file and copies it to `dist\`.
 
 ```powershell
-.\publish.ps1                       # dist\ReBackup-1.5.0-win-x64.exe, self-contained (.NET runtime included)
+.\publish.ps1                       # dist\ReBackup-2.0.0-win-x64.exe, self-contained (.NET runtime included)
 .\publish.ps1 -Version 1.5.1        # override the version from Directory.Build.props
-.\publish.ps1 -FrameworkDependent   # dist\ReBackup-1.5.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
+.\publish.ps1 -FrameworkDependent   # dist\ReBackup-2.0.0-win-x64-fd.exe, small, needs the .NET 9 Desktop Runtime
 .\publish.ps1 -Runtime win-arm64    # for Windows on ARM
 ```
 
@@ -203,22 +217,28 @@ at the cost of reading the whole source each time.
 
 **Deleting versions.** Delete versions as usual (by hand, or by retention). For an incremental plan that also
 removes the file contents no remaining version uses: the run that applies retention (and a deletion by hand) does this
-cleanup automatically at the end, and what another version still needs is never removed. If a `re-manifest.json` in the target's root cannot be read, cleanup is blocked until it is
-fixed, because ReBackup cannot tell what that version needs; the run says so and keeps everything.
+cleanup automatically at the end, and what another version still needs is never removed. If a `re-manifest.json` in
+the target's root cannot be read, cleanup is blocked until it is fixed, because ReBackup cannot tell what that version
+needs; the run says so and keeps everything. Every deletion by hand asks for confirmation first. While it runs, the
+Versions tab and the plan's card show its phases: deleting the version, cleaning up (reading the manifests, listing
+the pool, deleting content nothing uses any more) and indexing. Folders being deleted are marked
+(`re-deleting.json`) and a pending cleanup too (`re-cleanup.<computer>.json`), so a deletion that was interrupted by
+quitting ReBackup, a crash or a lost connection is finished in the background the next time ReBackup starts.
 
 **Verify backup…** checks an incremental target: every file a version lists must be in the pool. The *thorough*
 check also reads every stored content and compares it with its hash, so it takes as long as reading the whole
 target. It changes nothing and lists what is missing or damaged.
 
 **Locked by …** While a run, a deletion, a verify or a copy works on an incremental target, it holds a lock
-(`re-lock.json`) so that two of them never change the pool at once; the plan then shows "Locked by *computer* (*what*) since *time*".
+(`re-lock.json`) so that two of them never change the pool at once; the plan then shows
+"Locked by *computer* (*what*) since *time*".
 It is released when the job ends. If the computer crashed or was switched off, nothing removes it: when you are sure
 nothing runs on the target any more, choose **Release lock…**.
 
 **Opening files of an incremental version.** Because a version has no files of its own, Explorer shows only its
 `re-manifest.json`. In the Versions tab, **Open** restores the file to a temporary folder
-(`%TEMP%\ReBackup\open\`), verifies it against its hash and opens it there; a file above 1 GB asks for confirmation first,
-and temporary files older than a day are removed when ReBackup starts. Restoring a file, a folder or a version works as
+(`%TEMP%\ReBackup\open\`), verifies it against its hash and opens it there; a file above 1 GB asks for confirmation
+first, and temporary files older than a day are removed when ReBackup starts. Restoring a file, a folder or a version works as
 for full copies.
 
 ### Where ReBackup keeps its data

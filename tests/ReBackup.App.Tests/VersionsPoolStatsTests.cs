@@ -122,7 +122,7 @@ public class VersionsPoolStatsTests : IDisposable
         vm.PoolBytes.Should().Be(29);
         vm.FullEquivalentBytes.Should().Be(43);
         vm.SavedFraction.Should().BeApproximately(14.0 / 43, 1e-9);
-        vm.PoolSummary.Should().Be($"Pool {Formats.Bytes(29)} · full copies would be {Formats.Bytes(43)} · 32 % saved", "32.6 % is floored");
+        vm.PoolSummary.Should().Be($"Pool {Formats.Bytes(29)} · full copies would be {Formats.Bytes(43)} · 32 % saved", "32.6 % is floored");
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public class VersionsPoolStatsTests : IDisposable
         await vm.RefreshCommand.ExecuteAsync(null);
 
         vm.SavedFraction.Should().BeApproximately(0.995, 1e-9);
-        vm.PoolSummary.Should().EndWith("· 99 % saved");
+        vm.PoolSummary.Should().EndWith("· 99 % saved");
     }
 
     /// <summary>Forwards to an in-memory storage; listing the pool is denied.</summary>
