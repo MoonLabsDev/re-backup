@@ -68,24 +68,49 @@ public class VersionsPoolStatsTests : IDisposable
         return vm;
     }
 
-    [Fact]
-    public async Task Full_plan_hides_the_pool_header()
+    /// <summary>A full plan on a folder with two versions: 5 + 7 bytes, and a folder that is no version of the plan.</summary>
+    private VersionsViewModel CreateFullPlan()
     {
         var target = Path.Combine(_fixture.Root, "target");
-        Directory.CreateDirectory(Path.Combine(target, Second));
-        File.WriteAllText(Path.Combine(target, Second, "a.txt"), "alpha");
-        var vm = Create(new BackupPlan
+        Directory.CreateDirectory(Path.Combine(target, First));
+        File.WriteAllText(Path.Combine(target, First, "a.txt"), "alpha");
+        Directory.CreateDirectory(Path.Combine(target, Second, "sub"));
+        File.WriteAllText(Path.Combine(target, Second, "sub", "b.txt"), "bravo 2");
+        Directory.CreateDirectory(Path.Combine(target, "not a version"));
+        File.WriteAllText(Path.Combine(target, "not a version", "big.bin"), new string('x', 1000));
+        return Create(new BackupPlan
         {
             Id = "p2",
             Name = "Projects",
             Source = StorageLocation.FileSystem(Path.Combine(_fixture.Root, "source")),
             Target = StorageLocation.FileSystem(target),
         });
+    }
+
+    [Fact]
+    public async Task Full_plan_shows_what_all_versions_take_together()
+    {
+        var vm = CreateFullPlan();
 
         await vm.RefreshCommand.ExecuteAsync(null);
 
-        vm.ShowPoolStats.Should().BeFalse();
-        vm.PoolSummary.Should().BeEmpty();
+        vm.ShowPoolStats.Should().BeTrue();
+        vm.FullEquivalentBytes.Should().Be(12);
+        vm.PoolSummary.Should().Be($"All versions together: {Formats.Bytes(12)} (full copies, no deduplication)");
+        vm.PoolSummary.Should().NotContain("saved");
+        vm.BarFraction.Should().Be(1, "full copies save nothing: the bar shows the space as used");
+        vm.MeasureLabel.Should().Be(Loc.T("versions.pool.measureFull"));
+    }
+
+    [Fact]
+    public async Task Full_plan_measures_its_version_folders_on_the_target()
+    {
+        var vm = CreateFullPlan();
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        await vm.MeasurePoolCommand.ExecuteAsync(null);
+
+        vm.MeasuredSummary.Should().Be($"On target: {Formats.Bytes(12)} in 2 files", "the folder that is no version is left out");
     }
 
     [Fact]

@@ -62,4 +62,19 @@ public class PoolMeasureTests
     {
         public void Report(int value) => report(value);
     }
+
+    [Fact]
+    public async Task Folders_are_measured_by_their_files_and_a_missing_one_counts_nothing()
+    {
+        for (var i = 0; i < 20; i++)
+            _target.AddFile($"v{i}/sub/f{i}.bin", new byte[i + 1]);
+        _target.AddFile("elsewhere/x.bin", new byte[100]);
+        var folders = Enumerable.Range(0, 20).Select(i => $"v{i}").Append("gone").ToList();
+        var reports = new List<int>();
+
+        var measured = await PoolUsage.MeasureFoldersAsync(_target, folders, new SyncProgress(reports.Add), CancellationToken.None);
+
+        measured.Should().Be((20, Enumerable.Range(1, 20).Sum(n => (long)n)));
+        reports.Should().Equal(20);
+    }
 }

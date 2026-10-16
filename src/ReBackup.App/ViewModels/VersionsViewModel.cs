@@ -253,6 +253,11 @@ public sealed partial class VersionsViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowTempRestore));
         OnPropertyChanged(nameof(ShowPoolStats));
         OnPropertyChanged(nameof(PoolSummary));
+        OnPropertyChanged(nameof(BarFraction));
+        OnPropertyChanged(nameof(BarName));
+        OnPropertyChanged(nameof(SummaryToolTip));
+        OnPropertyChanged(nameof(MeasureLabel));
+        OnPropertyChanged(nameof(MeasureToolTip));
         IsSyncing = true;
         ErrorText = null;
         Sync = LocText.Of("versions.sync.reading");
@@ -269,7 +274,7 @@ public sealed partial class VersionsViewModel : ObservableObject
                 IReadOnlyList<ForeignMarkedFolder> marked = storage is null
                     ? []
                     : await VersionCatalog.ListForeignMarkedAsync(storage, plan.Id, plan.Name, _context.Host, cts.Token);
-                (long, long)? stats = plan.Incremental ? planIndex.PoolStats() : null;
+                (long, long)? stats = planIndex.PoolStats();
                 return (planIndex, targetState, storage, list, marked, planIndex.Versions(), stats);
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
@@ -318,7 +323,7 @@ public sealed partial class VersionsViewModel : ObservableObject
                 IReadOnlyDictionary<string, long>? unique = plan.Incremental
                     ? indexedVersions.ToDictionary(v => v.Name, v => planIndex.UniqueBytes(v.Id), StringComparer.OrdinalIgnoreCase)
                     : null;
-                (long, long)? stats = plan.Incremental ? planIndex.PoolStats() : null;
+                (long, long)? stats = planIndex.PoolStats();
                 return (synced, indexedVersions, gone, unique, stats);
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
