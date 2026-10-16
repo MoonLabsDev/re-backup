@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 
@@ -90,31 +91,68 @@ public sealed partial class VersionIndex
     {
         if (versionIds.Count == 0)
             return 0;
-
         using var connection = OpenConnection();
-        using var transaction = connection.BeginTransaction();
-        using (var create = Command(connection, transaction, "CREATE TEMP TABLE IF NOT EXISTS pool_ids (id INTEGER PRIMARY KEY)"))
-            create.ExecuteNonQuery();
-        using (var clear = Command(connection, transaction, "DELETE FROM pool_ids"))
-            clear.ExecuteNonQuery();
-        using (var insert = Command(connection, transaction, "INSERT OR IGNORE INTO pool_ids(id) VALUES ($id)"))
+        return PoolBytesOf(connection, null, versionIds);
+    }
+
+    /// <summary>
+    /// The pool numbers of an incremental plan's retention preview, all read from one snapshot of the index (a sync
+    /// beside it cannot give a version a new id half-way). Every list names versions; see <see cref="PoolNumbers"/>.
+    /// </summary>
+    public PoolNumbers PoolNumbersOf(PoolQuery query)
+    {
+        using var connection = OpenConnection();
+        // Deferred: a read transaction, so the statements below share one snapshot and no write lock is taken.
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var indexed = new Dictionary<string, IndexedVersion>(StringComparer.OrdinalIgnoreCase);
+        foreach (var version in ReadVersions(connection, transaction))
+            indexed[version.Name] = version;
+
+        long[] Ids(IEnumerable<string> names) =>
+            names.Where(indexed.ContainsKey).Select(name => indexed[name].Id).Distinct().ToArray();
+        long Bytes(IEnumerable<string> names) => PoolBytesOf(connection, transaction, Ids(names));
+
+        var notIndexed = query.All.Where(name => !indexed.ContainsKey(name)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var deleted = new HashSet<string>(query.Deleted, StringComparer.OrdinalIgnoreCase);
+        var kept = query.All.Where(name => !deleted.Contains(name)).ToList();
+
+        var pool = Bytes(query.Managed);
+        // A kept version the index lacks may share content with the deleted ones: then nothing is known.
+        long? freed = deleted.Count == 0 ? 0
+            : kept.Any(name => !indexed.ContainsKey(name)) ? null
+            : Math.Max(0, Bytes(query.All) - Bytes(kept));
+
+        // The forecast's versions: the owned ones that have files (a damaged version has none), oldest first.
+        long? forecastBase = null;
+        long growth = 0;
+        if (query.Owned.Count > 0 && indexed.ContainsKey(query.Owned[^1]))
         {
-            var id = insert.Parameters.Add("$id", SqliteType.Integer);
-            foreach (var versionId in versionIds)
+            var usable = query.Owned.Where(name => indexed.TryGetValue(name, out var v) && v.Origin != IndexOrigin.Damaged && v.FileCount > 0)
+                .ToList();
+            if (usable.Count > 0)
             {
-                id.Value = versionId;
-                insert.ExecuteNonQuery();
+                forecastBase = Bytes([usable[^1]]);
+                if (usable.Count >= 2)
+                    growth = Math.Max(0, (Bytes(usable) - forecastBase.Value) / (usable.Count - 1));
             }
         }
+        transaction.Commit();
+        return new PoolNumbers(pool, freed, forecastBase, growth, notIndexed);
+    }
 
+    private static long PoolBytesOf(SqliteConnection connection, SqliteTransaction? transaction, IReadOnlyCollection<long> versionIds)
+    {
+        if (versionIds.Count == 0)
+            return 0;
+        // The ids as one JSON array: any number of them in one parameter.
         using var command = Command(connection, transaction, """
-            SELECT (SELECT COALESCE(SUM(size), 0) FROM (SELECT MAX(f.size) AS size FROM files f JOIN pool_ids i ON i.id = f.version_id
+            WITH ids(id) AS (SELECT DISTINCT value FROM json_each($ids))
+            SELECT (SELECT COALESCE(SUM(size), 0) FROM (SELECT MAX(f.size) AS size FROM ids JOIN files f ON f.version_id = ids.id
                                                         WHERE f.hash IS NOT NULL GROUP BY f.hash))
-                 + (SELECT COALESCE(SUM(f.size), 0) FROM files f JOIN pool_ids i ON i.id = f.version_id WHERE f.hash IS NULL)
+                 + (SELECT COALESCE(SUM(f.size), 0) FROM ids JOIN files f ON f.version_id = ids.id WHERE f.hash IS NULL)
             """);
-        var bytes = (long)command.ExecuteScalar()!;
-        transaction.Rollback();   // the temporary table goes with the connection anyway; nothing was written
-        return bytes;
+        command.Parameters.AddWithValue("$ids", "[" + string.Join(',', versionIds.Select(id => id.ToString(CultureInfo.InvariantCulture))) + "]");
+        return (long)command.ExecuteScalar()!;
     }
 
     /// <summary>
