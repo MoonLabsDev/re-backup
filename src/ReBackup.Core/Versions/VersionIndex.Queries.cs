@@ -64,6 +64,24 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>
+    /// The sizes of an incremental plan's indexed versions: <c>FullBytes</c> is what they would take as full copies (every
+    /// file of every version), <c>PoolBytes</c> what the pool needs for them (each content hash once, a file without a hash
+    /// on its own). Both 0 for an empty index.
+    /// </summary>
+    public (long FullBytes, long PoolBytes) PoolStats()
+    {
+        using var connection = OpenConnection();
+        using var command = Command(connection, null, """
+            SELECT (SELECT COALESCE(SUM(size), 0) FROM files),
+                   (SELECT COALESCE(SUM(size), 0) FROM (SELECT MAX(size) AS size FROM files WHERE hash IS NOT NULL GROUP BY hash))
+                 + (SELECT COALESCE(SUM(size), 0) FROM files WHERE hash IS NULL)
+            """);
+        using var reader = command.ExecuteReader();
+        reader.Read();
+        return (reader.GetInt64(0), reader.GetInt64(1));
+    }
+
+    /// <summary>
     /// The status of every file and folder of version A and version B (§11): Added = only in B, Deleted = only in A;
     /// files in both are compared by hash when both have one, otherwise by size and time. A folder in both is Changed
     /// when anything below it differs.
