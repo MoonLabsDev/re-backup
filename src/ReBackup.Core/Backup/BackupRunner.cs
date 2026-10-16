@@ -22,16 +22,19 @@ namespace ReBackup.Core.Backup;
 /// <summary>
 /// CreatingFolders counts folders in FilesDone/FilesTotal. CleaningUp: the run did not finish and the incomplete copy
 /// is being removed. RemovingLeftovers: before indexing, what earlier runs left behind (an unfinished copy, the remains of
-/// a deleted version) is removed; FilesDone counts the files removed, CurrentFile is the folder.
+/// a deleted version) is removed; FilesDone counts the files removed, CurrentFile is the folder. CollectingGarbage: an
+/// incremental plan's pool is collected after retention; <see cref="BackupProgress.Cleanup"/> tells where it stands.
 /// </summary>
-public enum BackupPhase { Indexing, CreatingFolders, Copying, Finishing, CleaningUp, Retention, RemovingLeftovers }
+public enum BackupPhase { Indexing, CreatingFolders, Copying, Finishing, CleaningUp, Retention, RemovingLeftovers, CollectingGarbage }
 
 public readonly record struct BackupProgress(
-    BackupPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal, string CurrentFile)
+    BackupPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal, string CurrentFile,
+    CollectProgress Cleanup = default)
 {
-    /// <summary>0..1, by bytes; by files when there are no bytes to copy.</summary>
+    /// <summary>0..1, by bytes; by files when there are no bytes to copy; within the cleanup phase while collecting.</summary>
     public double Fraction =>
-        BytesTotal > 0 ? Math.Clamp((double)BytesDone / BytesTotal, 0, 1)
+        Phase == BackupPhase.CollectingGarbage ? Cleanup.Fraction
+        : BytesTotal > 0 ? Math.Clamp((double)BytesDone / BytesTotal, 0, 1)
         : FilesTotal > 0 ? Math.Clamp((double)FilesDone / FilesTotal, 0, 1)
         : Phase is BackupPhase.Finishing or BackupPhase.Retention ? 1 : 0;
 }
@@ -186,7 +189,7 @@ public sealed partial class BackupRunner : IBackupRunner
                     entry.Warnings.Add(CoreTexts.English("core.run.retentionFailed", ("error", ex.Message)));
                 }
                 if (plan.Incremental)
-                    await Task.Run(() => CollectGarbageAsync(plan, work!.Target, entry, cancellationToken));
+                    await Task.Run(() => CollectGarbageAsync(plan, work!.Target, entry, progress, cancellationToken));
             }
         }
         finally

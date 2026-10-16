@@ -27,18 +27,24 @@ public enum VersionDeletionOutcome
 /// <summary>What happened to one version a person asked to delete; <see cref="Error"/> for RemainsLeft and Failed.</summary>
 public sealed record VersionDeletion(string Name, VersionDeletionOutcome Outcome, string? Error);
 
-/// <summary>Preparing: the versions' manifests are read for their file counts. Deleting: the files are deleted.</summary>
-public enum VersionDeletionPhase { Preparing, Deleting }
+/// <summary>
+/// Preparing: the versions' manifests are read for their file counts (an incremental plan's version folders are listed).
+/// Deleting: the files are deleted. CleaningUp: an incremental plan's pool is collected (<see cref="VersionDeletionProgress.Cleanup"/>).
+/// </summary>
+public enum VersionDeletionPhase { Preparing, Deleting, CleaningUp }
 
 /// <summary>
 /// A deletion's progress: the version being examined or deleted (1-based <see cref="Current"/> of <see cref="VersionCount"/>) and
-/// the files deleted so far over all versions, of the total their manifests list.
+/// the files deleted so far over all versions, of the total their manifests list (of the files in their folders for an
+/// incremental plan, whose folders hold only the manifest and markers). While the pool is collected,
+/// <see cref="Cleanup"/> tells where the collection stands.
 /// </summary>
 public readonly record struct VersionDeletionProgress(VersionDeletionPhase Phase, int Current, int VersionCount, string VersionName, long FilesDone,
-    long FilesTotal)
+    long FilesTotal, CollectProgress Cleanup = default)
 {
-    /// <summary>0..1 by files; by versions when the manifests list no files.</summary>
+    /// <summary>0..1 by files; by versions when the manifests list no files; within the cleanup phase while cleaning up.</summary>
     public double Fraction => Phase == VersionDeletionPhase.Preparing ? 0
+        : Phase == VersionDeletionPhase.CleaningUp ? Cleanup.Fraction
         : FilesTotal > 0
         ? Math.Clamp((double)FilesDone / FilesTotal, 0, 1)
         : VersionCount > 0 ? Math.Clamp((double)(Current - 1) / VersionCount, 0, 1) : 1;
@@ -71,9 +77,11 @@ public static class VersionDeleter
     /// The plan is incremental (spec 5): the target's lock is taken (operation <c>"delete"</c>, host
     /// <paramref name="machineName"/>) before anything else, the versions are deleted, the pool is collected
     /// (<see cref="PoolCollector"/>) and the lock is released. While another holder has the lock nothing is changed and every
-    /// version is <see cref="VersionDeletionOutcome.Failed"/> with the <c>core.run.targetLocked</c> text. Collection problems
-    /// and a lock that cannot be released are traced only: the versions are deleted all the same, and the next collection
-    /// continues.
+    /// version is <see cref="VersionDeletionOutcome.Failed"/> with the <c>core.run.targetLocked</c> text. Before the first
+    /// version is deleted <see cref="CleanupMarker"/> is written (when that fails nothing is changed and every version is
+    /// Failed); it is removed once the pool was collected, so a cleanup that did not get there is finished at the next app
+    /// start (<see cref="DeletionResumer"/>). Collection problems and a lock that cannot be released are traced only: the
+    /// versions are deleted all the same, and the next collection continues.
     /// </param>
     public static async Task<IReadOnlyList<VersionDeletion>> DeleteAsync(IStorage target, string planId, string planName,
         IReadOnlyList<string> versionNames, IProgress<VersionDeletionProgress>? progress = null, CancellationToken ct = default,
@@ -81,7 +89,7 @@ public static class VersionDeleter
     {
         var host = machineName ?? Environment.MachineName;
         if (!pool)
-            return await DeleteVersionsAsync(target, planId, planName, versionNames, progress, host, ct).ConfigureAwait(false);
+            return await DeleteVersionsAsync(target, planId, planName, versionNames, progress, host, pool: false, ct).ConfigureAwait(false);
 
         TargetLock? held;
         try
@@ -104,34 +112,77 @@ public static class VersionDeleter
 
         try
         {
-            var results = await DeleteVersionsAsync(target, planId, planName, versionNames, progress, host, ct).ConfigureAwait(false);
             try
             {
-                var collected = await PoolCollector.CollectAsync(target, planId, planName, ct).ConfigureAwait(false);
-                if (collected.SkippedReason is { } reason)
-                    Trace.TraceWarning($"The pool of plan {planId} was not collected: {reason}");
+                await CleanupMarker.WriteAsync(target, host, DateTime.UtcNow, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                // The next collection continues.
+                return [];
             }
             catch (Exception ex) when (ex is StorageException or ArgumentException)
             {
-                Trace.TraceWarning(CoreTexts.English("core.gc.failed", ("error", ex.Message)));
+                return versionNames.Select(name => new VersionDeletion(name, VersionDeletionOutcome.Failed, ex.Message)).ToList();
             }
+            var results = await DeleteVersionsAsync(target, planId, planName, versionNames, progress, host, pool: true, ct)
+                .ConfigureAwait(false);
+            await CollectPoolAsync(target, planId, planName, host, progress, versionNames.Count, ct).ConfigureAwait(false);
             return results;
         }
         finally
         {
-            try
-            {
-                await held.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is StorageException or ArgumentException)
-            {
-                Trace.TraceWarning(CoreTexts.English("core.run.lockReleaseFailed", ("error", ex.Message)));
-            }
+            await ReleaseAsync(held).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Releases the lock; a lock that cannot be released is traced only.</summary>
+    internal static async Task ReleaseAsync(TargetLock held)
+    {
+        try
+        {
+            await held.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            Trace.TraceWarning(CoreTexts.English("core.run.lockReleaseFailed", ("error", ex.Message)));
+        }
+    }
+
+    /// <summary>
+    /// Collects the pool under the caller's lock, reporting <see cref="VersionDeletionPhase.CleaningUp"/>, and removes this
+    /// computer's <see cref="CleanupMarker"/> once the pool was swept. True when it was; problems are traced only.
+    /// </summary>
+    internal static async Task<bool> CollectPoolAsync(IStorage target, string planId, string planName, string host,
+        IProgress<VersionDeletionProgress>? progress, int versionCount, CancellationToken ct)
+    {
+        try
+        {
+            var cleanup = progress is null ? null : new CleanupProgress(progress, versionCount);
+            var collected = await PoolCollector.CollectAsync(target, planId, planName, ct, cleanup).ConfigureAwait(false);
+            if (collected.SkippedReason is { } reason)
+            {
+                Trace.TraceWarning($"The pool of plan {planId} was not collected: {reason}");
+                return false;
+            }
+            await CleanupMarker.RemoveOwnAsync(target, host, CancellationToken.None).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;   // the marker stays: the next app start continues
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
+        {
+            Trace.TraceWarning(CoreTexts.English("core.gc.failed", ("error", ex.Message)));
+            return false;
+        }
+    }
+
+    /// <summary>Hands the collection's reports on as <see cref="VersionDeletionPhase.CleaningUp"/>, on the reporting thread.</summary>
+    private sealed class CleanupProgress(IProgress<VersionDeletionProgress> progress, int versionCount) : IProgress<CollectProgress>
+    {
+        public void Report(CollectProgress value) =>
+            progress.Report(new VersionDeletionProgress(VersionDeletionPhase.CleaningUp, versionCount, versionCount, "", 0, 0, value));
     }
 
     /// <summary>What a lock holder is doing while it deletes versions by hand (<see cref="LockInfo.Operation"/>).</summary>
@@ -140,16 +191,20 @@ public static class VersionDeleter
     /// <summary>The deletion itself, as <see cref="DeleteAsync"/> describes it, without lock or collection.</summary>
     private static async Task<IReadOnlyList<VersionDeletion>> DeleteVersionsAsync(IStorage target, string planId,
         string planName, IReadOnlyList<string> versionNames, IProgress<VersionDeletionProgress>? progress, string host,
-        CancellationToken ct)
+        bool pool, CancellationToken ct)
     {
         long filesTotal = 0;
+        var counts = new long[versionNames.Count];
         if (progress is not null)
         {
             for (var i = 0; i < versionNames.Count && !ct.IsCancellationRequested; i++)
             {
                 progress.Report(new VersionDeletionProgress(VersionDeletionPhase.Preparing, i + 1, versionNames.Count,
                     versionNames[i], 0, filesTotal));
-                filesTotal += await FileCountOfAsync(target, versionNames[i]).ConfigureAwait(false);
+                counts[i] = pool
+                    ? await FilesInFolderAsync(target, versionNames[i]).ConfigureAwait(false)
+                    : await FileCountOfAsync(target, versionNames[i]).ConfigureAwait(false);
+                filesTotal += counts[i];
             }
         }
         long filesDone = 0;
@@ -162,6 +217,7 @@ public static class VersionDeleter
             var current = i + 1;
             progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
             var sinceReport = Stopwatch.StartNew();
+            var doneBefore = filesDone;
             var marker = new MarkerInfo(VersionMarkers.FormatVersion, planId, planName, DateTime.UtcNow, host);
             results.Add(await DeleteOneAsync(target, planId, name, marker, host, progress is null ? null : count =>
             {
@@ -171,6 +227,9 @@ public static class VersionDeleter
                 sinceReport.Restart();
                 progress.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
             }).ConfigureAwait(false));
+            // The manifest and the marker are not counted while they are deleted; an incremental plan's folder holds little else.
+            if (pool && results[^1].Outcome == VersionDeletionOutcome.Deleted)
+                filesDone = Math.Max(filesDone, doneBefore + counts[i]);
             progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, versionNames.Count, name, filesDone, filesTotal));
         }
         return results;
@@ -191,6 +250,27 @@ public static class VersionDeleter
                    (await ManifestReader.ReadTotalsAsync(target, manifest).ConfigureAwait(false)).FileCount;
         }
         catch (Exception ex) when (ex is StorageException or JsonException or ArgumentException)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>The files in the version's folder (an incremental plan's: its manifest and markers); 0 when that is not known. Never throws.</summary>
+    private static async Task<long> FilesInFolderAsync(IStorage target, string name)
+    {
+        if (!IsVersionName(name))
+            return 0;
+        try
+        {
+            long files = 0;
+            await foreach (var entry in target.ListAsync(name, recursive: true, CancellationToken.None).ConfigureAwait(false))
+            {
+                if (!entry.IsDirectory)
+                    files++;
+            }
+            return files;
+        }
+        catch (Exception ex) when (ex is StorageException or ArgumentException)
         {
             return 0;
         }

@@ -98,6 +98,10 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         {
             if (e.PropertyName == nameof(VersionsViewModel.IsDeleting))
                 ReleaseLockCommand.NotifyCanExecuteChanged();
+            // The card follows a deletion of the plan's versions, and the indexing after it ("Indexing 2 of 5").
+            if (e.PropertyName is nameof(VersionsViewModel.DeletionStatus) ||
+                (e.PropertyName is nameof(VersionsViewModel.SyncText) && Versions.DeletionStatus is not null))
+                Run.SetDeletion(Versions.DeletionStatus);
         };
         Versions.VersionsDeleted += () =>
         {
@@ -118,6 +122,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         IsDirty = isNew;
         Validate();
     }
+
+    /// <summary>Versions of the plan are deleted by hand, or an unfinished deletion is finished: the plan does not run meanwhile.</summary>
+    public bool IsDeletingVersions => Versions.IsDeleting || Versions.IsResuming;
 
     /// <summary>Index and preview of this plan's source; cached for the session.</summary>
     public IgnorePreviewViewModel Preview { get; }

@@ -30,6 +30,8 @@ public enum PlanCardState
     Finishing,
     /// <summary>Stopping: canceled by the user, or the incomplete copy is being removed.</summary>
     Canceling,
+    /// <summary>Versions of the plan are deleted by hand (or a deletion is resumed), cleaned up after and indexed.</summary>
+    Deleting,
 }
 
 /// <summary>The action button of the plan card.</summary>
@@ -40,6 +42,8 @@ public enum PlanCardAction
     RemoveFromQueue,
     /// <summary>The cancel button, disabled while the run stops.</summary>
     Canceling,
+    /// <summary>No button: versions of the plan are deleted (the Versions tab cancels that).</summary>
+    None,
 }
 
 /// <summary>Queue state, progress and history of one plan, and the plan card built from them.</summary>
@@ -59,6 +63,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private bool _schedulerPaused;
     private LocText _nextRun = LocText.Empty;
     private TimeSpan? _remaining;
+    private DeletionCardStatus? _deletion;
     private readonly IStorageFactory _storages;
     private int _historyLoads;   // tells a version check whether its rows are still the shown ones
 
@@ -183,6 +188,16 @@ public sealed partial class PlanRunViewModel : ObservableObject
         UpdateCard();
     }
 
+    /// <summary>
+    /// A deletion of the plan's versions (with its cleanup and the indexing after it) is shown on the card while
+    /// <paramref name="status"/> is not null and the plan does not run; null returns the card to its normal state.
+    /// </summary>
+    public void SetDeletion(DeletionCardStatus? status)
+    {
+        _deletion = status;
+        UpdateCard();
+    }
+
     /// <summary>Where the queued job stands: <paramref name="position"/> 1 starts next, after <paramref name="aheadName"/>.</summary>
     public void SetQueuePosition(int position, string? aheadName)
     {
@@ -281,6 +296,8 @@ public sealed partial class PlanRunViewModel : ObservableObject
             ShowQueued();
         else if (State == JobState.Running)
             ShowRunning();
+        else if (_deletion is { } deletion)
+            ShowDeleting(deletion);
         else
             ShowIdle();
         if (PhaseToolTip.Length == 0)
@@ -345,6 +362,13 @@ public sealed partial class PlanRunViewModel : ObservableObject
                     EtaText.Length > 0 ? EtaText : Loc.T("card.copying"),
                     Loc.F("card.copyDetail", ("bytes", BytesOf(p.BytesDone, p.BytesTotal)), ("count", p.FilesDone)));
                 break;
+            case BackupPhase.CollectingGarbage:
+                // An incremental plan's pool is collected after retention: the content no version references goes.
+                var cleanup = p.Cleanup;
+                Show(PlanCardState.Finishing, PlanCardAction.Cancel, cleanup.IsIndeterminate ? 0 : p.Fraction, cleanup.IsIndeterminate,
+                    cleanup.IsIndeterminate ? "" : percent, Loc.T("card.removingLeftovers"),
+                    VersionsViewModel.CleanupText(cleanup).ToString());
+                break;
             case BackupPhase.Retention:
                 Show(PlanCardState.Finishing, PlanCardAction.Cancel, 1, false, percent, Loc.T("card.finishing"),
                     Loc.T("card.removingOld"));
@@ -355,6 +379,11 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 break;
         }
     }
+
+    private void ShowDeleting(DeletionCardStatus deletion) =>
+        Show(PlanCardState.Deleting, PlanCardAction.None, deletion.Indeterminate ? 0 : deletion.Fraction, deletion.Indeterminate,
+            deletion.Indeterminate ? "" : $"{Math.Min(99, (int)Math.Floor(deletion.Fraction * 100))}%",
+            deletion.Phase.ToString(), deletion.Detail.ToString());
 
     private void ShowIdle()
     {

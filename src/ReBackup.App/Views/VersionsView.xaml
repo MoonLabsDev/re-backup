@@ -175,16 +175,16 @@
                     <!-- Incremental plans: the pool's size from the index, and the pool measured on the target by hand. -->
                     <StackPanel Margin="0,6,0,0" Visibility="{Binding Versions.ShowPoolStats, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}"
-                                   Text="{Binding Versions.PoolSummary}" ToolTip="{l:Loc versions.pool.summaryToolTip}" />
-                        <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.SavedFraction, Mode=OneWay}"
-                                     AutomationProperties.Name="{l:Loc versions.pool.savedName}" />
+                                   Text="{Binding Versions.PoolSummary}" ToolTip="{Binding Versions.SummaryToolTip}" />
+                        <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.BarFraction, Mode=OneWay}"
+                                     AutomationProperties.Name="{Binding Versions.BarName}" />
                         <DockPanel Margin="0,6,0,0">
                             <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Margin="8,0,0,0" VerticalAlignment="Center"
                                     Content="{StaticResource Icon.Stop}" Command="{Binding Versions.CancelMeasurePoolCommand}"
                                     AutomationProperties.Name="{l:Loc versions.pool.cancel}" ToolTip="{l:Loc versions.pool.cancel}"
                                     Visibility="{Binding Versions.IsMeasuringPool, Converter={StaticResource BoolToVisibility}}" />
-                            <Button DockPanel.Dock="Left" HorizontalAlignment="Left" Content="{l:Loc versions.pool.measure}"
-                                    ToolTip="{l:Loc versions.pool.measureToolTip}" Command="{Binding Versions.MeasurePoolCommand}" />
+                            <Button DockPanel.Dock="Left" HorizontalAlignment="Left" Content="{Binding Versions.MeasureLabel}"
+                                    ToolTip="{Binding Versions.MeasureToolTip}" Command="{Binding Versions.MeasurePoolCommand}" />
                             <ProgressBar Margin="8,0,0,0" Height="4" IsIndeterminate="True" VerticalAlignment="Center"
                                          Visibility="{Binding Versions.IsMeasuringPool, Converter={StaticResource BoolToVisibility}}" />
                         </DockPanel>
@@ -202,7 +202,8 @@
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.AccentLight}"
                                        Text="{Binding Versions.DeleteText}" />
-                            <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.DeleteFraction, Mode=OneWay}" />
+                            <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.DeleteFraction, Mode=OneWay}"
+                                         IsIndeterminate="{Binding Versions.DeleteIndeterminate, Mode=OneWay}" />
                         </StackPanel>
                     </DockPanel>
                 </StackPanel>

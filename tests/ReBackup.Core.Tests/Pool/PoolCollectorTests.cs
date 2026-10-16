@@ -232,6 +232,57 @@ public class PoolCollectorTests
     }
 
     [Fact]
+    public async Task Collection_reports_its_phases_in_order()
+    {
+        Version(V1, ("a.txt", "kept"));
+        Version(V2, ("b.txt", "kept too"));
+        AddBlob(_target, "orphan");
+        AddBlob(_target, "orphan 2");
+        var poolFiles = _target.Files.Count(f => f.StartsWith(PoolLayout.PoolFolder + "/", StringComparison.Ordinal));
+        var reports = new List<CollectProgress>();
+
+        await PoolCollector.CollectAsync(_target, PlanId, PlanName, CancellationToken.None,
+            new SyncProgress<CollectProgress>(reports.Add));
+
+        reports.Select(r => r.Phase).Should().BeInAscendingOrder()
+            .And.Contain([CollectPhase.ReadingManifests, CollectPhase.ListingPool, CollectPhase.DeletingUnreferenced]);
+        var reading = reports.Where(r => r.Phase == CollectPhase.ReadingManifests).ToList();
+        reading.Should().OnlyContain(r => r.Total == 2);
+        reading.Select(r => r.Done).Should().BeInAscendingOrder().And.StartWith(0).And.EndWith(2);
+        var listing = reports.Where(r => r.Phase == CollectPhase.ListingPool).ToList();
+        listing.Should().OnlyContain(r => r.Total == 0, "the count is not known while listing");
+        listing.Select(r => r.Done).Should().BeInAscendingOrder().And.StartWith(0).And.EndWith(poolFiles);
+        var deleting = reports.Where(r => r.Phase == CollectPhase.DeletingUnreferenced).ToList();
+        deleting.Should().OnlyContain(r => r.Total == 2);
+        deleting.Select(r => r.Done).Should().BeInAscendingOrder().And.StartWith(0).And.EndWith(2);
+        reports.Should().OnlyContain(r => r.Fraction >= 0 && r.Fraction <= 1);
+    }
+
+    [Fact]
+    public async Task Listing_error_aborts_collection_with_nothing_deleted()
+    {
+        Version(V1, ("a.txt", "kept"));
+        for (var i = 0; i < 40; i++)
+            AddBlob(_target, $"orphan-{i}");
+        var shard = StoragePath.Parent(StoragePath.Parent(BlobOf("orphan-7")));
+        var before = _target.Files.ToList();
+        var faulty = new FaultyStorage(_target)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "list" && path == shard)
+                    throw new StorageUnavailableException(path);
+            },
+        };
+
+        var collect = () => Collect(faulty);
+
+        await collect.Should().ThrowAsync<StorageUnavailableException>();
+        faulty.DeleteBatches.Should().BeEmpty();
+        _target.Files.Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
     public async Task UniqueBytes_counts_only_exclusive_content()
     {
         Version(V1, ("a.txt", "shared"), ("b.txt", "x1"), ("c.txt", "x1"));
@@ -401,6 +452,53 @@ public class PoolCollectorTests
         _target.Files.Should().NotContain(PoolLayout.LockFile);
     }
 
+    [Fact]
+    public async Task Run_reports_the_cleanup_phases_after_retention()
+    {
+        await RunDay(RunPlan(Daily(1)), "old content");
+        _source.AddFile("a.txt", Bytes("new content"), PoolVersions.Mtime.AddDays(30));
+        var reports = new List<BackupProgress>();
+        _target.FreeSpace = null;
+        var storages = new TestStorageFactory(location => location == RunPlan().Source ? _source : _target);
+
+        var entry = await new BackupRunner(storages, _time, host: "TESTHOST").RunAsync(
+            new BackupRequest(RunPlan(Daily(1)), [], RunTrigger.Manual), new SyncProgress<BackupProgress>(reports.Add));
+
+        entry.Status.Should().Be(RunStatus.Completed, entry.Reason);
+        var cleanup = reports.SkipWhile(r => r.Phase != BackupPhase.CollectingGarbage).ToList();
+        cleanup.Should().NotBeEmpty().And.OnlyContain(r => r.Phase == BackupPhase.CollectingGarbage,
+            "the collection is the last thing a run does");
+        reports.TakeWhile(r => r.Phase != BackupPhase.CollectingGarbage).Should().Contain(r => r.Phase == BackupPhase.Retention);
+        cleanup.Select(r => r.Cleanup.Phase).Should().BeInAscendingOrder()
+            .And.Contain([CollectPhase.ReadingManifests, CollectPhase.ListingPool, CollectPhase.DeletingUnreferenced]);
+        cleanup.Last().Cleanup.Should().Be(new CollectProgress(CollectPhase.DeletingUnreferenced, 1, 1));
+        cleanup.Should().OnlyContain(r => r.Fraction >= 0 && r.Fraction <= 1);
+    }
+
+    [Fact]
+    public async Task Manual_pool_delete_counts_the_files_in_the_folder_and_reports_the_cleanup()
+    {
+        await RunDay(RunPlan(), "old content");
+        await RunDay(RunPlan(), "new content");
+        var inFolder = _target.Files.Count(f => f.StartsWith(RunFirst + "/", StringComparison.Ordinal));
+        inFolder.Should().BeGreaterThan(0);
+        var reports = new List<VersionDeletionProgress>();
+
+        await VersionDeleter.DeleteAsync(_target, PlanId, PlanName, [RunFirst],
+            new SyncProgress<VersionDeletionProgress>(reports.Add), machineName: "TESTHOST", pool: true);
+
+        var deleting = reports.Where(r => r.Phase == VersionDeletionPhase.Deleting).ToList();
+        deleting.Should().OnlyContain(r => r.FilesTotal == inFolder, "a pool version holds only its manifest and markers");
+        deleting.Last().FilesDone.Should().Be(inFolder);
+        deleting.Last().Fraction.Should().Be(1);
+        var cleanup = reports.SkipWhile(r => r.Phase != VersionDeletionPhase.CleaningUp).ToList();
+        cleanup.Should().NotBeEmpty().And.OnlyContain(r => r.Phase == VersionDeletionPhase.CleaningUp);
+        cleanup.Select(r => r.Cleanup.Phase).Should().BeInAscendingOrder()
+            .And.Contain([CollectPhase.ReadingManifests, CollectPhase.ListingPool, CollectPhase.DeletingUnreferenced]);
+        cleanup.Last().Cleanup.Should().Be(new CollectProgress(CollectPhase.DeletingUnreferenced, 1, 1));
+        cleanup.Should().OnlyContain(r => r.Fraction >= 0 && r.Fraction <= 1);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -435,5 +533,191 @@ public class PoolCollectorTests
             new VersionDeletion(RunSecond, VersionDeletionOutcome.Failed, locked));
         _target.Files.Should().BeEquivalentTo(before);
         (await TargetLock.ReadAsync(_target, CancellationToken.None))!.Token.Should().Be(held!.Info.Token);
+    }
+    // ---- Resuming deletions at app start ----
+
+    private static byte[] DeletingMarker(string host) => Bytes(
+        "{\"formatVersion\":1,\"planId\":\"p1\",\"planName\":\"Projects\",\"startedUtc\":\"2026-10-15T08:00:00Z\",\"host\":\"" + host + "\"}");
+
+    private static readonly string OwnCleanup = CleanupMarker.FileNameFor("TESTHOST");
+
+    private static byte[] CleanupFile(string host) => Bytes("{\"host\":\"" + host + "\",\"startedUtc\":\"2026-10-15T08:00:00Z\"}");
+
+    private Task<DeletionResume> Resume(IStorage? target = null, IProgress<VersionDeletionProgress>? progress = null) =>
+        DeletionResumer.ResumeAsync(target ?? _target, PlanId, PlanName, pool: true, progress, CancellationToken.None, "TESTHOST");
+
+    [Fact]
+    public async Task Manual_pool_delete_marks_the_cleanup_and_removes_the_mark_once_collected()
+    {
+        await RunDay(RunPlan(), "old content");
+        await RunDay(RunPlan(), "new content");
+        bool? markedWhileDeleting = null;
+        var target = new FaultyStorage(_target)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "delete" && path == $"{RunFirst}/re-manifest.json")
+                    markedWhileDeleting = _target.Files.Contains(OwnCleanup);
+            },
+        };
+
+        await VersionDeleter.DeleteAsync(target, PlanId, PlanName, [RunFirst], machineName: "TESTHOST", pool: true);
+
+        markedWhileDeleting.Should().BeTrue();
+        _target.Files.Should().NotContain(OwnCleanup);
+    }
+
+    [Fact]
+    public async Task Interrupted_delete_is_resumed_and_completed_at_the_next_start()
+    {
+        await RunDay(RunPlan(), "old content");
+        await RunDay(RunPlan(), "new content");
+        using var cts = new CancellationTokenSource();
+        var interrupted = new FaultyStorage(_target)
+        {
+            // The target drops right after the first file of the version went: the marker and the cleanup mark stay.
+            FailDelete = path => path == $"{RunFirst}/re-manifest.json" && cts.IsCancellationRequested,
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && path == $"{RunFirst}/re-deleting.json")
+                    cts.Cancel();
+            },
+        };
+        await VersionDeleter.DeleteAsync(interrupted, PlanId, PlanName, [RunFirst], ct: cts.Token, machineName: "TESTHOST",
+            pool: true);
+        _target.Files.Should().Contain([$"{RunFirst}/re-deleting.json", OwnCleanup]);
+        Blobs(_target).Should().Contain(BlobOf("old content"));
+        var reports = new List<VersionDeletionProgress>();
+
+        var resumed = await Resume(progress: new SyncProgress<VersionDeletionProgress>(reports.Add));
+
+        resumed.Should().BeEquivalentTo(new DeletionResume(ResumeOutcome.Finished, [RunFirst]));
+        _target.Files.Should().NotContain(f => f.StartsWith(RunFirst + "/", StringComparison.Ordinal));
+        _target.Files.Should().NotContain([OwnCleanup, PoolLayout.LockFile]);
+        Blobs(_target).Should().BeEquivalentTo(BlobOf("new content"), BlobOf("same-everywhere"));
+        reports.Select(r => r.Phase).Should().BeInAscendingOrder()
+            .And.Contain([VersionDeletionPhase.Deleting, VersionDeletionPhase.CleaningUp]);
+        (await RestoreAsync(_target, RunSecond)).Should().ContainKey("a.txt");
+        (await Resume()).Outcome.Should().Be(ResumeOutcome.NothingToDo, "nothing is left");
+    }
+
+    [Fact]
+    public async Task Pending_cleanup_is_collected_at_start_and_its_mark_removed()
+    {
+        await RunDay(RunPlan(), "kept");
+        AddBlob(_target, "orphan");
+        _target.AddFile(CleanupMarker.FileNameFor("testhost"), CleanupFile("testhost"));
+
+        var resumed = await Resume();
+
+        resumed.Outcome.Should().Be(ResumeOutcome.Finished);
+        _target.Files.Should().NotContain([BlobOf("orphan"), OwnCleanup, PoolLayout.LockFile]);
+    }
+
+    [Fact]
+    public async Task Markers_of_another_computer_are_left_alone_at_start()
+    {
+        await RunDay(RunPlan(), "old content");
+        await RunDay(RunPlan(), "new content");
+        _target.AddFile($"{RunFirst}/re-deleting.json", DeletingMarker("OTHERPC"));
+        _target.AddFile(CleanupMarker.FileNameFor("OTHERPC"), CleanupFile("OTHERPC"));
+        AddBlob(_target, "orphan");
+        var before = _target.Files.ToList();
+
+        var resumed = await Resume();
+
+        resumed.Outcome.Should().Be(ResumeOutcome.NothingToDo);
+        _target.Files.Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Unreachable_target_at_start_changes_nothing_and_is_tried_again_next_start()
+    {
+        await RunDay(RunPlan(), "old content");
+        _target.AddFile(CleanupMarker.FileNameFor("TESTHOST"), CleanupFile("TESTHOST"));
+        AddBlob(_target, "orphan");
+        var before = _target.Files.ToList();
+        var offline = new FaultyStorage(_target)
+        {
+            Before = (_, path) => throw new StorageUnavailableException(path),
+        };
+
+        (await Resume(offline)).Outcome.Should().Be(ResumeOutcome.NotNow);
+        _target.Files.Should().BeEquivalentTo(before);
+
+        (await Resume()).Outcome.Should().Be(ResumeOutcome.Finished, "the next start finds the target");
+        _target.Files.Should().NotContain([BlobOf("orphan"), OwnCleanup]);
+    }
+
+    [Fact]
+    public async Task Resume_waits_for_another_holder_of_the_lock()
+    {
+        await RunDay(RunPlan(), "old content");
+        _target.AddFile(CleanupMarker.FileNameFor("TESTHOST"), CleanupFile("TESTHOST"));
+        await using var held = await TargetLock.TryAcquireAsync(_target, "OTHERPC", "backup", _time, CancellationToken.None);
+
+        (await Resume()).Outcome.Should().Be(ResumeOutcome.NotNow);
+        _target.Files.Should().Contain(OwnCleanup);
+    }
+
+    [Fact]
+    public async Task Another_computers_cleanup_mark_survives_delete_run_and_resume()
+    {
+        await RunDay(RunPlan(), "first");
+        var foreign = CleanupMarker.FileNameFor("OTHERPC");
+        _target.AddFile(foreign, CleanupFile("OTHERPC"));
+
+        await RunDay(RunPlan(Daily(1)), "second");   // retention deletes the first version, the run collects
+        await RunDay(RunPlan(), "third");
+        await VersionDeleter.DeleteAsync(_target, PlanId, PlanName, [RunSecond], machineName: "TESTHOST", pool: true);
+        _target.AddFile(OwnCleanup, CleanupFile("TESTHOST"));
+        (await Resume()).Outcome.Should().Be(ResumeOutcome.Finished);
+
+        foreign.Should().NotBe(OwnCleanup);
+        _target.ReadAllBytes(foreign).Should().Equal(CleanupFile("OTHERPC"));
+        _target.Files.Should().NotContain(OwnCleanup);
+    }
+
+    [Fact]
+    public async Task Resume_canceled_after_a_folder_returns_what_was_removed_and_keeps_the_rest()
+    {
+        await RunDay(RunPlan(), "a");
+        await RunDay(RunPlan(), "b");
+        await RunDay(RunPlan(), "c");
+        _target.AddFile($"{RunFirst}/re-deleting.json", DeletingMarker("TESTHOST"));
+        _target.AddFile($"{RunSecond}/re-deleting.json", DeletingMarker("TESTHOST"));
+        using var cts = new CancellationTokenSource();
+        var target = new FaultyStorage(_target)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "delete" && path == $"{RunFirst}/re-deleting.json")
+                    cts.Cancel();   // the app exits while the first folder is removed
+            },
+        };
+
+        var resumed = await DeletionResumer.ResumeAsync(target, PlanId, PlanName, pool: true, null, cts.Token, "TESTHOST");
+
+        resumed.Should().BeEquivalentTo(new DeletionResume(ResumeOutcome.Canceled, [RunFirst]));
+        _target.Files.Should().Contain([$"{RunSecond}/re-deleting.json", OwnCleanup]).And.NotContain(PoolLayout.LockFile);
+        _target.Files.Should().NotContain(f => f.StartsWith(RunFirst + "/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Cleanup_mark_names_are_per_host_whatever_the_case()
+    {
+        CleanupMarker.FileNameFor("TESTHOST").Should().Be(CleanupMarker.FileNameFor("testhost"));
+        CleanupMarker.FileNameFor("pc/../x y").Should().Be("re-cleanup.pc____x_y.json");
+    }
+
+    [Fact]
+    public async Task Run_collection_removes_a_pending_cleanup_mark_of_this_computer()
+    {
+        await RunDay(RunPlan(), "old content");
+        _target.AddFile(CleanupMarker.FileNameFor("TESTHOST"), CleanupFile("TESTHOST"));
+
+        await RunDay(RunPlan(), "new content");
+
+        _target.Files.Should().NotContain(OwnCleanup);
     }
 }

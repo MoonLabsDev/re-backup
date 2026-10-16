@@ -298,7 +298,10 @@
       "deleteCancelBackup": "Cancel the backup of \"{plan}\" before deleting the plan.",
       "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
       "deleteWaitCopy": "Wait for the copy of \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "deleteWaitDelete": "Wait for the versions of \"{plan}\" to be deleted before deleting the plan.",
+      "runDeferred": "A scheduled run of \"{plan}\" starts once its versions have been deleted.",
       "copyRunning": "\"{plan}\" is being copied; run it again once the copy has finished.",
+      "deleteRunning": "Versions of \"{plan}\" are being deleted; run it again once that has finished.",
       "copying": "Copying \"{plan}\"…",
       "copied": "The copy \"{plan}\" was added. It is disabled until you enable it.",
       "copyAdded": "\"{plan}\" was added as an unfinished copy; the copy is running.",
@@ -357,6 +360,17 @@
     "finishing": "Finishing",
     "removingOld": "removing old versions…",
     "completingVersion": "completing the version…",
+    "delete": {
+      "version": "Deleting version…",
+      "preparing": "preparing…",
+      "files": {
+        "one": "{done:N0} / {count:N0} file",
+        "other": "{done:N0} / {count:N0} files"
+      },
+      "cleaning": "Deleting version · cleaning up",
+      "cleaningPercent": "Deleting version · cleaning up {percent} %",
+      "stopping": "Stopping the deletion"
+    },
     "manualOnly": "Manual only",
     "schedulerPaused": "Scheduler paused",
     "canceledAt": "Canceled · {when}",
@@ -434,11 +448,11 @@
     },
     "restoreStuck": "A restore did not stop within 10 seconds. A file it was writing may be incomplete (a \"*.rebackup-tmp\" file next to it).",
     "poolJobRunning": {
-      "title": "Copy or verify in progress",
-      "exit": "A copy or verify is running. It is stopped and its lock is released; an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and exit ReBackup?",
-      "restart": "A copy or verify is running. It is stopped and its lock is released; an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and restart ReBackup?"
+      "title": "Copy, verify or deletion in progress",
+      "exit": "A copy, verify or deletion of versions is running. It is stopped and its lock is released (a deletion is finished at the next start); an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and exit ReBackup?",
+      "restart": "A copy, verify or deletion of versions is running. It is stopped and its lock is released (a deletion is finished at the next start); an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and restart ReBackup?"
     },
-    "poolJobStuck": "A copy or verify did not stop within 10 seconds. Its lock may be left on the target; \"Release lock…\" removes it.",
+    "poolJobStuck": "A copy, verify or deletion of versions did not stop within 10 seconds. Its lock may be left on the target; \"Release lock…\" removes it.",
     "backupRunning": {
       "title": "Backup in progress",
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
@@ -863,6 +877,16 @@
         "other": "Deleting {done:N0} of {count:N0} files · version {current} of {versions}"
       },
       "preparing": "Preparing: reading the manifest of version {current} of {versions}…",
+      "andMore": "and {count} more",
+      "poolCleanupNote": "Afterwards the content no other version references any more is removed from the pool (cleaning up).",
+      "resuming": "Finishing a deletion that was not finished…",
+      "resumed": "A deletion that was not finished has been finished.",
+      "resumeIncomplete": "A deletion that was not finished could not be finished completely; the next start tries again.",
+      "cleanup": {
+        "manifests": "Cleaning up: reading manifests {done:N0}/{total:N0}",
+        "listing": "Cleaning up: listing pool · {files}",
+        "deleting": "Cleaning up: deleting unreferenced content {done:N0}/{total:N0}"
+      },
       "cancel": "Cancel deleting",
       "cancelToolTip": "Stop after the version being deleted",
       "canceling": "Stopping after the current version…",
@@ -900,6 +924,14 @@
     },
     "pool": {
       "summary": "Pool {pool} · full copies would be {full} · {percent} % saved",
+      "fullSummary": "All versions together: {size} (full copies, no deduplication)",
+      "fullSummaryToolTip": "From the local index: the space all versions take together; each is a full copy",
+      "fullUsedName": "Space all versions take",
+      "measureFull": "Measure on target",
+      "measureFullToolTip": "Add up the plan's version folders on the target once (read-only)",
+      "measuringFull": "Measuring the versions… {count:N0} files",
+      "unreachableFull": "The target cannot be reached, so the versions were not measured.",
+      "failedFull": "The versions could not be measured: {error}",
       "summaryToolTip": "From the local index: the space the pool needs for all versions, and what they would take as full copies",
       "savedName": "Share the pool saves",
       "measure": "Measure pool",

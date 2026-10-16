@@ -55,8 +55,8 @@ public static class PoolUsage
     public const int MeasureProgressEvery = 1000;
 
     /// <summary>
-    /// The blobs in <paramref name="target"/>'s pool and their bytes, by one recursive listing of
-    /// <see cref="PoolLayout.PoolFolder"/>: read-only, without the lock. Only files named like a blob (32 hex digits) count.
+    /// The blobs in <paramref name="target"/>'s pool and their bytes, by listing
+    /// <see cref="PoolLayout.PoolFolder"/> (<see cref="PoolListing"/>): read-only, without the lock. Only files named like a blob (32 hex digits) count.
     /// <paramref name="progress"/> gets the blobs counted so far every <see cref="MeasureProgressEvery"/> blobs and at
     /// the end. A pool that does not exist yet is (0, 0).
     /// </summary>
@@ -66,26 +66,61 @@ public static class PoolUsage
     {
         var blobs = 0;
         long bytes = 0;
-        try
+        await PoolListing.ListAsync(target, entry =>
         {
-            await foreach (var entry in target.ListAsync(PoolLayout.PoolFolder, recursive: true, ct).ConfigureAwait(false))
-            {
-                ct.ThrowIfCancellationRequested();
-                if (entry.IsDirectory || entry.IsLink ||
-                    !PoolLayout.TryParseHex(PoolLayout.HashPrefix + StoragePath.Name(entry.Path), out _))
-                    continue;
-                blobs++;
-                bytes += entry.Size;
-                if (blobs % MeasureProgressEvery == 0)
-                    progress?.Report(blobs);
-            }
-        }
-        catch (StorageNotFoundException)
-        {
-            return (0, 0);   // no pool yet
-        }
+            ct.ThrowIfCancellationRequested();
+            if (entry.IsDirectory || entry.IsLink ||
+                !PoolLayout.TryParseHex(PoolLayout.HashPrefix + StoragePath.Name(entry.Path), out _))
+                return;
+            blobs++;
+            bytes += entry.Size;
+            if (blobs % MeasureProgressEvery == 0)
+                progress?.Report(blobs);
+        }, ct).ConfigureAwait(false);
         if (blobs % MeasureProgressEvery != 0)
             progress?.Report(blobs);
         return (blobs, bytes);
+    }
+
+    /// <summary>
+    /// The files in <paramref name="folders"/> (a full plan's version folders) and their bytes, by listing each folder
+    /// recursively, <see cref="PoolListing.ParallelShards"/> at a time: read-only, without the lock. A folder that is gone
+    /// counts nothing. <paramref name="progress"/> gets the files counted so far every <see cref="MeasureProgressEvery"/>
+    /// files and at the end.
+    /// </summary>
+    /// <exception cref="StorageException">A folder cannot be listed.</exception>
+    public static async Task<(int Files, long Bytes)> MeasureFoldersAsync(IStorage target, IReadOnlyList<string> folders,
+        IProgress<int>? progress, CancellationToken ct)
+    {
+        var gate = new object();
+        var files = 0;
+        long bytes = 0;
+        await Parallel.ForEachAsync(folders,
+            new ParallelOptions { MaxDegreeOfParallelism = PoolListing.ParallelShards, CancellationToken = ct },
+            async (folder, token) =>
+            {
+                try
+                {
+                    await foreach (var entry in target.ListAsync(folder, recursive: true, token).ConfigureAwait(false))
+                    {
+                        if (entry.IsDirectory)
+                            continue;
+                        lock (gate)
+                        {
+                            files++;
+                            bytes += entry.Size;
+                            if (files % MeasureProgressEvery == 0)
+                                progress?.Report(files);
+                        }
+                    }
+                }
+                catch (StorageNotFoundException)
+                {
+                    // Deleted meanwhile: it takes no space.
+                }
+            }).ConfigureAwait(false);
+        if (files % MeasureProgressEvery != 0)
+            progress?.Report(files);
+        return (files, bytes);
     }
 }

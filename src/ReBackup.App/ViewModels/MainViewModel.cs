@@ -68,7 +68,7 @@ public sealed partial class MainViewModel : ObservableObject
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
         _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
-            DescribeLocation: DescribeLocation, TempOpener: tempOpener);
+            DescribeLocation: DescribeLocation, TempOpener: tempOpener, TrackJob: (job, running) => Track(job, running));
         // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
         _s3.Changed += (_, _) => RevalidateAll();
         _drive.Changed += (_, _) => RevalidateAll();
@@ -102,6 +102,20 @@ public sealed partial class MainViewModel : ObservableObject
         PublishPlans();
         RefreshSchedule();
     }
+
+    /// <summary>
+    /// At app start: every saved plan finishes, in the background, the deletions this computer left unfinished in its
+    /// target (<see cref="VersionsViewModel.ResumeDeletionAsync"/>); meanwhile its runs are refused or skipped. Completes
+    /// when all have ended.
+    /// </summary>
+    public Task ResumeDeletionsAsync() =>
+        Task.WhenAll(Plans.Where(p => !p.IsNew).Select(p => p.Versions.ResumeDeletionAsync(_exit.Token)).ToList());
+
+    /// <summary>Canceled when the app stops its jobs to exit: resumed deletions stop looking and stop.</summary>
+    private readonly CancellationTokenSource _exit = new();
+
+    /// <summary>Scheduled runs that came while versions of their plan were deleted, by plan id: they start afterwards.</summary>
+    private readonly Dictionary<string, RunTrigger> _deferredRuns = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Plan name and result of a finished run; raised on the UI thread.</summary>
     public event Action<string, RunLogEntry>? RunFinished;
@@ -168,7 +182,7 @@ public sealed partial class MainViewModel : ObservableObject
     public IReadOnlyList<(string Id, string Name, bool CanRun)> RunnablePlans =>
         Plans.Where(p => !p.IsNew)
             .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive && !p.IsCopying &&
-                                         !p.IsCopyUnfinished))
+                                         !p.IsCopyUnfinished && !p.IsDeletingVersions))
             .ToList();
 
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
@@ -302,6 +316,11 @@ public sealed partial class MainViewModel : ObservableObject
         if (editor.IsCopying)
         {
             SetStatus(LocText.Of("shell.status.deleteWaitCopy", ("plan", editor.Name)));
+            return;
+        }
+        if (editor.IsDeletingVersions)
+        {
+            SetStatus(LocText.Of("shell.status.deleteWaitDelete", ("plan", editor.Name)));
             return;
         }
 
@@ -544,6 +563,13 @@ public sealed partial class MainViewModel : ObservableObject
                 SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.copyUnfinished"));
                 return;
             }
+            if (editor.IsDeletingVersions)
+            {
+                // Versions are deleted (or an unfinished deletion is finished): the run starts once that has ended.
+                _deferredRuns[editor.Id] = trigger;
+                SetStatus(LocText.Of("shell.status.runDeferred", ("plan", editor.Name)));
+                return;
+            }
             if (ScheduledRunBlocker(plan) is { } reason)
             {
                 SkipScheduledRun(editor, plan, trigger, reason);
@@ -730,6 +756,11 @@ public sealed partial class MainViewModel : ObservableObject
             SetStatus(LocText.Of("shell.status.copyUnfinished", ("plan", editor.Name)));
             return false;
         }
+        if (editor.IsDeletingVersions)
+        {
+            SetStatus(LocText.Of("shell.status.deleteRunning", ("plan", editor.Name)));
+            return false;
+        }
 
         var request = new BackupRequest(editor.SavedPlan(), _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Manual);
         if (!_queue.Enqueue(request))
@@ -831,6 +862,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void AddEditor(PlanEditorViewModel editor, int? index = null)
     {
+        editor.Versions.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is not (nameof(VersionsViewModel.IsDeleting) or nameof(VersionsViewModel.IsResuming)))
+                return;
+            OnPropertyChanged(nameof(RunnablePlans));
+            if (!editor.IsDeletingVersions && _deferredRuns.Remove(editor.Id, out var trigger))
+                RunScheduled(editor.Id, trigger);
+        };
         editor.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(PlanEditorViewModel.Name))

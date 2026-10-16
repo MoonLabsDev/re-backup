@@ -43,16 +43,22 @@ public sealed partial class BackupRunner
 
     /// <summary>
     /// Garbage collection after retention (spec 6), under the run's lock: deletes the blobs no version references any more.
-    /// A skip or an abort, and whatever goes wrong, is a warning; the run stays as it is.
+    /// A skip or an abort, and whatever goes wrong, is a warning; the run stays as it is. <paramref name="progress"/> gets
+    /// <see cref="BackupPhase.CollectingGarbage"/> with the collection's phases. A cleanup that a manual delete of this
+    /// computer left pending (<see cref="CleanupMarker"/>) is done once the pool was swept: its marker is removed.
     /// </summary>
-    private static async Task CollectGarbageAsync(BackupPlan plan, IStorage target, RunLogEntry entry,
-        CancellationToken cancellationToken)
+    private async Task CollectGarbageAsync(BackupPlan plan, IStorage target, RunLogEntry entry,
+        IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
     {
         try
         {
-            var result = await PoolCollector.CollectAsync(target, plan.Id, plan.Name, cancellationToken).ConfigureAwait(false);
+            var cleanup = progress is null ? null : new CollectProgressAdapter(progress);
+            var result = await PoolCollector.CollectAsync(target, plan.Id, plan.Name, cancellationToken, cleanup)
+                .ConfigureAwait(false);
             if (result.SkippedReason is { } reason)
                 entry.Warnings.Add(reason);
+            else
+                await CleanupMarker.RemoveOwnAsync(target, _host, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -121,8 +127,15 @@ public sealed partial class BackupRunner
         if (!removed)
             return free;
 
-        await CollectGarbageAsync(plan, target, entry, cancellationToken).ConfigureAwait(false);
+        await CollectGarbageAsync(plan, target, entry, null, cancellationToken).ConfigureAwait(false);
         return await target.GetFreeSpaceAsync(cancellationToken).ConfigureAwait(false) ?? long.MaxValue;
+    }
+
+    /// <summary>Hands the collection's reports on as <see cref="BackupPhase.CollectingGarbage"/>.</summary>
+    private sealed class CollectProgressAdapter(IProgress<BackupProgress> progress) : IProgress<CollectProgress>
+    {
+        public void Report(CollectProgress value) => progress.Report(new BackupProgress(BackupPhase.CollectingGarbage,
+            (int)Math.Min(value.Done, int.MaxValue), (int)Math.Min(value.Total, int.MaxValue), 0, 0, "", value));
     }
 
     /// <summary>Releases the run's lock. A target that cannot be reached any more leaves the lock in place: a warning, never a failure of the run.</summary>

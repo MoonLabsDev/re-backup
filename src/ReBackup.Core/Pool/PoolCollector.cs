@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Versions;
@@ -10,6 +11,29 @@ namespace ReBackup.Core.Pool;
 /// otherwise the English text (<see cref="CoreTexts"/>, <c>core.gc.*</c>) of why nothing was deleted.
 /// </summary>
 public sealed record CollectResult(int BlobsDeleted, long BytesFreed, string? SkippedReason);
+
+/// <summary>The phases of <see cref="PoolCollector.CollectAsync"/>, in the order they run.</summary>
+public enum CollectPhase
+{
+    /// <summary>The manifests of the target's versions are read: <see cref="CollectProgress.Done"/> of <see cref="CollectProgress.Total"/> folders.</summary>
+    ReadingManifests,
+
+    /// <summary>The pool is listed: <see cref="CollectProgress.Done"/> files so far; the total is not known (0).</summary>
+    ListingPool,
+
+    /// <summary>The unreferenced blobs are deleted: <see cref="CollectProgress.Done"/> of <see cref="CollectProgress.Total"/>.</summary>
+    DeletingUnreferenced,
+}
+
+/// <summary>Where a collection stands; <see cref="Total"/> is 0 while it is not known.</summary>
+public readonly record struct CollectProgress(CollectPhase Phase, long Done, long Total)
+{
+    /// <summary>0..1 within the phase; 0 while the total is not known.</summary>
+    public double Fraction => Total > 0 ? Math.Clamp((double)Done / Total, 0, 1) : 0;
+
+    /// <summary>The total is not known (listing the pool).</summary>
+    public bool IsIndeterminate => Phase == CollectPhase.ListingPool;
+}
 
 /// <summary>
 /// Garbage collection of an incremental plan's pool (spec 6): deletes the blobs no version's manifest names any more.
@@ -35,18 +59,24 @@ public static class PoolCollector
     /// </list>
     /// An interruption is harmless: what was deleted was unreferenced, and the next collection continues.
     /// </summary>
+    /// <param name="progress">
+    /// Gets the phases in order (<see cref="CollectPhase"/>): before and after each manifest, at most every
+    /// <see cref="ProgressInterval"/> while the pool is listed and at its end, and before and after each batch of deletions;
+    /// never two reports at once, but not always on the calling thread.
+    /// </param>
     /// <exception cref="StorageException">The target cannot be listed or a deletion failed; blobs deleted before stay deleted.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="ct"/> was canceled.</exception>
     public static async Task<CollectResult> CollectAsync(IStorage target, string planId, string planName,
-        CancellationToken ct)
+        CancellationToken ct, IProgress<CollectProgress>? progress = null)
     {
-        var (marked, skipped) = await MarkAsync(target, ct).ConfigureAwait(false);
+        var (marked, skipped) = await MarkAsync(target, ct, progress).ConfigureAwait(false);
         if (skipped is not null)
             return new CollectResult(0, 0, skipped);
 
-        var (pool, doomed, bytes) = await ListPoolAsync(target, marked, ct).ConfigureAwait(false);
+        var (pool, doomed, bytes) = await ListPoolAsync(target, marked, ct, progress).ConfigureAwait(false);
         var deleted = 0;
         long freed = 0;
+        progress?.Report(new CollectProgress(CollectPhase.DeletingUnreferenced, 0, doomed.Count));
         for (var start = 0; start < doomed.Count; start += DeleteBatchSize)
         {
             ct.ThrowIfCancellationRequested();
@@ -54,6 +84,7 @@ public static class PoolCollector
             await target.DeleteAsync(batch, ct).ConfigureAwait(false);
             deleted += batch.Count;
             freed += bytes.GetRange(start, batch.Count).Sum();
+            progress?.Report(new CollectProgress(CollectPhase.DeletingUnreferenced, deleted, doomed.Count));
         }
 
         if (deleted > 0)
@@ -80,20 +111,26 @@ public static class PoolCollector
     /// The preconditions and the mark phase: the hashes every manifest in the target's root names, or why the collection
     /// is skipped (then the hashes are incomplete).
     /// </summary>
-    private static async Task<(HashSet<string> Marked, string? Skipped)> MarkAsync(IStorage target, CancellationToken ct)
+    private static async Task<(HashSet<string> Marked, string? Skipped)> MarkAsync(IStorage target, CancellationToken ct,
+        IProgress<CollectProgress>? progress = null)
     {
         var marked = new HashSet<string>(StringComparer.Ordinal);
         var folders = await PoolManifests.RootFoldersAsync(target, ct).ConfigureAwait(false);
+        progress?.Report(new CollectProgress(CollectPhase.ReadingManifests, 0, folders.Count));
         if (await HasFoldersInTransitAsync(target, folders, ct).ConfigureAwait(false))
             return (marked, CoreTexts.English("core.gc.skippedMarkers"));
-        foreach (var folder in folders)
+        for (var i = 0; i < folders.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            if (!await TryMarkAsync(target, folder, marked, ct).ConfigureAwait(false))
-                return (marked, CoreTexts.English("core.gc.manifestUnreadable", ("version", StoragePath.Name(folder))));
+            if (!await TryMarkAsync(target, folders[i], marked, ct).ConfigureAwait(false))
+                return (marked, CoreTexts.English("core.gc.manifestUnreadable", ("version", StoragePath.Name(folders[i]))));
+            progress?.Report(new CollectProgress(CollectPhase.ReadingManifests, i + 1, folders.Count));
         }
         return (marked, null);
     }
+
+    /// <summary>Reports while the pool is listed come at most this often.</summary>
+    public static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// Whether one of <paramref name="folders"/> carries <see cref="VersionMarkerNames.Pending"/> or
@@ -135,35 +172,42 @@ public static class PoolCollector
         }, ct).ConfigureAwait(false) != ManifestRead.Unreadable;
 
     /// <summary>
-    /// Everything in the pool, and the blobs in it whose hash is not marked, with their sizes. A pool that does not exist
-    /// yet is empty.
+    /// Everything in the pool, and the blobs in it whose hash is not marked, with their sizes (<see cref="PoolListing"/>). A
+    /// pool that does not exist yet is empty.
     /// </summary>
     private static async Task<(List<StorageEntry> Pool, List<string> Doomed, List<long> Sizes)> ListPoolAsync(
-        IStorage target, HashSet<string> marked, CancellationToken ct)
+        IStorage target, HashSet<string> marked, CancellationToken ct, IProgress<CollectProgress>? progress)
     {
         var pool = new List<StorageEntry>();
         var doomed = new List<string>();
+        var doomedSet = new HashSet<string>(StringComparer.Ordinal);
         var sizes = new List<long>();
-        try
+        long files = 0;
+        var sinceReport = Stopwatch.StartNew();
+        progress?.Report(new CollectProgress(CollectPhase.ListingPool, 0, 0));
+        await PoolListing.ListAsync(target, entry =>
         {
-            await foreach (var entry in target.ListAsync(PoolLayout.PoolFolder, recursive: true, ct).ConfigureAwait(false))
+            pool.Add(entry);
+            if (entry.IsDirectory)
+                return;
+            files++;
+            if (progress is not null && sinceReport.Elapsed >= ProgressInterval)
             {
-                pool.Add(entry);
-                if (entry.IsDirectory || entry.IsLink ||
-                    !PoolLayout.TryParseHex(PoolLayout.HashPrefix + StoragePath.Name(entry.Path), out var hex))
-                    continue;
-                var lower = hex.ToLowerInvariant();
-                if (marked.Contains(lower) ||
-                    !entry.Path.Equals(PoolLayout.BlobPath(PoolLayout.HashPrefix + lower), StringComparison.OrdinalIgnoreCase))
-                    continue;   // referenced, or not a blob at its own path: never ours to delete
-                doomed.Add(entry.Path);
-                sizes.Add(entry.Size);
+                sinceReport.Restart();
+                progress.Report(new CollectProgress(CollectPhase.ListingPool, files, 0));
             }
-        }
-        catch (StorageNotFoundException)
-        {
-            // No pool yet.
-        }
+            if (entry.IsLink || !PoolLayout.TryParseHex(PoolLayout.HashPrefix + StoragePath.Name(entry.Path), out var hex))
+                return;
+            var lower = hex.ToLowerInvariant();
+            if (marked.Contains(lower) ||
+                !entry.Path.Equals(PoolLayout.BlobPath(PoolLayout.HashPrefix + lower), StringComparison.OrdinalIgnoreCase))
+                return;   // referenced, or not a blob at its own path: never ours to delete
+            if (!doomedSet.Add(entry.Path))
+                return;   // listed twice: deleted once
+            doomed.Add(entry.Path);
+            sizes.Add(entry.Size);
+        }, ct).ConfigureAwait(false);
+        progress?.Report(new CollectProgress(CollectPhase.ListingPool, files, 0));
         return (pool, doomed, sizes);
     }
 
@@ -177,7 +221,8 @@ public static class PoolCollector
     {
         static int Depth(string path) => path.Count(c => c == '/');
         var children = remaining.ToLookup(entry => StoragePath.Parent(entry.Path), entry => entry.Path, StringComparer.Ordinal);
-        var folders = remaining.Where(entry => entry.IsDirectory && !entry.IsLink).Select(entry => entry.Path).ToList();
+        var folders = remaining.Where(entry => entry.IsDirectory && !entry.IsLink).Select(entry => entry.Path)
+            .Distinct(StringComparer.Ordinal).ToList();
 
         var emptyShards = folders.Where(f => Depth(f) == 2 && !children[f].Any()).ToList();
         var emptyShardSet = emptyShards.ToHashSet(StringComparer.Ordinal);
