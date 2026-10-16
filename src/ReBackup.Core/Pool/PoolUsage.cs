@@ -55,8 +55,8 @@ public static class PoolUsage
     public const int MeasureProgressEvery = 1000;
 
     /// <summary>
-    /// The blobs in <paramref name="target"/>'s pool and their bytes, by one recursive listing of
-    /// <see cref="PoolLayout.PoolFolder"/>: read-only, without the lock. Only files named like a blob (32 hex digits) count.
+    /// The blobs in <paramref name="target"/>'s pool and their bytes, by listing
+    /// <see cref="PoolLayout.PoolFolder"/> (<see cref="PoolListing"/>): read-only, without the lock. Only files named like a blob (32 hex digits) count.
     /// <paramref name="progress"/> gets the blobs counted so far every <see cref="MeasureProgressEvery"/> blobs and at
     /// the end. A pool that does not exist yet is (0, 0).
     /// </summary>
@@ -66,24 +66,17 @@ public static class PoolUsage
     {
         var blobs = 0;
         long bytes = 0;
-        try
+        await PoolListing.ListAsync(target, entry =>
         {
-            await foreach (var entry in target.ListAsync(PoolLayout.PoolFolder, recursive: true, ct).ConfigureAwait(false))
-            {
-                ct.ThrowIfCancellationRequested();
-                if (entry.IsDirectory || entry.IsLink ||
-                    !PoolLayout.TryParseHex(PoolLayout.HashPrefix + StoragePath.Name(entry.Path), out _))
-                    continue;
-                blobs++;
-                bytes += entry.Size;
-                if (blobs % MeasureProgressEvery == 0)
-                    progress?.Report(blobs);
-            }
-        }
-        catch (StorageNotFoundException)
-        {
-            return (0, 0);   // no pool yet
-        }
+            ct.ThrowIfCancellationRequested();
+            if (entry.IsDirectory || entry.IsLink ||
+                !PoolLayout.TryParseHex(PoolLayout.HashPrefix + StoragePath.Name(entry.Path), out _))
+                return;
+            blobs++;
+            bytes += entry.Size;
+            if (blobs % MeasureProgressEvery == 0)
+                progress?.Report(blobs);
+        }, ct).ConfigureAwait(false);
         if (blobs % MeasureProgressEvery != 0)
             progress?.Report(blobs);
         return (blobs, bytes);
