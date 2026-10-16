@@ -345,7 +345,6 @@ public sealed partial class VersionsViewModel : ObservableObject
                 ? LocText.Empty
                 : LocText.Of("versions.sync.errors", ("count", errors.Count), ("errors", string.Join("; ", errors)));
             OnIndexReady();
-            IndexSynced?.Invoke();
         }
         catch (OperationCanceledException)
         {
@@ -365,7 +364,9 @@ public sealed partial class VersionsViewModel : ObservableObject
                 _loaded = true;
                 IsSyncing = false;
                 if (_reloadRequested)
-                    _ = RefreshAsync();
+                    _ = RefreshAsync();   // that read reports its end
+                else
+                    IndexSyncEnded?.Invoke();
             }
         }
     }
@@ -396,10 +397,11 @@ public sealed partial class VersionsViewModel : ObservableObject
     partial void OnIndexReady();
 
     /// <summary>
-    /// Raised on the UI thread after every successful sync of the plan's index, e.g. for the Retention tab's pool
-    /// numbers.
+    /// Raised on the UI thread when a read of the target and sync of the plan's index has ended, successfully or not
+    /// (not when a later one took over), e.g. for the Retention tab's pool numbers. A read asked for while a sync ran
+    /// (<see cref="ReloadIfLoaded"/>) follows first: the event comes at its end.
     /// </summary>
-    public event Action? IndexSynced;
+    public event Action? IndexSyncEnded;
 
     /// <summary>
     /// Shows the listed folders newest first, reusing rows by name so the selection stays, and their coverage under the

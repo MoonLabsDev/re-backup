@@ -35,7 +35,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private readonly IFolderOpener _folders;
     private readonly IStorageFactory _storages;
     private readonly Func<IReadOnlyList<RunLogEntry>> _runLog;
-    private readonly Func<BackupPlan, VersionIndex?> _poolIndex;
+    private readonly Func<BackupPlan, Func<VersionIndex>?> _poolIndex;
     private readonly Action _requestIndexSync;
     private IReadOnlyList<VersionInfo>? _versions;
     private string? _versionsTarget;   // belongs to _versions: the target they were read from
@@ -46,11 +46,12 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     private CancellationTokenSource? _simulateCts;
     private CancellationTokenSource? _poolCts;
     private bool _syncRequested;   // belongs to _versions: a sync of the index was asked for since they were read
+    private bool _syncEnded;   // belongs to _versions: a sync ended after it was asked for
 
     // The "now" numbers of the last evaluation; for an incremental plan the pool numbers follow from the index.
     private NowNumbers? _nowNumbers;
     private PoolInputs? _poolInputs;   // null for a full plan
-    private PoolFigures? _poolFigures;   // null while the pool numbers are being read
+    private PoolView? _poolView;   // null while the pool numbers are being read
     private ShownSimulation? _shown;   // the forecast shown, to show again when the pool numbers arrive
 
     [ObservableProperty] private bool _isLoading;
@@ -136,16 +137,17 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     /// <param name="storages">Opens the plan's target.</param>
     /// <param name="runLog">The plan's run log, oldest first: versions whose run ended with warnings show so in the coverage.</param>
     /// <param name="poolIndex">
-    /// The version index of a plan (called on a worker thread); null while the plan has none (e.g. it is new). The pool
-    /// numbers of an incremental plan are read from it.
+    /// Gets the plan as edited (on the UI thread) and gives what opens the index of its versions (called on a worker
+    /// thread), or null when there is none for it (e.g. a new plan, or an edited target). The pool numbers of an
+    /// incremental plan are read from it; without one they are unknown.
     /// </param>
     /// <param name="requestIndexSync">
-    /// Asks for a sync of the plan's index because it lacks versions the target holds; the end of a sync is reported to
-    /// <see cref="OnIndexSynced"/>.
+    /// Asks for a sync of the plan's index because it lacks versions the target holds; the end of every sync, successful
+    /// or not, is to be reported to <see cref="OnIndexSyncEnded"/>.
     /// </param>
     public RetentionPreviewViewModel(Func<BackupPlan> plan, Func<long?> fallbackVersionBytes, IFolderOpener folders,
         IStorageFactory storages, Func<IReadOnlyList<RunLogEntry>>? runLog = null,
-        Func<BackupPlan, VersionIndex?>? poolIndex = null, Action? requestIndexSync = null)
+        Func<BackupPlan, Func<VersionIndex>?>? poolIndex = null, Action? requestIndexSync = null)
     {
         _poolIndex = poolIndex ?? (_ => null);
         _requestIndexSync = requestIndexSync ?? (() => { });
@@ -176,7 +178,8 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     /// incremental plan the pool's estimate, e.g. "≈ 61 MB (pool, estimated)", and "calculating…" until it is known.
     /// </summary>
     public string ForecastSpaceText =>
-        _poolInputs is not null && _shown is not null && _poolFigures is null ? Loc.T("retention.pool.calculating")
+        _poolInputs is not null && _shown is not null && (_poolView ?? PoolView.Calculating).IsCalculating
+            ? Loc.T("retention.pool.calculating")
         : ForecastBytes is not { } bytes ? Loc.T("retention.forecast.unknown")
         : _poolInputs is not null ? Loc.F("retention.forecast.poolSpace", ("size", Formats.Bytes(bytes)))
         : "≈ " + Formats.Bytes(bytes);
@@ -225,6 +228,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         _targetMissing = false;
         _targetUnreachable = false;
         _syncRequested = false;
+        _syncEnded = false;
         IsLoading = false;
         ErrorText = null;
         NowRows.ReplaceAll([]);
@@ -307,6 +311,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             _targetMissing = targetMissing;
             _targetUnreachable = targetUnreachable;
             _syncRequested = false;
+            _syncEnded = false;
             ClearPool();   // the versions may hold other content now
             OnPropertyChanged(nameof(ShowEmpty));
             OnPropertyChanged(nameof(EmptyText));
@@ -384,24 +389,27 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         {
             // Other versions or other decisions: the pool numbers are read again (they stay on a mere language change).
             CancelPool();
-            _poolFigures = inputs is { All.Count: 0 } ? PoolFigures.None : null;
+            _poolView = inputs is { Query.All.Count: 0 } ? PoolView.Of(new PoolNumbers(0, 0, null, 0, [])) : null;
         }
         _poolInputs = inputs;
         ShowNow();
-        if (inputs is not null && _poolFigures is null)
-            _ = ReadPoolAsync(plan, inputs);
+        if (inputs is not null && _poolView is null)
+            ReadPool(plan, inputs);
 
         _ = SimulateAsync(versions, rules, plan.Triggers);
     }
 
     /// <summary>
-    /// The plan's index finished a sync (on the Versions tab): the pool numbers of an incremental plan are read again,
-    /// now that the index may hold the versions it lacked.
+    /// A sync of the plan's index ended (on the Versions tab), successfully or not: the pool numbers of an incremental
+    /// plan are read again. Once a sync asked for has ended they are shown over the versions the index has, even when
+    /// it still lacks some.
     /// </summary>
-    public void OnIndexSynced()
+    public void OnIndexSyncEnded()
     {
+        if (_syncRequested)
+            _syncEnded = true;
         if (_poolInputs is { } inputs && _versions is not null)
-            _ = ReadPoolAsync(_plan(), inputs);
+            ReadPool(_plan(), inputs);
     }
 
     /// <summary>The "now" summary of the last evaluation, with the pool numbers as far as they are known.</summary>
@@ -415,40 +423,60 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             return;
         }
 
-        var pool = _poolInputs is null ? null : _poolFigures;
-        var isPool = _poolInputs is not null;
+        var view = _poolInputs is null ? null : _poolView ?? PoolView.Calculating;
+        var managed = _poolInputs?.Query.Managed;
+        var deleted = _poolInputs?.Query.Deleted;
         Now = new LocText(() =>
         {
             var unmanaged = n.Unmanaged > 0 ? Loc.F("retention.now.unmanaged", ("count", n.Unmanaged)) : "";
-            if (!isPool)
+            if (view is null)
             {
                 return Loc.F("retention.now.summary", ("count", n.Count), ("size", Formats.Bytes(n.Size)), ("keep", n.Keep),
                     ("delete", n.Delete), ("freed", Formats.Bytes(n.Freed))) + unmanaged;
             }
-            var calculating = Loc.T("retention.pool.calculating");
-            return Loc.F("retention.now.poolSummary", ("count", n.Count),
-                ("pool", pool is null ? calculating : Formats.Bytes(pool.Pool)), ("size", Formats.Bytes(n.Size)),
-                ("keep", n.Keep), ("delete", n.Delete),
-                ("freed", pool is null ? calculating : Formats.Bytes(pool.Freed))) + unmanaged;
+
+            string pool, freed, notIndexed = "";
+            if (view.Numbers is not { } numbers)
+                pool = freed = Loc.T(view.IsCalculating ? "retention.pool.calculating" : "retention.forecast.unknown");
+            else
+            {
+                // Over the versions the index has: a lower bound when it lacks some of the counted ones.
+                var missing = new HashSet<string>(numbers.NotIndexed, StringComparer.OrdinalIgnoreCase);
+                pool = Bound(numbers.Pool, managed!.Any(missing.Contains));
+                freed = numbers.Freed is { } bytes ? Bound(bytes, deleted!.Any(missing.Contains)) : Loc.T("retention.forecast.unknown");
+                if (missing.Count > 0)
+                    notIndexed = Loc.F("retention.now.notIndexed", ("count", missing.Count));
+            }
+            return Loc.F("retention.now.poolSummary", ("count", n.Count), ("pool", pool), ("size", Formats.Bytes(n.Size)),
+                ("keep", n.Keep), ("delete", n.Delete), ("freed", freed)) + unmanaged + notIndexed;
         });
+
+        static string Bound(long bytes, bool lower) =>
+            lower ? Loc.F("retention.pool.atLeast", ("size", Formats.Bytes(bytes))) : Formats.Bytes(bytes);
     }
 
     /// <summary>
-    /// Reads the pool numbers of <paramref name="inputs"/> from the plan's index on a worker thread. While the index
-    /// lacks a version the target holds they stay "calculating…", and a sync is asked for (once per read of the target);
-    /// <see cref="OnIndexSynced"/> reads them again.
+    /// Reads the pool numbers of <paramref name="inputs"/> from the plan's index on a worker thread; a plan without an
+    /// index shows them as unknown. While the index lacks a version the target holds they stay "calculating…" and a
+    /// sync is asked for (once per read of the target), until a sync has ended (<see cref="OnIndexSyncEnded"/>).
     /// </summary>
-    private async Task ReadPoolAsync(BackupPlan plan, PoolInputs inputs)
+    private async void ReadPool(BackupPlan plan, PoolInputs inputs)
     {
-        _poolCts?.Cancel();
+        CancelPool();
+        if (_poolIndex(plan) is not { } open)
+        {
+            ShowPool(PoolView.Unknown);
+            return;
+        }
+
         var cts = _poolCts = new CancellationTokenSource();
+        var token = cts.Token;
         try
         {
-            var figures = await Task.Run(() => _poolIndex(plan) is { } index ? PoolFigures.Read(index, inputs, cts.Token) : null,
-                cts.Token);
+            var numbers = await Task.Run(() => open().PoolNumbersOf(inputs.Query), token);
             if (!ReferenceEquals(_poolCts, cts) || !ReferenceEquals(_poolInputs, inputs))
-                return;
-            if (figures is null)
+                return;   // a later read, or other versions or decisions, took over
+            if (numbers.NotIndexed.Count > 0 && !_syncEnded)
             {
                 if (!_syncRequested)
                 {
@@ -457,24 +485,31 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
                 }
                 return;
             }
-
-            _poolFigures = figures;
-            ShowNow();
-            ShowForecast();
+            ShowPool(PoolView.Of(numbers));
         }
         catch (OperationCanceledException)
         {
         }
         catch (Exception ex)
         {
-            // An index that cannot be read leaves the pool numbers open; never a full-copy number in their place.
+            // An index that cannot be read: the pool numbers are unknown, never a full-copy number in their place.
             System.Diagnostics.Trace.TraceWarning($"The pool numbers of plan {plan.Id} could not be read: {ex.Message}");
+            if (ReferenceEquals(_poolCts, cts) && ReferenceEquals(_poolInputs, inputs))
+                ShowPool(PoolView.Unknown);
         }
+    }
+
+    private void ShowPool(PoolView view)
+    {
+        _poolView = view;
+        ShowNow();
+        ShowForecast();
     }
 
     private void CancelPool()
     {
         _poolCts?.Cancel();
+        _poolCts?.Dispose();
         _poolCts = null;
     }
 
@@ -483,7 +518,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
     {
         CancelPool();
         _poolInputs = null;
-        _poolFigures = null;
+        _poolView = null;
         _nowNumbers = null;
     }
 
@@ -558,7 +593,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
 
             var result = await Task.Run(() => RetentionSimulator.Simulate(seeds, rules, runs, now, average, cts.Token), cts.Token);
             if (ReferenceEquals(_simulateCts, cts))
-                ShowSimulation(result, rules, frequencyKey, now, average);
+                ShowSimulation(result, rules, frequencyKey, now);
         }
         catch (OperationCanceledException)
         {
@@ -574,14 +609,10 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         }
     }
 
-    /// <param name="versionBytes">
-    /// The size of one version the simulation went by (the average, else the fallback); an incremental plan without
-    /// owned versions takes it for the first version of its pool.
-    /// </param>
     private void ShowSimulation(SimulationResult result, IReadOnlyList<RetentionRule> rules, string frequencyKey,
-        DateTime now, long? versionBytes)
+        DateTime now)
     {
-        _shown = new ShownSimulation(result, rules.Count == 0, frequencyKey, versionBytes);
+        _shown = new ShownSimulation(result, rules.Count == 0, frequencyKey);
         ShowForecast();
 
         var noRules = rules.Count == 0;
@@ -606,8 +637,9 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
 
     /// <summary>
     /// The forecast sentence and numbers of the shown simulation. A full plan's space is the simulator's (every version
-    /// a full copy); an incremental plan's is the pool's: the newest version, plus the new content an average version
-    /// adds for every further version. That space is not known while the pool numbers are being read.
+    /// a full copy). An incremental plan's is the pool's: the newest owned version that has files, plus for every further
+    /// version the new content an average owned version added. It is unknown without owned versions, and while the pool
+    /// numbers are being read.
     /// </summary>
     private void ShowForecast()
     {
@@ -617,8 +649,7 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         var (count, truncated, runs, noRules) = (result.SteadyStateCount, result.Truncated, result.RunsSimulated, shown.NoRules);
         var pool = _poolInputs is not null;
         long? bytes = !pool ? result.EstimatedBytes
-            : _poolFigures is not { } figures ? null
-            : (figures.ForecastBase ?? shown.VersionBytes) is { } first ? first + figures.Growth * Math.Max(count - 1, 0)
+            : _poolView?.Numbers is { ForecastBase: { } first } numbers ? first + numbers.Growth * Math.Max(count - 1, 0)
             : null;
         var frequencyKey = shown.FrequencyKey;
         Full = new LocText(() =>
@@ -644,15 +675,13 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
         bool TargetMissing);
 
     /// <summary>A finished simulation as the forecast shows it.</summary>
-    private sealed record ShownSimulation(SimulationResult Result, bool NoRules, string FrequencyKey, long? VersionBytes);
+    private sealed record ShownSimulation(SimulationResult Result, bool NoRules, string FrequencyKey);
 
     /// <summary>
-    /// The versions whose pool numbers an incremental plan shows, by name: all read from the target, the managed ones,
-    /// those the rules delete, and the owned ones oldest first (the forecast's). Two evaluations with the same
-    /// <see cref="Key"/> have the same versions and decisions.
+    /// The versions whose pool numbers an incremental plan shows (see <see cref="PoolQuery"/>); the owned ones are
+    /// ordered by time, then name. Two evaluations with the same <see cref="Key"/> have the same versions and decisions.
     /// </summary>
-    private sealed record PoolInputs(IReadOnlyList<string> All, IReadOnlyList<string> Managed, IReadOnlyList<string> Deleted,
-        IReadOnlyList<string> Owned, string Key)
+    private sealed record PoolInputs(PoolQuery Query, string Key)
     {
         public static PoolInputs Of(IReadOnlyList<VersionInfo> versions, IReadOnlyList<VersionDecision> managed,
             IReadOnlyList<VersionDecision> deleted)
@@ -660,47 +689,23 @@ public sealed partial class RetentionPreviewViewModel : ObservableObject
             var all = versions.Select(v => v.Name).ToList();
             var managedNames = managed.Select(d => d.Version.Name).ToList();
             var deletedNames = deleted.Select(d => d.Version.Name).ToList();
-            var owned = versions.Where(v => v.IsOwned).OrderBy(v => v.LocalTime).Select(v => v.Name).ToList();
+            var owned = versions.Where(v => v.IsOwned).OrderBy(v => v.LocalTime)
+                .ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase).Select(v => v.Name).ToList();
             var key = string.Join('\n', [.. all, "", .. managedNames, "", .. deletedNames]);
-            return new PoolInputs(all, managedNames, deletedNames, owned, key);
+            return new PoolInputs(new PoolQuery(all, managedNames, deletedNames, owned), key);
         }
     }
 
     /// <summary>
-    /// The pool numbers of an incremental plan: <paramref name="Pool"/> is what the managed versions need,
-    /// <paramref name="Freed"/> what deleting the versions the rules delete frees (the content no other version holds);
-    /// the forecast starts at <paramref name="ForecastBase"/> (the newest owned version; null without one) and grows by
-    /// <paramref name="Growth"/> (the new content of an average further version).
+    /// What the pool numbers show: <see cref="Numbers"/> once read; without them "calculating…" while
+    /// <see cref="IsCalculating"/>, otherwise unknown (no index for the plan, or one that cannot be read).
     /// </summary>
-    private sealed record PoolFigures(long Pool, long Freed, long? ForecastBase, long Growth)
+    private sealed record PoolView(PoolNumbers? Numbers, bool IsCalculating)
     {
-        /// <summary>No versions: nothing to read.</summary>
-        public static readonly PoolFigures None = new(0, 0, null, 0);
+        public static readonly PoolView Calculating = new(null, true);
 
-        /// <summary>The numbers from <paramref name="index"/>; null while it lacks one of the versions.</summary>
-        public static PoolFigures? Read(VersionIndex index, PoolInputs inputs, CancellationToken ct)
-        {
-            var ids = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-            foreach (var version in index.Versions())
-                ids[version.Name] = version.Id;
-            if (inputs.All.Any(name => !ids.ContainsKey(name)))
-                return null;
+        public static readonly PoolView Unknown = new(null, false);
 
-            long[] Ids(IEnumerable<string> names) => names.Select(name => ids[name]).Distinct().ToArray();
-            var deleted = new HashSet<string>(inputs.Deleted, StringComparer.OrdinalIgnoreCase);
-            ct.ThrowIfCancellationRequested();
-            var pool = index.PoolBytesOf(Ids(inputs.Managed));
-            ct.ThrowIfCancellationRequested();
-            var freed = deleted.Count == 0
-                ? 0
-                : index.PoolBytesOf(Ids(inputs.All)) - index.PoolBytesOf(Ids(inputs.All.Where(name => !deleted.Contains(name))));
-            ct.ThrowIfCancellationRequested();
-            if (inputs.Owned.Count == 0)
-                return new PoolFigures(pool, freed, null, 0);
-
-            var first = index.PoolBytesOf(Ids([inputs.Owned[^1]]));
-            var growth = inputs.Owned.Count >= 2 ? (index.PoolBytesOf(Ids(inputs.Owned)) - first) / (inputs.Owned.Count - 1) : 0;
-            return new PoolFigures(pool, freed, first, growth);
-        }
+        public static PoolView Of(PoolNumbers numbers) => new(numbers, false);
     }
 }

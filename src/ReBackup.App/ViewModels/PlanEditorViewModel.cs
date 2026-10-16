@@ -7,6 +7,7 @@ using ReBackup.App.Services;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Versions;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
@@ -89,12 +90,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         TargetDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: true, () => TargetEdited(LocationKind.Drive));
         Run = new PlanRunViewModel(versions.Storages);
         Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
-        // The pool numbers of an incremental plan come from the index the Versions tab keeps in sync; a new plan has none.
+        // The pool numbers of an incremental plan come from the index the Versions tab keeps in sync.
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
-            () => Run.Entries, poolIndex: plan => IsNew ? null : versions.Indexes.For(plan.Id), requestIndexSync: SyncIndex);
+            () => Run.Entries, poolIndex: PoolIndexFor, requestIndexSync: SyncIndex);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries,
             () => IsCopying);
-        Versions.IndexSynced += RetentionPreview.OnIndexSynced;
+        Versions.IndexSyncEnded += RetentionPreview.OnIndexSyncEnded;
         HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);
         Versions.PropertyChanged += (_, e) =>
         {
@@ -126,8 +127,23 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
 
     /// <summary>
+    /// What opens the index of <paramref name="edited"/>'s versions for the Retention tab (decided on the UI thread, opened
+    /// on a worker thread); null when there is none for it: the plan is new, or its target or format is edited, so the
+    /// index (which belongs to the saved plan) holds other versions or full copies.
+    /// </summary>
+    private Func<VersionIndex>? PoolIndexFor(BackupPlan edited)
+    {
+        if (IsNew || !edited.Incremental || !_saved.Incremental || edited.Target != _saved.Target)
+            return null;
+        var indexes = _context.Indexes;
+        var planId = _saved.Id;
+        return () => indexes.For(planId);
+    }
+
+    /// <summary>
     /// The Retention tab needs versions the plan's index lacks: the Versions tab syncs it, after the sync that runs if
-    /// one does (it may have started before the versions were there).
+    /// one does (it may have started before the versions were there). The Versions tab then reads the target and syncs
+    /// in the background even when it has not been shown, as when it is shown.
     /// </summary>
     private void SyncIndex()
     {

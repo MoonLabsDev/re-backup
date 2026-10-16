@@ -764,7 +764,8 @@
       "cut": " Die Simulation endete nach {runs:N0} Läufen."
     },
     "pool": {
-      "calculating": "wird berechnet …"
+      "calculating": "wird berechnet …",
+      "atLeast": "≥ {size}"
     },
     "scheduleLabel": {
       "weekly": "einem Backup pro Woche",
@@ -797,6 +798,7 @@
         "other": "{count:N0} Versionen, Pool {pool} ({size} als volle Kopien)  →  die Regeln behalten {keep:N0} und löschen {delete:N0} (gibt {freed} frei)"
       },
       "unmanaged": "  ·  {count:N0} nicht verwaltet",
+      "notIndexed": "  ·  {count:N0} nicht indiziert",
       "openInExplorer": "Im Explorer öffnen",
       "openFolder": "Versionsordner öffnen"
     },
