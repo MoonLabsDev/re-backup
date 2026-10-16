@@ -171,7 +171,6 @@
       "targetLocked": "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
       "lockReleaseFailed": "The target's lock could not be released: {error}",
       "copyRunning": "The plan is being copied (\"Copy plan…\"); the backup was not started.",
-      "deleteRunning": "Versions of the plan are being deleted; the backup was not started.",
       "copyUnfinished": "The plan is an unfinished copy; finish it with \"Continue copy…\" first. The backup was not started."
     },
     "gc": {
@@ -299,6 +298,8 @@
       "deleteCancelBackup": "Cancel the backup of \"{plan}\" before deleting the plan.",
       "deleteWaitRestore": "Wait for the restore from \"{plan}\" to finish, or cancel it, before deleting the plan.",
       "deleteWaitCopy": "Wait for the copy of \"{plan}\" to finish, or cancel it, before deleting the plan.",
+      "deleteWaitDelete": "Wait for the versions of \"{plan}\" to be deleted before deleting the plan.",
+      "runDeferred": "A scheduled run of \"{plan}\" starts once its versions have been deleted.",
       "copyRunning": "\"{plan}\" is being copied; run it again once the copy has finished.",
       "deleteRunning": "Versions of \"{plan}\" are being deleted; run it again once that has finished.",
       "copying": "Copying \"{plan}\"…",
@@ -451,7 +452,7 @@
       "exit": "A copy, verify or deletion of versions is running. It is stopped and its lock is released (a deletion is finished at the next start); an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and exit ReBackup?",
       "restart": "A copy, verify or deletion of versions is running. It is stopped and its lock is released (a deletion is finished at the next start); an unfinished copy can be continued later with \"Continue copy…\".\n\nStop it and restart ReBackup?"
     },
-    "poolJobStuck": "A copy or verify did not stop within 10 seconds. Its lock may be left on the target; \"Release lock…\" removes it.",
+    "poolJobStuck": "A copy, verify or deletion of versions did not stop within 10 seconds. Its lock may be left on the target; \"Release lock…\" removes it.",
     "backupRunning": {
       "title": "Backup in progress",
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"

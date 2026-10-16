@@ -8,6 +8,7 @@ using ReBackup.Core.Backup;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Pool;
+using ReBackup.Core.Versions;
 using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Storage;
@@ -40,6 +41,7 @@ public class VersionsDeleteProgressTests : IDisposable
     public void Dispose()
     {
         _step.Gate.TrySetResult();
+        _fixture.Queue?.CancelAll();
         _fixture.Dispose();
     }
 
@@ -129,7 +131,7 @@ public class VersionsDeleteProgressTests : IDisposable
         await WaitUntilAsync(() => versions.DeletionStatus is null && !versions.IsSyncing, "the indexing ends");
         await WaitUntilAsync(() => editor.Run.CardState == otherState, "the card returns to its normal state");
         versions.VersionRows.Select(r => r.Name).Should().Equal(Second);
-        _target.Files.Should().NotContain([Blob("only in the first"), CleanupMarker.FileName, PoolLayout.LockFile]);
+        _target.Files.Should().NotContain([Blob("only in the first"), OwnCleanup, PoolLayout.LockFile]);
         _target.Files.Should().Contain(Blob("in the second"));
         editor.IsDeletingVersions.Should().BeFalse();
     }
@@ -230,6 +232,8 @@ public class VersionsDeleteProgressTests : IDisposable
     private static byte[] DeletingMarker(string host) => Encoding.UTF8.GetBytes(
         "{\"formatVersion\":1,\"planId\":\"p1\",\"planName\":\"Projects\",\"startedUtc\":\"2026-10-15T08:00:00Z\",\"host\":\"" + host + "\"}");
 
+    private static readonly string OwnCleanup = CleanupMarker.FileNameFor(Environment.MachineName);
+
     private static byte[] CleanupFile(string host) =>
         Encoding.UTF8.GetBytes("{\"host\":\"" + host + "\",\"startedUtc\":\"2026-10-15T08:00:00Z\"}");
 
@@ -240,43 +244,112 @@ public class VersionsDeleteProgressTests : IDisposable
         // The app was quit after the first version was marked and its manifest deleted.
         _target.AddFile($"{First}/re-deleting.json", DeletingMarker(Environment.MachineName));
         await _target.DeleteAsync([$"{First}/re-manifest.json"], CancellationToken.None);
-        _target.AddFile(CleanupMarker.FileName, CleanupFile(Environment.MachineName));
+        _target.AddFile(CleanupMarker.FileNameFor(Environment.MachineName), CleanupFile(Environment.MachineName));
         var editor = Projects(vm);
         _step.HoldList = path => path == PoolLayout.PoolFolder;
 
         var resuming = vm.ResumeDeletionsAsync();
-        editor.IsDeletingVersions.Should().BeTrue("runs wait from the very start");
         await _step.Reached.Task.WaitAsync(Timeout);
 
         await WaitUntilAsync(() => editor.Run.CardState == PlanCardState.Deleting, "the card shows the resumed deletion");
-        editor.Versions.IsDeleting.Should().BeTrue();
+        editor.Run.CardAction.Should().Be(PlanCardAction.None, "the card offers no run while versions are deleted");
+        editor.IsDeletingVersions.Should().BeTrue();
+        vm.RunnablePlans.Single(p => p.Id == "p1").CanRun.Should().BeFalse();
         vm.IsAnyPoolJobRunning.Should().BeTrue("the app waits for it when it exits");
         vm.RunNowCommand.Execute(editor);
         _fixture.Queue.IsBusy.Should().BeFalse("a manual run waits for the deletion");
         vm.StatusMessage.Should().Be(Loc.F("shell.status.deleteRunning", ("plan", "Projects")));
-        vm.RunScheduled("p1", RunTrigger.Scheduled);
-        _fixture.Queue.IsBusy.Should().BeFalse("a scheduled run is skipped");
-        new RunLog(_fixture.Paths.LogFileFor("p1")).ReadAll().Should().ContainSingle()
-            .Which.Reason.Should().Be(CoreTexts.English("core.run.deleteRunning"));
+        vm.SelectedPlan = editor;
+        vm.DeletePlanCommand.Execute(null);
+        vm.Plans.Should().Contain(editor, "a plan is not deleted while its versions are");
+        vm.StatusMessage.Should().Be(Loc.F("shell.status.deleteWaitDelete", ("plan", "Projects")));
 
         _step.Gate.SetResult();
         await resuming.WaitAsync(Timeout);
 
         _target.Files.Should().NotContain(f => f.StartsWith(First + "/", StringComparison.Ordinal));
-        _target.Files.Should().NotContain([Blob("only in the first"), CleanupMarker.FileName, PoolLayout.LockFile]);
+        _target.Files.Should().NotContain([Blob("only in the first"), OwnCleanup, PoolLayout.LockFile]);
         _target.Files.Should().Contain(Blob("in the second"));
         editor.IsDeletingVersions.Should().BeFalse();
         vm.IsAnyPoolJobRunning.Should().BeFalse();
         await WaitUntilAsync(() => editor.Run.CardState != PlanCardState.Deleting, "the card returns to its normal state");
         vm.StatusMessage.Should().Be(Loc.T("versions.delete.resumed"));
+        vm.RunnablePlans.Single(p => p.Id == "p1").CanRun.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Scheduled_run_during_a_resume_is_deferred_and_starts_afterwards()
+    {
+        var vm = Create();
+        _target.AddFile(OwnCleanup, CleanupFile(Environment.MachineName));
+        _step.HoldList = path => path == PoolLayout.PoolFolder;
+        var resuming = vm.ResumeDeletionsAsync();
+        await _step.Reached.Task.WaitAsync(Timeout);
+        await WaitUntilAsync(() => Projects(vm).IsDeletingVersions, "the resume runs");
+
+        vm.RunScheduled("p1", RunTrigger.Scheduled);
+
+        _fixture.Queue.IsBusy.Should().BeFalse("the run waits for the deletion");
+        new RunLog(_fixture.Paths.LogFileFor("p1")).ReadAll().Should().BeEmpty("a deferred run is no error");
+        vm.StatusMessage.Should().Be(Loc.F("shell.status.runDeferred", ("plan", "Projects")));
+
+        _step.HoldList = _ => false;
+        _step.Gate.SetResult();
+        await resuming.WaitAsync(Timeout);
+        await WaitUntilAsync(() => new RunLog(_fixture.Paths.LogFileFor("p1")).ReadAll().Count == 1, "the deferred run ran");
+        new RunLog(_fixture.Paths.LogFileFor("p1")).ReadAll().Single().Trigger.Should().Be(RunTrigger.Scheduled);
+    }
+
+    [Fact]
+    public async Task Looking_for_unfinished_deletions_does_not_hold_up_runs_and_stops_on_exit()
+    {
+        var vm = Create();
+        _step.HoldList = path => path.Length == 0;   // the target's root, as the resume looks at it
+
+        var resuming = vm.ResumeDeletionsAsync();
+        await _step.Reached.Task.WaitAsync(Timeout);
+
+        Projects(vm).IsDeletingVersions.Should().BeFalse("nothing was found to resume yet");
+        vm.RunnablePlans.Single(p => p.Id == "p1").CanRun.Should().BeTrue();
+        vm.StopPoolJobs(Timeout).Should().BeTrue();
+        await resuming.WaitAsync(Timeout);
+        Projects(vm).IsDeletingVersions.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task No_resume_while_the_plan_runs()
+    {
+        _target.AddFile(OwnCleanup, CleanupFile(Environment.MachineName));
+        PoolTargets.WriteStore(_target, "p1");
+        PoolTargets.WriteVersion(_target, First, "p1", "Projects", new PoolFile("a.txt", "only in the first"));
+        AddOrphan();
+        var plan = new BackupPlan
+        {
+            Id = "p1",
+            Name = "Projects",
+            Source = StorageLocation.FileSystem(_fixture.Root),
+            Target = new StorageLocation("s3", "", "pool"),
+            Incremental = true,
+        };
+        var worker = new VersionIndexWorker(new VersionIndexSet(Path.Combine(_fixture.Root, "index")));
+        var context = new VersionsContext(worker, _fixture.Dialogs, _ => { }, _storages);
+        var versions = new VersionsViewModel(() => plan, () => true, new FakeFolderOpener(), context);
+        var before = _target.Files.ToList();
+
+        await versions.ResumeDeletionAsync().WaitAsync(Timeout);
+
+        _target.Files.Should().BeEquivalentTo(before, "a queued or running backup goes first");
+        versions.IsResuming.Should().BeFalse();
+    }
+
+    private void AddOrphan() => _target.AddFile(Blob("orphan"), Encoding.UTF8.GetBytes("orphan"));
 
     [Fact]
     public async Task Markers_of_another_computer_are_not_resumed()
     {
         var vm = Create();
         _target.AddFile($"{First}/re-deleting.json", DeletingMarker("OTHER-PC"));
-        _target.AddFile(CleanupMarker.FileName, CleanupFile("OTHER-PC"));
+        _target.AddFile(CleanupMarker.FileNameFor("OTHER-PC"), CleanupFile("OTHER-PC"));
         var before = _target.Files.ToList();
 
         await vm.ResumeDeletionsAsync().WaitAsync(Timeout);
@@ -289,7 +362,7 @@ public class VersionsDeleteProgressTests : IDisposable
     public async Task Exit_stops_a_resumed_cleanup_releases_the_lock_and_keeps_the_mark_for_the_next_start()
     {
         var vm = Create();
-        _target.AddFile(CleanupMarker.FileName, CleanupFile(Environment.MachineName));
+        _target.AddFile(CleanupMarker.FileNameFor(Environment.MachineName), CleanupFile(Environment.MachineName));
         _step.HoldList = path => path == PoolLayout.PoolFolder;
 
         var resuming = vm.ResumeDeletionsAsync();
@@ -299,7 +372,7 @@ public class VersionsDeleteProgressTests : IDisposable
         vm.StopPoolJobs(Timeout).Should().BeTrue();
         await resuming.WaitAsync(Timeout);
 
-        _target.Files.Should().Contain(CleanupMarker.FileName).And.NotContain(PoolLayout.LockFile);
+        _target.Files.Should().Contain(OwnCleanup).And.NotContain(PoolLayout.LockFile);
         Projects(vm).IsDeletingVersions.Should().BeFalse();
     }
 

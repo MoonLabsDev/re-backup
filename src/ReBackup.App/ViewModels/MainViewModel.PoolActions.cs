@@ -40,6 +40,7 @@ public sealed partial class MainViewModel
     /// </summary>
     public bool StopPoolJobs(TimeSpan wait)
     {
+        _exit.Cancel();   // resumed deletions stop looking for work
         IPoolJob[] jobs;
         lock (_poolJobs)
             jobs = [.. _poolJobs];

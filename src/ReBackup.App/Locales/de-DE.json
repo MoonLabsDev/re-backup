@@ -171,7 +171,6 @@
       "targetLocked": "Das Ziel wird seit {since} von {host} verwendet ({operation}). Es wurde nichts geändert.",
       "lockReleaseFailed": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}",
       "copyRunning": "Der Plan wird gerade kopiert („Plan kopieren …“); das Backup wurde nicht gestartet.",
-      "deleteRunning": "Versionen des Plans werden gerade gelöscht; das Backup wurde nicht gestartet.",
       "copyUnfinished": "Der Plan ist eine unfertige Kopie; zuerst mit „Kopieren fortsetzen …“ fertigstellen. Das Backup wurde nicht gestartet."
     },
     "gc": {
@@ -299,6 +298,8 @@
       "deleteCancelBackup": "Vor dem Löschen des Plans das Backup von „{plan}“ abbrechen.",
       "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
       "deleteWaitCopy": "Vor dem Löschen des Plans das Kopieren von „{plan}“ abwarten oder abbrechen.",
+      "deleteWaitDelete": "Vor dem Löschen des Plans das Löschen der Versionen von „{plan}“ abwarten.",
+      "runDeferred": "Ein geplanter Lauf von „{plan}“ startet, sobald seine Versionen gelöscht sind.",
       "copyRunning": "„{plan}“ wird gerade kopiert; nach dem Kopieren erneut ausführen.",
       "deleteRunning": "Versionen von „{plan}“ werden gerade gelöscht; danach erneut ausführen.",
       "copying": "„{plan}“ wird kopiert …",
@@ -451,7 +452,7 @@
       "exit": "Ein Kopieren, Prüfen oder Löschen von Versionen läuft. Es wird angehalten und seine Sperre aufgehoben (ein Löschen wird beim nächsten Start abgeschlossen); eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup beenden?",
       "restart": "Ein Kopieren, Prüfen oder Löschen von Versionen läuft. Es wird angehalten und seine Sperre aufgehoben (ein Löschen wird beim nächsten Start abgeschlossen); eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup neu starten?"
     },
-    "poolJobStuck": "Ein Kopieren oder Prüfen hat nicht innerhalb von 10 Sekunden angehalten. Seine Sperre kann auf dem Ziel zurückgeblieben sein; „Sperre aufheben …“ entfernt sie.",
+    "poolJobStuck": "Ein Kopieren, Prüfen oder Löschen von Versionen hat nicht innerhalb von 10 Sekunden angehalten. Seine Sperre kann auf dem Ziel zurückgeblieben sein; „Sperre aufheben …“ entfernt sie.",
     "backupRunning": {
       "title": "Backup läuft",
       "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"

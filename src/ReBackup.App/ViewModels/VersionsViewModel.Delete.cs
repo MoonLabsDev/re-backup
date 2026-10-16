@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Plans;
 using ReBackup.Core.Pool;
 using ReBackup.Storage;
 
@@ -307,7 +308,7 @@ public sealed partial class VersionsViewModel
 
     /// <summary>
     /// Reads the target again and syncs the index after a deletion; meanwhile the plan card shows "Indexing…" with the
-    /// sync's progress.
+    /// sync's progress, until no sync runs any more (a sync started meanwhile supersedes this one).
     /// </summary>
     private async Task IndexAfterDeleteAsync()
     {
@@ -316,6 +317,8 @@ public sealed partial class VersionsViewModel
         try
         {
             await RefreshAsync();
+            while (IsSyncing && ReferenceEquals(DeletionStatus, indexing))
+                await SyncEndedAsync();
         }
         finally
         {
@@ -324,62 +327,113 @@ public sealed partial class VersionsViewModel
         }
     }
 
+    /// <summary>Completes when <see cref="IsSyncing"/> turns false (at once when it is).</summary>
+    private Task SyncEndedAsync()
+    {
+        if (!IsSyncing)
+            return Task.CompletedTask;
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(IsSyncing) or "" && !IsSyncing)
+            {
+                PropertyChanged -= OnChanged;
+                ended.TrySetResult();
+            }
+        }
+        PropertyChanged += OnChanged;
+        if (!IsSyncing)
+        {
+            PropertyChanged -= OnChanged;
+            ended.TrySetResult();
+        }
+        return ended.Task;
+    }
+
+    /// <summary>How long the app looks for unfinished deletions in a plan's target at start (an unreachable share can hang).</summary>
+    public static readonly TimeSpan ResumeFindTimeout = TimeSpan.FromSeconds(30);
+
     /// <summary>
     /// At app start: finishes the plan's deletions this computer did not finish (version folders it marked as being
     /// deleted, an incremental plan's pending pool cleanup; <see cref="DeletionResumer"/>) in the background, with the same
-    /// progress as a deletion by hand. Nothing happens while the target cannot be reached; the next start tries again.
+    /// progress as a deletion by hand. The target is looked at first (at most <see cref="ResumeFindTimeout"/>); only when
+    /// something is left does <see cref="IsResuming"/> turn true and the plan's runs wait. Nothing happens while the plan
+    /// is queued or running, or while the target cannot be reached; the next start tries again. <paramref name="ct"/> is
+    /// the app's exit: it stops looking, or stops after the folder being removed (what was removed leaves the index).
     /// </summary>
-    public async Task ResumeDeletionAsync()
+    public async Task ResumeDeletionAsync(CancellationToken ct = default)
     {
-        if (_savedPlan() is not { } plan || IsDeleting || IsResuming)
+        if (_savedPlan() is not { } plan || IsDeleting || IsResuming || _isBackupActive())
             return;
-        IsResuming = true;
         try
         {
             var target = _context.Storages.Open(plan.Target);
             var host = _context.Host;
-            var (folders, cleanup) = await Task.Run(() =>
-                DeletionResumer.FindAsync(target, plan.Id, plan.Incremental, host, CancellationToken.None));
-            if (folders.Count == 0 && !cleanup)
+            IReadOnlyList<string> folders;
+            bool cleanup;
+            using (var find = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                find.CancelAfter(ResumeFindTimeout);
+                (folders, cleanup) = await Task.Run(() =>
+                    DeletionResumer.FindAsync(target, plan.Id, plan.Incremental, host, find.Token), find.Token);
+            }
+            // A run (full plans take no lock) or a deletion by hand may have started meanwhile: it goes first.
+            if ((folders.Count == 0 && !cleanup) || ct.IsCancellationRequested || IsDeleting || _isBackupActive())
                 return;
 
-            _syncCts?.Cancel();
-            var cts = _deleteCts = new CancellationTokenSource();
-            StartDeleting(LocText.Of("versions.delete.resuming"));
-            var progress = DeletionProgress(cts);
-            DeletionResume result;
+            IsResuming = true;
             try
             {
-                result = await RunAsJobAsync(cts, () =>
-                    DeletionResumer.ResumeAsync(target, plan.Id, plan.Name, plan.Incremental, progress, cts.Token, host));
-                if (result.Removed.Count > 0)
-                    await _context.Worker.RunAsync(plan.Id, index => index.Remove(result.Removed));
-            }
-            catch (OperationCanceledException)
-            {
-                return;   // the markers stay: the next start continues
+                await ResumeFoundAsync(plan, target, host, ct);
             }
             finally
             {
-                EndDeleting();
-                cts.Dispose();
+                IsResuming = false;
             }
-
-            _context.ReportStatus(result.Outcome == ResumeOutcome.Finished
-                ? LocText.Of("versions.delete.resumed")
-                : LocText.Of("versions.delete.resumeIncomplete"));
-            VersionsDeleted?.Invoke();
-            if (_loaded)
-                _ = IndexAfterDeleteAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Exit or timeout: the markers stay, the next start continues.
         }
         catch (Exception ex)
         {
             Trace.TraceWarning($"Resuming the deletions of plan {plan.Id} failed: {ex.Message}");
         }
+    }
+
+    private async Task ResumeFoundAsync(BackupPlan plan, IStorage target, string host, CancellationToken ct)
+    {
+        _syncCts?.Cancel();
+        var cts = _deleteCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        StartDeleting(LocText.Of("versions.delete.resuming"));
+        var progress = DeletionProgress(cts);
+        DeletionResume result;
+        try
+        {
+            result = await RunAsJobAsync(cts, () =>
+                DeletionResumer.ResumeAsync(target, plan.Id, plan.Name, plan.Incremental, progress, cts.Token, host));
+            if (result.Removed.Count > 0)
+                await _context.Worker.RunAsync(plan.Id, index => index.Remove(result.Removed));
+        }
+        catch (OperationCanceledException)
+        {
+            return;   // nothing was changed; the markers stay for the next start
+        }
         finally
         {
-            IsResuming = false;
+            EndDeleting();
+            cts.Dispose();
         }
+
+        if (result.Removed.Count > 0)
+            VersionsDeleted?.Invoke();
+        if (result.Outcome == ResumeOutcome.Canceled)
+            return;   // the rest stays for the next start
+        _context.ReportStatus(result.Outcome == ResumeOutcome.Finished
+            ? LocText.Of("versions.delete.resumed")
+            : LocText.Of("versions.delete.resumeIncomplete"));
+        if (_loaded)
+            _ = IndexAfterDeleteAsync();
     }
 
     private static string ProblemText(VersionDeletion result) => result.Outcome switch

@@ -42,6 +42,8 @@ public enum PlanCardAction
     RemoveFromQueue,
     /// <summary>The cancel button, disabled while the run stops.</summary>
     Canceling,
+    /// <summary>No button: versions of the plan are deleted (the Versions tab cancels that).</summary>
+    None,
 }
 
 /// <summary>Queue state, progress and history of one plan, and the plan card built from them.</summary>
@@ -379,7 +381,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     }
 
     private void ShowDeleting(DeletionCardStatus deletion) =>
-        Show(PlanCardState.Deleting, PlanCardAction.Run, deletion.Indeterminate ? 0 : deletion.Fraction, deletion.Indeterminate,
+        Show(PlanCardState.Deleting, PlanCardAction.None, deletion.Indeterminate ? 0 : deletion.Fraction, deletion.Indeterminate,
             deletion.Indeterminate ? "" : $"{Math.Min(99, (int)Math.Floor(deletion.Fraction * 100))}%",
             deletion.Phase.ToString(), deletion.Detail.ToString());
 
