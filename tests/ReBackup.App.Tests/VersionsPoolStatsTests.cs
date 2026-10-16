@@ -97,7 +97,7 @@ public class VersionsPoolStatsTests : IDisposable
         vm.PoolBytes.Should().Be(29);
         vm.FullEquivalentBytes.Should().Be(43);
         vm.SavedFraction.Should().BeApproximately(14.0 / 43, 1e-9);
-        vm.PoolSummary.Should().Be($"Pool {Formats.Bytes(29)} · full copies would be {Formats.Bytes(43)} · 33 % saved");
+        vm.PoolSummary.Should().Be($"Pool {Formats.Bytes(29)} · full copies would be {Formats.Bytes(43)} · 32 % saved", "32.6 % is floored");
     }
 
     [Fact]
@@ -188,6 +188,66 @@ public class VersionsPoolStatsTests : IDisposable
         vm.MeasuredSummary.Should().NotBeNull();
         vm.OnSavedTargetChanged();
         vm.MeasuredSummary.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Measure_shows_a_message_when_listing_the_pool_is_denied()
+    {
+        var vm = await LoadedPoolAsync();
+        _current = DeniedPoolStorage.Create(_target);
+
+        await vm.MeasurePoolCommand.ExecuteAsync(null);
+
+        vm.MeasuredSummary.Should().Be("The pool could not be measured: no access");
+        vm.IsMeasuringPool.Should().BeFalse();
+        vm.MeasurePoolCommand.CanExecute(null).Should().BeTrue();
+
+        _current = _target;
+        await vm.MeasurePoolCommand.ExecuteAsync(null);
+        vm.MeasuredSummary.Should().Be($"On target: {Formats.Bytes(29)} in 3 files");
+    }
+
+    [Fact]
+    public async Task Saved_percentage_never_rounds_up_to_100()
+    {
+        // 200 files of one content: 99.5 % saved, which rounding would show as 100 %.
+        PoolTargets.WriteVersion(_target, First, "p1", "Projects",
+            Enumerable.Range(0, 200).Select(i => new PoolFile($"copy{i}.txt", "x", Size: 1000)).ToArray());
+        var vm = Create(_poolPlan);
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        vm.SavedFraction.Should().BeApproximately(0.995, 1e-9);
+        vm.PoolSummary.Should().EndWith("· 99 % saved");
+    }
+
+    /// <summary>Forwards to an in-memory storage; listing the pool is denied.</summary>
+    public class DeniedPoolStorage : DispatchProxy
+    {
+        private InMemoryStorage _inner = null!;
+
+        public static IStorage Create(InMemoryStorage inner)
+        {
+            var proxy = Create<IStorage, DeniedPoolStorage>();
+            ((DeniedPoolStorage)(object)proxy)._inner = inner;
+            return proxy;
+        }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == nameof(IStorage.ListAsync) && (string)args![0]! == PoolLayout.PoolFolder)
+                return Denied();
+            return targetMethod!.Invoke(_inner, args);
+        }
+
+        private static async IAsyncEnumerable<StorageEntry> Denied()
+        {
+            await Task.Yield();
+            throw new UnauthorizedAccessException("no access");
+#pragma warning disable CS0162 // an iterator needs a yield
+            yield break;
+#pragma warning restore CS0162
+        }
     }
 
     [Fact]

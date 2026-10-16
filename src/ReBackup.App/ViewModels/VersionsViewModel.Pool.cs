@@ -1,10 +1,8 @@
-using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Core.Pool;
 using ReBackup.Core.Versions;
 using ReBackup.Shared.Wpf.Localization;
-using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
@@ -55,7 +53,7 @@ public sealed partial class VersionsViewModel
     public string PoolSummary => !ShowPoolStats
         ? ""
         : Loc.F("versions.pool.summary", ("pool", Formats.Bytes(PoolBytes)), ("full", Formats.Bytes(FullEquivalentBytes)),
-            ("percent", (int)Math.Round(SavedFraction * 100, MidpointRounding.AwayFromZero)));
+            ("percent", (int)Math.Floor(SavedFraction * 100)));   // floored: a non-empty pool never shows 100 %
 
     /// <summary>
     /// "On target: 12.9 GB in 48,213 files · about 0.5 GB not referenced" after a measurement (the last part only when the
@@ -143,8 +141,9 @@ public sealed partial class VersionsViewModel
         catch (OperationCanceledException)
         {
         }
-        catch (Exception ex) when (ex is StorageException or IOException)
+        catch (Exception ex)
         {
+            // Like the tab's sync: any failure to reach or list the target (access denied, an SDK error) is a message.
             if (ReferenceEquals(_measureCts, cts))
                 _measureMessage = new LocText(() => Loc.F("versions.pool.failed", ("error", Loc.Known(ex.Message))));
         }
