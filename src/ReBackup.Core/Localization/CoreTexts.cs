@@ -96,7 +96,6 @@ public static class CoreTexts
         ["core.run.targetLocked"] = "The target is in use by {host} ({operation}) since {since}. Nothing was changed.",
         ["core.run.lockReleaseFailed"] = "The target's lock could not be released: {error}",
         ["core.run.copyRunning"] = "The plan is being copied (\"Copy plan…\"); the backup was not started.",
-        ["core.run.deleteRunning"] = "Versions of the plan are being deleted; the backup was not started.",
         ["core.run.copyUnfinished"] = "The plan is an unfinished copy; finish it with \"Continue copy…\" first. The backup was not started.",
 
         ["core.gc.skippedMarkers"] = "Unused backup content was not removed: a version is still being written or deleted.",

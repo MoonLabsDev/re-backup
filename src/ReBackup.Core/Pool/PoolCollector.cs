@@ -180,6 +180,7 @@ public static class PoolCollector
     {
         var pool = new List<StorageEntry>();
         var doomed = new List<string>();
+        var doomedSet = new HashSet<string>(StringComparer.Ordinal);
         var sizes = new List<long>();
         long files = 0;
         var sinceReport = Stopwatch.StartNew();
@@ -201,6 +202,8 @@ public static class PoolCollector
             if (marked.Contains(lower) ||
                 !entry.Path.Equals(PoolLayout.BlobPath(PoolLayout.HashPrefix + lower), StringComparison.OrdinalIgnoreCase))
                 return;   // referenced, or not a blob at its own path: never ours to delete
+            if (!doomedSet.Add(entry.Path))
+                return;   // listed twice: deleted once
             doomed.Add(entry.Path);
             sizes.Add(entry.Size);
         }, ct).ConfigureAwait(false);
@@ -218,7 +221,8 @@ public static class PoolCollector
     {
         static int Depth(string path) => path.Count(c => c == '/');
         var children = remaining.ToLookup(entry => StoragePath.Parent(entry.Path), entry => entry.Path, StringComparer.Ordinal);
-        var folders = remaining.Where(entry => entry.IsDirectory && !entry.IsLink).Select(entry => entry.Path).ToList();
+        var folders = remaining.Where(entry => entry.IsDirectory && !entry.IsLink).Select(entry => entry.Path)
+            .Distinct(StringComparer.Ordinal).ToList();
 
         var emptyShards = folders.Where(f => Depth(f) == 2 && !children[f].Any()).ToList();
         var emptyShardSet = emptyShards.ToHashSet(StringComparer.Ordinal);

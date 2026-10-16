@@ -87,6 +87,79 @@ public class PoolListingTests : IDisposable
     }
 
     [Fact]
+    public async Task A_storage_without_folders_lists_the_pool_in_one_recursive_listing()
+    {
+        var keys = new InMemoryStorage(StorageCapabilities.None);
+        for (var i = 0; i < 40; i++)
+            keys.AddFile(BlobOf("blob " + i), Bytes("blob " + i));
+        var lists = new List<string>();
+        var counting = new FaultyStorage(keys)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "list")
+                    lock (lists)
+                        lists.Add(path);
+            },
+        };
+
+        var listed = await ParallelAsync(counting);
+
+        lists.Should().Equal(PoolLayout.PoolFolder);
+        Key(listed).Should().BeEquivalentTo(Key(await RecursiveAsync(keys)));
+    }
+
+    [Fact]
+    public async Task Shards_a_storage_lists_twice_are_listed_and_collected_once()
+    {
+        PoolVersions.Write(_target, V1, PlanId, PlanName, [("a.txt", "kept")]);
+        for (var i = 0; i < 20; i++)
+            AddBlob(_target, "orphan " + i);
+        var twice = new TwiceListedShards(_target);
+
+        var result = await PoolCollector.CollectAsync(twice, PlanId, PlanName, CancellationToken.None);
+
+        result.BlobsDeleted.Should().Be(20);
+        twice.ShardLists.Should().OnlyHaveUniqueItems();
+        Blobs(_target).Should().Equal(BlobOf("kept"));
+    }
+
+    /// <summary>Lists every first-level shard of the pool twice, as Google Drive does for two folders of one name.</summary>
+    private sealed class TwiceListedShards(IStorage inner) : IStorage
+    {
+        public List<string> ShardLists { get; } = [];
+
+        public StorageCapabilities Capabilities => inner.Capabilities;
+
+        public Task<StorageEntry?> StatAsync(string path, CancellationToken ct) => inner.StatAsync(path, ct);
+
+        public async IAsyncEnumerable<StorageEntry> ListAsync(string folder, bool recursive,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            if (StoragePath.Parent(folder) == PoolLayout.PoolFolder)
+                lock (ShardLists)
+                    ShardLists.Add(folder);
+            await foreach (var entry in inner.ListAsync(folder, recursive, ct))
+            {
+                yield return entry;
+                if (folder == PoolLayout.PoolFolder && !recursive && entry.IsDirectory)
+                    yield return entry;
+            }
+        }
+
+        public Task<Stream> OpenReadAsync(string path, CancellationToken ct) => inner.OpenReadAsync(path, ct);
+
+        public Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct) =>
+            inner.CreateAsync(path, options, ct);
+
+        public Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct) => inner.DeleteAsync(paths, ct);
+
+        public Task EnsureDirectoryAsync(string path, CancellationToken ct) => inner.EnsureDirectoryAsync(path, ct);
+
+        public Task<long?> GetFreeSpaceAsync(CancellationToken ct) => inner.GetFreeSpaceAsync(ct);
+    }
+
+    [Fact]
     public async Task A_missing_pool_is_empty()
     {
         PoolVersions.Write(_target, V1, PlanId, PlanName, []);

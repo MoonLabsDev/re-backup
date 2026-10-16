@@ -17,6 +17,9 @@ public enum ResumeOutcome
 
     /// <summary>The target cannot be reached, or another holder has its lock: nothing was changed; the next start tries again.</summary>
     NotNow,
+
+    /// <summary>Canceled (the app exits): what was removed before is in the result, the rest stays for the next start.</summary>
+    Canceled,
 }
 
 /// <summary>
@@ -68,22 +71,23 @@ public static class DeletionResumer
         {
             return ([], false);   // the target has not been created yet
         }
-        var cleanup = pool && await CleanupMarker.ReadAsync(target, ct).ConfigureAwait(false) is { } info && info.IsOwn(host);
+        var cleanup = pool && await CleanupMarker.ExistsAsync(target, host, ct).ConfigureAwait(false);
         return (folders, cleanup);
     }
 
     /// <summary>
     /// Finishes what <see cref="FindAsync"/> finds: an incremental plan takes the target's lock (operation <c>"delete"</c>)
-    /// first, removes the marked folders (<see cref="VersionRemover.FinishRemovalAsync"/>), collects the pool and removes
-    /// <see cref="CleanupMarker"/>; a full plan only removes the folders. A pool plan with marked folders but no cleanup
-    /// marker is collected as well (its versions were deleted, the pool was not). Never throws but for cancellation:
-    /// an unreachable target or a held lock is <see cref="ResumeOutcome.NotNow"/>.
+    /// first, marks the pending cleanup (<see cref="CleanupMarker"/>, when it is not marked yet: the versions are deleted,
+    /// the pool not yet), removes the marked folders (<see cref="VersionRemover.FinishRemovalAsync"/>), collects the pool and
+    /// removes its cleanup marker; a full plan only removes the folders. Never throws but for cancellation while the
+    /// target is still being looked at: an unreachable target or a held lock is <see cref="ResumeOutcome.NotNow"/>, and a
+    /// cancellation after that is <see cref="ResumeOutcome.Canceled"/> with the folders removed so far.
     /// </summary>
     /// <param name="progress">
     /// Gets <see cref="VersionDeletionPhase.Deleting"/> per folder (by its files) and <see cref="VersionDeletionPhase.CleaningUp"/>
     /// as <see cref="VersionDeleter.DeleteAsync"/> reports them, on the deleting thread.
     /// </param>
-    /// <exception cref="OperationCanceledException"><paramref name="ct"/> was canceled; the markers stay for the next start.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="ct"/> was canceled before anything was changed.</exception>
     public static async Task<DeletionResume> ResumeAsync(IStorage target, string planId, string planName, bool pool,
         IProgress<VersionDeletionProgress>? progress, CancellationToken ct, string? machineName = null)
     {
@@ -117,25 +121,28 @@ public static class DeletionResumer
             return new DeletionResume(ResumeOutcome.NotNow, []);
         try
         {
-            var removed = await RemoveFoldersAsync(target, folders, progress, ct).ConfigureAwait(false);
             if (!cleanup)
             {
-                // The versions are gone now: the pool still holds what only they referenced.
+                // Once the versions are gone, the pool still holds what only they referenced: mark that first.
                 try
                 {
-                    await CleanupMarker.WriteAsync(target, host, DateTime.UtcNow, ct).ConfigureAwait(false);
+                    await CleanupMarker.WriteAsync(target, host, DateTime.UtcNow, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is StorageException or ArgumentException)
                 {
-                    // Collected all the same; a failure leaves it to the next collection.
+                    return new DeletionResume(ResumeOutcome.NotNow, []);   // nothing was changed
                 }
             }
+            var removed = await RemoveFoldersAsync(target, folders, progress, ct).ConfigureAwait(false);
+            if (removed.Outcome == ResumeOutcome.Canceled)
+                return removed;
             var collected = await VersionDeleter.CollectPoolAsync(target, planId, planName, host, progress, folders.Count, ct)
                 .ConfigureAwait(false);
-            ct.ThrowIfCancellationRequested();
             return removed with
             {
-                Outcome = removed.Outcome == ResumeOutcome.Finished && collected ? ResumeOutcome.Finished : ResumeOutcome.Incomplete,
+                Outcome = ct.IsCancellationRequested ? ResumeOutcome.Canceled
+                    : removed.Outcome == ResumeOutcome.Finished && collected ? ResumeOutcome.Finished
+                    : ResumeOutcome.Incomplete,
             };
         }
         finally
@@ -144,6 +151,10 @@ public static class DeletionResumer
         }
     }
 
+    /// <summary>
+    /// Removes the folders one after the other; a cancellation stops before the next folder (a folder that was started is
+    /// finished, its removal runs to the end) and is <see cref="ResumeOutcome.Canceled"/>.
+    /// </summary>
     private static async Task<DeletionResume> RemoveFoldersAsync(IStorage target, IReadOnlyList<string> folders,
         IProgress<VersionDeletionProgress>? progress, CancellationToken ct)
     {
@@ -152,7 +163,8 @@ public static class DeletionResumer
         long done = 0;
         for (var i = 0; i < folders.Count; i++)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested)
+                return new DeletionResume(ResumeOutcome.Canceled, removed);
             var name = StoragePath.Name(folders[i]);
             var current = i + 1;
             progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, folders.Count, name, done, 0));
@@ -162,12 +174,8 @@ public static class DeletionResumer
                 {
                     done += count;
                     progress?.Report(new VersionDeletionProgress(VersionDeletionPhase.Deleting, current, folders.Count, name, done, 0));
-                }, ct).ConfigureAwait(false);
+                }, CancellationToken.None).ConfigureAwait(false);
                 removed.Add(name);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
             }
             catch (Exception ex) when (ex is StorageException or ArgumentException)
             {

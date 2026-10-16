@@ -1,31 +1,43 @@
+using System.Text;
 using System.Text.Json;
 using ReBackup.Shared.Json;
 using ReBackup.Storage;
 
 namespace ReBackup.Core.Pool;
 
-/// <summary>The content of <see cref="CleanupMarker.FileName"/>: which computer left a cleanup pending, since when.</summary>
-public sealed record CleanupInfo(string Host, DateTime StartedUtc)
-{
-    /// <summary>Whether <paramref name="machineName"/> wrote it (whatever the case).</summary>
-    public bool IsOwn(string machineName) => string.Equals(Host, machineName, StringComparison.OrdinalIgnoreCase);
-}
+/// <summary>The content of a cleanup marker: which computer left a cleanup pending, since when.</summary>
+public sealed record CleanupInfo(string Host, DateTime StartedUtc);
 
 /// <summary>
-/// <c>re-cleanup.json</c> in an incremental plan's target root: versions were deleted by hand, and the pool still has to be
-/// collected. It is written under the "delete" lock before the first version is deleted and removed only once the pool
-/// was collected; when it is still there at the next app start (the app was quit, crashed, or the target dropped), that
-/// computer finishes the cleanup (<see cref="Backup.DeletionResumer"/>). A marker of another computer is never acted on.
+/// <c>re-cleanup.&lt;host&gt;.json</c> in an incremental plan's target root, one per computer: versions were deleted by
+/// hand there, and the pool still has to be collected. It is written under the "delete" lock before the first version is
+/// deleted and removed only once the pool was collected; when it is still there at that computer's next app start (the
+/// app was quit, crashed, or the target dropped), that computer finishes the cleanup (<see cref="Backup.DeletionResumer"/>).
+/// Each computer only ever writes, reads and removes its own file: another computer's marker is never touched.
 /// </summary>
 public static class CleanupMarker
 {
-    public const string FileName = "re-cleanup.json";
+    private const string Prefix = "re-cleanup.";
+    private const string Suffix = ".json";
 
-    /// <summary>Writes the marker for <paramref name="host"/>, replacing one that is there.</summary>
+    /// <summary>
+    /// The marker's file name for <paramref name="host"/>: the host in lower case (markers compare host names whatever the
+    /// case), every character other than a letter, a digit, '-' or '_' as '_'.
+    /// </summary>
+    public static string FileNameFor(string host)
+    {
+        var name = new StringBuilder(host.Length);
+        foreach (var c in host.ToLowerInvariant())
+            name.Append(char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '_');
+        return Prefix + (name.Length == 0 ? "_" : name.ToString()) + Suffix;
+    }
+
+    /// <summary>Writes the marker of <paramref name="host"/>, replacing its own earlier one.</summary>
     /// <exception cref="StorageException">The target cannot be written.</exception>
     public static async Task WriteAsync(IStorage target, string host, DateTime startedUtc, CancellationToken ct)
     {
-        var writer = await target.CreateAsync(FileName, new CreateOptions(Overwrite: true, Durable: true), ct).ConfigureAwait(false);
+        var writer = await target.CreateAsync(FileNameFor(host), new CreateOptions(Overwrite: true, Durable: true), ct)
+            .ConfigureAwait(false);
         await using (writer.ConfigureAwait(false))
         {
             await JsonSerializer.SerializeAsync(writer, new CleanupInfo(host, startedUtc), JsonDefaults.Options, ct).ConfigureAwait(false);
@@ -33,39 +45,25 @@ public static class CleanupMarker
         }
     }
 
-    /// <summary>
-    /// The marker; null when there is none. One that cannot be read as a marker counts as nobody's (host ""), so it is
-    /// never acted on automatically.
-    /// </summary>
+    /// <summary>Whether <paramref name="host"/> left a cleanup pending (its marker is there, whatever it holds).</summary>
     /// <exception cref="StorageException">The target cannot be read.</exception>
-    public static async Task<CleanupInfo?> ReadAsync(IStorage target, CancellationToken ct)
+    public static async Task<bool> ExistsAsync(IStorage target, string host, CancellationToken ct)
     {
-        if (await target.StatAsync(FileName, ct).ConfigureAwait(false) is null)
-            return null;
         try
         {
-            var stream = await target.OpenReadAsync(FileName, ct).ConfigureAwait(false);
-            await using (stream.ConfigureAwait(false))
-            {
-                var info = await JsonSerializer.DeserializeAsync<CleanupInfo>(stream, JsonDefaults.Options, ct).ConfigureAwait(false);
-                return info is { Host: not null } ? info : new CleanupInfo("", DateTime.MinValue);
-            }
+            return await target.StatAsync(FileNameFor(host), ct).ConfigureAwait(false) is { IsDirectory: false };
         }
         catch (StorageNotFoundException)
         {
-            return null;
-        }
-        catch (JsonException)
-        {
-            return new CleanupInfo("", DateTime.MinValue);
+            return false;
         }
     }
 
-    /// <summary>Removes the marker when <paramref name="host"/> wrote it; a marker of another computer stays.</summary>
+    /// <summary>Removes the marker of <paramref name="host"/>; none is fine.</summary>
     /// <exception cref="StorageException">The target cannot be read or written.</exception>
     public static async Task RemoveOwnAsync(IStorage target, string host, CancellationToken ct)
     {
-        if (await ReadAsync(target, ct).ConfigureAwait(false) is { } info && info.IsOwn(host))
-            await target.DeleteAsync([FileName], ct).ConfigureAwait(false);
+        if (await ExistsAsync(target, host, ct).ConfigureAwait(false))
+            await target.DeleteAsync([FileNameFor(host)], ct).ConfigureAwait(false);
     }
 }
