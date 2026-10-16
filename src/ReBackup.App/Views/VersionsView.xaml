@@ -202,7 +202,8 @@
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.AccentLight}"
                                        Text="{Binding Versions.DeleteText}" />
-                            <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.DeleteFraction, Mode=OneWay}" />
+                            <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.DeleteFraction, Mode=OneWay}"
+                                         IsIndeterminate="{Binding Versions.DeleteIndeterminate, Mode=OneWay}" />
                         </StackPanel>
                     </DockPanel>
                 </StackPanel>

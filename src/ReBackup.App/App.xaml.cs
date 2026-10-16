@@ -97,6 +97,8 @@ public partial class App : Application
 
         Loc.Instance.Apply(AppLanguages.Resolve(_settings.Language));
         CleanUpInBackground();
+        // Deletions the app did not finish last time (it was quit, crashed, or the target dropped) go on in the background.
+        _ = _mainViewModel.ResumeDeletionsAsync();
 
         // The Run entry follows the exe that is running now (moved or updated installs would leave a stale path).
         try

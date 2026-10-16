@@ -171,6 +171,7 @@
       "targetLocked": "Das Ziel wird seit {since} von {host} verwendet ({operation}). Es wurde nichts geändert.",
       "lockReleaseFailed": "Die Sperre des Ziels konnte nicht aufgehoben werden: {error}",
       "copyRunning": "Der Plan wird gerade kopiert („Plan kopieren …“); das Backup wurde nicht gestartet.",
+      "deleteRunning": "Versionen des Plans werden gerade gelöscht; das Backup wurde nicht gestartet.",
       "copyUnfinished": "Der Plan ist eine unfertige Kopie; zuerst mit „Kopieren fortsetzen …“ fertigstellen. Das Backup wurde nicht gestartet."
     },
     "gc": {
@@ -299,6 +300,7 @@
       "deleteWaitRestore": "Vor dem Löschen des Plans die Wiederherstellung aus „{plan}“ abwarten oder abbrechen.",
       "deleteWaitCopy": "Vor dem Löschen des Plans das Kopieren von „{plan}“ abwarten oder abbrechen.",
       "copyRunning": "„{plan}“ wird gerade kopiert; nach dem Kopieren erneut ausführen.",
+      "deleteRunning": "Versionen von „{plan}“ werden gerade gelöscht; danach erneut ausführen.",
       "copying": "„{plan}“ wird kopiert …",
       "copied": "Die Kopie „{plan}“ wurde hinzugefügt. Sie ist deaktiviert, bis du sie aktivierst.",
       "copyAdded": "„{plan}“ wurde als unfertige Kopie hinzugefügt; das Kopieren läuft.",
@@ -357,6 +359,17 @@
     "finishing": "Abschließen",
     "removingOld": "alte Versionen werden entfernt …",
     "completingVersion": "Version wird abgeschlossen …",
+    "delete": {
+      "version": "Version wird gelöscht …",
+      "preparing": "Vorbereiten …",
+      "files": {
+        "one": "{done:N0} / {count:N0} Datei",
+        "other": "{done:N0} / {count:N0} Dateien"
+      },
+      "cleaning": "Version wird gelöscht · Aufräumen",
+      "cleaningPercent": "Version wird gelöscht · Aufräumen {percent} %",
+      "stopping": "Löschen wird angehalten"
+    },
     "manualOnly": "Nur manuell",
     "schedulerPaused": "Zeitplaner pausiert",
     "canceledAt": "Abgebrochen · {when}",
@@ -434,9 +447,9 @@
     },
     "restoreStuck": "Eine Wiederherstellung wurde nicht innerhalb von 10 Sekunden beendet. Eine gerade geschriebene Datei ist möglicherweise unvollständig (daneben liegt eine Datei „*.rebackup-tmp“).",
     "poolJobRunning": {
-      "title": "Kopieren oder Prüfen läuft",
-      "exit": "Ein Kopieren oder Prüfen läuft. Es wird angehalten und seine Sperre aufgehoben; eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup beenden?",
-      "restart": "Ein Kopieren oder Prüfen läuft. Es wird angehalten und seine Sperre aufgehoben; eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup neu starten?"
+      "title": "Kopieren, Prüfen oder Löschen läuft",
+      "exit": "Ein Kopieren, Prüfen oder Löschen von Versionen läuft. Es wird angehalten und seine Sperre aufgehoben (ein Löschen wird beim nächsten Start abgeschlossen); eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup beenden?",
+      "restart": "Ein Kopieren, Prüfen oder Löschen von Versionen läuft. Es wird angehalten und seine Sperre aufgehoben (ein Löschen wird beim nächsten Start abgeschlossen); eine unfertige Kopie lässt sich später mit „Kopieren fortsetzen …“ fortsetzen.\n\nAnhalten und ReBackup neu starten?"
     },
     "poolJobStuck": "Ein Kopieren oder Prüfen hat nicht innerhalb von 10 Sekunden angehalten. Seine Sperre kann auf dem Ziel zurückgeblieben sein; „Sperre aufheben …“ entfernt sie.",
     "backupRunning": {
@@ -863,6 +876,16 @@
         "other": "Löschen: {done:N0} von {count:N0} Dateien · Version {current} von {versions}"
       },
       "preparing": "Vorbereiten: Manifest von Version {current} von {versions} wird gelesen …",
+      "andMore": "und {count} weitere",
+      "poolCleanupNote": "Danach werden Inhalte, auf die keine andere Version mehr verweist, aus dem Pool entfernt (Aufräumen).",
+      "resuming": "Ein nicht abgeschlossenes Löschen wird abgeschlossen …",
+      "resumed": "Ein nicht abgeschlossenes Löschen wurde abgeschlossen.",
+      "resumeIncomplete": "Ein nicht abgeschlossenes Löschen konnte nicht ganz abgeschlossen werden; der nächste Start versucht es erneut.",
+      "cleanup": {
+        "manifests": "Aufräumen: Manifeste lesen {done:N0}/{total:N0}",
+        "listing": "Aufräumen: Pool auflisten · {files}",
+        "deleting": "Aufräumen: nicht referenzierte Inhalte löschen {done:N0}/{total:N0}"
+      },
       "cancel": "Löschen abbrechen",
       "cancelToolTip": "Nach der Version anhalten, die gerade gelöscht wird",
       "canceling": "Abbruch nach der aktuellen Version …",

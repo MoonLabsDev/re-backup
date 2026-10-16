@@ -3,15 +3,23 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Pool;
 using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
 
+/// <summary>
+/// What the plan card shows while versions of the plan are deleted by hand (or a deletion is resumed), cleaned up after
+/// and indexed: the phase line, the detail line and the ring (<paramref name="Fraction"/>, ignored while
+/// <paramref name="Indeterminate"/>).
+/// </summary>
+public sealed record DeletionCardStatus(LocText Phase, LocText Detail, double Fraction, bool Indeterminate);
+
 /// <summary>The Versions tab: deleting versions picked by hand, after a confirmation.</summary>
 public sealed partial class VersionsViewModel
 {
-    /// <summary>Versions listed in the confirmation; the rest are summed up as "…".</summary>
-    private const int VersionsInConfirmation = 8;
+    /// <summary>Versions listed in the confirmation; the rest are summed up as "and N more".</summary>
+    private const int VersionsInConfirmation = 5;
 
     /// <summary>The rows marked in the version list (several with Ctrl or Shift); the delete acts on these.</summary>
     private IReadOnlyList<VersionRowViewModel> _marked = [];
@@ -35,6 +43,20 @@ public sealed partial class VersionsViewModel
 
     [ObservableProperty] private double _deleteFraction;
 
+    /// <summary>The deletion's progress has no known total right now (preparing, listing the pool).</summary>
+    [ObservableProperty] private bool _deleteIndeterminate;
+
+    /// <summary>What the plan card shows of a deletion, its cleanup and the indexing after it; null otherwise.</summary>
+    [ObservableProperty] private DeletionCardStatus? _deletionStatus;
+
+    /// <summary>
+    /// True from the start of <see cref="ResumeDeletionAsync"/> until it has ended: the plan's runs wait for it (spec: an
+    /// unfinished deletion is finished first).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DeleteVersionsCommand))]
+    private bool _isResuming;
+
     /// <summary>Versions were deleted by hand (the retention preview reads the target again).</summary>
     public event Action? VersionsDeleted;
 
@@ -46,11 +68,59 @@ public sealed partial class VersionsViewModel
             return;
         cts.Cancel();
         DeleteProgress = LocText.Of("versions.delete.canceling");
+        DeleteIndeterminate = true;
+        DeletionStatus = new DeletionCardStatus(LocText.Of("card.delete.stopping"), LocText.Of("versions.delete.canceling"), 0, true);
+    }
+
+    /// <summary>A deletion the app waits for when it exits (<see cref="IPoolJob"/>): canceling stops it after the current version.</summary>
+    private sealed class DeletionJob(CancellationTokenSource cts) : IPoolJob
+    {
+        public Task Work { get; set; } = Task.CompletedTask;
+
+        public void Stop()
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // It has ended already.
+            }
+        }
+    }
+
+    /// <summary>Runs <paramref name="work"/> off the UI thread as a job the app stops and waits for on exit.</summary>
+    private async Task<T> RunAsJobAsync<T>(CancellationTokenSource cts, Func<Task<T>> work)
+    {
+        var job = new DeletionJob(cts);
+        var task = Task.Run(work);
+        job.Work = task;
+        _context.TrackJob?.Invoke(job, true);
+        try
+        {
+            return await task;
+        }
+        finally
+        {
+            _context.TrackJob?.Invoke(job, false);
+        }
     }
 
     /// <summary>
-    /// The progress line of a deletion, with the remaining time from the average rate since it started; reports come on
-    /// the UI thread.
+    /// The line of a cleanup phase, e.g. "Cleaning up: listing pool · 84,120 files" (the Versions tab, and the plan card
+    /// while a run collects the pool).
+    /// </summary>
+    internal static LocText CleanupText(CollectProgress c) => c.Phase switch
+    {
+        CollectPhase.ReadingManifests => LocText.Of("versions.delete.cleanup.manifests", ("done", c.Done), ("total", c.Total)),
+        CollectPhase.ListingPool => LocText.Of("versions.delete.cleanup.listing", ("files", Formats.Files(c.Done))),
+        _ => LocText.Of("versions.delete.cleanup.deleting", ("done", c.Done), ("total", c.Total)),
+    };
+
+    /// <summary>
+    /// The progress line of a deletion (also the footer's status and the plan card's <see cref="DeletionStatus"/>), with
+    /// the remaining time from the average rate since it started; reports come on the UI thread.
     /// </summary>
     private IProgress<VersionDeletionProgress> DeletionProgress(CancellationTokenSource cts)
     {
@@ -60,12 +130,34 @@ public sealed partial class VersionsViewModel
             if (!IsDeleting || !ReferenceEquals(_deleteCts, cts) || cts.IsCancellationRequested)
                 return;
             DeleteFraction = p.Fraction;
+            var version = LocText.Of("card.delete.version");
             if (p.Phase == VersionDeletionPhase.Preparing)
             {
                 clock.Restart();   // the rate counts from the first deleted file on
                 DeleteProgress = LocText.Of("versions.delete.preparing", ("current", p.Current), ("versions", p.VersionCount));
+                DeleteIndeterminate = true;
+                DeletionStatus = new DeletionCardStatus(version, LocText.Of("card.delete.preparing"), 0, true);
+                _context.ReportStatus(DeleteProgress);
                 return;
             }
+            if (p.Phase == VersionDeletionPhase.CleaningUp)
+            {
+                var cleanup = p.Cleanup;
+                DeleteProgress = CleanupText(cleanup);
+                DeleteIndeterminate = cleanup.IsIndeterminate;
+                var percent = (int)Math.Floor(cleanup.Fraction * 100);
+                DeletionStatus = new DeletionCardStatus(
+                    cleanup.IsIndeterminate
+                        ? LocText.Of("card.delete.cleaning")
+                        : LocText.Of("card.delete.cleaningPercent", ("percent", percent)),
+                    DeleteProgress, cleanup.Fraction, cleanup.IsIndeterminate);
+                _context.ReportStatus(DeleteProgress);
+                return;
+            }
+            DeleteIndeterminate = false;
+            DeletionStatus = new DeletionCardStatus(version,
+                LocText.Of("card.delete.files", ("done", p.FilesDone), ("count", Math.Max(p.FilesTotal, p.FilesDone))),
+                p.Fraction, false);
 
             TimeSpan? remaining = null;
             var elapsed = clock.Elapsed;
@@ -75,6 +167,7 @@ public sealed partial class VersionsViewModel
                 Loc.F("versions.delete.progress", ("done", p.FilesDone), ("count", Math.Max(p.FilesTotal, p.FilesDone)),
                     ("current", p.Current), ("versions", p.VersionCount)) +
                 (remaining is { } left ? " · " + PlanRunViewModel.FormatRemaining(left) : ""));
+            _context.ReportStatus(DeleteProgress);
         });
     }
 
@@ -85,7 +178,7 @@ public sealed partial class VersionsViewModel
         DeleteVersionsCommand.NotifyCanExecuteChanged();
     }
 
-    private bool CanDeleteVersions() => !IsDeleting && !IsRestoring && _marked.Any(r => r.IsManaged);
+    private bool CanDeleteVersions() => !IsDeleting && !IsResuming && !IsRestoring && _marked.Any(r => r.IsManaged);
 
     /// <summary>
     /// Confirm → delete the marked versions of the plan in the background (only those the plan manages) → take them out
@@ -115,8 +208,10 @@ public sealed partial class VersionsViewModel
             return;
         }
 
-        var listed = string.Join("\n", managed.Take(VersionsInConfirmation).Select(r => $"  {r.DateText}  ·  {r.SizeText}"));
-        var more = managed.Count > VersionsInConfirmation ? "\n  …" : "";
+        var listed = string.Join("\n", managed.Take(VersionsInConfirmation).Select(r => $"  {r.Name}  ·  {r.SizeText}"));
+        var more = managed.Count > VersionsInConfirmation
+            ? "\n  " + Loc.F("versions.delete.andMore", ("count", managed.Count - VersionsInConfirmation))
+            : "";
         var bytes = managed.Sum(r => r.Info.TotalBytes ?? r.Indexed?.TotalBytes ?? 0);
         var message = managed.Count == 1
             ? Loc.F("versions.delete.confirm", ("versions", listed), ("size", Formats.Bytes(bytes)))
@@ -124,23 +219,22 @@ public sealed partial class VersionsViewModel
                 ("size", Formats.Bytes(bytes)));
         if (rows.Count > managed.Count)
             message += "\n\n" + Loc.F("versions.delete.notManagedNote", ("count", rows.Count - managed.Count));
+        if (plan.Incremental)
+            message += "\n\n" + Loc.T("versions.delete.poolCleanupNote");
         if (!dialogs.ConfirmDefaultNo(title, message))
             return;
 
         // A sync must not import folders that are being deleted; the target is read again afterwards.
         _syncCts?.Cancel();
         var cts = _deleteCts = new CancellationTokenSource();
-        IsDeleting = true;
-        DeleteFraction = 0;
         var names = managed.Select(r => r.Name).ToList();
-        DeleteProgress = LocText.Of("versions.delete.deleting", ("count", names.Count));
-        _context.ReportStatus(DeleteProgress);
+        StartDeleting(LocText.Of("versions.delete.deleting", ("count", names.Count)));
         var progress = DeletionProgress(cts);
         IReadOnlyList<VersionDeletion> results;
         try
         {
-            results = await Task.Run(() => VersionDeleter.DeleteAsync(_context.Storages.Open(plan.Target), plan.Id, plan.Name,
-                names, progress, cts.Token, _context.Host, pool: plan.Incremental));
+            results = await RunAsJobAsync(cts, () => VersionDeleter.DeleteAsync(_context.Storages.Open(plan.Target), plan.Id,
+                plan.Name, names, progress, cts.Token, _context.Host, pool: plan.Incremental));
             var gone = results.Where(r => r.Outcome is not (VersionDeletionOutcome.Failed or VersionDeletionOutcome.NotManaged))
                 .Select(r => r.Name)
                 .ToList();
@@ -163,10 +257,7 @@ public sealed partial class VersionsViewModel
         }
         finally
         {
-            _deleteCts = null;
-            IsDeleting = false;
-            DeleteProgress = LocText.Empty;
-            DeleteFraction = 0;
+            EndDeleting();
         }
 
         var canceled = cts.IsCancellationRequested;
@@ -191,7 +282,104 @@ public sealed partial class VersionsViewModel
         }
 
         VersionsDeleted?.Invoke();
-        _ = RefreshAsync();
+        _ = IndexAfterDeleteAsync();
+    }
+
+    private void StartDeleting(LocText text)
+    {
+        IsDeleting = true;
+        DeleteFraction = 0;
+        DeleteIndeterminate = true;
+        DeleteProgress = text;
+        DeletionStatus = new DeletionCardStatus(LocText.Of("card.delete.version"), text, 0, true);
+        _context.ReportStatus(DeleteProgress);
+    }
+
+    private void EndDeleting()
+    {
+        _deleteCts = null;
+        IsDeleting = false;
+        DeleteProgress = LocText.Empty;
+        DeleteFraction = 0;
+        DeleteIndeterminate = false;
+        DeletionStatus = null;
+    }
+
+    /// <summary>
+    /// Reads the target again and syncs the index after a deletion; meanwhile the plan card shows "Indexing…" with the
+    /// sync's progress.
+    /// </summary>
+    private async Task IndexAfterDeleteAsync()
+    {
+        var indexing = new DeletionCardStatus(LocText.Of("card.indexing"), new LocText(() => SyncText), 0, true);
+        DeletionStatus = indexing;
+        try
+        {
+            await RefreshAsync();
+        }
+        finally
+        {
+            if (ReferenceEquals(DeletionStatus, indexing))
+                DeletionStatus = null;
+        }
+    }
+
+    /// <summary>
+    /// At app start: finishes the plan's deletions this computer did not finish (version folders it marked as being
+    /// deleted, an incremental plan's pending pool cleanup; <see cref="DeletionResumer"/>) in the background, with the same
+    /// progress as a deletion by hand. Nothing happens while the target cannot be reached; the next start tries again.
+    /// </summary>
+    public async Task ResumeDeletionAsync()
+    {
+        if (_savedPlan() is not { } plan || IsDeleting || IsResuming)
+            return;
+        IsResuming = true;
+        try
+        {
+            var target = _context.Storages.Open(plan.Target);
+            var host = _context.Host;
+            var (folders, cleanup) = await Task.Run(() =>
+                DeletionResumer.FindAsync(target, plan.Id, plan.Incremental, host, CancellationToken.None));
+            if (folders.Count == 0 && !cleanup)
+                return;
+
+            _syncCts?.Cancel();
+            var cts = _deleteCts = new CancellationTokenSource();
+            StartDeleting(LocText.Of("versions.delete.resuming"));
+            var progress = DeletionProgress(cts);
+            DeletionResume result;
+            try
+            {
+                result = await RunAsJobAsync(cts, () =>
+                    DeletionResumer.ResumeAsync(target, plan.Id, plan.Name, plan.Incremental, progress, cts.Token, host));
+                if (result.Removed.Count > 0)
+                    await _context.Worker.RunAsync(plan.Id, index => index.Remove(result.Removed));
+            }
+            catch (OperationCanceledException)
+            {
+                return;   // the markers stay: the next start continues
+            }
+            finally
+            {
+                EndDeleting();
+                cts.Dispose();
+            }
+
+            _context.ReportStatus(result.Outcome == ResumeOutcome.Finished
+                ? LocText.Of("versions.delete.resumed")
+                : LocText.Of("versions.delete.resumeIncomplete"));
+            VersionsDeleted?.Invoke();
+            if (_loaded)
+                _ = IndexAfterDeleteAsync();
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"Resuming the deletions of plan {plan.Id} failed: {ex.Message}");
+        }
+        finally
+        {
+            IsResuming = false;
+        }
     }
 
     private static string ProblemText(VersionDeletion result) => result.Outcome switch

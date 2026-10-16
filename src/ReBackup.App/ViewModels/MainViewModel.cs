@@ -68,7 +68,7 @@ public sealed partial class MainViewModel : ObservableObject
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
         _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
-            DescribeLocation: DescribeLocation, TempOpener: tempOpener);
+            DescribeLocation: DescribeLocation, TempOpener: tempOpener, TrackJob: (job, running) => Track(job, running));
         // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
         _s3.Changed += (_, _) => RevalidateAll();
         _drive.Changed += (_, _) => RevalidateAll();
@@ -102,6 +102,14 @@ public sealed partial class MainViewModel : ObservableObject
         PublishPlans();
         RefreshSchedule();
     }
+
+    /// <summary>
+    /// At app start: every saved plan finishes, in the background, the deletions this computer left unfinished in its
+    /// target (<see cref="VersionsViewModel.ResumeDeletionAsync"/>); meanwhile its runs are refused or skipped. Completes
+    /// when all have ended.
+    /// </summary>
+    public Task ResumeDeletionsAsync() =>
+        Task.WhenAll(Plans.Where(p => !p.IsNew).Select(p => p.Versions.ResumeDeletionAsync()).ToList());
 
     /// <summary>Plan name and result of a finished run; raised on the UI thread.</summary>
     public event Action<string, RunLogEntry>? RunFinished;
@@ -168,7 +176,7 @@ public sealed partial class MainViewModel : ObservableObject
     public IReadOnlyList<(string Id, string Name, bool CanRun)> RunnablePlans =>
         Plans.Where(p => !p.IsNew)
             .Select(p => (p.Id, p.Name, CanRun: !p.IsDirty && p.Errors.Count == 0 && !p.Run.IsActive && !p.IsCopying &&
-                                         !p.IsCopyUnfinished))
+                                         !p.IsCopyUnfinished && !p.IsDeletingVersions))
             .ToList();
 
     public bool HasUnsavedChanges => Plans.Any(p => p.IsDirty);
@@ -544,6 +552,12 @@ public sealed partial class MainViewModel : ObservableObject
                 SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.copyUnfinished"));
                 return;
             }
+            if (editor.IsDeletingVersions)
+            {
+                // Versions are deleted (or an unfinished deletion is finished): the run would find them half gone.
+                SkipScheduledRun(editor, plan, trigger, CoreTexts.English("core.run.deleteRunning"));
+                return;
+            }
             if (ScheduledRunBlocker(plan) is { } reason)
             {
                 SkipScheduledRun(editor, plan, trigger, reason);
@@ -728,6 +742,11 @@ public sealed partial class MainViewModel : ObservableObject
         if (editor.IsCopyUnfinished)
         {
             SetStatus(LocText.Of("shell.status.copyUnfinished", ("plan", editor.Name)));
+            return false;
+        }
+        if (editor.IsDeletingVersions)
+        {
+            SetStatus(LocText.Of("shell.status.deleteRunning", ("plan", editor.Name)));
             return false;
         }
 

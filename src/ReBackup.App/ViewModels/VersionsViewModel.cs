@@ -20,11 +20,12 @@ namespace ReBackup.App.ViewModels;
 /// folders that other computers marked are listed apart. <paramref name="DescribeLocation"/> names a location in
 /// messages (an S3 location by its connection, bucket and prefix); a folder's path, else <c>kind://path</c>, when null.
 /// <paramref name="TempOpener"/> opens files and folders of versions that cannot be opened in place (incremental plans,
-/// targets that are no folder) through a temporary copy; without it they are not opened.
+/// targets that are no folder) through a temporary copy; without it they are not opened. <paramref name="TrackJob"/> gets
+/// a deletion when it starts (true) and ends (false), so the app can stop it and wait for it when it exits.
 /// </summary>
 public sealed record VersionsContext(VersionIndexWorker Worker, IDialogService Dialogs, Action<LocText> ReportStatus,
     IStorageFactory Storages, string? MachineName = null, Func<StorageLocation, string>? DescribeLocation = null,
-    ITempOpener? TempOpener = null)
+    ITempOpener? TempOpener = null, Action<IPoolJob, bool>? TrackJob = null)
 {
     /// <summary>This computer, as markers name it.</summary>
     public string Host => MachineName ?? Environment.MachineName;
