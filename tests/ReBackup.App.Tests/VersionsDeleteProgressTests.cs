@@ -90,50 +90,56 @@ public class VersionsDeleteProgressTests : IDisposable
     [Fact]
     public async Task Pool_delete_shows_each_phase_in_the_tab_and_on_the_plan_card_and_resets_afterwards()
     {
-        var vm = Create();
-        var editor = Projects(vm);
-        var versions = editor.Versions;
-        await MarkAsync(versions, First);
-        var otherState = Other(vm).Run.CardState;
-        _step.HoldList = path => path == PoolLayout.PoolFolder;
+        // As on the UI thread: the progress reports are applied one after the other, in order, and the test reads the view
+        // models between them (without a context, Progress<T> runs them on the thread pool, concurrently and out of order).
+        using var ui = new SerialContext();
+        await ui.RunAsync(async () =>
+        {
+            var vm = Create();
+            var editor = Projects(vm);
+            var versions = editor.Versions;
+            await MarkAsync(versions, First);
+            var otherState = Other(vm).Run.CardState;
+            _step.HoldList = path => path == PoolLayout.PoolFolder;
 
-        var deleting = versions.DeleteVersionsCommand.ExecuteAsync(null);
-        await _step.Reached.Task.WaitAsync(Timeout);
+            var deleting = versions.DeleteVersionsCommand.ExecuteAsync(null);
+            await _step.Reached.Task.WaitAsync(Timeout);
 
-        // Listing the pool: no total yet.
-        var listing = Loc.F("versions.delete.cleanup.listing", ("files", Formats.Files(0)));
-        await WaitUntilAsync(() => versions.DeleteText == listing, "the tab shows the listing");
-        versions.DeleteIndeterminate.Should().BeTrue();
-        vm.StatusMessage.Should().Be(listing);
-        await WaitUntilAsync(() => editor.Run.CardState == PlanCardState.Deleting && editor.Run.DetailText == listing,
-            "the card shows the listing");
-        editor.Run.PhaseText.Should().Be(Loc.T("card.delete.cleaning"));
-        editor.Run.RingIndeterminate.Should().BeTrue();
-        Other(vm).Run.CardState.Should().Be(otherState, "only the plan whose versions are deleted shows it");
-        editor.IsDeletingVersions.Should().BeTrue();
+            // Listing the pool: no total yet.
+            var listing = Loc.F("versions.delete.cleanup.listing", ("files", Formats.Files(0)));
+            await WaitUntilAsync(() => versions.DeleteText == listing, "the tab shows the listing");
+            versions.DeleteIndeterminate.Should().BeTrue();
+            vm.StatusMessage.Should().Be(listing);
+            await WaitUntilAsync(() => editor.Run.CardState == PlanCardState.Deleting && editor.Run.DetailText == listing,
+                "the card shows the listing");
+            editor.Run.PhaseText.Should().Be(Loc.T("card.delete.cleaning"));
+            editor.Run.RingIndeterminate.Should().BeTrue();
+            Other(vm).Run.CardState.Should().Be(otherState, "only the plan whose versions are deleted shows it");
+            editor.IsDeletingVersions.Should().BeTrue();
 
-        // The indexing after the deletion waits on the remaining version's manifest.
-        _step.Reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var gate = _step.Gate;
-        _step.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _step.HoldList = _ => false;
-        _step.HoldRead = path => path == $"{Second}/re-manifest.json";
-        gate.SetResult();
-        await deleting.WaitAsync(Timeout);
-        await _step.Reached.Task.WaitAsync(Timeout);
+            // The indexing after the deletion waits on the remaining version's manifest.
+            _step.Reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = _step.Gate;
+            _step.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _step.HoldList = _ => false;
+            _step.HoldRead = path => path == $"{Second}/re-manifest.json";
+            gate.SetResult();
+            await deleting.WaitAsync(Timeout);
+            await _step.Reached.Task.WaitAsync(Timeout);
 
-        await WaitUntilAsync(() => editor.Run.PhaseText == Loc.T("card.indexing"), "the card shows the indexing");
-        editor.Run.CardState.Should().Be(PlanCardState.Deleting);
-        versions.IsSyncing.Should().BeTrue();
-        versions.SyncText.Should().NotBeEmpty("the tab shows the sync's own progress");
+            await WaitUntilAsync(() => editor.Run.PhaseText == Loc.T("card.indexing"), "the card shows the indexing");
+            editor.Run.CardState.Should().Be(PlanCardState.Deleting);
+            versions.IsSyncing.Should().BeTrue();
+            versions.SyncText.Should().NotBeEmpty("the tab shows the sync's own progress");
 
-        _step.Gate.SetResult();
-        await WaitUntilAsync(() => versions.DeletionStatus is null && !versions.IsSyncing, "the indexing ends");
-        await WaitUntilAsync(() => editor.Run.CardState == otherState, "the card returns to its normal state");
-        versions.VersionRows.Select(r => r.Name).Should().Equal(Second);
-        _target.Files.Should().NotContain([Blob("only in the first"), OwnCleanup, PoolLayout.LockFile]);
-        _target.Files.Should().Contain(Blob("in the second"));
-        editor.IsDeletingVersions.Should().BeFalse();
+            _step.Gate.SetResult();
+            await WaitUntilAsync(() => versions.DeletionStatus is null && !versions.IsSyncing, "the indexing ends");
+            await WaitUntilAsync(() => editor.Run.CardState == otherState, "the card returns to its normal state");
+            versions.VersionRows.Select(r => r.Name).Should().Equal(Second);
+            _target.Files.Should().NotContain([Blob("only in the first"), OwnCleanup, PoolLayout.LockFile]);
+            _target.Files.Should().Contain(Blob("in the second"));
+            editor.IsDeletingVersions.Should().BeFalse();
+        }).WaitAsync(Timeout * 4);
     }
 
     [Fact]
