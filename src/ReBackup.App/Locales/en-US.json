@@ -898,6 +898,22 @@
       "text": "{size} exclusive",
       "toolTip": "Space only this version uses in the pool: deleting it frees about this much"
     },
+    "pool": {
+      "summary": "Pool {pool} · full copies would be {full} · {percent} % saved",
+      "summaryToolTip": "From the local index: the space the pool needs for all versions, and what they would take as full copies",
+      "savedName": "Share the pool saves",
+      "measure": "Measure pool",
+      "measureToolTip": "List the pool on the target once and add it up (read-only)",
+      "measuring": "Measuring the pool… {count:N0} files",
+      "cancel": "Cancel measuring",
+      "measured": {
+        "one": "On target: {size} in {count:N0} file",
+        "other": "On target: {size} in {count:N0} files"
+      },
+      "unreferenced": " · about {size} not referenced",
+      "unreachable": "The target cannot be reached, so the pool was not measured.",
+      "failed": "The pool could not be measured: {error}"
+    },
     "foreign": {
       "list": "Folders other computers are writing or deleting",
       "pending": "Being written by {host} since {time}",
