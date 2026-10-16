@@ -923,7 +923,7 @@
       "toolTip": "Platz, den nur diese Version im Pool belegt: Löschen gibt etwa so viel frei"
     },
     "pool": {
-      "summary": "Pool {pool} · volle Kopien wären {full} · {percent} % gespart",
+      "summary": "Pool {pool} · volle Kopien wären {full} · {percent} % gespart",
       "fullSummary": "Alle Versionen zusammen: {size} (volle Kopien, keine Deduplizierung)",
       "fullSummaryToolTip": "Aus dem lokalen Index: der Platz, den alle Versionen zusammen belegen; jede ist eine volle Kopie",
       "fullUsedName": "Platz, den alle Versionen belegen",
