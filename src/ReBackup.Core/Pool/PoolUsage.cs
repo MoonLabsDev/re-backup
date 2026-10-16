@@ -50,4 +50,42 @@ public static class PoolUsage
             unique[version] = sizes.Where(pair => owners[pair.Key] == 1).Sum(pair => pair.Value);
         return unique;
     }
+
+    /// <summary><see cref="MeasurePoolAsync"/> reports its count after this many blobs.</summary>
+    public const int MeasureProgressEvery = 1000;
+
+    /// <summary>
+    /// The blobs in <paramref name="target"/>'s pool and their bytes, by one recursive listing of
+    /// <see cref="PoolLayout.PoolFolder"/>: read-only, without the lock. Only files named like a blob (32 hex digits) count.
+    /// <paramref name="progress"/> gets the blobs counted so far every <see cref="MeasureProgressEvery"/> blobs and at
+    /// the end. A pool that does not exist yet is (0, 0).
+    /// </summary>
+    /// <exception cref="StorageException">The pool cannot be listed.</exception>
+    public static async Task<(int Blobs, long Bytes)> MeasurePoolAsync(IStorage target, IProgress<int>? progress,
+        CancellationToken ct)
+    {
+        var blobs = 0;
+        long bytes = 0;
+        try
+        {
+            await foreach (var entry in target.ListAsync(PoolLayout.PoolFolder, recursive: true, ct).ConfigureAwait(false))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (entry.IsDirectory || entry.IsLink ||
+                    !PoolLayout.TryParseHex(PoolLayout.HashPrefix + StoragePath.Name(entry.Path), out _))
+                    continue;
+                blobs++;
+                bytes += entry.Size;
+                if (blobs % MeasureProgressEvery == 0)
+                    progress?.Report(blobs);
+            }
+        }
+        catch (StorageNotFoundException)
+        {
+            return (0, 0);   // no pool yet
+        }
+        if (blobs % MeasureProgressEvery != 0)
+            progress?.Report(blobs);
+        return (blobs, bytes);
+    }
 }

@@ -650,4 +650,29 @@ public class VersionIndexTests : IDisposable
         index.UniqueBytes(versions[1].Id).Should().Be(40, "two paths with the same new content both count");
         index.UniqueBytes(-1).Should().Be(0);
     }
+
+    [Fact]
+    public async Task PoolStats_counts_shared_content_once_and_files_without_hash_each()
+    {
+        var storage = new InMemoryStorage();
+        const string hashC = "xxh128:0123456789abcdef0123456789abcdef";
+        AddPoolVersion(storage, "2026_09_29-14_05",
+            PoolFile("shared.txt", 100, PoolHashA), PoolFile("old.txt", 10, PoolHashB), PoolFile("nohash.txt", 1, ""));
+        AddPoolVersion(storage, "2026_09_30-14_05",
+            PoolFile("renamed.txt", 100, PoolHashA), PoolFile("new.txt", 20, hashC), PoolFile("twin.txt", 20, hashC),
+            PoolFile("nohash.txt", 1, ""));
+        var index = VersionIndex.Open(_db);
+        index.Sync(await VersionCatalog.ListAsync(storage, PlanId, PlanName), storage, scanFallback: false);
+
+        var (full, pool) = index.PoolStats();
+
+        full.Should().Be(100 + 10 + 1 + 100 + 20 + 20 + 1);
+        pool.Should().Be(100 + 10 + 20 + 1 + 1, "shared and twin content count once; files without a hash count each");
+    }
+
+    [Fact]
+    public void PoolStats_of_an_empty_index_is_zero()
+    {
+        VersionIndex.Open(_db).PoolStats().Should().Be((0L, 0L));
+    }
 }

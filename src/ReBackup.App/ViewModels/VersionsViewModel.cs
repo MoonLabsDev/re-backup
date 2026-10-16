@@ -196,6 +196,8 @@ public sealed partial class VersionsViewModel : ObservableObject
         VersionRows.ReplaceAll([]);
         ShowForeign([]);
         ShowCoverage(null);
+        ShowPoolStatsOf(null);
+        ClearMeasurement(cancel: true);
         OnPropertyChanged(nameof(ShowEmpty));
     }
 
@@ -248,13 +250,15 @@ public sealed partial class VersionsViewModel : ObservableObject
         _reloadRequested = false;
         OnPropertyChanged(nameof(ShowExplorerActions));
         OnPropertyChanged(nameof(ShowTempRestore));
+        OnPropertyChanged(nameof(ShowPoolStats));
+        OnPropertyChanged(nameof(PoolSummary));
         IsSyncing = true;
         ErrorText = null;
         Sync = LocText.Of("versions.sync.reading");
         try
         {
             // Listing the target and reading the index never wait for a sync (the index allows reads beside writes).
-            var (index, state, target, folders, foreign, indexed) = await Task.Run(async () =>
+            var (index, state, target, folders, foreign, indexed, pool) = await Task.Run(async () =>
             {
                 var planIndex = _context.Indexes.For(plan.Id);
                 var (targetState, storage) = await TargetStates.OpenAndProbeAsync(_context.Storages, plan.Target, cts.Token);
@@ -264,13 +268,15 @@ public sealed partial class VersionsViewModel : ObservableObject
                 IReadOnlyList<ForeignMarkedFolder> marked = storage is null
                     ? []
                     : await VersionCatalog.ListForeignMarkedAsync(storage, plan.Id, plan.Name, _context.Host, cts.Token);
-                return (planIndex, targetState, storage, list, marked, planIndex.Versions());
+                (long, long)? stats = plan.Incremental ? planIndex.PoolStats() : null;
+                return (planIndex, targetState, storage, list, marked, planIndex.Versions(), stats);
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
                 return;
 
             _index = index;
             _versionsLocation = plan.Target;
+            ShowPoolStatsOf(pool);   // at once from the index; again after the sync
             if (state == TargetState.Unreachable)
             {
                 // An offline target (e.g. a NAS): show nothing, and keep the index as it is.
@@ -300,7 +306,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             // Queued behind other work on this plan's index (another sync, a finished run's version); the ids are
             // read in the same step, after the sync, because a re-import gives a version a new id. A pool version
             // without a usable manifest is not scanned (its folder holds no files): it is indexed as damaged.
-            var (result, versions, targetGone, exclusive) = await _context.Worker.RunAsync(plan.Id, planIndex =>
+            var (result, versions, targetGone, exclusive, poolStats) = await _context.Worker.RunAsync(plan.Id, planIndex =>
             {
                 var synced = planIndex.Sync(folders, target!, progress, cts.Token, scanFallback: !plan.Incremental);
                 // Errors because the whole target went away (e.g. the NAS went offline mid-sync) are one message.
@@ -311,10 +317,13 @@ public sealed partial class VersionsViewModel : ObservableObject
                 IReadOnlyDictionary<string, long>? unique = plan.Incremental
                     ? indexedVersions.ToDictionary(v => v.Name, v => planIndex.UniqueBytes(v.Id), StringComparer.OrdinalIgnoreCase)
                     : null;
-                return (synced, indexedVersions, gone, unique);
+                (long, long)? stats = plan.Incremental ? planIndex.PoolStats() : null;
+                return (synced, indexedVersions, gone, unique, stats);
             }, cts.Token);
             if (!ReferenceEquals(_syncCts, cts))
                 return;
+
+            ShowPoolStatsOf(poolStats);   // a measurement stays unless the stats changed
 
             if (targetGone)
             {

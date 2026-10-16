@@ -898,6 +898,22 @@
       "text": "{size} exklusiv",
       "toolTip": "Platz, den nur diese Version im Pool belegt: Löschen gibt etwa so viel frei"
     },
+    "pool": {
+      "summary": "Pool {pool} · volle Kopien wären {full} · {percent} % gespart",
+      "summaryToolTip": "Aus dem lokalen Index: der Platz, den der Pool für alle Versionen braucht, und was sie als volle Kopien belegen würden",
+      "savedName": "Anteil, den der Pool spart",
+      "measure": "Pool messen",
+      "measureToolTip": "Den Pool auf dem Ziel einmal auflisten und zusammenzählen (nur lesend)",
+      "measuring": "Pool wird gemessen… {count:N0} Dateien",
+      "cancel": "Messen abbrechen",
+      "measured": {
+        "one": "Auf dem Ziel: {size} in {count:N0} Datei",
+        "other": "Auf dem Ziel: {size} in {count:N0} Dateien"
+      },
+      "unreferenced": " · davon ca. {size} nicht referenziert",
+      "unreachable": "Das Ziel ist nicht erreichbar, daher wurde der Pool nicht gemessen.",
+      "failed": "Der Pool konnte nicht gemessen werden: {error}"
+    },
     "foreign": {
       "list": "Ordner, die andere Computer schreiben oder löschen",
       "pending": "Wird seit {time} von {host} geschrieben",
