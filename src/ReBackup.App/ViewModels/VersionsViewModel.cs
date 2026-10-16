@@ -323,8 +323,7 @@ public sealed partial class VersionsViewModel : ObservableObject
             if (!ReferenceEquals(_syncCts, cts))
                 return;
 
-            ShowPoolStatsOf(poolStats);
-            ClearMeasurement(cancel: false);   // it was measured against the index before this sync
+            ShowPoolStatsOf(poolStats);   // a measurement stays unless the stats changed
 
             if (targetGone)
             {

@@ -77,11 +77,19 @@ public sealed partial class VersionsViewModel
         }
     }
 
-    /// <summary>Shows the sizes of <paramref name="stats"/> (null for full plans: none).</summary>
+    /// <summary>
+    /// Shows the sizes of <paramref name="stats"/> (null for full plans: none). When they differ from the shown ones, the
+    /// measurement on the target is forgotten: it was compared with the index as it was.
+    /// </summary>
     private void ShowPoolStatsOf((long FullBytes, long PoolBytes)? stats)
     {
-        FullEquivalentBytes = stats?.FullBytes ?? 0;
-        PoolBytes = stats?.PoolBytes ?? 0;
+        var full = stats?.FullBytes ?? 0;
+        var pool = stats?.PoolBytes ?? 0;
+        if (full == FullEquivalentBytes && pool == PoolBytes)
+            return;
+        FullEquivalentBytes = full;
+        PoolBytes = pool;
+        ClearMeasurement(cancel: false);
     }
 
     /// <summary>Forgets the shown measurement (a running one goes on unless <paramref name="cancel"/>).</summary>

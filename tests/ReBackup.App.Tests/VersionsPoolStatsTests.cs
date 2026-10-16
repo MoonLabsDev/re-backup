@@ -160,16 +160,32 @@ public class VersionsPoolStatsTests : IDisposable
     }
 
     [Fact]
-    public async Task Measurement_is_cleared_by_a_new_sync_and_a_target_change()
+    public async Task Measurement_survives_a_sync_with_unchanged_stats()
     {
         var vm = await LoadedPoolAsync();
         await vm.MeasurePoolCommand.ExecuteAsync(null);
-        vm.MeasuredSummary.Should().NotBeNull();
+        var measured = vm.MeasuredSummary;
+        measured.Should().NotBeNull();
 
+        vm.EnsureLoaded();   // the tab is shown again
         await vm.RefreshCommand.ExecuteAsync(null);
-        vm.MeasuredSummary.Should().BeNull();
+
+        vm.MeasuredSummary.Should().Be(measured);
+    }
+
+    [Fact]
+    public async Task Measurement_is_cleared_when_the_stats_change_or_the_target_changes()
+    {
+        var vm = await LoadedPoolAsync();
+        await vm.MeasurePoolCommand.ExecuteAsync(null);
+
+        PoolTargets.WriteVersion(_target, "2026_10_01-14_05 Projects", "p1", "Projects", new PoolFile("big.txt", "0123456789"));
+        await vm.RefreshCommand.ExecuteAsync(null);
+        vm.PoolBytes.Should().Be(39);
+        vm.MeasuredSummary.Should().BeNull("it was measured against the index before the new version");
 
         await vm.MeasurePoolCommand.ExecuteAsync(null);
+        vm.MeasuredSummary.Should().NotBeNull();
         vm.OnSavedTargetChanged();
         vm.MeasuredSummary.Should().BeNull();
     }
