@@ -19,12 +19,14 @@ public sealed partial class VersionTreeNode : ObservableObject
     [NotifyPropertyChangedFor(nameof(StatusText))]
     private DiffStatus? _status;
 
-    internal VersionTreeNode(VersionTreeViewModel tree, IndexChild entry, int depth, DiffStatus? status)
+    internal VersionTreeNode(VersionTreeViewModel tree, IndexChild entry, int depth, DiffStatus? status,
+        bool shownIsNewer = false)
     {
         _tree = tree;
         Entry = entry;
         Depth = depth;
         Status = status;
+        ShownIsNewer = shownIsNewer;
     }
 
     /// <summary>A message row ("Loading…", "Indexing…", "Empty folder").</summary>
@@ -55,7 +57,33 @@ public sealed partial class VersionTreeNode : ObservableObject
     /// <summary>The values shown: version A's, or B's for entries only in B.</summary>
     public IndexStats? Stats => Entry?.InVersion ?? Entry?.InOther;
 
-    public string SizeText => Stats is { } stats ? Formats.Bytes(stats.Size) : "";
+    /// <summary>Version A is the newer one of the comparison (the difference is newer minus older).</summary>
+    public bool ShownIsNewer { get; }
+
+    /// <summary>A's size; while comparing an entry only in B has none (B's is the compared size).</summary>
+    public string SizeText =>
+        (Status is null ? Stats : Entry?.InVersion) is { } stats ? Formats.Bytes(stats.Size) : "";
+
+    /// <summary>B's size while comparing; empty for entries only in A.</summary>
+    public string CompareSizeText => Status is not null && Entry?.InOther is { } other ? Formats.Bytes(other.Size) : "";
+
+    /// <summary>
+    /// While comparing: the newer version's size minus the older one's (a missing entry counts as 0), so growth is
+    /// positive whichever of the two is shown; null otherwise.
+    /// </summary>
+    public long? SizeChange => Status is null || Entry is not { } entry ? null
+        : ShownIsNewer ? (entry.InVersion?.Size ?? 0) - (entry.InOther?.Size ?? 0)
+        : (entry.InOther?.Size ?? 0) - (entry.InVersion?.Size ?? 0);
+
+    /// <summary>"+1.2 MB" / "−1.2 MB"; empty when the size stayed the same or nothing is compared.</summary>
+    public string SizeChangeText => SizeChange switch
+    {
+        null or 0 => "",
+        > 0 and var growth => "+" + Formats.Bytes(growth),
+        var shrink => "−" + Formats.Bytes(-shrink.Value),
+    };
+
+    public bool IsGrowth => SizeChange > 0;
 
     public string FilesText => IsDirectory && Stats is { } stats ? Formats.Count(stats.Files) : "";
 

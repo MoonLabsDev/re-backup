@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,11 +15,53 @@ public partial class VersionsView : UserControl
     /// <summary>The Name column never gets narrower; below that the table scrolls sideways.</summary>
     private const double NameMinWidth = 160;
 
+    private VersionsViewModel? _versions;
+
     public VersionsView()
     {
         InitializeComponent();
         IsVisibleChanged += (_, _) => EnsureLoaded();
-        DataContextChanged += (_, _) => EnsureLoaded();
+        DataContextChanged += (_, _) =>
+        {
+            WatchVersions((DataContext as PlanEditorViewModel)?.Versions);
+            EnsureLoaded();
+        };
+        WatchVersions(null);
+    }
+
+    /// <summary>Follows <see cref="VersionsViewModel.IsComparing"/>: the compare columns are shown only while comparing.</summary>
+    private void WatchVersions(VersionsViewModel? versions)
+    {
+        if (_versions is not null)
+            _versions.PropertyChanged -= OnVersionsPropertyChanged;
+        _versions = versions;
+        if (versions is not null)
+            versions.PropertyChanged += OnVersionsPropertyChanged;
+        ShowCompareColumns(versions?.IsComparing ?? false);
+    }
+
+    private void OnVersionsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(VersionsViewModel.IsComparing) && sender is VersionsViewModel versions)
+            ShowCompareColumns(versions.IsComparing);
+    }
+
+    private void ShowCompareColumns(bool show)
+    {
+        if (TreeList.View is not GridView view || view.Columns.Contains(CompareSizeColumn) == show)
+            return;
+        if (show)
+        {
+            var after = view.Columns.IndexOf(SizeColumn) + 1;
+            view.Columns.Insert(after, CompareSizeColumn);
+            view.Columns.Insert(after + 1, SizeChangeColumn);
+        }
+        else
+        {
+            view.Columns.Remove(CompareSizeColumn);
+            view.Columns.Remove(SizeChangeColumn);
+        }
+        FitNameColumn();
     }
 
     private void EnsureLoaded()
@@ -62,10 +105,18 @@ public partial class VersionsView : UserControl
 
     private void OnTreeSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        // The Name column takes the width the fixed columns leave (room kept for the vertical scroll bar).
-        if (!e.WidthChanged || TreeList.View is not GridView view)
+        if (e.WidthChanged)
+            FitNameColumn();
+    }
+
+    /// <summary>The Name column takes the width the fixed columns leave (room kept for the vertical scroll bar).</summary>
+    private void FitNameColumn()
+    {
+        if (TreeList.View is not GridView view || TreeList.ActualWidth <= 0)
             return;
-        var others = view.Columns.Where(column => column != NameColumn).Sum(column => column.ActualWidth);
+        // A column just inserted has no ActualWidth yet.
+        var others = view.Columns.Where(column => column != NameColumn)
+            .Sum(column => column.ActualWidth > 0 ? column.ActualWidth : column.Width);
         NameColumn.Width = Math.Max(NameMinWidth, TreeList.ActualWidth - others - ThemeScrollBarWidth - 8);
     }
 

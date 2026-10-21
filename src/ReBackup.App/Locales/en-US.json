@@ -1010,7 +1010,10 @@
       "noFiles": "This version holds no files.",
       "cannotRead": "Cannot be read: {error}",
       "loading": "Loading…",
-      "emptyFolder": "Empty folder"
+      "emptyFolder": "Empty folder",
+      "compareSize": "Compared",
+      "sizeChange": "Difference",
+      "sizeChangeToolTip": "Newer version minus older version"
     },
     "search": {
       "results": "Search results",
