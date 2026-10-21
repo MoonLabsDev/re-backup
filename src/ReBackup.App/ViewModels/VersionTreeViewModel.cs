@@ -18,6 +18,7 @@ public sealed partial class VersionTreeViewModel : ObservableObject
     private long _versionId;
     private long? _otherId;
     private IReadOnlyDictionary<long, DiffStatus>? _statuses;
+    private bool _shownIsNewer;
     private bool _changedOnly;
     private int _generation;
 
@@ -67,13 +68,15 @@ public sealed partial class VersionTreeViewModel : ObservableObject
 
     /// <summary>
     /// Shows version <paramref name="versionId"/>; with <paramref name="otherId"/> and <paramref name="statuses"/> as a
-    /// comparison. Folders that were expanded before stay expanded when they exist.
+    /// comparison (<paramref name="shownIsNewer"/>: the shown version is the newer one). Folders that were expanded before
+    /// stay expanded when they exist.
     /// </summary>
     public async Task ShowAsync(VersionIndex index, long versionId, long? otherId,
-        IReadOnlyDictionary<long, DiffStatus>? statuses, bool changedOnly)
+        IReadOnlyDictionary<long, DiffStatus>? statuses, bool changedOnly, bool shownIsNewer = false)
     {
         var generation = ++_generation;
         _index = null;   // until the new tree is in, nothing is loaded with the old ids
+        _shownIsNewer = shownIsNewer;   // read by Load, also on the worker below
         var expanded = _expanded.ToHashSet();
         var roots = await Task.Run(() => LoadTree(index, versionId, otherId, statuses, expanded));
         if (generation != _generation)
@@ -236,7 +239,7 @@ public sealed partial class VersionTreeViewModel : ObservableObject
         IReadOnlyDictionary<long, DiffStatus>? statuses, long folderId, int depth) =>
         index.Children(versionId, folderId, otherId)
             .Select(child => new VersionTreeNode(this, child, depth,
-                statuses is null ? null : statuses.GetValueOrDefault(child.PathId, DiffStatus.Unchanged)))
+                statuses is null ? null : statuses.GetValueOrDefault(child.PathId, DiffStatus.Unchanged), _shownIsNewer))
             .ToList();
 
     /// <summary>

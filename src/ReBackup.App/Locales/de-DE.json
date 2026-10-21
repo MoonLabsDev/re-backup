@@ -1010,7 +1010,10 @@
       "noFiles": "Diese Version enthält keine Dateien.",
       "cannotRead": "Nicht lesbar: {error}",
       "loading": "Wird geladen …",
-      "emptyFolder": "Leerer Ordner"
+      "emptyFolder": "Leerer Ordner",
+      "compareSize": "Verglichen",
+      "sizeChange": "Differenz",
+      "sizeChangeToolTip": "Neuere Version minus ältere Version"
     },
     "search": {
       "results": "Suchergebnisse",

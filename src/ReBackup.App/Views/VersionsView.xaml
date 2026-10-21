@@ -446,10 +446,40 @@
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>
-                                    <GridViewColumn Header="{l:Loc common.size}" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                                    <GridViewColumn x:Name="SizeColumn" Header="{l:Loc common.size}" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <!-- Only while comparing (code-behind): B's size, and newer minus older. -->
+                                    <GridViewColumn x:Name="CompareSizeColumn" Header="{l:Loc versions.tree.compareSize}" Width="96"
+                                                    HeaderContainerStyle="{StaticResource Header.Number}">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding CompareSizeText}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn x:Name="SizeChangeColumn" Width="100" HeaderContainerStyle="{StaticResource Header.Number}">
+                                        <GridViewColumn.Header>
+                                            <TextBlock Text="{l:Loc versions.tree.sizeChange}" ToolTip="{l:Loc versions.tree.sizeChangeToolTip}" />
+                                        </GridViewColumn.Header>
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding SizeChangeText}">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Number}">
+                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsGrowth}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>

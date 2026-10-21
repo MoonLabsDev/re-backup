@@ -246,11 +246,12 @@ public sealed partial class VersionsViewModel
         }
 
         IReadOnlyDictionary<long, DiffStatus>? statuses = null;
+        var aFirst = true;
         try
         {
             if (other is not null)
             {
-                var aFirst = versionA.LocalTime != other.LocalTime
+                aFirst = versionA.LocalTime != other.LocalTime
                     ? versionA.LocalTime < other.LocalTime
                     : string.Compare(versionA.Name, other.Name, StringComparison.OrdinalIgnoreCase) <= 0;
                 var (older, newer) = aFirst ? (versionA, other) : (other, versionA);
@@ -258,7 +259,7 @@ public sealed partial class VersionsViewModel
                 if (generation != _treeGeneration)
                     return;
             }
-            await Tree.ShowAsync(index, versionA.Id, other?.Id, statuses, ChangedOnly);
+            await Tree.ShowAsync(index, versionA.Id, other?.Id, statuses, ChangedOnly, shownIsNewer: !aFirst);
             if (generation == _treeGeneration)
                 _shown = (index, versionA, other);
         }
