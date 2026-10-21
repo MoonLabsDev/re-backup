@@ -33,6 +33,18 @@
             </Style.Triggers>
         </Style>
 
+        <!-- A size difference: growth red, shrinking green (the sign stays in the text). -->
+        <Style x:Key="TextBlock.SizeChange" TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Number}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsGrowth}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsShrink}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.DiffAdded}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Status dot of a compared entry: Added DiffAdded, Changed Warning, Deleted Danger, Unchanged TextFaint. -->
         <Style x:Key="Ellipse.Diff" TargetType="Ellipse">
             <Setter Property="Width" Value="8" />
@@ -325,7 +337,7 @@
                         </Grid>
                         <StackPanel Orientation="Horizontal" Margin="0,0,12,6">
                             <TextBlock Style="{StaticResource TextBlock.Muted}" VerticalAlignment="Center" Margin="0,0,8,0" Text="{l:Loc versions.toolbar.compareWith}" />
-                            <ComboBox Width="190" ItemsSource="{Binding Versions.CompareChoices}" DisplayMemberPath="Label"
+                            <ComboBox Width="240" ItemsSource="{Binding Versions.CompareChoices}" DisplayMemberPath="Label"
                                       SelectedItem="{Binding Versions.SelectedCompare}" AutomationProperties.Name="{l:Loc versions.toolbar.compareWith}" />
                             <Button Style="{StaticResource Button.Icon}" Margin="4,0,0,0" Content="{StaticResource Icon.Swap}"
                                     ToolTip="{l:Loc versions.toolbar.swapToolTip}" AutomationProperties.Name="{l:Loc versions.toolbar.swapName}"
@@ -468,18 +480,7 @@
                                         </GridViewColumn.Header>
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding SizeChangeText}">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Number}">
-                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsGrowth}" Value="True">
-                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
+                                                <TextBlock Style="{StaticResource TextBlock.SizeChange}" Text="{Binding SizeChangeText}" />
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>

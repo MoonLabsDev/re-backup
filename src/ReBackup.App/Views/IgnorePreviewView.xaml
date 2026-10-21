@@ -19,6 +19,18 @@
             <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
         </Style>
 
+        <!-- A size difference: growth red, shrinking green (the sign stays in the text). -->
+        <Style x:Key="TextBlock.SizeChange" TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Number}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsGrowth}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsShrink}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.DiffAdded}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="Header.Number" TargetType="GridViewColumnHeader" BasedOn="{StaticResource {x:Type GridViewColumnHeader}}">
             <Setter Property="HorizontalContentAlignment" Value="Right" />
             <Setter Property="Padding" Value="6,0,12,0" />
@@ -147,6 +159,10 @@
             <!-- Summary pills, with the size toggle on the right: always visible, also before the first scan. -->
             <DockPanel Grid.Row="2" Margin="0,12,0,0">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
+                    <TextBlock Style="{StaticResource TextBlock.Small}" Margin="0,0,8,0" Text="{l:Loc ignore.compare.with}" />
+                    <ComboBox Width="220" Margin="0,0,16,0" VerticalAlignment="Center" ItemsSource="{Binding Preview.CompareChoices}"
+                              DisplayMemberPath="Label" SelectedItem="{Binding Preview.SelectedCompare}"
+                              ToolTip="{l:Loc ignore.compare.toolTip}" AutomationProperties.Name="{l:Loc ignore.compare.with}" />
                     <TextBlock Style="{StaticResource TextBlock.Small}" Margin="0,0,8,0" Text="{l:Loc ignore.sizes.show}" />
                     <Border Background="{DynamicResource Brush.Rail}" BorderBrush="{DynamicResource Brush.BorderStrong}"
                             BorderThickness="1" CornerRadius="8" Padding="3" VerticalAlignment="Center"
@@ -266,10 +282,29 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="{l:Loc common.size}" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
+                            <GridViewColumn x:Name="SizeColumn" Header="{l:Loc common.size}" Width="96" HeaderContainerStyle="{StaticResource Header.Number}">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding ShownSizeText}" />
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <!-- Only while comparing with a version (code-behind): its size, and the backup's minus it. -->
+                            <GridViewColumn x:Name="CompareSizeColumn" Header="{l:Loc ignore.tree.compareSize}" Width="96"
+                                            HeaderContainerStyle="{StaticResource Header.Number}">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding CompareSizeText}" />
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn x:Name="SizeChangeColumn" Width="100" HeaderContainerStyle="{StaticResource Header.Number}">
+                                <GridViewColumn.Header>
+                                    <TextBlock Text="{l:Loc ignore.tree.sizeChange}" ToolTip="{l:Loc ignore.tree.sizeChangeToolTip}" />
+                                </GridViewColumn.Header>
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Style="{StaticResource TextBlock.SizeChange}" Text="{Binding SizeChangeText}" />
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
