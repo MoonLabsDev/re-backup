@@ -13,6 +13,11 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
     private readonly Dictionary<IPreviewEntry, PreviewRowViewModel> _placeholders = new(ReferenceEqualityComparer.Instance);
     private IPreviewEntry? _root;
 
+    /// <summary>The version compared with; its folders' sizes by folder path, null while one loads (or failed).</summary>
+    private PreviewComparison? _comparison;
+    private readonly Dictionary<string, IReadOnlyDictionary<string, long>?> _comparedFolders = new(StringComparer.OrdinalIgnoreCase);
+    private int _comparisonGeneration;
+
     [ObservableProperty] private PreviewRowViewModel? _selectedRow;
 
     /// <summary>
@@ -43,6 +48,65 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         _root = root;
         _placeholders.Clear();
         Rebuild(reuseRows: false);
+    }
+
+    /// <summary>A version is compared with: the rows show its sizes and the difference.</summary>
+    public bool IsComparing => _comparison is not null;
+
+    /// <summary>
+    /// Compares the rows with a version (null: no comparison). Its folders are listed when they are shown, off the UI
+    /// thread.
+    /// </summary>
+    public void SetComparison(PreviewComparison? comparison)
+    {
+        _comparison = comparison;
+        _comparisonGeneration++;
+        _comparedFolders.Clear();
+        OnPropertyChanged(nameof(IsComparing));
+        Rebuild(reuseRows: true);
+    }
+
+    /// <summary>
+    /// The size of <paramref name="entry"/> in the compared version: false while it is not known (no comparison, its
+    /// folder still loading); <paramref name="size"/> null when the version does not have it.
+    /// </summary>
+    internal bool TryGetComparedSize(IPreviewEntry entry, out long? size)
+    {
+        size = null;
+        if (_comparison is not { } comparison)
+            return false;
+        if (entry.RelativePath.Length == 0)
+        {
+            size = comparison.RootSize;
+            return true;
+        }
+        var slash = entry.RelativePath.LastIndexOf('/');
+        var folder = slash < 0 ? "" : entry.RelativePath[..slash];
+        if (!_comparedFolders.TryGetValue(folder, out var sizes) || sizes is null)
+            return false;
+        size = sizes.TryGetValue(PreviewComparison.Key(entry.Name, entry.IsDirectory), out var found) ? found : null;
+        return true;
+    }
+
+    /// <summary>Lists a shown folder of the compared version once; the rows are read again when it is in.</summary>
+    private async void LoadComparedFolder(string folder)
+    {
+        if (_comparison is not { } comparison || !_comparedFolders.TryAdd(folder, null))
+            return;
+        var generation = _comparisonGeneration;
+        IReadOnlyDictionary<string, long>? sizes;
+        try
+        {
+            sizes = await Task.Run(() => comparison.ListFolder(folder));
+        }
+        catch (Exception)
+        {
+            return;   // the index cannot be read: the folder's rows show no comparison
+        }
+        if (generation != _comparisonGeneration)
+            return;
+        _comparedFolders[folder] = sizes;
+        Rebuild(reuseRows: true);
     }
 
     partial void OnShowInBackupChanged(bool value)
@@ -148,6 +212,7 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         rows.Add(row);
         if (!expanded)
             return;
+        LoadComparedFolder(entry.RelativePath);
 
         // An open folder that is still waiting (open before the scan started, or kept open by path) goes first;
         // prioritising one that is already wanted is a cheap no-op, so this may run on every refresh.

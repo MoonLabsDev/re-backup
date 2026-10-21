@@ -76,14 +76,11 @@ public sealed partial class VersionTreeNode : ObservableObject
         : (entry.InOther?.Size ?? 0) - (entry.InVersion?.Size ?? 0);
 
     /// <summary>"+1.2 MB" / "−1.2 MB"; empty when the size stayed the same or nothing is compared.</summary>
-    public string SizeChangeText => SizeChange switch
-    {
-        null or 0 => "",
-        > 0 and var growth => "+" + Formats.Bytes(growth),
-        var shrink => "−" + Formats.Bytes(-shrink.Value),
-    };
+    public string SizeChangeText => Formats.BytesChange(SizeChange);
 
     public bool IsGrowth => SizeChange > 0;
+
+    public bool IsShrink => SizeChange < 0;
 
     public string FilesText => IsDirectory && Stats is { } stats ? Formats.Count(stats.Files) : "";
 

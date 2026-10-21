@@ -664,12 +664,19 @@
       "total": "Gesamt",
       "totalToolTip": "Zeigt die Gesamtgröße, ignorierte Einträge eingeschlossen"
     },
+    "compare": {
+      "with": "Vergleichen mit",
+      "toolTip": "Das nächste Backup mit einer Version dieses Plans vergleichen, um zu finden, was gewachsen ist"
+    },
     "tree": {
       "name": "Vorschaubaum",
       "ignoreThis": "Dies ignorieren",
       "ignoreExtension": "Alle Dateien mit dieser Endung ignorieren",
       "unignore": "Nicht mehr ignorieren",
-      "percent": "% des Ordners"
+      "percent": "% des Ordners",
+      "compareSize": "In Version",
+      "sizeChange": "Differenz",
+      "sizeChangeToolTip": "Was das nächste Backup enthielte minus das, was die Version enthält"
     },
     "treemap": {
       "resize": "Größe der Treemap ändern",

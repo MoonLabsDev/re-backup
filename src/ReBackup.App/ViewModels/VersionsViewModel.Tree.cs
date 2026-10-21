@@ -163,7 +163,8 @@ public sealed partial class VersionsViewModel
         var choices = new List<CompareChoice> { NoCompare };
         choices.AddRange(VersionRows
             .Where(row => !ReferenceEquals(row, SelectedVersion))
-            .Select(row => new CompareChoice(row.DateText + (row.IsManaged ? "" : Loc.T("versions.compare.notManaged")), row)));
+            .Select(row => new CompareChoice($"{row.DateText} [{row.SizeText}]" +
+                (row.IsManaged ? "" : Loc.T("versions.compare.notManaged")), row)));
         _suppressReload++;
         try
         {

@@ -5,6 +5,7 @@ using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
+using ReBackup.Core.Versions;
 using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
@@ -70,6 +71,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         OnPropertyChanged(string.Empty);
         foreach (var row in Tree.Rows)
             row.Refresh();
+        RefreshCompareChoices();   // the dates and sizes of the versions
     }
 
     /// <summary>The evaluated tree of the last complete scan (treemap, sizes); null while a scan runs.</summary>
@@ -81,9 +83,19 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     public long? LastEvaluatedIncludedSize { get; private set; }
 
     /// <param name="source">The plan's source as it is edited right now; null when there is none.</param>
+    /// <param name="versionIndex">
+    /// Gives what opens the index of the plan's versions (called on a worker thread), or null when there is none (a new
+    /// plan); the tree is compared with those versions.
+    /// </param>
+    /// <param name="requestIndexSync">
+    /// Asks for a sync of that index; the end of every sync is to be reported to <see cref="OnIndexSyncEnded"/>.
+    /// </param>
     public IgnorePreviewViewModel(Func<StorageLocation?> source, Func<IgnoreSettings> ignoreSettings,
-        Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages)
+        Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages,
+        Func<Func<VersionIndex>?>? versionIndex = null, Action? requestIndexSync = null)
     {
+        _versionIndex = versionIndex ?? (() => null);
+        _requestIndexSync = requestIndexSync ?? (() => { });
         _storages = storages;
         _source = source;
         _ignoreSettings = ignoreSettings;

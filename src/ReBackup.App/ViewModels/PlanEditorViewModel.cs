@@ -89,13 +89,15 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         SourceDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: false, () => SourceEdited(LocationKind.Drive));
         TargetDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: true, () => TargetEdited(LocationKind.Drive));
         Run = new PlanRunViewModel(versions.Storages);
-        Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages);
+        Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages,
+            versionIndex: VersionIndexFor, requestIndexSync: SyncIndex);
         // The pool numbers of an incremental plan come from the index the Versions tab keeps in sync.
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
             () => Run.Entries, poolIndex: PoolIndexFor, requestIndexSync: SyncIndex);
         Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries,
             () => IsCopying);
         Versions.IndexSyncEnded += RetentionPreview.OnIndexSyncEnded;
+        Versions.IndexSyncEnded += Preview.OnIndexSyncEnded;
         HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);
         Versions.PropertyChanged += (_, e) =>
         {
@@ -140,8 +142,18 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         return () => indexes.For(planId);
     }
 
+    /// <summary>What opens the index of the saved plan's versions (the Ignore tab compares with them); null for a new plan.</summary>
+    private Func<VersionIndex>? VersionIndexFor()
+    {
+        if (IsNew)
+            return null;
+        var indexes = _context.Indexes;
+        var planId = _saved.Id;
+        return () => indexes.For(planId);
+    }
+
     /// <summary>
-    /// The Retention tab needs versions the plan's index lacks: the Versions tab syncs it, after the sync that runs if
+    /// The Retention or Ignore tab needs versions the plan's index lacks: the Versions tab syncs it, after the sync that runs if
     /// one does (it may have started before the versions were there). The Versions tab then reads the target and syncs
     /// in the background even when it has not been shown, as when it is shown.
     /// </summary>

@@ -22,6 +22,14 @@ public static class Formats
 
     public static string Bytes(long bytes) => ByteSize.Format(bytes, Loc.Culture);
 
+    /// <summary>A change of size with its sign ("+1.2 MB", "−1.2 MB"); empty when nothing changed or it is unknown.</summary>
+    public static string BytesChange(long? change) => change switch
+    {
+        null or 0 => "",
+        > 0 => "+" + Bytes(change.Value),
+        _ => "−" + Bytes(-change.Value),
+    };
+
     /// <summary>"1 file" / "2 files", as an argument of a label that holds several counts.</summary>
     public static Message Files(long count) => Message.Of("common.fileCount", ("count", count));
 

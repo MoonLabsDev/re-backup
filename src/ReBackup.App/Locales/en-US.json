@@ -664,12 +664,19 @@
       "total": "Total",
       "totalToolTip": "Show the total, ignored entries included"
     },
+    "compare": {
+      "with": "Compare with",
+      "toolTip": "Compare the next backup with a version of this plan, to find what grew"
+    },
     "tree": {
       "name": "Preview tree",
       "ignoreThis": "Ignore this",
       "ignoreExtension": "Ignore all files with this extension",
       "unignore": "Un-ignore this",
-      "percent": "% of parent"
+      "percent": "% of parent",
+      "compareSize": "In version",
+      "sizeChange": "Difference",
+      "sizeChangeToolTip": "What the next backup would hold minus what the version holds"
     },
     "treemap": {
       "resize": "Resize the treemap",

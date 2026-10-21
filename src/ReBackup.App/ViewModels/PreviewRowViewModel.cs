@@ -64,6 +64,23 @@ public sealed class PreviewRowViewModel : ObservableObject
         : Entry.Status == IncludeStatus.Ignored ? "—"
         : Prefix + Formats.Bytes(Entry.IncludedSize);
 
+    /// <summary>The size in the compared version; empty when it does not have the entry or nothing is compared.</summary>
+    public string CompareSizeText =>
+        !IsPlaceholder && _tree.TryGetComparedSize(Entry, out var size) && size is { } bytes ? Formats.Bytes(bytes) : "";
+
+    /// <summary>
+    /// While comparing: what the next backup would hold of this entry minus what the version holds (an entry the
+    /// version lacks counts as 0); null while unknown or the entry is still being scanned.
+    /// </summary>
+    public long? SizeChange =>
+        IsPlaceholder || IsLoading || !_tree.TryGetComparedSize(Entry, out var size) ? null : Entry.IncludedSize - (size ?? 0);
+
+    public string SizeChangeText => Formats.BytesChange(SizeChange);
+
+    public bool IsGrowth => SizeChange > 0;
+
+    public bool IsShrink => SizeChange < 0;
+
     public string FilesText =>
         Entry.IsDirectory ? Prefix + Formats.Count(Entry.TotalFiles) : "";
 
