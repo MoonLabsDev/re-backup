@@ -29,6 +29,7 @@ public sealed class LiveScan
     private readonly object _gate = new();
     private readonly IStorage _source;
     private readonly StringComparer _comparer;
+    private readonly NamePool _names = new();
     private TaskCompletionSource _wake = NewWake();
     private readonly PriorityQueue<LiveNode, (int Rank, int Depth, long Order)> _queue = new();
     private readonly List<NestedIgnoreFile> _ignoreFiles = [];
@@ -56,7 +57,7 @@ public sealed class LiveScan
         _cancellationToken = cancellationToken;
 
         // The time of the root is not known yet; the scan sets it as its first step.
-        Root = new LiveNode(null, rootName, "", true, 0, default, 0, false, null, false)
+        Root = new LiveNode(null, rootName, true, 0, default, 0, false, null, false)
         {
             Matcher = IgnoreMatcher.ForPlan(settings, globalDefaults, []),
         };
@@ -204,10 +205,11 @@ public sealed class LiveScan
     {
         _options.BeforeListing?.Invoke(folder);
 
+        var folderPath = folder.RelativePath;
         var entries = new List<StorageEntry>();
         try
         {
-            await foreach (var entry in _source.ListAsync(folder.RelativePath, recursive: false, _cancellationToken).ConfigureAwait(false))
+            await foreach (var entry in _source.ListAsync(folderPath, recursive: false, _cancellationToken).ConfigureAwait(false))
                 entries.Add(entry);
         }
         catch (StorageNotFoundException) when (folder.Parent is null)
@@ -229,7 +231,7 @@ public sealed class LiveScan
         var chain = folder.IgnoreChain;
         var ignoreFile = entries.FirstOrDefault(e => !e.IsDirectory &&
             StoragePath.Name(e.Path).Equals(IgnoreOrigins.NestedFileName, StringComparison.OrdinalIgnoreCase));
-        if (ignoreFile is not null && await ReadIgnoreFileAsync(ignoreFile.Path, folder.RelativePath).ConfigureAwait(false) is { } nested
+        if (ignoreFile is not null && await ReadIgnoreFileAsync(ignoreFile.Path, folderPath).ConfigureAwait(false) is { } nested
             && _settings.HonorNestedFiles)
         {
             chain = [.. chain, nested];
@@ -241,13 +243,13 @@ public sealed class LiveScan
         {
             _cancellationToken.ThrowIfCancellationRequested();
             var path = entry.Path;
-            var name = StoragePath.Name(path);
+            var name = _names.Get(StoragePath.Name(path));
 
             if (entry.IsDirectory)
             {
                 Interlocked.Increment(ref _directories);
                 var (ignored, pattern) = Decide(folder, matcher, path, isDirectory: true);
-                var child = new LiveNode(folder, name, path, true, 0, entry.ModifiedUtc,
+                var child = new LiveNode(folder, name, true, 0, entry.ModifiedUtc,
                     folder.Depth + 1, ignored, pattern, folder.IsIgnored);
                 if (entry.IsLink)
                 {
@@ -270,7 +272,7 @@ public sealed class LiveScan
             {
                 Interlocked.Increment(ref _files);
                 var (ignored, pattern) = Decide(folder, matcher, path, isDirectory: false);
-                folder.Add(new LiveNode(folder, name, path, false, entry.Size, entry.ModifiedUtc,
+                folder.Add(new LiveNode(folder, name, false, entry.Size, entry.ModifiedUtc,
                     folder.Depth + 1, ignored, pattern, folder.IsIgnored));
             }
         }
@@ -374,7 +376,6 @@ public sealed class LiveScan
         return new IndexNode
         {
             Name = node.Name,
-            RelativePath = node.RelativePath,
             IsDirectory = node.IsDirectory,
             Size = node.Size,
             LastWriteUtc = node.LastWriteUtc,

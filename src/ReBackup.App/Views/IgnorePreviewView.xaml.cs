@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Controls;
 using ReBackup.App.ViewModels;
 
@@ -13,17 +14,54 @@ public partial class IgnorePreviewView : UserControl
     private const double NameMinWidth = 140;
 
     private PreviewTreeViewModel? _tree;
+    private IgnorePreviewViewModel? _preview;
+    private Window? _window;
 
     public IgnorePreviewView()
     {
         InitializeComponent();
-        IsVisibleChanged += (_, _) => EnsureCompareChoices();
+        IsVisibleChanged += (_, _) =>
+        {
+            EnsureCompareChoices();
+            UpdateShown();
+        };
         DataContextChanged += (_, _) =>
         {
             WatchTree((DataContext as PlanEditorViewModel)?.Preview.Tree);
             EnsureCompareChoices();
+            UpdateShown();
         };
+        Loaded += (_, _) => WatchWindow(Window.GetWindow(this));
+        Unloaded += (_, _) => WatchWindow(null);
         WatchTree(null);
+    }
+
+    /// <summary>Follows the window: a minimized one does not show the tab (the scan may then be freed).</summary>
+    private void WatchWindow(Window? window)
+    {
+        if (_window is not null)
+            _window.StateChanged -= OnWindowStateChanged;
+        _window = window;
+        if (window is not null)
+            window.StateChanged += OnWindowStateChanged;
+        UpdateShown();
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs e) => UpdateShown();
+
+    /// <summary>
+    /// Tells the plan's preview whether the tab is on screen: visible (not another tab, not in the tray) and its window
+    /// not minimized. A plan the view no longer shows is told it is not.
+    /// </summary>
+    private void UpdateShown()
+    {
+        var preview = (DataContext as PlanEditorViewModel)?.Preview;
+        if (!ReferenceEquals(preview, _preview))
+        {
+            _preview?.SetShown(false);
+            _preview = preview;
+        }
+        preview?.SetShown(IsVisible && _window is not { WindowState: WindowState.Minimized });
     }
 
     private void EnsureCompareChoices()

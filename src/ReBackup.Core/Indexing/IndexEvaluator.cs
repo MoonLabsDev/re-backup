@@ -50,9 +50,10 @@ public static class IndexEvaluator
     /// <summary>Applies the matcher to a cached index. Nothing is read from disk.</summary>
     public static EvaluatedNode Evaluate(SourceIndex index, IgnoreMatcher matcher,
         CancellationToken cancellationToken = default) =>
-        Evaluate(index.RootNode, matcher, isRoot: true, parentIgnored: false, parentPattern: null, cancellationToken);
+        Evaluate(index.RootNode, "", matcher, isRoot: true, parentIgnored: false, parentPattern: null, cancellationToken);
 
-    private static EvaluatedNode Evaluate(IndexNode node, IgnoreMatcher matcher, bool isRoot, bool parentIgnored,
+    /// <param name="path">The node's path: passed down, so that it is not put together from the names for every entry.</param>
+    private static EvaluatedNode Evaluate(IndexNode node, string path, IgnoreMatcher matcher, bool isRoot, bool parentIgnored,
         IgnorePattern? parentPattern, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -61,7 +62,7 @@ public static class IndexEvaluator
         var pattern = parentPattern;
         if (!parentIgnored && !isRoot)
         {
-            var result = matcher.MatchEntry(node.RelativePath, node.IsDirectory);
+            var result = matcher.MatchEntry(path, node.IsDirectory);
             ignored = result.IsIgnored;
             pattern = result.Pattern;
         }
@@ -87,7 +88,8 @@ public static class IndexEvaluator
         var anythingSkipped = false;
         foreach (var child in node.Children)
         {
-            var evaluated = Evaluate(child, matcher, isRoot: false, ignored, ignored ? pattern : null, cancellationToken);
+            var childPath = path.Length == 0 ? child.Name : path + "/" + child.Name;
+            var evaluated = Evaluate(child, childPath, matcher, isRoot: false, ignored, ignored ? pattern : null, cancellationToken);
             children.Add(evaluated);
             includedSize += evaluated.IncludedSize;
             ignoredSize += evaluated.IgnoredSize;

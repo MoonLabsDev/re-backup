@@ -8,13 +8,13 @@ public class IndexEvaluatorTests
 {
     private static IndexNode File(string path, long size) => new()
     {
-        Name = path[(path.LastIndexOf('/') + 1)..], RelativePath = path, IsDirectory = false, Size = size,
+        Name = path[(path.LastIndexOf('/') + 1)..], IsDirectory = false, Size = size,
     };
 
     private static IndexNode Dir(string path, params IndexNode[] children) => new()
     {
         Name = path.Length == 0 ? "root" : path[(path.LastIndexOf('/') + 1)..],
-        RelativePath = path, IsDirectory = true, Children = children,
+        IsDirectory = true, Children = children,
     };
 
     // root: a.txt(10) b.tmp(5) build{ out.bin(100) keep.txt(1) } src{ x.cs(20) y.tmp(2) }
