@@ -7,12 +7,21 @@ using ReBackup.Storage.FileSystem;
 
 namespace ReBackup.Core.Indexing;
 
-public sealed class IndexNode
+/// <summary>
+/// A scanned file or folder. It keeps its name and its parent, not its path (<see cref="TreePath"/>): a source of
+/// millions of entries would otherwise hold millions of long paths.
+/// </summary>
+public sealed class IndexNode : ITreePathNode<IndexNode>
 {
+    private readonly IReadOnlyList<IndexNode> _children = [];
+
     public required string Name { get; init; }
 
-    /// <summary>Path relative to the source root, with forward slashes; "" for the root.</summary>
-    public required string RelativePath { get; init; }
+    /// <summary>The folder this entry is in; null for the root. Set when the folder gets its <see cref="Children"/>.</summary>
+    public IndexNode? Parent { get; private set; }
+
+    /// <summary>Path relative to the source root, with forward slashes; "" for the root. Put together on every call.</summary>
+    public string RelativePath => TreePath.Of(this);
 
     public required bool IsDirectory { get; init; }
     public long Size { get; init; }
@@ -23,7 +32,16 @@ public sealed class IndexNode
     /// by reading it; <c>null</c> for every other file, for folders, and when the storage has none.
     /// </summary>
     public string? Stamp { get; init; }
-    public IReadOnlyList<IndexNode> Children { get; init; } = [];
+    public IReadOnlyList<IndexNode> Children
+    {
+        get => _children;
+        init
+        {
+            _children = value;
+            foreach (var child in value)
+                child.Parent = this;
+        }
+    }
 
     /// <summary>Why this folder could not be (fully) read, if so.</summary>
     public string? Error { get; init; }
@@ -132,6 +150,7 @@ public static class SourceIndexer
     {
         private readonly Stopwatch _sinceReport = Stopwatch.StartNew();
         private readonly StringComparer _comparer = NameComparer(source);
+        private readonly NamePool _names = new();
 
         public List<NestedIgnoreFile> IgnoreFiles { get; } = [];
         public List<string> UnreadableIgnoreFiles { get; } = [];
@@ -171,7 +190,7 @@ public static class SourceIndexer
             foreach (var entry in entries)
             {
                 ct.ThrowIfCancellationRequested();
-                var childName = StoragePath.Name(entry.Path);
+                var childName = _names.Get(StoragePath.Name(entry.Path));
 
                 if (entry.IsDirectory)
                 {
@@ -189,7 +208,6 @@ public static class SourceIndexer
                     children.Add(new IndexNode
                     {
                         Name = childName,
-                        RelativePath = entry.Path,
                         IsDirectory = false,
                         Size = entry.Size,
                         LastWriteUtc = entry.ModifiedUtc,
@@ -205,7 +223,6 @@ public static class SourceIndexer
             return new IndexNode
             {
                 Name = name,
-                RelativePath = relativePath,
                 IsDirectory = true,
                 LastWriteUtc = lastWriteUtc,
                 Children = children,
@@ -216,7 +233,6 @@ public static class SourceIndexer
         private static IndexNode Leaf(string name, StorageEntry entry, string error) => new()
         {
             Name = name,
-            RelativePath = entry.Path,
             IsDirectory = true,
             LastWriteUtc = entry.ModifiedUtc,
             Error = error,

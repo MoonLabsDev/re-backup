@@ -694,7 +694,8 @@
       "canceledPrevious": "Indexing canceled; showing the previous index.",
       "canceledIncomplete": "Scan canceled — incomplete.",
       "failedPrevious": "Indexing failed; showing the previous index.",
-      "failedIncomplete": "Scan failed — incomplete."
+      "failedIncomplete": "Scan failed — incomplete.",
+      "released": "The scan was freed after 30 minutes unused, to save memory. Index now scans again."
     },
     "summary": {
       "live": "So far — included: {includedFiles}, {includedSize}   ·   ignored: {ignoredFiles}, {ignoredSize}",

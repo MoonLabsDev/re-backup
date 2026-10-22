@@ -694,7 +694,8 @@
       "canceledPrevious": "Indizieren abgebrochen; der vorherige Index wird angezeigt.",
       "canceledIncomplete": "Scan abgebrochen – unvollständig.",
       "failedPrevious": "Indizieren fehlgeschlagen; der vorherige Index wird angezeigt.",
-      "failedIncomplete": "Scan fehlgeschlagen – unvollständig."
+      "failedIncomplete": "Scan fehlgeschlagen – unvollständig.",
+      "released": "Der Scan wurde nach 30 Minuten ohne Nutzung freigegeben, um Speicher zu sparen. „Jetzt indizieren“ scannt erneut."
     },
     "summary": {
       "live": "Bisher – enthalten: {includedFiles}, {includedSize}   ·   ignoriert: {ignoredFiles}, {ignoredSize}",

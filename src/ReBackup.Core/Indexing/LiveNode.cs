@@ -6,7 +6,7 @@ namespace ReBackup.Core.Indexing;
 /// A file or folder of a running <see cref="LiveScan"/>. Every member can be read from any thread while the scan
 /// runs; totals only grow. The ignore decision is made when the entry is found and does not change.
 /// </summary>
-public sealed class LiveNode : IPreviewEntry
+public sealed class LiveNode : IPreviewEntry, ITreePathNode<LiveNode>
 {
     private readonly object _gate = new();
     private readonly List<LiveNode> _children = [];
@@ -26,12 +26,11 @@ public sealed class LiveNode : IPreviewEntry
     internal IgnoreMatcher? Matcher;
     internal IReadOnlyList<NestedIgnoreFile> IgnoreChain = [];
 
-    internal LiveNode(LiveNode? parent, string name, string relativePath, bool isDirectory, long size,
+    internal LiveNode(LiveNode? parent, string name, bool isDirectory, long size,
         DateTime lastWriteUtc, int depth, bool isIgnored, IgnorePattern? pattern, bool ignoredByParent)
     {
         Parent = parent;
         Name = name;
-        RelativePath = relativePath;
         IsDirectory = isDirectory;
         _size = isDirectory ? 0 : size;
         _lastWriteTicks = lastWriteUtc.Ticks;
@@ -57,7 +56,10 @@ public sealed class LiveNode : IPreviewEntry
 
     public LiveNode? Parent { get; }
     public string Name { get; }
-    public string RelativePath { get; }
+
+    /// <summary>Put together from the names on every call (<see cref="TreePath"/>); "" for the root.</summary>
+    public string RelativePath => TreePath.Of(this);
+
     public bool IsDirectory { get; }
     public DateTime LastWriteUtc => new(Volatile.Read(ref _lastWriteTicks), DateTimeKind.Utc);
     public int Depth { get; }
