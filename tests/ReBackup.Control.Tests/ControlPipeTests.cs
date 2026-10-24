@@ -233,6 +233,16 @@ public sealed class ControlPipeTests
         good.Id.Should().Be("6");
     }
 
+    [Fact]
+    public void Owner_check_failure_maps_to_a_protocol_error()
+    {
+        // A pipe with a foreign owner cannot be created without SeRestorePrivilege, so the mapping is tested directly.
+        var mapped = ControlClient.MapConnectFailure(new UnauthorizedAccessException("owner"));
+
+        mapped.Should().BeOfType<ControlProtocolException>().Which.Message.Should().Contain("owned by a different identity");
+        ControlClient.MapConnectFailure(new InvalidOperationException()).Should().BeNull();
+    }
+
     private sealed class RawClient : IAsyncDisposable
     {
         private readonly NamedPipeClientStream _pipe;

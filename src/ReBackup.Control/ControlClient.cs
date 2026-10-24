@@ -33,8 +33,8 @@ public sealed class ControlClient : IAsyncDisposable
     public static async Task<ControlClient> ConnectAsync(string? pipeName, TimeSpan timeout, CancellationToken ct)
     {
         pipeName ??= ControlPipe.NameForCurrentUser();
-        // CurrentUserOnly refuses a server owned by another user. It also compares elevation, so an elevated
-        // bridge talking to a non-elevated app (or the reverse) is refused.
+        // CurrentUserOnly refuses a server whose owner differs from our token's default owner, so an elevated
+        // bridge and a non-elevated app (or the reverse) do not connect.
         var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         try
@@ -59,6 +59,10 @@ public sealed class ControlClient : IAsyncDisposable
             catch (LineTooLongException)
             {
                 throw new ControlProtocolException("The server sent an oversized handshake.");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw MapConnectFailure(ex)!;
             }
             catch (IOException ex)
             {
@@ -110,14 +114,16 @@ public sealed class ControlClient : IAsyncDisposable
                 // Once the request has left, an unread or half-read answer would be mistaken for the next call's:
                 // the connection is unusable from here on.
                 Break();
-                throw ex switch
+                Exception? mapped = ex switch
                 {
-                    ControlUnavailableException or ControlProtocolException or OperationCanceledException => ex,
                     LineTooLongException => new ControlProtocolException("The server sent an oversized response."),
+                    ControlUnavailableException => null,
                     IOException or ObjectDisposedException => Unavailable(ex),
                     JsonException => new ControlProtocolException("The server sent an unreadable response: " + ex.Message),
-                    _ => ex,
+                    _ => null,
                 };
+                if (mapped is null) throw; // pass-through keeps the original stack trace
+                throw mapped;
             }
         }
         finally
@@ -125,6 +131,12 @@ public sealed class ControlClient : IAsyncDisposable
             _gate.Release();
         }
     }
+
+    /// <summary>Maps the owner-check failure of <c>CurrentUserOnly</c>; null for exceptions it does not know.</summary>
+    internal static Exception? MapConnectFailure(Exception ex) => ex is UnauthorizedAccessException
+        ? new ControlProtocolException(
+            "The ReBackup control pipe is owned by a different identity than this process (for example a different elevation level), so it was not trusted.", ex)
+        : null;
 
     private void Break()
     {

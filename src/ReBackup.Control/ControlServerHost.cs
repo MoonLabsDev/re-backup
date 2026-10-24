@@ -65,10 +65,21 @@ public sealed class ControlServerHost : IAsyncDisposable
             }
             catch (Exception)
             {
+                if (ct.IsCancellationRequested)
+                {
+                    await pending.DisposeAsync().ConfigureAwait(false);
+                    return;
+                }
+                // Create the replacement while the failed instance still holds the name, so nobody can slip in.
+                NamedPipeServerStream replacement;
+                try { replacement = ControlPipe.CreateServerStream(_pipeName); }
+                catch (IOException)
+                {
+                    await pending.DisposeAsync().ConfigureAwait(false);
+                    return;
+                }
                 await pending.DisposeAsync().ConfigureAwait(false);
-                if (ct.IsCancellationRequested) return;
-                try { pending = ControlPipe.CreateServerStream(_pipeName); }
-                catch (IOException) { return; }
+                pending = replacement;
                 continue;
             }
 

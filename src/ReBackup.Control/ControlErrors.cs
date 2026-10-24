@@ -30,7 +30,7 @@ public sealed class ControlUnavailableException(string message, Exception? inner
 }
 
 /// <summary>The peer speaks a different protocol version.</summary>
-public sealed class ControlProtocolException(string message) : Exception(message)
+public sealed class ControlProtocolException(string message, Exception? inner = null) : Exception(message, inner)
 {
     public string Key => ControlErrors.ProtocolMismatch;
 }

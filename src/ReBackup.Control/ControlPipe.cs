@@ -22,7 +22,9 @@ public static class ControlPipe
     {
         var user = WindowsIdentity.GetCurrent().User!;
         var security = new PipeSecurity();
-        security.SetOwner(user); // clients using CurrentUserOnly compare the owner with their own user
+        // .NET's CurrentUserOnly client compares the pipe owner with the token's default owner (not the user SID); an
+        // elevated admin token defaults to Administrators. Using the same value pairs only same-elevation processes.
+        security.SetOwner(WindowsIdentity.GetCurrent().Owner!);
         security.AddAccessRule(new PipeAccessRule(
             user,
             PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance,
