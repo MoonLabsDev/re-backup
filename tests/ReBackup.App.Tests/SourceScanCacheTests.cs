@@ -62,7 +62,7 @@ public class SourceScanCacheTests : IDisposable
     }
 
     [Fact]
-    public async Task The_tab_reads_a_cached_index_after_release_instead_of_scanning()
+    public async Task Release_drops_the_plans_cache_entry_and_the_next_index_rescans()
     {
         var cache = NewCache();
         var plan = Plan("p1");
@@ -70,15 +70,104 @@ public class SourceScanCacheTests : IDisposable
         var vm = new IgnorePreviewViewModel(() => plan.Source, () => new IgnoreSettings(), () => [],
             new Factory(_ => { tabOpens++; return _source; }), scanCache: cache, planId: plan.Id);
         await vm.IndexCommand.ExecuteAsync(null);
-        var first = vm.CompletedIndex;
+        cache.Has("p1").Should().BeTrue();
         vm.Release();
         vm.Root.Should().BeNull();
+        cache.Has("p1").Should().BeFalse("a cache rooting the index would defeat the release");
 
         await vm.IndexCommand.ExecuteAsync(null);
 
-        vm.CompletedIndex.Should().BeSameAs(first);
         vm.Root!.IncludedFiles.Should().Be(2);
-        tabOpens.Should().Be(1, "only the first scan opened the source");
+        tabOpens.Should().Be(2, "the next index scans again");
+    }
+
+    [Fact]
+    public async Task Release_of_a_tab_that_never_held_an_index_leaves_the_cache_alone()
+    {
+        var cache = NewCache();
+        var plan = Plan("p1");
+        cache.Put("p1", await IndexAsync(), plan.Source);
+        var vm = new IgnorePreviewViewModel(() => plan.Source, () => new IgnoreSettings(), () => [], new Factory(_ => _source),
+            scanCache: cache, planId: plan.Id);
+
+        vm.Release();
+
+        cache.Has("p1").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_scan_the_cache_started_is_shown_on_the_tabs_first_open()
+    {
+        var cache = NewCache();
+        var plan = Plan("p1");
+        var started = (await cache.GetAsync(plan, Wait, CancellationToken.None)).Index;
+        var tabOpens = 0;
+        var vm = new IgnorePreviewViewModel(() => plan.Source, () => new IgnoreSettings(), () => [],
+            new Factory(_ => { tabOpens++; return _source; }), scanCache: cache, planId: plan.Id);
+
+        await vm.IndexCommand.ExecuteAsync(null);
+
+        vm.CompletedIndex.Should().BeSameAs(started);
+        vm.Root!.IncludedFiles.Should().Be(2);
+        tabOpens.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_waiter_survives_the_tab_putting_its_index_over_the_running_scan()
+    {
+        _useGate = true;
+        var cache = NewCache();
+        var plan = Plan("p1");
+        var waiter = cache.GetAsync(plan, Wait, CancellationToken.None);
+        await WaitUntilAsync(() => _opens == 1 && cache.Count == 1);
+        await Task.Delay(50);   // the waiter is inside the scan now
+
+        var index = await IndexAsync();
+        cache.Put("p1", index, plan.Source);   // cancels the running scan
+
+        var lookup = await waiter.WaitAsync(TimeSpan.FromSeconds(10));
+        lookup.Index.Should().BeSameAs(index);
+    }
+
+    [Fact]
+    public async Task A_waiter_survives_the_eviction_of_its_scan_by_a_third_plan()
+    {
+        _useGate = true;
+        var cache = NewCache();
+        var waiter = cache.GetAsync(Plan("p1"), Wait, CancellationToken.None);
+        await WaitUntilAsync(() => _opens == 1 && cache.Count == 1);
+        await Task.Delay(50);
+        var index = await IndexAsync();
+        cache.Put("p2", index);
+        cache.Put("p3", index);   // p1 is the least recently used: its scan is cancelled
+
+        _gated.Gate.SetResult();
+        var lookup = await waiter.WaitAsync(TimeSpan.FromSeconds(10));
+
+        lookup.Should().NotBeNull();
+        lookup.Running.Should().BeFalse("the retry scans again and finishes");
+        lookup.Index.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task The_sweep_timer_drops_idle_entries_without_any_lookup()
+    {
+        var cache = NewCache();
+        cache.Put("p1", await IndexAsync());
+
+        _time.Advance(TimeSpan.FromMinutes(11));
+
+        cache.Count.Should().Be(0, "Count does not drop anything itself; the timer did");
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var end = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            DateTime.UtcNow.Should().BeBefore(end);
+            await Task.Delay(10);
+        }
     }
 
     [Fact]

@@ -367,6 +367,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         // Modal dialogs pump the dispatcher, so a reload may already have removed the editor.
         var index = Plans.IndexOf(editor);
+        ScanCache.Invalidate(editor.Id);
         editor.Versions.Invalidate();   // stops its sync
         editor.HistoryCoverage.Invalidate();
         if (index >= 0)

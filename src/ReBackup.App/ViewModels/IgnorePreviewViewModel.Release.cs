@@ -65,6 +65,9 @@ public sealed partial class IgnorePreviewViewModel
         Tree.IgnoreFileDirectories = NoDirectories;
         Tree.SetRoot(null);
         ClearIgnoreFiles();
+        // The cache must not keep the index alive (that would defeat the release) or serve it stale on the next scan.
+        if (_planId is not null)
+            _scanCache?.Invalidate(_planId);
         Progress = LocText.Of("ignore.progress.released");
         CompactMemory();
     }

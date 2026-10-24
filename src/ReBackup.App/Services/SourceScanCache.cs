@@ -45,6 +45,23 @@ public sealed class SourceScanCache : IDisposable
     /// </summary>
     public async Task<ScanLookup> GetAsync(BackupPlan plan, TimeSpan maxWait, CancellationToken ct)
     {
+        // The scan being waited for can be taken away by someone else (the tab puts its own index, another plan evicts
+        // it, Invalidate); that is no cancellation of this caller: look again, the replacement answers.
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                return await GetOnceAsync(plan, maxWait, ct);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+            }
+        }
+        return new ScanLookup(null, true, 0, 0);
+    }
+
+    private async Task<ScanLookup> GetOnceAsync(BackupPlan plan, TimeSpan maxWait, CancellationToken ct)
+    {
         Entry entry;
         lock (_gate)
         {
@@ -102,6 +119,16 @@ public sealed class SourceScanCache : IDisposable
         {
             if (_entries.TryGetValue(planId, out var entry))
                 Remove(planId, entry);
+        }
+    }
+
+    /// <summary>How many plans are held (for tests: unlike <see cref="Has"/> it does not drop idle entries first).</summary>
+    internal int Count
+    {
+        get
+        {
+            lock (_gate)
+                return _entries.Count;
         }
     }
 
