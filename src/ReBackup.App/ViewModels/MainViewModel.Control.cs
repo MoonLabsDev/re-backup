@@ -40,11 +40,28 @@ public sealed partial class MainViewModel
     /// </summary>
     public event Action<string, string>? ControlNotified;
 
-    /// <summary>Tells the user about a change made through the control pipe: in the footer and as a notification.</summary>
+    /// <summary>
+    /// Tells the user about a change made through the control pipe: in the footer and as a notification. The change is
+    /// done by then: a subscriber that fails does not undo it or fail the request.
+    /// </summary>
     internal void NotifyControl(LocText message)
     {
         SetStatus(message);
-        ControlNotified?.Invoke(Loc.T("control.notification.title"), message.ToString());
+        if (ControlNotified is not { } notified)
+            return;
+        var title = Loc.T("control.notification.title");
+        var text = message.ToString();
+        foreach (var handler in notified.GetInvocationList().Cast<Action<string, string>>())
+        {
+            try
+            {
+                handler(title, text);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.TraceWarning($"A control notification could not be shown: {ex.Message}");
+            }
+        }
     }
 
     /// <summary>

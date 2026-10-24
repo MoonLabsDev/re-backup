@@ -805,7 +805,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (ScheduledRunBlocker(plan) is { } reason)
             return reason;
 
-        queuedUtc = DateTime.UtcNow;
+        queuedUtc = _queue.Clock.GetUtcNow().UtcDateTime;   // the clock the runs are stamped with
         if (!_queue.Enqueue(new BackupRequest(plan, _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Mcp)))
         {
             busy = true;

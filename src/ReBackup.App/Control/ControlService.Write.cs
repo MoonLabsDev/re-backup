@@ -6,6 +6,7 @@ using ReBackup.Core.Backup;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
+using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Storage;
 
@@ -60,7 +61,8 @@ public sealed partial class ControlService
             return (newlyIgnored.Info(), newlyIncluded.Info());
         }, ct);
 
-        var id = _proposals.Add(new IgnoreChangeProposal(context.Plan.Id, before, after));
+        var id = _proposals.Add(new IgnoreChangeProposal(context.Plan.Id,
+            IgnoreBasis.Of(context.Plan.Ignore, context.GlobalDefaults), before, after));
         var truncated = after.Count > MaxRulesPerOrigin;
         return new IgnoreChangeResult(id, context.Plan.Name, after.Take(MaxRulesPerOrigin).ToList(), ignored, included,
             index.FileCount, index.DirectoryCount, truncated,
@@ -163,6 +165,9 @@ public sealed partial class ControlService
         if (context.Plan.Source is not { IsFileSystem: true, Path: { } root } || string.IsNullOrWhiteSpace(root))
             throw new ControlFailure(ControlErrors.SourceNotFolder,
                 $"The source of '{context.Plan.Name}' is no folder ({context.Source}); rules move only between a folder source's plan and its .backupignore files.");
+        if (extracting && !context.Plan.Ignore.HonorNestedFiles)
+            throw new ControlFailure(ControlErrors.BadRequest,
+                $"'{context.Plan.Name}' does not honor .backupignore files, so rules moved into one would do nothing.");
 
         var index = await ScanAsync(context, ct);
         var proposal = await Task.Run(() =>
@@ -179,11 +184,6 @@ public sealed partial class ControlService
                     : extract.Select(line => IndexOfLine(patterns, line)).ToList();
                 return IgnoreRelocation.ProposeExtract(relocation, lines, directory);
             }
-            catch (InvalidOperationException)
-            {
-                throw new ControlFailure(ControlErrors.BadRequest,
-                    $"'{context.Plan.Name}' does not honor .backupignore files, so rules moved into one would do nothing.");
-            }
             catch (ArgumentException ex)
             {
                 throw new ControlFailure(ControlErrors.BadRequest, $"The folder is not below the source: {ex.Message}");
@@ -198,7 +198,8 @@ public sealed partial class ControlService
             throw new ControlFailure(ControlErrors.BadRequest,
                 $"There is no {IgnoreOrigins.ForNestedFile(proposal.Directory)} in the source; get_ignore_rules lists the files.");
         var id = proposal.MovedLines.Count > 0
-            ? _proposals.Add(new RelocationPlanProposal(context.Plan.Id, context.Plan.Source, proposal))
+            ? _proposals.Add(new RelocationPlanProposal(context.Plan.Id, context.Plan.Source,
+                IgnoreBasis.Of(context.Plan.Ignore, context.GlobalDefaults), proposal))
             : null;
         return RelocationResultOf(id, context.Plan.Name, proposal);
     }
@@ -285,7 +286,7 @@ public sealed partial class ControlService
     /// <summary>On the UI thread: the plan's patterns as proposed, saved.</summary>
     private ApplyResult ApplyIgnoreChange(IgnoreChangeProposal change)
     {
-        var (editor, plan) = EditorForApply(change.PlanId);
+        var (editor, plan) = EditorForApply(change.PlanId, change.Basis);
         if (!plan.Ignore.Patterns.SequenceEqual(change.Before, StringComparer.Ordinal))
             throw new ControlFailure(ControlErrors.ProposalStale,
                 $"The ignore patterns of '{plan.Name}' changed since the proposal; make a new one.");
@@ -304,7 +305,7 @@ public sealed partial class ControlService
     /// <summary>On the UI thread: the relocation as proposed, through the same steps and the same recycle bin as the dialog.</summary>
     private ApplyResult ApplyRelocation(RelocationPlanProposal relocation)
     {
-        var (editor, plan) = EditorForApply(relocation.PlanId);
+        var (editor, plan) = EditorForApply(relocation.PlanId, relocation.Basis);
         var proposal = relocation.Proposal;
         if (plan.Source != relocation.Source || plan.Source.Path is not { } root)
             throw new ControlFailure(ControlErrors.ProposalStale, $"The source of '{plan.Name}' changed since the proposal; make a new one.");
@@ -349,9 +350,10 @@ public sealed partial class ControlService
 
     /// <summary>
     /// On the UI thread: the saved plan's editor, which must have no unsaved edits (they would be overwritten), and its
-    /// saved plan.
+    /// saved plan, whose ignore settings besides the patterns (and the global defaults it uses) must still be those the
+    /// proposal was made with: otherwise its numbers no longer hold.
     /// </summary>
-    private (PlanEditorViewModel Editor, BackupPlan Plan) EditorForApply(string planId)
+    private (PlanEditorViewModel Editor, BackupPlan Plan) EditorForApply(string planId, IgnoreBasis basis)
     {
         var editor = _main.Plans.FirstOrDefault(p => !p.IsNew && p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase))
                      ?? throw new ControlFailure(ControlErrors.PlanNotFound, "The plan of the proposal no longer exists.");
@@ -359,6 +361,9 @@ public sealed partial class ControlService
         if (editor.IsDirty)
             throw new ControlFailure(ControlErrors.ProposalStale,
                 $"The plan '{plan.Name}' has unsaved edits in ReBackup; ask the user to save or revert the plan first, then make a new proposal.");
+        if (!basis.Matches(IgnoreBasis.Of(plan.Ignore, _main.GlobalIgnoreDefaultsNow())))
+            throw new ControlFailure(ControlErrors.ProposalStale,
+                $"The ignore settings of '{plan.Name}' (global defaults, honoring .backupignore files) changed since the proposal; make a new one.");
         return (editor, plan);
     }
 
@@ -421,16 +426,32 @@ public sealed partial class ControlService
         RunStatusResult Finished(RunLogEntry entry) => new(runId, name, "finished", null, null, RunRowOf(entry));
     }
 
-    /// <summary>The plan's first logged run that started at or after <paramref name="since"/>; null when there is none yet.</summary>
+    /// <summary>The plan's first logged MCP run that started at or after <paramref name="since"/>; null when there is none yet.</summary>
     private RunLogEntry? RunSince(string planId, DateTime since) =>
-        ReadRuns(planId).FirstOrDefault(run => AsUtc(run.StartUtc) >= since);
+        ReadRuns(planId).FirstOrDefault(run => run.Trigger == RunTrigger.Mcp && AsUtc(run.StartUtc) >= since);
 
     private static RunProgressInfo ProgressOf(BackupProgress progress) => new(Name(progress.Phase), progress.FilesDone,
         progress.FilesTotal, SizeValue.Of(progress.BytesDone), SizeValue.Of(progress.BytesTotal), progress.Fraction);
 
     /// <summary>The proposed new plan patterns of <c>preview_ignore_change</c>, and the patterns they were made from.</summary>
-    private sealed record IgnoreChangeProposal(string PlanId, IReadOnlyList<string> Before, IReadOnlyList<string> After);
+    private sealed record IgnoreChangeProposal(string PlanId, IgnoreBasis Basis, IReadOnlyList<string> Before,
+        IReadOnlyList<string> After);
 
     /// <summary>A relocation proposal of <c>propose_relocation</c>, with the plan and the source it was made for.</summary>
-    private sealed record RelocationPlanProposal(string PlanId, StorageLocation Source, RelocationProposal Proposal);
+    private sealed record RelocationPlanProposal(string PlanId, StorageLocation Source, IgnoreBasis Basis,
+        RelocationProposal Proposal);
+
+    /// <summary>
+    /// What a proposal's numbers rest on besides the plan patterns: whether the plan uses the global defaults (and which
+    /// they are, while it does) and whether it honors <c>.backupignore</c> files.
+    /// </summary>
+    private sealed record IgnoreBasis(bool UseGlobalDefaults, bool HonorNestedFiles, IReadOnlyList<string> GlobalDefaults)
+    {
+        public static IgnoreBasis Of(IgnoreSettings settings, IReadOnlyList<string> globalDefaults) =>
+            new(settings.UseGlobalDefaults, settings.HonorNestedFiles, settings.UseGlobalDefaults ? [.. globalDefaults] : []);
+
+        public bool Matches(IgnoreBasis other) =>
+            UseGlobalDefaults == other.UseGlobalDefaults && HonorNestedFiles == other.HonorNestedFiles &&
+            GlobalDefaults.SequenceEqual(other.GlobalDefaults, StringComparer.Ordinal);
+    }
 }

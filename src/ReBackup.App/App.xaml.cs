@@ -209,9 +209,11 @@ public partial class App : Application
             var drive = new DriveConnections(paths.DriveConnectionsFile);
             var s3Storages = new S3StorageFactory(new StorageFactory(), s3.Resolve);
             var storages = new DriveStorageFactory(s3Storages, drive.Resolve);
-            var runner = new BackupRunner(storages, currentRules: planId => planStore.TryLoad(planId)?.Retention,
+            // One clock for the runner and the queue: the control service's run ids compare with the logged starts.
+            var clock = TimeProvider.System;
+            var runner = new BackupRunner(storages, clock, currentRules: planId => planStore.TryLoad(planId)?.Retention,
                 indexSink: versionIndex);
-            var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
+            var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)), clock);
             // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
             var scheduler = new Scheduler((planId, trigger) =>
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));

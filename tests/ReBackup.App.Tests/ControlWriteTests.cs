@@ -174,6 +174,64 @@ public class ControlWriteTests : IDisposable
         var shown = await OnUi(() => (editor.IsDirty, editor.IgnorePatternsText));
         shown.IsDirty.Should().BeTrue();
         shown.IgnorePatternsText.Should().Be("# my own edit\nlogs/", "the user's edit stays");
+        _notifications.Should().BeEmpty("nothing was changed");
+    }
+
+    [Fact]
+    public async Task Ignore_change_after_the_global_defaults_switch_was_saved_is_stale()
+    {
+        var (service, vm) = Create();
+        var editor = vm.Plans.Single();
+        var id = await PreviewAsync(service, add: ["*.md"]);
+        await OnUi(() =>
+        {
+            editor.UseGlobalIgnoreDefaults = false;
+            vm.SaveCommand.Execute(null);
+            return editor.IsDirty;
+        });
+
+        var error = await FailAsync(service, ControlOps.ApplyChange, new { proposalId = id });
+
+        error.Key.Should().Be(ControlErrors.ProposalStale);
+        var saved = _fixture.Store.TryLoad("p1")!.Ignore;
+        saved.Patterns.Should().Equal(["# build output", "logs/"]);
+        saved.UseGlobalDefaults.Should().BeFalse();
+        _notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ignore_change_after_the_global_defaults_changed_is_stale()
+    {
+        var (service, _) = Create();
+        var id = await PreviewAsync(service, add: ["*.md"]);
+        _fixture.Settings.DefaultIgnorePatterns = ["*.md"];
+
+        (await FailAsync(service, ControlOps.ApplyChange, new { proposalId = id })).Key.Should().Be(ControlErrors.ProposalStale);
+        _fixture.Store.TryLoad("p1")!.Ignore.Patterns.Should().Equal(["# build output", "logs/"]);
+    }
+
+    [Fact]
+    public async Task Second_of_two_conflicting_proposals_is_stale()
+    {
+        var (service, _) = Create();
+        var first = await PreviewAsync(service, add: ["*.md"]);
+        var second = await PreviewAsync(service, remove: ["logs/"]);
+        await OkAsync(service, ControlOps.ApplyChange, new { proposalId = first });
+
+        (await FailAsync(service, ControlOps.ApplyChange, new { proposalId = second })).Key.Should().Be(ControlErrors.ProposalStale);
+        _fixture.Store.TryLoad("p1")!.Ignore.Patterns.Should().Equal(["# build output", "logs/", "*.md"]);
+    }
+
+    [Fact]
+    public async Task A_throwing_notification_subscriber_does_not_fail_the_write()
+    {
+        var (service, vm) = Create();
+        vm.ControlNotified += (_, _) => throw new InvalidOperationException("tray gone");
+        var id = await PreviewAsync(service, add: ["*.md"]);
+
+        await OkAsync(service, ControlOps.ApplyChange, new { proposalId = id });
+
+        _fixture.Store.TryLoad("p1")!.Ignore.Patterns.Should().Equal(["# build output", "logs/", "*.md"]);
     }
 
     [Fact]
@@ -235,6 +293,43 @@ public class ControlWriteTests : IDisposable
         // The scan the control service reads from knows the file is gone: the rules come from the plan now.
         var rules = await OkAsync(service, ControlOps.GetIgnoreRules, new { plan = "Projects" });
         rules.GetProperty("ignoreFiles").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Relocation_after_honoring_nested_files_was_switched_off_is_stale()
+    {
+        var (service, vm) = Create();
+        var editor = vm.Plans.Single();
+        var proposed = await OkAsync(service, ControlOps.ProposeRelocation, new { plan = "Projects", integrate = "docs" });
+        await OnUi(() =>
+        {
+            editor.HonorNestedIgnoreFiles = false;
+            vm.SaveCommand.Execute(null);
+            return editor.IsDirty;
+        });
+
+        var error = await FailAsync(service, ControlOps.ApplyChange, new { proposalId = proposed.GetProperty("proposalId").GetString() });
+
+        error.Key.Should().Be(ControlErrors.ProposalStale);
+        File.Exists(Path.Combine(_source, "docs", ".backupignore")).Should().BeTrue("nothing was moved");
+        _fixture.RecycleBin.Recycled.Should().BeEmpty();
+        _fixture.Store.TryLoad("p1")!.Ignore.Patterns.Should().Equal(["# build output", "logs/"]);
+        _notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Relocation_after_the_ignore_file_was_edited_is_stale()
+    {
+        var (service, _) = Create();
+        var proposed = await OkAsync(service, ControlOps.ProposeRelocation, new { plan = "Projects", integrate = "docs/.backupignore" });
+        File.WriteAllText(Path.Combine(_source, "docs", ".backupignore"), "*.tmp\n*.md\n");
+
+        var error = await FailAsync(service, ControlOps.ApplyChange, new { proposalId = proposed.GetProperty("proposalId").GetString() });
+
+        error.Key.Should().Be(ControlErrors.ProposalStale);
+        File.ReadAllText(Path.Combine(_source, "docs", ".backupignore")).Should().Be("*.tmp\n*.md\n");
+        _fixture.Store.TryLoad("p1")!.Ignore.Patterns.Should().Equal(["# build output", "logs/"]);
+        _notifications.Should().BeEmpty();
     }
 
     [Fact]
@@ -336,6 +431,38 @@ public class ControlWriteTests : IDisposable
             await _fixture.Queue.WhenIdleAsync();
         }
         new RunLog(_fixture.Paths.LogFileFor("p1")).ReadAll().Should().ContainSingle("the second start queued nothing");
+    }
+
+    [Fact]
+    public async Task Run_status_ignores_other_runs_logged_meanwhile()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _fixture.Storages = new HoldingFactory(_source, gate.Task);
+        var (service, _) = Create();
+        var started = await OkAsync(service, ControlOps.StartBackup, new { plan = "Projects" });
+        var runId = started.GetProperty("runId").GetString();
+        try
+        {
+            // A scheduled run that was skipped while the MCP job waits.
+            var now = DateTime.UtcNow.AddSeconds(1);
+            new RunLog(_fixture.Paths.LogFileFor("p1")).Append(new RunLogEntry
+            {
+                RunId = "skipped", Trigger = RunTrigger.Scheduled, StartUtc = now, EndUtc = now, Status = RunStatus.Error,
+                Reason = "skipped",
+            });
+
+            var status = await OkAsync(service, ControlOps.GetRunStatus, new { runId });
+
+            status.GetProperty("state").GetString().Should().BeOneOf("queued", "running");
+        }
+        finally
+        {
+            gate.TrySetResult();
+            await _fixture.Queue.WhenIdleAsync();
+        }
+        var finished = await OkAsync(service, ControlOps.GetRunStatus, new { runId });
+        finished.GetProperty("state").GetString().Should().Be("finished");
+        finished.GetProperty("result").GetProperty("trigger").GetString().Should().Be("mcp");
     }
 
     [Fact]
