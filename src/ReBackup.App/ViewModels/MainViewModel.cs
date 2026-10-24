@@ -60,6 +60,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <param name="saveSettings">Saves <paramref name="settings"/> (the plan order) to settings.json.</param>
     /// <param name="settingsLoadError">Why settings.json could not be read; the plan order then is not saved over it.</param>
+    /// <summary>The finished source scans of the plans last looked at; shared by the Ignore tabs and the control service.</summary>
+    public SourceScanCache ScanCache { get; }
+
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, Action saveSettings,
         Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
@@ -71,8 +74,10 @@ public sealed partial class MainViewModel : ObservableObject
         _recycleBin = recycleBin ?? new ShellRecycleBin();
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
         _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
+        ScanCache = new SourceScanCache(storages, GlobalIgnoreDefaults);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
-            DescribeLocation: DescribeLocation, TempOpener: tempOpener, TrackJob: (job, running) => Track(job, running));
+            DescribeLocation: DescribeLocation, TempOpener: tempOpener, TrackJob: (job, running) => Track(job, running),
+            ScanCache: ScanCache);
         // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
         _s3.Changed += (_, _) => RevalidateAll();
         _drive.Changed += (_, _) => RevalidateAll();
@@ -362,6 +367,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         // Modal dialogs pump the dispatcher, so a reload may already have removed the editor.
         var index = Plans.IndexOf(editor);
+        ScanCache.Invalidate(editor.Id);
         editor.Versions.Invalidate();   // stops its sync
         editor.HistoryCoverage.Invalidate();
         if (index >= 0)
@@ -774,6 +780,41 @@ public sealed partial class MainViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Queues a run of the saved plan for the control service (trigger <see cref="RunTrigger.Mcp"/>), without dialogs: unsaved
+    /// edits are neither saved nor touched. Null when it is queued, with the time just before it was; otherwise why not
+    /// (English), with <paramref name="busy"/> true when a run, a copy or a deletion of versions of the plan is active.
+    /// </summary>
+    internal string? StartForControl(PlanEditorViewModel editor, out bool busy, out DateTime queuedUtc)
+    {
+        busy = true;
+        queuedUtc = default;
+        if (editor.Run.IsActive)
+            return $"A backup of '{editor.SavedPlan().Name}' is already queued or running.";
+        if (editor.IsCopying)
+            return $"'{editor.SavedPlan().Name}' is being copied (Copy plan…); its runs wait until the copy has ended.";
+        if (editor.IsDeletingVersions)
+            return $"Versions of '{editor.SavedPlan().Name}' are being deleted; start the backup once that has ended.";
+
+        busy = false;
+        if (editor.IsNew)
+            return "The plan is not saved yet.";
+        var plan = editor.SavedPlan();
+        if (plan.CopyFromPlanId is not null)
+            return CoreTexts.English("core.run.copyUnfinished");
+        if (ScheduledRunBlocker(plan) is { } reason)
+            return reason;
+
+        queuedUtc = _queue.Clock.GetUtcNow().UtcDateTime;   // the clock the runs are stamped with
+        if (!_queue.Enqueue(new BackupRequest(plan, _settings.DefaultIgnorePatterns.ToList(), RunTrigger.Mcp)))
+        {
+            busy = true;
+            return $"A backup of '{plan.Name}' is already queued or running.";
+        }
+        NotifyControl(LocText.Of("control.notification.backupStarted", ("plan", plan.Name)));
+        return null;
+    }
+
     private void OnJobUpdate(BackupJobUpdate update)
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
@@ -782,6 +823,10 @@ public sealed partial class MainViewModel : ObservableObject
         if (update.Progress is null)
             RefreshQueuePositions();   // the queue changed: a job was added, started, removed or finished
         UpdateQueueStatus(update, editor?.Run);
+
+        // A finished run made a version newer than any cached scan of its source: the next answer scans again.
+        if (update.State == JobState.Finished)
+            ScanCache.Invalidate(update.PlanId);
 
         if (update.State == JobState.Removed)
         {

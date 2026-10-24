@@ -46,6 +46,12 @@ public sealed class BackupQueue
     /// </summary>
     public event Action<BackupJobUpdate>? Changed;
 
+    /// <summary>
+    /// The clock the queue stamps the runs it logs itself with (a runner that failed outright); the app gives the runner
+    /// the same one, so that times taken from it compare with every logged run's start.
+    /// </summary>
+    public TimeProvider Clock => _time;
+
     public bool IsBusy
     {
         get { lock (_gate) return _running is not null || _queued.Count > 0; }

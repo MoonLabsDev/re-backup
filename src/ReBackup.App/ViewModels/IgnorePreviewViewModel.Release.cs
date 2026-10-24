@@ -1,4 +1,4 @@
-using System.Runtime;
+using ReBackup.App.Services;
 using ReBackup.Shared.Wpf.Localization;
 
 namespace ReBackup.App.ViewModels;
@@ -65,18 +65,13 @@ public sealed partial class IgnorePreviewViewModel
         Tree.IgnoreFileDirectories = NoDirectories;
         Tree.SetRoot(null);
         ClearIgnoreFiles();
+        // The cache must not keep the index alive (that would defeat the release) or serve it stale on the next scan.
+        if (_planId is not null)
+            _scanCache?.Invalidate(_planId);
         Progress = LocText.Of("ignore.progress.released");
         CompactMemory();
     }
 
-    /// <summary>
-    /// Hands memory that is no longer used back to Windows now. After a scan of millions of entries, the live tree it
-    /// grew and any older evaluation are garbage of the same size as the result; the runtime would keep that memory
-    /// until a full collection happens to run.
-    /// </summary>
-    private static void CompactMemory()
-    {
-        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-    }
+    /// <summary>Hands the freed scan's memory back to Windows now (<see cref="MemoryCompaction.Compact"/>).</summary>
+    private static void CompactMemory() => MemoryCompaction.Compact();
 }

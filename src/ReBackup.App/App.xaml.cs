@@ -12,8 +12,11 @@ using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Win32;
 using ReBackup.Shared.Wpf.Localization;
+using ReBackup.App.Control;
+using ReBackup.App.Mcp;
 using ReBackup.App.Services;
 using ReBackup.Shared.Wpf.Services;
+using ReBackup.App.Localization;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
@@ -35,6 +38,11 @@ public partial class App : Application
 {
     /// <summary>Names the single-instance mutex and event (<c>Local\ReBackup.SingleInstance</c>, <c>Local\ReBackup.Activate</c>).</summary>
     internal const string AppId = "ReBackup";
+
+    /// <summary>Set to "1" by the process tests: a start without <c>--mcp</c> then exits at once with <see cref="McpTestGuardExitCode"/>.</summary>
+    internal const string McpTestGuard = "REBACKUP_MCP_TEST_GUARD";
+
+    internal const int McpTestGuardExitCode = 3;
 
     private readonly IDialogService _dialogs;
     private S3Connections? _s3;
@@ -58,6 +66,7 @@ public partial class App : Application
     private ThemeToggleViewModel _themeToggle = null!;
     private VersionIndexWorker _versionIndex = null!;
     private TempOpener _tempOpener = null!;
+    private McpControlHost? _mcpHost;
 
     public App()
     {
@@ -67,6 +76,20 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // An MCP client started the exe: serve it over stdio, before the mutex, settings, tray and windows.
+        if (e.Args.Contains("--mcp", StringComparer.OrdinalIgnoreCase))
+        {
+            RunMcpBridge(e.Args);
+            return;
+        }
+        // The process tests set this, so that a regressed --mcp branch exits here instead of starting the user's app
+        // (mutex, settings, tray, window), which they could only force-kill.
+        if (Environment.GetEnvironmentVariable(McpTestGuard) == "1")
+        {
+            Shutdown(McpTestGuardExitCode);
+            return;
+        }
+
         // Label files (later sources override earlier ones) and the recognizers of stored English texts.
         Loc.Configure(
             [
@@ -120,8 +143,68 @@ public partial class App : Application
         _scheduler.Start(planId => new RunLog(_paths.LogFileFor(planId)).ReadLast()?.StartUtc);
         SystemEvents.TimeChanged += OnSystemTimeChanged;
         _singleInstance.ListenForActivation(() => Dispatcher.InvokeAsync(ShowMainWindow));
+        // "Allow control via MCP": the one control service serves the pipe while the setting is on.
+        _mcpHost = new McpControlHost(
+            new ControlService(_mainViewModel, new System.Windows.Threading.DispatcherSynchronizationContext(Dispatcher)), LocVersionExtension.Version);
+        if (_settings.AllowMcpControl)
+            _ = StartMcpControlAsync(restarted);
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
+    }
+
+    /// <summary>
+    /// Hosts the control pipe at startup; another process owning the pipe name is told in a notification. After a restart
+    /// (<paramref name="restarted"/>) the old process may still be releasing the name: tried again for up to 10 s first.
+    /// </summary>
+    private async Task StartMcpControlAsync(bool restarted)
+    {
+        var error = await McpControlHost.ApplyRetryingAsync(_mcpHost!,
+            restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero, TimeSpan.FromMilliseconds(500));
+        if (error is not null)
+            ShowControlNotification(Loc.T("settings.mcp.title"), Loc.F("settings.mcp.startFailed", ("error", error)));
+    }
+
+    /// <summary>Releases the control pipe (bounded); the process that replaces this one hosts it again.</summary>
+    private void StopMcpControl()
+    {
+        try
+        {
+            _mcpHost?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(6));
+        }
+        catch (AggregateException)
+        {
+            // Releasing the pipe never blocks an exit or a restart.
+        }
+    }
+
+    /// <summary>Settings → "Copy configuration": the text goes to the clipboard and stays there after the app exits.</summary>
+    private void CopyToClipboard(string text)
+    {
+        try
+        {
+            Clipboard.SetDataObject(text, true);
+        }
+        catch (System.Runtime.InteropServices.ExternalException ex)
+        {
+            // Another program holds the clipboard.
+            _dialogs.ShowError(Loc.T("settings.mcp.title"), ex.Message);
+        }
+    }
+
+    private async void RunMcpBridge(string[] args)
+    {
+        int exitCode;
+        try
+        {
+            exitCode = await McpBridge.RunAsync(args, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // stderr, never stdout: stdout carries the protocol.
+            Console.Error.WriteLine(ex);
+            exitCode = 1;
+        }
+        Shutdown(exitCode);
     }
 
     /// <summary>Resolves the configuration folder and loads everything that lives in it; false means the app must exit.</summary>
@@ -185,9 +268,11 @@ public partial class App : Application
             var drive = new DriveConnections(paths.DriveConnectionsFile);
             var s3Storages = new S3StorageFactory(new StorageFactory(), s3.Resolve);
             var storages = new DriveStorageFactory(s3Storages, drive.Resolve);
-            var runner = new BackupRunner(storages, currentRules: planId => planStore.TryLoad(planId)?.Retention,
+            // One clock for the runner and the queue: the control service's run ids compare with the logged starts.
+            var clock = TimeProvider.System;
+            var runner = new BackupRunner(storages, clock, currentRules: planId => planStore.TryLoad(planId)?.Retention,
                 indexSink: versionIndex);
-            var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)));
+            var queue = new BackupQueue(runner, planId => new RunLog(paths.LogFileFor(planId)), clock);
             // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
             var scheduler = new Scheduler((planId, trigger) =>
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
@@ -300,6 +385,22 @@ public partial class App : Application
             }
         };
         _mainViewModel.RunFinished += ShowRunNotification;
+        _mainViewModel.ControlNotified += ShowControlNotification;
+    }
+
+    /// <summary>Claude changed something through the control pipe (MCP): the user sees it at once.</summary>
+    private void ShowControlNotification(string title, string message)
+    {
+        if (_exitRequested || _tray is null)
+            return;
+        try
+        {
+            _tray.ShowNotification(title, message, NotificationIcon.Info);
+        }
+        catch (Exception)
+        {
+            // A tray failure must never take the app down.
+        }
     }
 
     private void ShowRunNotification(string planName, RunLogEntry result)
@@ -422,7 +523,8 @@ public partial class App : Application
             },
             manageS3Connections: ShowS3Connections,
             manageDriveAccounts: ShowDriveAccounts,
-            manageDriveConnections: ShowDriveConnections);
+            manageDriveConnections: ShowDriveConnections,
+            mcpControl: _mcpHost, copyToClipboard: CopyToClipboard);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
             window.Owner = _window;
@@ -517,6 +619,7 @@ public partial class App : Application
 
         DisposeTray();
         _planStore.Dispose();
+        StopMcpControl();   // the new process hosts the pipe name
         _singleInstance?.Dispose();   // the new process needs the lock; released only after the backups stopped
         try
         {
@@ -556,6 +659,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         base.OnExit(e);
+        StopMcpControl();
         // The Drive and S3 clients; backups and restores were stopped before the app shut down.
         _storages?.Dispose();
         _s3Storages?.Dispose();

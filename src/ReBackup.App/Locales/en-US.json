@@ -39,7 +39,7 @@
       "Friday": "Friday", "Saturday": "Saturday", "Sunday": "Sunday"
     },
     "weekdayShort": { "Mon": "Mon", "Tue": "Tue", "Wed": "Wed", "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun" },
-    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up" },
+    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up", "Mcp": "MCP" },
     "includeStatus": { "Included": "Included", "Ignored": "Ignored", "Partial": "Partial" },
     "diffStatus": { "Unchanged": "Unchanged", "Added": "Added", "Changed": "Changed", "Deleted": "Deleted" },
     "historyStatus": { "New": "New", "Changed": "Changed", "Unchanged": "Unchanged", "Deleted": "Deleted", "Absent": "—" },
@@ -68,6 +68,14 @@
       "title": "DEFAULT IGNORE PATTERNS",
       "note": "One per line, gitignore syntax.",
       "name": "Default ignore patterns"
+    },
+    "mcp": {
+      "title": "CONTROL VIA MCP",
+      "allow": "Allow control via MCP",
+      "allowHint": "Lets an MCP client such as Claude look at your plans, versions and ignore rules and propose changes. It only sees names, sizes and dates, never file contents, a change is only proposed first and applied after you agree in Claude, and each one is announced in the tray.",
+      "copy": "Copy configuration",
+      "copied": "Copied",
+      "startFailed": "ReBackup could not open the control connection: {error}"
     },
     "app": {
       "title": "APP",
@@ -404,6 +412,15 @@
       "full": "Aborted: target full",
       "error": "Aborted: error",
       "canceled": "Canceled"
+    }
+  },
+  "control": {
+    "notification": {
+      "title": "Claude via MCP",
+      "backupStarted": "Claude started a backup of \"{plan}\".",
+      "ignoreChanged": "Claude changed the ignore rules of \"{plan}\".",
+      "integrated": "Claude moved the rules of {file} into the plan \"{plan}\".",
+      "extracted": "Claude moved rules of the plan \"{plan}\" into {file}."
     }
   },
   "tray": {

@@ -4,6 +4,8 @@ using ReBackup.App.Tests.TestSupport;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Plans;
 using ReBackup.Shared.Wpf.Controls;
+using ReBackup.Storage;
+using ReBackup.Storage.InMemory;
 
 namespace ReBackup.App.Tests;
 
@@ -201,6 +203,21 @@ public class MainViewModelOrderTests : IDisposable
         vm.DeletePlanCommand.Execute(null);
 
         _fixture.Settings.PlanOrder.Should().Equal("c", "b");
+    }
+
+    [Fact]
+    public async Task Deleting_a_plan_forgets_its_scan()
+    {
+        var vm = _fixture.Create();
+        var plan = vm.Plans.Single(p => p.Id == "a");
+        var source = new InMemoryStorage(StorageCapabilities.None);
+        source.AddFile("x.txt", new byte[1]);
+        vm.ScanCache.Put("a", await ReBackup.Core.Indexing.LiveScan.Start(source, "r", new ReBackup.Core.Plans.IgnoreSettings(), []).Completion);
+        vm.SelectedPlan = plan;
+
+        vm.DeletePlanCommand.Execute(null);
+
+        vm.ScanCache.Has("a").Should().BeFalse();
     }
 
     [Fact]

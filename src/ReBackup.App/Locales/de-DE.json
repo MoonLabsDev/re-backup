@@ -39,7 +39,7 @@
       "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag"
     },
     "weekdayShort": { "Mon": "Mo", "Tue": "Di", "Wed": "Mi", "Thu": "Do", "Fri": "Fr", "Sat": "Sa", "Sun": "So" },
-    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt" },
+    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt", "Mcp": "MCP" },
     "includeStatus": { "Included": "Enthalten", "Ignored": "Ignoriert", "Partial": "Teilweise" },
     "diffStatus": { "Unchanged": "Unverändert", "Added": "Hinzugefügt", "Changed": "Geändert", "Deleted": "Gelöscht" },
     "historyStatus": { "New": "Neu", "Changed": "Geändert", "Unchanged": "Unverändert", "Deleted": "Gelöscht", "Absent": "—" },
@@ -68,6 +68,14 @@
       "title": "STANDARD-IGNORIERMUSTER",
       "note": "Ein Muster pro Zeile, gitignore-Syntax.",
       "name": "Standard-Ignoriermuster"
+    },
+    "mcp": {
+      "title": "STEUERUNG PER MCP",
+      "allow": "Steuerung per MCP erlauben",
+      "allowHint": "Erlaubt einem MCP-Client wie Claude, Pläne, Versionen und Ignorier-Regeln einzusehen und Änderungen vorzuschlagen. Er sieht nur Namen, Größen und Datum, nie Dateiinhalte, eine Änderung wird zuerst nur vorgeschlagen und erst nach deiner Zustimmung in Claude umgesetzt, und jede wird im Infobereich angezeigt.",
+      "copy": "Konfiguration kopieren",
+      "copied": "Kopiert",
+      "startFailed": "ReBackup konnte die Steuerungsverbindung nicht öffnen: {error}"
     },
     "app": {
       "title": "APP",
@@ -404,6 +412,15 @@
       "full": "Abgebrochen: Ziel voll",
       "error": "Abgebrochen: Fehler",
       "canceled": "Abgebrochen"
+    }
+  },
+  "control": {
+    "notification": {
+      "title": "Claude über MCP",
+      "backupStarted": "Claude hat ein Backup von „{plan}“ gestartet.",
+      "ignoreChanged": "Claude hat die Ignore-Regeln von „{plan}“ geändert.",
+      "integrated": "Claude hat die Regeln von {file} in den Plan „{plan}“ übernommen.",
+      "extracted": "Claude hat Regeln des Plans „{plan}“ nach {file} verschoben."
     }
   },
   "tray": {

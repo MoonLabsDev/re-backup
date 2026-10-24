@@ -24,6 +24,11 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private readonly Func<IgnoreSettings> _ignoreSettings;
     private readonly Func<IReadOnlyList<string>> _globalDefaults;
     private readonly IStorageFactory _storages;
+    private readonly SourceScanCache? _scanCache;
+
+    /// <summary>When the tab's scan finished: the cache keeps that time when the tab hands it (or a changed copy) over.</summary>
+    private DateTimeOffset? _scannedUtc;
+    private readonly string? _planId;
     private SourceIndex? _index;
     private LiveScan? _scan;
     private CancellationTokenSource? _indexCts;
@@ -96,11 +101,15 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     /// <param name="openFile">Opens a file with its program (the editor of "Open in editor"); tests record instead.</param>
     /// <param name="openInNotepad">Fallback when <paramref name="openFile"/> fails (no program for the file type).</param>
     /// <param name="dialogs">Shows the error when neither could open the file; none shows nothing.</param>
+    /// <param name="scanCache">Where a finished index is shared with the control service, and read from after a release; with <paramref name="planId"/>.</param>
     public IgnorePreviewViewModel(Func<StorageLocation?> source, Func<IgnoreSettings> ignoreSettings,
         Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages,
         Func<Func<VersionIndex>?>? versionIndex = null, Action? requestIndexSync = null,
-        Func<string, bool>? openFile = null, Func<string, bool>? openInNotepad = null, IDialogService? dialogs = null)
+        Func<string, bool>? openFile = null, Func<string, bool>? openInNotepad = null, IDialogService? dialogs = null,
+        SourceScanCache? scanCache = null, string? planId = null)
     {
+        _scanCache = planId is null ? null : scanCache;
+        _planId = planId;
         _openFile = openFile ?? ShellFileOpener.Open;
         _openInNotepad = openInNotepad ?? ShellFileOpener.OpenInNotepad;
         _dialogs = dialogs;
@@ -138,6 +147,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     /// <summary>Drops the cached index, e.g. after the source folder changed.</summary>
     public void Invalidate()
     {
+        if (_planId is not null)
+            _scanCache?.Invalidate(_planId);
         _indexCts?.Cancel();
         _indexCts = null;   // the aborted scan must not touch the state below any more
         _scan = null;
@@ -184,6 +195,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     [RelayCommand]
     private async Task IndexAsync()
     {
+        // "Scan" always scans anew, even when the scan cache holds a scan (the user asks for the source as it is now).
         var source = _source();
         IStorage? storage = null;
         // A folder needs a path; on other kinds (e.g. S3) an empty path is the storage's root.
@@ -234,6 +246,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             }
 
             var index = await scan.Completion;
+            _scannedUtc = DateTimeOffset.UtcNow;
             _scan = null;
             // A newer evaluation (pattern edit) can supersede this one; repeat until the new index is shown.
             while (!await EvaluateAsync(index, cts.Token))
@@ -242,6 +255,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             IsIndexing = false;
             Progress = LocText.Of("ignore.progress.indexed", ("files", Formats.Files(index.FileCount)),
                 ("folders", Formats.Folders(index.DirectoryCount)));
+            if (_planId is not null)
+                _scanCache?.Put(_planId, index, source, _scannedUtc);   // the same instance the tab holds, not a copy
             CompactMemory();   // the live tree of the scan is garbage now
             RequestReevaluate();   // in case the patterns were edited while the result was being evaluated
         }

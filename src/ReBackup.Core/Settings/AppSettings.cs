@@ -11,6 +11,12 @@ public sealed class AppSettings
     public List<string> DefaultIgnorePatterns { get; set; } = [.. BuiltInIgnoreDefaults];
     public bool CloseToTray { get; set; } = true;
     public bool StartWithWindows { get; set; }
+
+    /// <summary>
+    /// "Allow control via MCP": the running app hosts the control pipe that the <c>--mcp</c> bridge talks to. Off by
+    /// default; while off the app does not host the pipe.
+    /// </summary>
+    public bool AllowMcpControl { get; set; }
     [JsonConverter(typeof(ThemeModeConverter))]
     public ThemeMode Theme { get; set; } = ThemeMode.Dark;
 

@@ -159,6 +159,9 @@ public sealed partial class PlanRunViewModel : ObservableObject
         UpdateCard();
     }
 
+    /// <summary>The running job's latest progress; null while queued, before its first report and when idle.</summary>
+    internal BackupProgress? Progress => _progress;
+
     /// <summary>The remaining copy time; null while it is not known. <see cref="EtaText"/> is its text.</summary>
     public TimeSpan? RemainingTime => _remaining;
 

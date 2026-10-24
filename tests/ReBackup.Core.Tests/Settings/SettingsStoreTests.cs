@@ -211,4 +211,15 @@ public class SettingsStoreTests : IDisposable
 
         store.LastLoadError.Should().BeNull();
     }
+
+    [Fact]
+    public void Mcp_control_is_off_by_default_and_round_trips()
+    {
+        var store = new SettingsStore(_tmp.PathOf("settings.json"));
+        store.Load().AllowMcpControl.Should().BeFalse();
+
+        store.Save(new AppSettings { AllowMcpControl = true });
+
+        store.Load().AllowMcpControl.Should().BeTrue();
+    }
 }
