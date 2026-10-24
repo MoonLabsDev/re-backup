@@ -26,6 +26,7 @@ public abstract record EquivalenceResult
     {
         public const string ScanRunning = "ignore.relocation.scanRunning";
         public const string NoScan = "ignore.relocation.noScan";
+        public const string UnreadableFile = "ignore.relocation.unreadableFile";
     }
 }
 

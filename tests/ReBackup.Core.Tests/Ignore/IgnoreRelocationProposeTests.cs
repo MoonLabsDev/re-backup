@@ -201,8 +201,32 @@ public class IgnoreRelocationProposeTests : IDisposable
     [Fact]
     public void HashContent_ignores_a_BOM_and_line_ending_style()
     {
-        IgnoreRelocation.HashContent("﻿a\r\nb\r\n").Should().Be(IgnoreRelocation.HashContent("a\nb\n"));
+        IgnoreRelocation.HashContent("\uFEFFa\r\nb\r\n").Should().Be(IgnoreRelocation.HashContent("a\nb\n"));
         IgnoreRelocation.HashContent("a\nb\n").Should().NotBe(IgnoreRelocation.HashContent("a\nc\n"));
         IgnoreRelocation.HashContent(null).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Integrate_of_a_file_edited_on_disk_after_the_scan_is_identical()
+    {
+        _tmp.WriteFile("P/X/.backupignore", "foo/\n");
+        _tmp.WriteFile("P/X/foo/a.txt", "1");
+        _tmp.WriteFile("P/X/b.tmp", "1");
+        var context = await ContextAsync([]);
+        File.WriteAllText(_tmp.PathOf("P/X/.backupignore"), "*.tmp\n");
+
+        IgnoreRelocation.ProposeIntegrate(context, "P/X").Equivalence.Should().BeOfType<EquivalenceResult.Identical>();
+    }
+
+    [Fact]
+    public async Task Integrate_of_an_unreadable_file_is_not_checked()
+    {
+        _tmp.WriteFile("P/X/.backupignore", "foo/\n");
+        var context = await ContextAsync([]);
+        context = context with { Index = context.Index! with { UnreadableIgnoreFiles = ["P/X/.backupignore"] } };
+
+        IgnoreRelocation.ProposeIntegrate(context, "P/X").Equivalence
+            .Should().BeOfType<EquivalenceResult.NotChecked>()
+            .Which.ReasonKey.Should().Be("ignore.relocation.unreadableFile");
     }
 }

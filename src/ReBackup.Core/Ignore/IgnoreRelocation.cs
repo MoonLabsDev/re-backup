@@ -12,6 +12,7 @@ namespace ReBackup.Core.Ignore;
 public static class IgnoreRelocation
 {
     private const int MaxExamples = 20;
+    private const char Bom = '\uFEFF';
 
     /// <summary>Moves every line of <c>directory/.backupignore</c> to the end of the plan patterns.</summary>
     public static RelocationProposal ProposeIntegrate(RelocationContext context, string directory)
@@ -30,7 +31,7 @@ public static class IgnoreRelocation
         List<string> after = [.. before, .. moved];
         var nestedAfter = NestedFilesWith(context, dir, null);
         return new RelocationProposal(RelocationKind.Integrate, dir, [.. before], after, content, null, [],
-            CheckEquivalence(context, after, nestedAfter), Hash(before), HashContent(content))
+            CheckEquivalence(context, dir, content, after, nestedAfter), Hash(before), HashContent(content))
         {
             MovedLines = moved,
         };
@@ -70,7 +71,7 @@ public static class IgnoreRelocation
         var contentAfter = AppendFromPlan(content, nestedLines);
         var nestedAfter = NestedFilesWith(context, dir, SplitLines(contentAfter));
         return new RelocationProposal(RelocationKind.Extract, dir, [.. before], after, content, contentAfter, rejected,
-            CheckEquivalence(context, after, nestedAfter), Hash(before), HashContent(content))
+            CheckEquivalence(context, dir, content, after, nestedAfter), Hash(before), HashContent(content))
         {
             MovedLines = movedLines,
         };
@@ -92,6 +93,85 @@ public static class IgnoreRelocation
         return result;
     }
 
+    /// <summary>
+    /// Writes a proposal: re-checks that the plan and the file are as proposed, then writes the file (extract), saves the plan
+    /// and recycles the file (integrate), undoing the earlier steps when a later one fails.
+    /// </summary>
+    /// <exception cref="RelocationStaleException">The plan or the file changed since the proposal.</exception>
+    /// <exception cref="InvalidOperationException">The proposal moves nothing.</exception>
+    public static void Apply(RelocationProposal proposal, string sourceRoot, IReadOnlyList<string> currentPlanPatterns,
+        Action<IReadOnlyList<string>> savePlanPatterns, IRecycleBin recycleBin)
+    {
+        if (proposal.MovedLines.Count == 0)
+            throw new InvalidOperationException("The proposal moves no lines.");
+        if (proposal.Kind == RelocationKind.Extract && proposal.FileContentAfter is null)
+            throw new InvalidOperationException("An extract proposal has no file content.");
+
+        var path = Path.Combine(sourceRoot, proposal.Directory, IgnoreOrigins.NestedFileName);
+        var current = File.Exists(path) ? File.ReadAllText(path) : null;
+        if (Hash(currentPlanPatterns) != proposal.PlanPatternsHash || HashContent(current) != proposal.FileHash)
+            throw new RelocationStaleException();
+
+        if (proposal.Kind == RelocationKind.Integrate)
+        {
+            savePlanPatterns(proposal.PlanPatternsAfter);
+            try
+            {
+                recycleBin.Recycle(path);
+            }
+            catch
+            {
+                RestorePlan(savePlanPatterns, proposal.PlanPatternsBefore);
+                throw;
+            }
+            return;
+        }
+
+        WriteAtomically(path, proposal.FileContentAfter!);
+        try
+        {
+            savePlanPatterns(proposal.PlanPatternsAfter);
+        }
+        catch
+        {
+            RestoreFile(path, proposal.FileContentBefore);
+            throw;
+        }
+    }
+
+    private static void RestorePlan(Action<IReadOnlyList<string>> savePlanPatterns, IReadOnlyList<string> before)
+    {
+        try { savePlanPatterns(before); }
+        catch { /* the original failure is the one to report */ }
+    }
+
+    private static void RestoreFile(string path, string? before)
+    {
+        try
+        {
+            if (before is null)
+                File.Delete(path);
+            else
+                WriteAtomically(path, before);
+        }
+        catch { /* the original failure is the one to report */ }
+    }
+
+    private static void WriteAtomically(string path, string content)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, content, new UTF8Encoding(false));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+                File.Delete(temp);
+        }
+    }
+
     /// <summary>xxHash64 (hex) of plan lines joined with <c>\n</c>.</summary>
     public static string Hash(IEnumerable<string> lines) => HashText(string.Join('\n', lines));
 
@@ -100,10 +180,10 @@ public static class IgnoreRelocation
     {
         if (content is null)
             return null;
-        if (content.StartsWith('﻿'))
-            content = content[1..];
-        return HashText(content.Replace("\r\n", "\n"));
+        return HashText(StripBom(content).Replace("\r\n", "\n"));
     }
+
+    private static string StripBom(string content) => content.StartsWith(Bom) ? content[1..] : content;
 
     private static string HashText(string text) =>
         Convert.ToHexString(XxHash64.Hash(Encoding.UTF8.GetBytes(text)));
@@ -118,9 +198,7 @@ public static class IgnoreRelocation
     {
         if (string.IsNullOrEmpty(content))
             return [];
-        if (content.StartsWith('﻿'))
-            content = content[1..];
-        var lines = content.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
+        var lines = StripBom(content).Split('\n').Select(l => l.TrimEnd('\r')).ToList();
         if (lines[^1].Length == 0)
             lines.RemoveAt(lines.Count - 1);
         return lines;
@@ -151,13 +229,22 @@ public static class IgnoreRelocation
         return files;
     }
 
-    private static EquivalenceResult CheckEquivalence(RelocationContext context, IReadOnlyList<string> planAfter,
-        List<NestedIgnoreFile> nestedAfter)
+    /// <summary>
+    /// Compares the scope before and after. The file in <paramref name="directory"/> is taken from <paramref name="fileContent"/>
+    /// (what is on disk now) on both sides, so an edit made after the scan does not show up as a difference.
+    /// </summary>
+    private static EquivalenceResult CheckEquivalence(RelocationContext context, string directory, string? fileContent,
+        IReadOnlyList<string> planAfter, List<NestedIgnoreFile> nestedAfter)
     {
         if (context.Index is not { } index)
             return new EquivalenceResult.NotChecked(EquivalenceResult.NotChecked.NoScan);
 
-        var before = IgnoreMatcher.ForPlan(context.Settings, context.GlobalDefaults, index.IgnoreFiles);
+        var origin = IgnoreOrigins.ForNestedFile(directory);
+        if (index.UnreadableIgnoreFiles.Any(f => string.Equals(f, origin, StringComparison.OrdinalIgnoreCase)))
+            return new EquivalenceResult.NotChecked(EquivalenceResult.NotChecked.UnreadableFile);
+
+        var nestedBefore = NestedFilesWith(context, directory, fileContent is null ? null : SplitLines(fileContent));
+        var before = IgnoreMatcher.ForPlan(context.Settings, context.GlobalDefaults, nestedBefore);
         var settingsAfter = new IgnoreSettings
         {
             UseGlobalDefaults = context.Settings.UseGlobalDefaults,
