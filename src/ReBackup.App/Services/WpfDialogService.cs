@@ -120,6 +120,8 @@ public sealed class WpfDialogService(Func<S3ConnectionStore?> connections, Func<
 
     public void ShowVerify(VerifyViewModel viewModel) => ShowOwned(new VerifyDialog(viewModel));
 
+    public bool ConfirmRelocation(RelocationDialogViewModel model) => ShowOwned(new RelocationDialog(model)) == true;
+
     /// <summary>"New account…" in the connection dialog: the account dialog, then the account is stored.</summary>
     private DriveAccount? CreateDriveAccount(DriveConnections store)
     {

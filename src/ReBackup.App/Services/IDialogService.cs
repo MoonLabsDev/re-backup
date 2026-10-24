@@ -56,6 +56,12 @@ public interface IDialogService
     /// <summary>The "Verify backup…" dialog on <paramref name="viewModel"/>; returns when it is closed (a verify still running is stopped).</summary>
     void ShowVerify(VerifyViewModel viewModel);
 
+    /// <summary>
+    /// The confirmation of moving ignore lines between the plan and a <c>.backupignore</c>: true when the user chose Apply
+    /// (which the dialog offers only while <see cref="RelocationDialogViewModel.CanApply"/>).
+    /// </summary>
+    bool ConfirmRelocation(RelocationDialogViewModel model);
+
     /// <summary>The Google account dialog on <paramref name="existing"/> (null = a new account): name and key, not yet stored; null when cancelled.</summary>
     DriveAccountInput? EditDriveAccount(DriveAccount? existing);
 }

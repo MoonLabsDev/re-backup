@@ -1,6 +1,7 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Services;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
@@ -72,6 +73,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         foreach (var row in Tree.Rows)
             row.Refresh();
         RefreshCompareChoices();   // the dates and sizes of the versions
+        if (CompletedIndex is { } index)
+            RefreshIgnoreFiles(index);   // the panel's hit texts; a running scan has its own (empty) list
     }
 
     /// <summary>The evaluated tree of the last complete scan (treemap, sizes); null while a scan runs.</summary>
@@ -90,10 +93,17 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     /// <param name="requestIndexSync">
     /// Asks for a sync of that index; the end of every sync is to be reported to <see cref="OnIndexSyncEnded"/>.
     /// </param>
+    /// <param name="openFile">Opens a file with its program (the editor of "Open in editor"); tests record instead.</param>
+    /// <param name="openInNotepad">Fallback when <paramref name="openFile"/> fails (no program for the file type).</param>
+    /// <param name="dialogs">Shows the error when neither could open the file; none shows nothing.</param>
     public IgnorePreviewViewModel(Func<StorageLocation?> source, Func<IgnoreSettings> ignoreSettings,
         Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages,
-        Func<Func<VersionIndex>?>? versionIndex = null, Action? requestIndexSync = null)
+        Func<Func<VersionIndex>?>? versionIndex = null, Action? requestIndexSync = null,
+        Func<string, bool>? openFile = null, Func<string, bool>? openInNotepad = null, IDialogService? dialogs = null)
     {
+        _openFile = openFile ?? ShellFileOpener.Open;
+        _openInNotepad = openInNotepad ?? ShellFileOpener.OpenInNotepad;
+        _dialogs = dialogs;
         _versionIndex = versionIndex ?? (() => null);
         _requestIndexSync = requestIndexSync ?? (() => { });
         _storages = storages;
@@ -119,6 +129,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
 
     partial void OnSelectedNodeChanged(IPreviewEntry? value)
     {
+        OpenForNode(value);
         // Selection coming from outside the tree (the treemap): show it in the tree.
         if (value is not null && !ReferenceEquals(Tree.SelectedRow?.Entry, value))
             Tree.Reveal(value);
@@ -136,7 +147,9 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         LastEvaluatedIncludedSize = null;
         IsIndexing = false;
         Root = null;
+        Tree.IgnoreFileDirectories = NoDirectories;
         Tree.SetRoot(null);
+        ClearIgnoreFiles();
         SummaryText = LocText.Empty;
         InBackupPill = LocText.Empty;
         IgnoredPill = LocText.Empty;
@@ -206,6 +219,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         _scan = scan;
         IsIndexing = true;
         Root = null;   // the treemap waits for the finished scan
+        ClearIgnoreFiles();
+        Tree.IgnoreFileDirectories = NoDirectories;   // not the previous scan's folders; the running scan reports its own
         Tree.SetRoot(scan.Root);
 
         try
@@ -296,8 +311,14 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     [RelayCommand]
     private void CancelIndex() => _indexCts?.Cancel();
 
+    private static readonly IReadOnlySet<string> NoDirectories = new HashSet<string>();
+
+    private static IReadOnlySet<string> DirectoriesOf(IEnumerable<string> directories) =>
+        new HashSet<string>(directories, StringComparer.OrdinalIgnoreCase);
+
     private void ShowLive(LiveScan scan)
     {
+        Tree.UpdateLiveIgnoreFileDirectories(scan.IgnoreFileDirectories);
         Tree.Refresh();
         Progress = LocText.Of("ignore.progress.live",
             ("files", Formats.Files(scan.Files)), ("folders", Formats.Folders(scan.Directories)),
@@ -347,7 +368,9 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         LastEvaluatedIncludedSize = root.IncludedSize;
         ErrorText = null;
         Root = root;
+        Tree.IgnoreFileDirectories = DirectoriesOf(index.IgnoreFiles.Select(f => f.DirectoryRelativePath));
         Tree.SetRoot(root);
+        RefreshIgnoreFiles(index);
         SummaryText = SummaryOf("ignore.summary.done", root);
         SetPills(root, "");
         return true;

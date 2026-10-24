@@ -52,6 +52,28 @@ public sealed class PreviewRowViewModel : ObservableObject
 
     public bool IsExpandable => Entry.IsDirectory && (IsLoading || Entry.ChildCount > 0);
     public string Name => Entry.Name;
+
+    /// <summary>A <c>.backupignore</c> file.</summary>
+    public bool IsIgnoreFile => !IsPlaceholder && !Entry.IsDirectory && IgnoreOrigins.IsNestedFileName(Entry.Name);
+
+    /// <summary>A folder that holds a <c>.backupignore</c> directly.</summary>
+    public bool ContainsIgnoreFile
+    {
+        get
+        {
+            // RelativePath builds a string from the parent chain: look it up once per set of folders, not per bind.
+            if (_containsGeneration != _tree.IgnoreFileGeneration)
+            {
+                _contains = !IsPlaceholder && Entry.IsDirectory && _tree.IgnoreFileDirectories.Count > 0 &&
+                            _tree.IgnoreFileDirectories.Contains(Entry.RelativePath);
+                _containsGeneration = _tree.IgnoreFileGeneration;
+            }
+            return _contains;
+        }
+    }
+
+    private bool _contains;
+    private int _containsGeneration = -1;
     public Thickness Indent => new(Depth * IndentPerLevel, 0, 0, 0);
 
     private string Prefix => IsLoading ? "≥ " : "";

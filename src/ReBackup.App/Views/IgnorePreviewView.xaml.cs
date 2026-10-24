@@ -129,6 +129,11 @@ public partial class IgnorePreviewView : UserControl
         NameColumn.Width = Math.Max(NameMinWidth, free);
     }
 
+    /// <summary>"Move selected rules to …" moves the pattern lines the selection in the pattern box touches.</summary>
+    private void OnTreeMenuOpened(object sender, RoutedEventArgs e) =>
+        ExtractMenuItem.CommandParameter =
+            PlanEditorViewModel.TouchedPatternLines(PatternsBox.Text, PatternsBox.SelectionStart, PatternsBox.SelectionLength);
+
     private void OnRowSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (RowsList.SelectedItem is { } row)

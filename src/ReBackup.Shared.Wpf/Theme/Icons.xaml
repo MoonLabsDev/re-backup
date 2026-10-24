@@ -36,6 +36,7 @@
     <sys:String x:Key="Icon.Explorer">&#xEC50;</sys:String>
     <sys:String x:Key="Icon.Restore">&#xE777;</sys:String>
     <sys:String x:Key="Icon.Warning">&#xE7BA;</sys:String>
+    <sys:String x:Key="Icon.Filter">&#xE71C;</sys:String>
 
     <!-- Used by the control templates. -->
     <sys:String x:Key="Icon.ChevronUp">&#xE70E;</sys:String>

@@ -21,6 +21,8 @@ public sealed partial class VersionTreeViewModel : ObservableObject
     private bool _shownIsNewer;
     private bool _changedOnly;
     private int _generation;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(int Generation, long VersionId), IReadOnlySet<long>>
+        _ignoreFolders = new();
 
     /// <summary>The entry selected last; a reloaded tree selects it again even after a message was shown meanwhile.</summary>
     private long? _lastSelectedPathId;
@@ -42,6 +44,7 @@ public sealed partial class VersionTreeViewModel : ObservableObject
     public void ShowMessage(LocText message)
     {
         _generation++;
+        _ignoreFolders.Clear();
         _index = null;
         _statuses = null;
         _roots = [new VersionTreeNode(message, 0)];
@@ -63,6 +66,7 @@ public sealed partial class VersionTreeViewModel : ObservableObject
     public void Suspend()
     {
         _generation++;
+        _ignoreFolders.Clear();
         _index = null;
     }
 
@@ -75,6 +79,7 @@ public sealed partial class VersionTreeViewModel : ObservableObject
         IReadOnlyDictionary<long, DiffStatus>? statuses, bool changedOnly, bool shownIsNewer = false)
     {
         var generation = ++_generation;
+        _ignoreFolders.Clear();
         _index = null;   // until the new tree is in, nothing is loaded with the old ids
         _shownIsNewer = shownIsNewer;   // read by Load, also on the worker below
         var expanded = _expanded.ToHashSet();
@@ -235,12 +240,26 @@ public sealed partial class VersionTreeViewModel : ObservableObject
         return roots;
     }
 
+    private static readonly IReadOnlySet<long> NoFolders = new HashSet<long>();
+
+    /// <summary>The query reads a whole version, so it runs once per version and tree (loads run on worker threads).</summary>
+    private IReadOnlySet<long> IgnoreFolders(VersionIndex index, long versionId) =>
+        _ignoreFolders.GetOrAdd((_generation, versionId), key => index.FoldersWithIgnoreFile(key.VersionId));
+
     private List<VersionTreeNode> Load(VersionIndex index, long versionId, long? otherId,
-        IReadOnlyDictionary<long, DiffStatus>? statuses, long folderId, int depth) =>
-        index.Children(versionId, folderId, otherId)
+        IReadOnlyDictionary<long, DiffStatus>? statuses, long folderId, int depth)
+    {
+        var children = index.Children(versionId, folderId, otherId);
+        // Folders of either version that hold an ignore file, so that a collapsed tree shows where they are.
+        var hasFolders = children.Any(c => c.IsDirectory);
+        var marked = hasFolders ? IgnoreFolders(index, versionId) : NoFolders;
+        var markedOther = hasFolders && otherId is { } other ? IgnoreFolders(index, other) : NoFolders;
+        return children
             .Select(child => new VersionTreeNode(this, child, depth,
-                statuses is null ? null : statuses.GetValueOrDefault(child.PathId, DiffStatus.Unchanged), _shownIsNewer))
+                statuses is null ? null : statuses.GetValueOrDefault(child.PathId, DiffStatus.Unchanged), _shownIsNewer,
+                child.IsDirectory && (marked.Contains(child.PathId) || markedOther.Contains(child.PathId))))
             .ToList();
+    }
 
     /// <summary>
     /// Lists the visible rows. The selection stays on its row, or moves to the row of the same entry when the tree was

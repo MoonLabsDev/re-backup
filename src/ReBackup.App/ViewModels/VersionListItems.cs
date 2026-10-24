@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using ReBackup.Shared.Wpf.Localization;
+using ReBackup.Core.Ignore;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
@@ -14,6 +15,9 @@ public sealed class SearchHitRow(SearchHit hit) : ObservableObject
     public string Name => Hit.Name;
     public string Path => Hit.Path;
     public bool IsDirectory => Hit.IsDirectory;
+
+    /// <summary>A <c>.backupignore</c> file.</summary>
+    public bool IsIgnoreFile => !Hit.IsDirectory && IgnoreOrigins.IsNestedFileName(Hit.Name);
     public string SizeText => Formats.Bytes(Hit.Size);
 
     /// <summary>The language changed.</summary>
@@ -26,6 +30,9 @@ public sealed class FileHistoryRow(HistoryEntry entry, string? versionFolder, st
     public HistoryEntry Entry { get; } = entry;
     public HistoryStatus Status => Entry.Status;
     public string VersionName => Entry.Version.Name;
+
+    /// <summary>The file is a <c>.backupignore</c>.</summary>
+    public bool IsIgnoreFile => IgnoreOrigins.IsNestedFileName(System.IO.Path.GetFileName(RelativePath));
     public string DateText => Formats.DateAndTime(Entry.Version.LocalTime);
 
     public string StatusText => Loc.T("enum.historyStatus." + Entry.Status);

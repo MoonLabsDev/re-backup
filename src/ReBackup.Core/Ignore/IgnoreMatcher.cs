@@ -17,6 +17,10 @@ public static class IgnoreOrigins
     public const string Plan = "Plan";
     public const string NestedFileName = ".backupignore";
 
+    /// <summary>True for the name of a nested ignore file, whatever its case.</summary>
+    public static bool IsNestedFileName(string name) =>
+        string.Equals(name, NestedFileName, StringComparison.OrdinalIgnoreCase);
+
     public static string ForNestedFile(string directoryRelativePath) =>
         directoryRelativePath.Length == 0 ? NestedFileName : directoryRelativePath + "/" + NestedFileName;
 }

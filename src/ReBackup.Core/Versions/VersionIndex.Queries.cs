@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
+using ReBackup.Core.Ignore;
 
 namespace ReBackup.Core.Versions;
 
@@ -46,6 +47,26 @@ public sealed partial class VersionIndex
             ? (a.IsDirectory ? -1 : 1)
             : StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
         return children;
+    }
+
+    /// <summary>
+    /// The path ids of the folders holding a <c>.backupignore</c> file (any case) in a version, for marking them in the
+    /// tree. Empty for a version the index does not know.
+    /// </summary>
+    public IReadOnlySet<long> FoldersWithIgnoreFile(long versionId)
+    {
+        using var connection = OpenConnection();
+        using var command = Command(connection, null, """
+            SELECT DISTINCT p.parent_id FROM files f JOIN paths p ON p.id = f.path_id
+            WHERE f.version_id = $v AND p.parent_id IS NOT NULL AND p.name = $name COLLATE NOCASE
+            """);
+        command.Parameters.AddWithValue("$v", versionId);
+        command.Parameters.AddWithValue("$name", IgnoreOrigins.NestedFileName);
+        using var reader = command.ExecuteReader();
+        var folders = new HashSet<long>();
+        while (reader.Read())
+            folders.Add(reader.GetInt64(0));
+        return folders;
     }
 
     /// <summary>

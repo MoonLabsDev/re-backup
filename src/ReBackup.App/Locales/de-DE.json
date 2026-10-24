@@ -676,7 +676,9 @@
       "percent": "% des Ordners",
       "compareSize": "In Version",
       "sizeChange": "Differenz",
-      "sizeChangeToolTip": "Was das nächste Backup enthielte minus das, was die Version enthält"
+      "sizeChangeToolTip": "Was das nächste Backup enthielte minus das, was die Version enthält",
+      "integrate": "In den Plan übernehmen…",
+      "extract": "Ausgewählte Regeln nach {folder}/.backupignore verschieben…"
     },
     "treemap": {
       "resize": "Größe der Treemap ändern",
@@ -684,6 +686,60 @@
       "byBackup": "Größe nach Backup-Inhalt; ignorierte Einträge fehlen",
       "byTotal": "Größe nach Gesamtgröße; ignorierte Einträge grau",
       "empty": "Die Treemap erscheint nach dem Scan."
+    },
+    "files": {
+      "chip": ".backupignore ({count})",
+      "chipToolTip": "Nur die .backupignore-Dateien der Quelle anzeigen",
+      "listName": ".backupignore-Dateien",
+      "panelTitle": "Ignore-Datei",
+      "lines": "Zeilen der Ignore-Datei",
+      "openInEditor": "Im Editor öffnen",
+      "openFailed": "Die Datei konnte nicht geöffnet werden:\n{path}",
+      "folderOnly": "Nur für Ordnerquellen verfügbar",
+      "integrate": "In den Plan übernehmen…",
+      "hits": {
+        "one": "{count} Eintrag · {bytes}",
+        "other": "{count:N0} Einträge · {bytes}"
+      },
+      "unused": "keine Treffer"
+    },
+    "relocation": {
+      "title": "Ignore-Regeln verschieben",
+      "integrateHeading": "{path} in den Plan übernehmen",
+      "extractHeading": "Plan-Regeln nach {path} verschieben",
+      "planPatterns": "Plan-Muster",
+      "identical": "Backup-Umfang unverändert",
+      "differs": {
+        "one": "{count} Eintrag ändert sich",
+        "other": "{count:N0} Einträge ändern sich"
+      },
+      "waiting": "Warte auf den Scan…",
+      "existingOnly": "Geprüft an den Dateien, die jetzt vorhanden sind.",
+      "rejectedTitle": "Diese Zeilen bleiben im Plan:",
+      "rejected": {
+        "notBelowFolder": "Außerhalb dieses Ordners verankert",
+        "matchesOutsideFolder": "Trifft auch außerhalb dieses Ordners zu"
+      },
+      "nothing": "Keine Zeile kann verschoben werden.",
+      "examples": "Einträge, die sich ändern",
+      "change": "Änderung",
+      "pattern": "Entscheidendes Muster",
+      "nowIgnored": "enthalten → ignoriert",
+      "nowIncluded": "ignoriert → enthalten",
+      "apply": "Übernehmen",
+      "applyAnyway": "Trotzdem übernehmen",
+      "applyAnywayCheck": "Mir ist klar, dass sich der Backup-Umfang ändert",
+      "stale": "Der Plan oder die Datei hat sich seit der Vorschau geändert. Es wurde nichts geschrieben.",
+      "alreadyIntegrated": "Diese Datei wurde bereits übernommen – zum Aktualisieren des Baums neu scannen.",
+      "noScan": "Nicht geprüft: Zuerst die Quelle indizieren.",
+      "scanRunning": "Der Backup-Umfang lässt sich nur an einem fertigen Scan prüfen. Nach dem Scan erneut versuchen.",
+      "unreadableFile": "Nicht geprüft: Die .backupignore konnte beim Scan nicht gelesen werden.",
+      "saveFirst": "Zuerst den Plan speichern",
+      "notFolder": "Nur für Ordnerquellen verfügbar",
+      "honorOff": "Zuerst „.backupignore-Dateien in der Quelle beachten“ einschalten",
+      "notSaved": "Der Plan konnte nicht gespeichert werden. Es wurde nichts geändert.",
+      "failed": "Die Änderung konnte nicht geschrieben werden: {error}",
+      "renamed": "Dieses Laufwerk hat keinen Papierkorb, daher wurde die übernommene Datei in {name} umbenannt."
     },
     "patternNote": "Änderungen an den Mustern gelten, sobald der Scan fertig ist.",
     "sourceMissing": "Der Quellordner existiert nicht.",

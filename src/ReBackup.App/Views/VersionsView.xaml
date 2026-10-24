@@ -436,24 +436,53 @@
                                                 <StackPanel Orientation="Horizontal" Margin="{Binding Indent}">
                                                     <ToggleButton Style="{StaticResource ToggleButton.Expander}"
                                                                   AutomationProperties.Name="{l:Loc common.expand}" IsChecked="{Binding IsExpanded}" />
-                                                    <TextBlock Margin="0,0,6,0" FontSize="12">
+                                                    <Grid Margin="0,0,6,0" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="12">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
+                                                                    <Setter Property="Text" Value="{StaticResource Icon.Document}" />
+                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                                            <Setter Property="Text" Value="{StaticResource Icon.Folder}" />
+                                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding IsMessage}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding IsIgnoreFile}" Value="True">
+                                                                            <Setter Property="Text" Value="{StaticResource Icon.Filter}" />
+                                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <!-- A folder that holds a .backupignore shows a small badge on its icon. -->
+                                                        <Ellipse Width="6" Height="6" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-3,0"
+                                                                 Fill="{DynamicResource Brush.Accent}" Visibility="Collapsed">
+                                                            <Ellipse.Style>
+                                                                <Style TargetType="Ellipse">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding ContainsIgnoreFile}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Ellipse.Style>
+                                                        </Ellipse>
+                                                    </Grid>
+                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}">
                                                         <TextBlock.Style>
-                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
-                                                                <Setter Property="Text" Value="{StaticResource Icon.Document}" />
-                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                            <Style TargetType="TextBlock">
                                                                 <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsDirectory}" Value="True">
-                                                                        <Setter Property="Text" Value="{StaticResource Icon.Folder}" />
-                                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding IsMessage}" Value="True">
-                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <DataTrigger Binding="{Binding IsIgnoreFile}" Value="True">
+                                                                        <Setter Property="FontWeight" Value="SemiBold" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </TextBlock.Style>
                                                     </TextBlock>
-                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Name}" />
                                                 </StackPanel>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
@@ -517,21 +546,37 @@
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Margin="0,0,6,0" FontSize="12">
+                                                    <Grid Margin="0,0,6,0" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="12">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
+                                                                    <Setter Property="Text" Value="{StaticResource Icon.Document}" />
+                                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                                            <Setter Property="Text" Value="{StaticResource Icon.Folder}" />
+                                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding IsIgnoreFile}" Value="True">
+                                                                            <Setter Property="Text" Value="{StaticResource Icon.Filter}" />
+                                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Path}">
                                                         <TextBlock.Style>
-                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Icon}">
-                                                                <Setter Property="Text" Value="{StaticResource Icon.Document}" />
-                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                                            <Style TargetType="TextBlock">
                                                                 <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsDirectory}" Value="True">
-                                                                        <Setter Property="Text" Value="{StaticResource Icon.Folder}" />
-                                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+                                                                    <DataTrigger Binding="{Binding IsIgnoreFile}" Value="True">
+                                                                        <Setter Property="FontWeight" Value="SemiBold" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </TextBlock.Style>
                                                     </TextBlock>
-                                                    <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="{Binding Path}" />
                                                 </StackPanel>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>

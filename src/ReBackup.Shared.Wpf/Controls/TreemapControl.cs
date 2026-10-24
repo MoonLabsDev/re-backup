@@ -41,6 +41,9 @@ public sealed class TreemapControl : FrameworkElement
     private readonly record struct Tile(ITreemapEntry Node, Rect Rect, Brush Fill, bool IsLeaf);
 
     /// <summary>Brushes and pens resolved from the theme; resolved again after a theme switch.</summary>
+    /// <summary>The name of a nested ignore file (this assembly does not know ReBackup.Core.Ignore.IgnoreOrigins).</summary>
+    private const string IgnoreFileName = ".backupignore";
+
     private sealed class Paint
     {
         public required Brush Background { get; init; }
@@ -48,6 +51,7 @@ public sealed class TreemapControl : FrameworkElement
         public required Brush RootFolder { get; init; }
         public required Brush[] Extensions { get; init; }      // file colours, see ExtensionPalette
         public required Brush Folder { get; init; }            // shows through where children are too small
+        public required Brush IgnoreFile { get; init; }        // a .backupignore: the theme accent, whatever its extension
         public required Pen TilePen { get; init; }
         public required Pen SelectionPen { get; init; }
     }
@@ -232,6 +236,8 @@ public sealed class TreemapControl : FrameworkElement
             return paint.Folder;
 
         var name = node.Name;
+        if (name.Equals(IgnoreFileName, StringComparison.OrdinalIgnoreCase))
+            return paint.IgnoreFile;
         var dot = name.LastIndexOf('.');
         var extension = dot < 0 ? "" : name[dot..].ToLowerInvariant();
         return paint.Extensions[(int)(StableHash(extension) % (uint)paint.Extensions.Length)];
@@ -269,6 +275,7 @@ public sealed class TreemapControl : FrameworkElement
             Folder = ThemeResources.Brush(ThemeResources.Blend(muted, bg, 0.55)),
             Background = ThemeResources.Brush(bg),
             Ignored = ThemeResources.Brush(ignored),
+            IgnoreFile = ThemeResources.Brush(ThemeResources.Color(this, "Color.Accent", Color.FromRgb(0x2B, 0xB3, 0xA3))),
             RootFolder = ThemeResources.Brush(card),
             TilePen = ThemeResources.Pen(bg, 1),
             SelectionPen = ThemeResources.Pen(text, 2),

@@ -353,6 +353,19 @@ public sealed class LiveScan
         old.TrySetResult();
     }
 
+    /// <summary>
+    /// The folders (relative to the source root, forward slashes, "" for the root) in which a readable ignore file was
+    /// found so far. A copy: the scan keeps finding them.
+    /// </summary>
+    public IReadOnlyList<string> IgnoreFileDirectories
+    {
+        get
+        {
+            lock (_gate)
+                return [.. _ignoreFiles.Select(f => IgnorePattern.NormalizeDirectory(f.DirectoryRelativePath))];
+        }
+    }
+
     private SourceIndex ToSourceIndex()
     {
         List<NestedIgnoreFile> ignoreFiles;
