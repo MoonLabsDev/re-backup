@@ -17,8 +17,24 @@ public sealed partial class ControlService : IControlHandler
     /// <summary>Lists return at most this many rows; the rest is reported as truncated with a hint how to narrow.</summary>
     public const int MaxRows = 200;
 
-    /// <summary>A serialized result stays at or below this many characters; rows are dropped from the end until it fits.</summary>
+    /// <summary>
+    /// A serialized response (the envelope with its result) stays at or below this many characters; rows are dropped from
+    /// the end of a result until it fits.
+    /// </summary>
     public const int MaxChars = 50_000;
+
+    /// <summary>The longest request id the envelope reserves room for (the bridge sends a counter).</summary>
+    private const int MaxIdChars = 32;
+
+    /// <summary>
+    /// The characters a response adds around its result, <c>{"id":"…","ok":true,"result":…}</c>, for an id of up to
+    /// <see cref="MaxIdChars"/> characters: the result of <c>0</c> (one character) is taken off again.
+    /// </summary>
+    private static readonly int EnvelopeChars =
+        JsonSerializer.Serialize(ControlResponse.Success(new string('9', MaxIdChars), 0), ControlJson.Options).Length - 1;
+
+    /// <summary>What a serialized result may take so that its response stays within <see cref="MaxChars"/>.</summary>
+    internal static int ResultBudget => MaxChars - EnvelopeChars;
 
     /// <summary>Pattern lines listed per origin (plan, global defaults, one ignore file) in <c>get_ignore_rules</c>.</summary>
     public const int MaxRulesPerOrigin = 200;
@@ -47,6 +63,8 @@ public sealed partial class ControlService : IControlHandler
             [ControlOps.ExplainPath] = async (args, ct) => await ExplainPathAsync(args, ct),
             [ControlOps.ListFiles] = async (args, ct) => await ListFilesAsync(args, ct),
             [ControlOps.GetRunHistory] = async (args, ct) => await GetRunHistoryAsync(args, ct),
+            [ControlOps.CompareVersions] = async (args, ct) => await CompareVersionsAsync(args, ct),
+            [ControlOps.CompareSourceWithVersion] = async (args, ct) => await CompareSourceWithVersionAsync(args, ct),
         };
     }
 
@@ -119,20 +137,21 @@ public sealed partial class ControlService : IControlHandler
 
     /// <summary>
     /// The result <paramref name="build"/> makes from the first n of <paramref name="rowCount"/> rows, with the largest n
-    /// whose serialization stays within <see cref="MaxChars"/> (at least one row when there are rows). The builder sets
+    /// whose serialization stays within <see cref="ResultBudget"/>, so that the response stays within
+    /// <see cref="MaxChars"/> (at least one row when there are rows). The builder sets
     /// <c>truncated</c> and the hint itself when n is less than what it lists. Shared by every list result.
     /// </summary>
     internal static T FitToBudget<T>(int rowCount, Func<int, T> build)
     {
         var all = build(rowCount);
-        if (rowCount == 0 || Length(all) <= MaxChars)
+        if (rowCount == 0 || Length(all) <= ResultBudget)
             return all;
         // Binary search for the largest count that fits; the length grows with the count.
         int low = 1, high = rowCount - 1;
         while (low < high)
         {
             var middle = (low + high + 1) / 2;
-            if (Length(build(middle)) <= MaxChars)
+            if (Length(build(middle)) <= ResultBudget)
                 low = middle;
             else
                 high = middle - 1;

@@ -9,4 +9,6 @@ public static class ControlOps
     public const string ExplainPath = "explain_path";
     public const string ListFiles = "list_files";
     public const string GetRunHistory = "get_run_history";
+    public const string CompareVersions = "compare_versions";
+    public const string CompareSourceWithVersion = "compare_source_with_version";
 }

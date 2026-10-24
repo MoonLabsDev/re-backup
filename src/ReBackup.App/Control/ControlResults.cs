@@ -1,4 +1,5 @@
 using ReBackup.Core.Ignore;
+using ReBackup.Core.Versions;
 using ReBackup.Shared.IO;
 
 namespace ReBackup.App.Control;
@@ -11,6 +12,9 @@ namespace ReBackup.App.Control;
 public sealed record SizeValue(long Bytes, string Text)
 {
     public static SizeValue Of(long bytes) => new(bytes, ByteSize.Format(bytes));
+
+    /// <summary>A size change: negative ones read "-1.2 GB".</summary>
+    public static SizeValue Signed(long bytes) => bytes < 0 ? new(bytes, "-" + ByteSize.Format(-bytes)) : Of(bytes);
 }
 
 /// <summary>The pattern that decided an entry, where it is written (origin and 1-based line) and whether it re-includes.</summary>
@@ -77,3 +81,30 @@ public sealed record RunHistoryResult(string Plan, IReadOnlyList<RunRow> Runs, i
 
 public sealed record RunRow(string RunId, string Trigger, DateTime Start, DateTime End, long DurationMs, string Status,
     string? Reason, string? Version, int Files, SizeValue Size, int Skipped, IReadOnlyList<string>? Warnings);
+
+/// <summary>
+/// Where the growth from <paramref name="From"/> (a version) to <paramref name="To"/> (a version, or "source": what the
+/// next run would back up) comes from below <paramref name="Path"/>. <paramref name="ByFolder"/>: one row per direct
+/// child of the folder ("name/" for a folder); <paramref name="ByExtension"/>: per extension ("" = none); both the largest
+/// net growth first and cut to <c>top</c>. <paramref name="FolderRows"/> and <paramref name="ExtensionRows"/> count all
+/// rows; <paramref name="Total"/> sums them all.
+/// </summary>
+public sealed record GrowthResult(string Plan, string From, string To, string Path, GrowthRowInfo Total,
+    IReadOnlyList<GrowthRowInfo> ByFolder, int FolderRows, IReadOnlyList<GrowthRowInfo> ByExtension, int ExtensionRows,
+    bool Truncated, string? Hint);
+
+/// <summary>
+/// Files added, changed and deleted under <paramref name="Key"/> (null for the total), the sizes of the added and the
+/// deleted files, and the net change of all of them (a changed file counts with its size change).
+/// </summary>
+public sealed record GrowthRowInfo(string? Key, int Added, int Changed, int Deleted, SizeValue AddedSize, SizeValue DeletedSize,
+    SizeValue Net)
+{
+    public static GrowthRowInfo Of(GrowthRow row) => new(row.Key, row.Added, row.Changed, row.Deleted,
+        SizeValue.Of(row.AddedBytes), SizeValue.Of(row.DeletedBytes), SizeValue.Signed(row.NetBytes));
+
+    /// <summary>The sums of <paramref name="rows"/>, without a key.</summary>
+    public static GrowthRowInfo TotalOf(IReadOnlyList<GrowthRow> rows) => new(null, rows.Sum(r => r.Added),
+        rows.Sum(r => r.Changed), rows.Sum(r => r.Deleted), SizeValue.Of(rows.Sum(r => r.AddedBytes)),
+        SizeValue.Of(rows.Sum(r => r.DeletedBytes)), SizeValue.Signed(rows.Sum(r => r.NetBytes)));
+}

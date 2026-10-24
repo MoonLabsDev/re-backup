@@ -295,14 +295,7 @@ public sealed partial class ControlService
 
     private IReadOnlyList<FileRow> SourceRows(PlanContext context, SourceIndex index, string path, CancellationToken ct)
     {
-        var folder = IndexEvaluator.Evaluate(index, Matcher(context, index), ct);
-        foreach (var name in Segments(path))
-        {
-            folder = Pick(folder.Children, name, child => child.Name) is { IsDirectory: true } child
-                ? child
-                : throw new ControlFailure(ControlErrors.BadRequest, $"The source has no folder '{path}'.");
-        }
-
+        var folder = SourceFolder(IndexEvaluator.Evaluate(index, Matcher(context, index), ct), path);
         var rules = new RuleLocator(context, index);
         return folder.Children.Select(child => new FileRow(
             child.Name,
@@ -314,6 +307,19 @@ public sealed partial class ControlService
             child.Status == IncludeStatus.Ignored,
             child.Status == IncludeStatus.Partial ? true : null,
             rules.Of(child.Pattern))).ToList();
+    }
+
+    /// <summary>The folder at <paramref name="path"/> of an evaluated source; <c>bad_request</c> when there is none.</summary>
+    private static EvaluatedNode SourceFolder(EvaluatedNode root, string path)
+    {
+        var folder = root;
+        foreach (var name in Segments(path))
+        {
+            folder = Pick(folder.Children, name, child => child.Name) is { IsDirectory: true } child
+                ? child
+                : throw new ControlFailure(ControlErrors.BadRequest, $"The source has no folder '{path}'.");
+        }
+        return folder;
     }
 
     private IReadOnlyList<FileRow> VersionRows(PlanContext context, IndexedVersion version, string path)

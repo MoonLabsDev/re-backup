@@ -262,6 +262,104 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>
+    /// Where the growth from version A to version B below a folder comes from: one row per direct child (a folder as
+    /// "name/", a file as its name) holding files that were added, changed or deleted (§11, as <see cref="Compare"/>),
+    /// the largest net growth first. Empty when the folder is unknown or nothing below it differs.
+    /// </summary>
+    public IReadOnlyList<GrowthRow> GrowthByFolder(long versionA, long versionB, long folderPathId)
+    {
+        using var connection = OpenConnection();
+        if (FolderPath(connection, folderPathId) is not { } folder)
+            return [];
+        var tally = new GrowthTally();
+        ForEachDifferingFile(connection, versionA, versionB, folder,
+            (path, _, sizeA, sizeB) => tally.Add(GrowthTally.ChildKey(folder, path), sizeA, sizeB));
+        return tally.Rows();
+    }
+
+    /// <summary>
+    /// The growth from version A to version B by file extension (lower case, ".jpg"; "" for none), the largest net growth
+    /// first; below <paramref name="folderPathId"/> only when given (empty when that folder is unknown).
+    /// </summary>
+    public IReadOnlyList<GrowthRow> GrowthByExtension(long versionA, long versionB, long? folderPathId = null)
+    {
+        using var connection = OpenConnection();
+        var folder = folderPathId is { } id ? FolderPath(connection, id) : "";
+        if (folder is null)
+            return [];
+        var tally = new GrowthTally();
+        ForEachDifferingFile(connection, versionA, versionB, folder,
+            (_, name, sizeA, sizeB) => tally.Add(GrowthTally.ExtensionKey(name), sizeA, sizeB));
+        return tally.Rows();
+    }
+
+    /// <summary>
+    /// The files of a version below a folder (at any depth), by path; empty when the version or the folder is unknown.
+    /// </summary>
+    public IReadOnlyList<IndexedFile> FilesBelow(long versionId, long folderPathId)
+    {
+        using var connection = OpenConnection();
+        if (FolderPath(connection, folderPathId) is not { } folder)
+            return [];
+        using var command = Command(connection, null, """
+            SELECT p.path, f.size, f.mtime_ticks FROM files f JOIN paths p ON p.id = f.path_id
+            WHERE f.version_id = $v AND ($prefix = '' OR substr(p.path, 1, length($prefix) + 1) = $prefix || '/')
+            ORDER BY p.path
+            """);
+        command.Parameters.AddWithValue("$v", versionId);
+        command.Parameters.AddWithValue("$prefix", folder);
+        using var reader = command.ExecuteReader();
+        var files = new List<IndexedFile>();
+        while (reader.Read())
+            files.Add(new IndexedFile(reader.GetString(0), reader.GetInt64(1), new DateTime(reader.GetInt64(2), DateTimeKind.Utc)));
+        return files;
+    }
+
+    /// <summary>The path of a folder ("" = the root); null when no folder has that id.</summary>
+    private static string? FolderPath(SqliteConnection connection, long folderPathId)
+    {
+        using var command = Command(connection, null, "SELECT path FROM paths WHERE id = $id AND is_dir = 1");
+        command.Parameters.AddWithValue("$id", folderPathId);
+        return command.ExecuteScalar() as string;
+    }
+
+    /// <summary>
+    /// Calls <paramref name="visit"/> (path, name, size in A, size in B) for every file below <paramref name="folder"/>
+    /// that is only in A (size in B null), only in B (size in A null) or differs between them (§11).
+    /// </summary>
+    private static void ForEachDifferingFile(SqliteConnection connection, long versionA, long versionB, string folder,
+        Action<string, string, long?, long?> visit)
+    {
+        // The columns 2..7 as FileDiffers reads them.
+        using var command = Command(connection, null, """
+            WITH below(id, path, name) AS (
+                SELECT id, path, name FROM paths
+                WHERE is_dir = 0 AND ($prefix = '' OR substr(path, 1, length($prefix) + 1) = $prefix || '/'))
+            SELECT p.path, p.name, a.size, a.mtime_ticks, a.hash, b.size, b.mtime_ticks, b.hash
+            FROM files a JOIN below p ON p.id = a.path_id
+            LEFT JOIN files b ON b.version_id = $b AND b.path_id = a.path_id
+            WHERE a.version_id = $a
+            UNION ALL
+            SELECT p.path, p.name, NULL, NULL, NULL, b.size, b.mtime_ticks, b.hash
+            FROM files b JOIN below p ON p.id = b.path_id
+            WHERE b.version_id = $b
+              AND NOT EXISTS (SELECT 1 FROM files a WHERE a.version_id = $a AND a.path_id = b.path_id)
+            """);
+        command.Parameters.AddWithValue("$a", versionA);
+        command.Parameters.AddWithValue("$b", versionB);
+        command.Parameters.AddWithValue("$prefix", folder);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var inA = !reader.IsDBNull(2);
+            var inB = !reader.IsDBNull(5);
+            if (inA && inB && !FileDiffers(reader))
+                continue;
+            visit(reader.GetString(0), reader.GetString(1), inA ? reader.GetInt64(2) : null, inB ? reader.GetInt64(5) : null);
+        }
+    }
+
+    /// <summary>
     /// A file in every indexed version, oldest first, with its status against the previous version that had it.
     /// </summary>
     public IReadOnlyList<HistoryEntry> History(long filePathId)
