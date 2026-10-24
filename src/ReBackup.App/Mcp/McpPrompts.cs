@@ -27,18 +27,25 @@ public static class McpPrompts
         {
             ({ }, { }) => ($"between version {Quote(older)} and version {Quote(newer)}",
                 $"compare_versions(plan: {p}, a: {Quote(older)}, b: {Quote(newer)})"),
-            (null, null) => ("between the newest version and what the next run would back up",
-                $"compare_source_with_version(plan: {p})"),
+            (null, null) => ("between the newest version and what the next run would back up (or between the last two " +
+                             "updates, when the user means those)",
+                $"compare_source_with_version(plan: {p}). If the user means the growth between the last two updates " +
+                $"(backups), call list_versions(plan: {p}) first and instead call compare_versions with the two newest " +
+                "versions (a: the second newest, b: the newest)"),
             _ => ($"between version {Quote(older ?? newer!)} and what the next run would back up",
                 $"compare_source_with_version(plan: {p}, version: {Quote(older ?? newer!)})"),
         };
         return $"""
             Analyze where the growth of the ReBackup plan {p} comes from, {scope}, and suggest how to keep unneeded data out of the backup.
 
-            1. Compare: call {compare}. Group the growth by folder and by extension. Where one folder dominates, call the same tool again with 'path' set to that folder and drill down until the contributors are specific; list_files with sort "size" shows the largest entries of a folder.
+            1. Compare: call {compare}. Group the growth by folder and by extension. Where one folder dominates, call the same tool again with 'path' set to that folder and drill down until the contributors are specific; list_files with sort "size" shows the largest entries of a folder. For an incremental plan (list_plans shows the kind) look at the changed counts and copiedSize, not only net: a run copies a changed file whole, so a large file rewritten in place (a mailbox, a VM disk, a database, a rebuilt archive) costs its full size in every version although its net growth is ~0; the results are sorted by copiedSize for such plans.
             2. Judge each contributor from its metadata only (path, extension, file count, size, dates): caches, build output, logs, dumps, temporary files and duplicates are candidates for ignoring; documents, sources, photos and other media usually belong in the backup.
             3. Ask the user before looking at the content of any file. The ReBackup tools never return file contents; only when the user agrees, use your own file tools to look.
-            4. Suggest ignore rules in the style of the existing ones: read get_ignore_rules first, use the same notation (for example 'dir/' versus '**/dir'), and place each rule where similar rules already live (the plan's own patterns, or the matching .backupignore). Back every suggestion with numbers: preview_ignore_change for plan patterns, propose_relocation for moving rules between the plan and a .backupignore. Show those numbers to the user, and call apply_change with the proposalId only after the user agrees.
+            4. Suggest ignore rules in the style of the existing ones: read get_ignore_rules first, use the same notation (for example 'dir/' versus '**/dir'), and place each rule where similar rules already live (the plan's own patterns, or the matching .backupignore). Back every suggestion with numbers, show them to the user, and call apply_change with a proposalId only after the user agrees:
+               - a rule for the plan's own patterns: preview_ignore_change(add: [rule]) → apply_change;
+               - a new rule for a .backupignore: it goes into the plan first and is then moved, preview_ignore_change(add: [rule]) → apply_change → propose_relocation(extract: [rule], folder: that folder) → apply_change;
+               - existing rules that belong elsewhere: propose_relocation → apply_change.
+               Never edit .backupignore files with your own file tools; only these tools change rules.
             """;
     }
 

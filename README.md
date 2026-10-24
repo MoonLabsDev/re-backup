@@ -416,15 +416,21 @@ plans, versions and ignore rules, finds out where a backup grew, and proposes ig
 Claude talks to the running app, it does not start it. The connection is a local named pipe that only your Windows
 user can open (and only a process with the same elevation), so nothing is reachable over the network.
 
-**Connect Claude.** **Copy configuration** in the same card puts this on the clipboard; paste it into the MCP
-settings of Claude Desktop or Claude Code (for Claude Code: `claude mcp add-json rebackup '<json>'`):
+**Connect Claude.** For **Claude Desktop**, **Copy configuration** in the same card puts this on the clipboard (with
+the real path of your exe); merge it into Claude Desktop's `claude_desktop_config.json`:
 
 ```json
-{"mcpServers":{"rebackup":{"command":"C:\Path\To\ReBackup.exe","args":["--mcp"]}}}
+{"mcpServers":{"rebackup":{"command":"C:\\Path\\To\\ReBackup.exe","args":["--mcp"]}}}
+```
+
+For **Claude Code**, register the exe with its argument instead:
+
+```powershell
+claude mcp add rebackup -- "C:\Path\To\ReBackup.exe" --mcp
 ```
 
 `ReBackup.exe --mcp` is the same exe in a bridge mode: it has no window and only passes Claude's requests on to the
-running app. If you move or update the exe, copy the configuration again and restart Claude.
+running app. If you move the exe, copy the configuration again (or run `claude mcp add` again) and restart Claude.
 
 ### Tools
 
@@ -432,7 +438,7 @@ running app. If you move or update the exe, copy the configuration again and res
 |---|---|---|
 | `list_plans` | read | Plans with source, target, kind, last and next run, state. |
 | `list_versions` | read | A plan's versions, newest first: date, size, file count, exclusive bytes, warnings. |
-| `compare_versions` | read | Where the growth from version *a* to *b* comes from: totals, then subfolders and extensions with added, changed and deleted files and bytes. Drill down with `path`. |
+| `compare_versions` | read | Where the growth from version *a* to *b* comes from: totals, then subfolders and extensions with added, changed and deleted files, their bytes, the bytes a run copies (added plus changed files, which an incremental run copies whole) and the net change. Sorted by copied bytes for incremental plans, by net growth for full plans (`sort` overrides). Drill down with `path`. |
 | `compare_source_with_version` | read | The same for what the next run would add: the source now (with the ignore rules) against a version (the newest by default). |
 | `get_ignore_rules` | read | The plan's patterns, the global defaults and every `.backupignore` with its lines and what each one ignores. |
 | `explain_path` | read | Whether an entry is ignored, and which rule decides it. |
@@ -444,6 +450,11 @@ running app. If you move or update the exe, copy the configuration again and res
 | `apply_change` | write | Carries out a proposal. |
 | `start_backup` | write | Starts a run of a plan (queued behind other runs). |
 
+Answers about the source come from a scan of it, which ReBackup keeps for a while (shared with the **Ignore** tab);
+each such answer says when the scan was made (`scannedAt`). A finished run or a newer version makes the next answer
+scan again, and Claude can ask for a fresh scan (`rescan`). A new rule for a `.backupignore` is added to the plan
+first and then moved into the file with `propose_relocation`, so it is checked like every other change.
+
 The prompt **`analyze_growth`** (plan, optionally two versions) walks Claude through the whole analysis: compare,
 drill down into the biggest folders, judge them by path, extension and size, and suggest rules in the notation and
 places your existing rules use.
@@ -452,9 +463,9 @@ places your existing rules use.
 
 - **Metadata only.** Names, sizes, dates and the text of ignore rules; file contents never go through the MCP. If
   Claude wants to look inside a file, it asks you first and uses its own file tools.
-- **Writes are two steps.** A proposal shows the numbers and changes nothing. Only after you agree does Claude call
-  `apply_change`. A proposal expires after 5 minutes or when the plan or file changed in the meantime, and it is
-  refused while the plan has unsaved edits in ReBackup.
+- **Writes are two steps.** A proposal shows the numbers and changes nothing; Claude is instructed to ask you before it
+  calls `apply_change`, and ReBackup announces every change it makes. A proposal expires after 5 minutes or when the
+  plan or file changed in the meantime, and it is refused while the plan has unsaved edits in ReBackup.
 - **Always visible.** Every write (a backup started, ignore rules changed or moved) is announced in the tray. Runs
   started this way show the trigger **MCP** in the run history.
 - **Limits.** Claude cannot delete versions, restore files, or change a plan's source, target, schedule or retention.

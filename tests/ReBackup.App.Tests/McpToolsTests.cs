@@ -387,15 +387,26 @@ public class McpToolsTests : IAsyncDisposable
             new Dictionary<string, object?> { ["plan"] = "Projects" }));
 
         versions.Should().Contain("compare_versions").And.Contain("\"v1\"").And.Contain("\"v2\"").And.Contain("\"Projects\"");
-        source.Should().Contain("compare_source_with_version").And.NotContain("compare_versions(");
+        source.Should().Contain("compare_source_with_version(plan: \"Projects\")");
+        source.Should().Contain("between the last two", "without a and b the user may still mean the last two updates")
+            .And.Contain("list_versions").And.Contain("two newest versions");
+        versions.Should().NotContain("between the last two", "a and b are given");
         foreach (var text in new[] { versions, source })
         {
             text.Should().Contain("Ask the user before", "step 3: contents only after asking");
             text.Should().Contain("your own file tools");
             text.Should().Contain("preview_ignore_change").And.Contain("propose_relocation").And.Contain("apply_change");
             text.Should().Contain("style of the existing");
+            text.Should().Contain("only after the user agrees", "every apply_change waits for the user");
+            text.Should().Contain(AddToIgnoreFileRoute, "a new rule for a .backupignore has a route through the tools");
+            text.Should().Contain("Never edit .backupignore files with your own file tools");
+            text.Should().Contain("copiedSize").And.Contain("changed", "incremental growth hides in changed files");
         }
     }
+
+    /// <summary>The only way to put a new rule into a .backupignore: into the plan first, then moved.</summary>
+    private const string AddToIgnoreFileRoute =
+        "preview_ignore_change(add: [rule]) \u2192 apply_change \u2192 propose_relocation(extract: [rule], folder: that folder) \u2192 apply_change";
 
     [Fact]
     public async Task Instructions_state_the_two_step_rule()
@@ -406,8 +417,24 @@ public class McpToolsTests : IAsyncDisposable
 
         instructions.Should().Be(McpInstructions.Text);
         instructions.Should().Contain("proposalId").And.Contain("apply_change");
+        instructions.Should().Contain("only after the user agrees");
         instructions.Should().Contain("Ask the user before").And.Contain("your own file tools");
         instructions.Should().Contain("metadata");
+        instructions.Should().Contain(AddToIgnoreFileRoute);
+        instructions.Should().Contain("Never edit .backupignore files with your own file tools");
+        instructions.Should().Contain("app_not_running right after ReBackup restarted: retry once.");
+        instructions.Should().Contain("scannedAt").And.Contain("rescan");
+    }
+
+    [Fact]
+    public async Task Propose_relocation_says_extract_needs_the_lines_in_the_plan()
+    {
+        var client = await ConnectAsync(new RecordingChannel());
+
+        var tool = (await client.ListToolsAsync()).Single(t => t.Name == "propose_relocation").ProtocolTool;
+
+        tool.Description.Should().Contain("'extract' moves lines that are in the plan's own patterns")
+            .And.Contain("add it to the plan first");
     }
 
     // ------------------------------------------------------------------ helpers

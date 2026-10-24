@@ -168,7 +168,9 @@ public sealed class McpTools(IControlChannel channel)
     [McpServerTool(Name = ControlOps.ProposeRelocation, ReadOnly = true, Destructive = false)]
     [Description("Proposes moving ignore rules between a plan's own patterns and a .backupignore in its folder source, " +
                  "changing nothing. Either 'integrate' (move all lines of one .backupignore into the plan) or 'extract' " +
-                 "with 'folder' (move plan lines into that folder's .backupignore). Returns the diffs of both, lines that " +
+                 "with 'folder' (move plan lines into that folder's .backupignore). 'extract' moves lines that are in the " +
+                 "plan's own patterns: to put a new rule into a .backupignore, add it to the plan first " +
+                 "(preview_ignore_change, apply_change), then extract it. Returns the diffs of both, lines that " +
                  "cannot move with the reason, whether the result ignores exactly the same entries, and a proposalId when " +
                  "something can move; apply_change(proposalId) carries it out, within 5 minutes.")]
     public Task<CallToolResult> ProposeRelocation(
