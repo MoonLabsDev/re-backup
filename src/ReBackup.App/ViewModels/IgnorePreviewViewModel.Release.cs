@@ -64,6 +64,7 @@ public sealed partial class IgnorePreviewViewModel
         Root = null;
         Tree.IgnoreFileDirectories = NoDirectories;
         Tree.SetRoot(null);
+        ClearIgnoreFiles();
         Progress = LocText.Of("ignore.progress.released");
 
         // Hand the memory back to Windows now instead of whenever the next collection happens to run.

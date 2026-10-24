@@ -685,6 +685,18 @@
       "byTotal": "Sized by the total; ignored entries in grey",
       "empty": "The treemap appears after the scan."
     },
+    "files": {
+      "chip": ".backupignore ({count})",
+      "chipToolTip": "Show only the .backupignore files of the source",
+      "listName": ".backupignore files",
+      "panelTitle": "Ignore file",
+      "lines": "Lines of the ignore file",
+      "openInEditor": "Open in editor",
+      "folderOnly": "Only available for folder sources",
+      "integrate": "Integrate into plan…",
+      "hits": "{entries} entries · {bytes}",
+      "unused": "no hits"
+    },
     "patternNote": "Changes to the patterns are applied when the scan is finished.",
     "sourceMissing": "The source folder does not exist.",
     "progress": {
