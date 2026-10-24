@@ -70,6 +70,15 @@
 - **Why is this ignored?** The tooltip names the pattern and where it came from (plan, global defaults or a
   `.backupignore` file). From the context menu you can ignore an entry, ignore every file with its extension, or
   un-ignore it. Pattern changes are applied to the cached scan without scanning again.
+- **`.backupignore` files stay visible**: they are marked in every overview (filter icon, bold; folders that hold one get
+  a badge; a distinct treemap colour), and a **.backupignore (n)** chip lists them all.
+- **What does each line do?** Click a `.backupignore` to see its lines with the number of entries and bytes each one
+  currently excludes. Lines that match nothing are greyed. **Open in editor** jumps to the file.
+- **Relocate rules, with a preview**: right-click a `.backupignore` and choose **Integrate into plan…** (its rules move
+  into the plan with the folder prefixed; the file goes to the recycle bin, or is renamed to `.backupignore.integrated`
+  on drives without one). Right-click a folder and choose **Move selected rules to <folder>/.backupignore…** for the
+  other way round. The dialog shows both diffs and checks against the scanned files whether the backup scope stays
+  exactly the same (green) or which entries change (red, needs **Apply anyway**). Folder sources only.
 
 ![Ignore & Preview: patterns, tree and treemap, total sizes with ignored parts in grey](docs/images/ignore-preview-total.png)
 
@@ -83,7 +92,7 @@
 | **Schedules** | Triggers: **Daily** (time), **Weekly** (weekdays + time), **Monthly** (day 1–31, `0` = last day, `-1` = the day before it), **Interval** (every *n* hours between two times). Shows the next five runs. On startup, a plan that missed a trigger gets **one catch-up run** about a minute later. |
 | **Versions** | By default, every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. Plans can instead be **incremental** (see [Storage formats](#storage-formats)). |
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
-| **Ignore tab** | Scans the source live and shows, per file and folder, what goes into the backup and what the gitignore-style patterns leave out (tree and treemap). **Compare with** a version of the plan to see its size and the difference per entry — growth in red, shrinking in green — to find unwanted gains before the next run. |
+| **Ignore tab** | Scans the source live and shows, per file and folder, what goes into the backup and what the gitignore-style patterns leave out (tree and treemap). **Compare with** a version of the plan to see its size and the difference per entry — growth in red, shrinking in green — to find unwanted gains before the next run. `.backupignore` files are marked and can be moved into the plan or out of it with a scope-equivalence check. |
 | **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted with both sizes and the size difference, optionally changed only), and see a **file's history** across all versions. **Delete versions** by hand (one or several, after a confirmation), with the progress of the deletion, the cleanup and the indexing shown in the tab and on the plan's card. A size header shows how much the versions need (and, for incremental plans, how much the pool saves). Backed by a local SQLite index per plan. |
 | **Restore** | Restore a file, a folder or a whole version to its original location or to a folder of your choice. If files already exist you choose **Overwrite**, **Skip** or **Keep both** (or cancel). A restore **never deletes** anything at the destination. |
 | **App** | **Dark and Light** theme, **English and German** (both switch at once, no restart), tray icon with Open, Run plan, Pause scheduler and Exit, a notification when a run ends, start with Windows, a single instance. |
