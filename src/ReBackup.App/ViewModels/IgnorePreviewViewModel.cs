@@ -136,6 +136,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         LastEvaluatedIncludedSize = null;
         IsIndexing = false;
         Root = null;
+        Tree.IgnoreFileDirectories = NoDirectories;
         Tree.SetRoot(null);
         SummaryText = LocText.Empty;
         InBackupPill = LocText.Empty;
@@ -295,8 +296,14 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     [RelayCommand]
     private void CancelIndex() => _indexCts?.Cancel();
 
+    private static readonly IReadOnlySet<string> NoDirectories = new HashSet<string>();
+
+    private static IReadOnlySet<string> DirectoriesOf(IEnumerable<string> directories) =>
+        new HashSet<string>(directories, StringComparer.OrdinalIgnoreCase);
+
     private void ShowLive(LiveScan scan)
     {
+        Tree.IgnoreFileDirectories = DirectoriesOf(scan.IgnoreFileDirectories);
         Tree.Refresh();
         Progress = LocText.Of("ignore.progress.live",
             ("files", Formats.Files(scan.Files)), ("folders", Formats.Folders(scan.Directories)),
@@ -346,6 +353,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         LastEvaluatedIncludedSize = root.IncludedSize;
         ErrorText = null;
         Root = root;
+        Tree.IgnoreFileDirectories = DirectoriesOf(index.IgnoreFiles.Select(f => f.DirectoryRelativePath));
         Tree.SetRoot(root);
         SummaryText = SummaryOf("ignore.summary.done", root);
         SetPills(root, "");

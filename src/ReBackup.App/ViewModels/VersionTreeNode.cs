@@ -1,6 +1,7 @@
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using ReBackup.Shared.Wpf.Localization;
+using ReBackup.Core.Ignore;
 using ReBackup.Core.Versions;
 
 namespace ReBackup.App.ViewModels;
@@ -20,8 +21,9 @@ public sealed partial class VersionTreeNode : ObservableObject
     private DiffStatus? _status;
 
     internal VersionTreeNode(VersionTreeViewModel tree, IndexChild entry, int depth, DiffStatus? status,
-        bool shownIsNewer = false)
+        bool shownIsNewer = false, bool containsIgnoreFile = false)
     {
+        ContainsIgnoreFile = containsIgnoreFile;
         _tree = tree;
         Entry = entry;
         Depth = depth;
@@ -47,6 +49,12 @@ public sealed partial class VersionTreeNode : ObservableObject
     public long PathId => Entry?.PathId ?? -1;
     public string Name => Entry?.Name ?? Message?.ToString() ?? "";
     public string Path => Entry?.Path ?? "";
+
+    /// <summary>A <c>.backupignore</c> file.</summary>
+    public bool IsIgnoreFile => Entry is { IsDirectory: false } && IgnoreOrigins.IsNestedFileName(Entry.Name);
+
+    /// <summary>A folder that holds a <c>.backupignore</c> directly (in the shown version or, while comparing, in B).</summary>
+    public bool ContainsIgnoreFile { get; }
     public bool IsDirectory => Entry?.IsDirectory ?? false;
     public bool IsExpandable => IsDirectory;
     public Thickness Indent => new(Depth * IndentPerLevel, 0, 0, 0);

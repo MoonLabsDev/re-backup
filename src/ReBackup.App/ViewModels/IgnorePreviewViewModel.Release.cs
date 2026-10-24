@@ -62,6 +62,7 @@ public sealed partial class IgnorePreviewViewModel
         _indexCts = null;
         _scan = null;
         Root = null;
+        Tree.IgnoreFileDirectories = NoDirectories;
         Tree.SetRoot(null);
         Progress = LocText.Of("ignore.progress.released");
 

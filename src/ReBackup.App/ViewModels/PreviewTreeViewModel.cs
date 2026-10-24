@@ -37,6 +37,23 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
 
     public RangeObservableCollection<PreviewRowViewModel> Rows { get; } = new();
 
+    private IReadOnlySet<string> _ignoreFileDirectories = new HashSet<string>();
+
+    /// <summary>
+    /// The folders (relative to the source root) that hold a <c>.backupignore</c>, compared case-insensitively; their
+    /// rows are marked. Set from the finished index, or from the snapshot of a running scan.
+    /// </summary>
+    public IReadOnlySet<string> IgnoreFileDirectories
+    {
+        get => _ignoreFileDirectories;
+        set
+        {
+            _ignoreFileDirectories = value;
+            foreach (var row in Rows)
+                row.Refresh();
+        }
+    }
+
     /// <summary>Raised when a folder is expanded that is not finished yet.</summary>
     public event Action<IPreviewEntry>? LoadingFolderExpanded;
 
