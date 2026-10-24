@@ -37,6 +37,11 @@ public partial class App : Application
     /// <summary>Names the single-instance mutex and event (<c>Local\ReBackup.SingleInstance</c>, <c>Local\ReBackup.Activate</c>).</summary>
     internal const string AppId = "ReBackup";
 
+    /// <summary>Set to "1" by the process tests: a start without <c>--mcp</c> then exits at once with <see cref="McpTestGuardExitCode"/>.</summary>
+    internal const string McpTestGuard = "REBACKUP_MCP_TEST_GUARD";
+
+    internal const int McpTestGuardExitCode = 3;
+
     private readonly IDialogService _dialogs;
     private S3Connections? _s3;
     private DriveConnections? _drive;
@@ -72,6 +77,13 @@ public partial class App : Application
         if (e.Args.Contains("--mcp", StringComparer.OrdinalIgnoreCase))
         {
             RunMcpBridge(e.Args);
+            return;
+        }
+        // The process tests set this, so that a regressed --mcp branch exits here instead of starting the user's app
+        // (mutex, settings, tray, window), which they could only force-kill.
+        if (Environment.GetEnvironmentVariable(McpTestGuard) == "1")
+        {
+            Shutdown(McpTestGuardExitCode);
             return;
         }
 

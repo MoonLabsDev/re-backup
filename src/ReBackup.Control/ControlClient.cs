@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace ReBackup.Control;
 
 /// <summary>Client side of the control pipe, used by the <c>--mcp</c> bridge. Calls on one client are serialized.</summary>
-public sealed class ControlClient : IAsyncDisposable
+public sealed class ControlClient : IControlChannel, IAsyncDisposable
 {
     private static readonly UTF8Encoding Utf8 = new(false);
 
