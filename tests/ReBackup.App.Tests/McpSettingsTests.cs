@@ -107,6 +107,50 @@ public class McpSettingsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Any_start_failure_is_reported_and_a_later_toggle_still_works()
+    {
+        var fail = true;
+        await using var host = new McpControlHost(new EchoHandler(), "1", _pipe,
+            () => fail ? throw new System.IO.IOException("no user sid") : new ControlServerHost(new EchoHandler(), "1", _pipe));
+
+        (await host.ApplyAsync(true)).Should().Be("no user sid");
+        host.IsRunning.Should().BeFalse();
+
+        var settings = Create(host);
+        settings.AllowMcpControl = true;
+        await settings.McpApplyTask;
+        settings.AllowMcpControl.Should().BeFalse();
+        _fixture.Dialogs.Errors.Should().ContainSingle();
+
+        fail = false;
+        settings.AllowMcpControl = true;
+        await settings.McpApplyTask;
+        settings.AllowMcpControl.Should().BeTrue();
+        host.IsRunning.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_faulting_host_does_not_break_the_chain()
+    {
+        var settings = Create(new ThrowingThenWorking());
+
+        settings.AllowMcpControl = true;
+        await settings.McpApplyTask;
+        settings.AllowMcpControl = true;
+        await settings.McpApplyTask;
+
+        settings.AllowMcpControl.Should().BeTrue();
+    }
+
+    private sealed class ThrowingThenWorking : IMcpControlHost
+    {
+        private int _calls;
+        public bool IsRunning => false;
+        public Task<string?> ApplyAsync(bool enabled) =>
+            ++_calls == 1 ? throw new InvalidCastException("boom") : Task.FromResult<string?>(null);
+    }
+
+    [Fact]
     public void Copy_configuration_puts_the_exe_path_json_on_the_clipboard()
     {
         var settings = Create();

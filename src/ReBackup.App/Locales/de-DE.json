@@ -72,7 +72,7 @@
     "mcp": {
       "title": "STEUERUNG PER MCP",
       "allow": "Steuerung per MCP erlauben",
-      "allowHint": "Erlaubt einem MCP-Client wie Claude, Pläne, Versionen und Ignorier-Regeln einzusehen und Änderungen vorzuschlagen. Er sieht nur Namen, Größen und Datum, nie Dateiinhalte, und jede Änderung wird zuvor bei dir erfragt.",
+      "allowHint": "Erlaubt einem MCP-Client wie Claude, Pläne, Versionen und Ignorier-Regeln einzusehen und Änderungen vorzuschlagen. Er sieht nur Namen, Größen und Datum, nie Dateiinhalte, eine Änderung wird zuerst nur vorgeschlagen und erst nach deiner Zustimmung in Claude umgesetzt, und jede wird im Infobereich angezeigt.",
       "copy": "Konfiguration kopieren",
       "copied": "Kopiert",
       "startFailed": "ReBackup konnte die Steuerungsverbindung nicht öffnen: {error}"

@@ -24,15 +24,18 @@ public sealed class McpControlHost : IMcpControlHost, IAsyncDisposable
     private readonly IControlHandler _handler;
     private readonly string _appVersion;
     private readonly string? _pipeName;
+    private readonly Func<ControlServerHost> _hostFactory;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private ControlServerHost? _host;
     private bool _disposed;
 
-    public McpControlHost(IControlHandler handler, string appVersion, string? pipeName = null)
+    public McpControlHost(IControlHandler handler, string appVersion, string? pipeName = null,
+        Func<ControlServerHost>? hostFactory = null)
     {
         _handler = handler;
         _appVersion = appVersion;
         _pipeName = pipeName;
+        _hostFactory = hostFactory ?? (() => new ControlServerHost(_handler, _appVersion, _pipeName));
     }
 
     public bool IsRunning => Volatile.Read(ref _host) is not null;
@@ -52,14 +55,17 @@ public sealed class McpControlHost : IMcpControlHost, IAsyncDisposable
             if (_host is not null)
                 return null;
 
-            var host = new ControlServerHost(_handler, _appVersion, _pipeName);
+            ControlServerHost? host = null;
             try
             {
+                host = _hostFactory();
                 host.Start();
             }
-            catch (InvalidOperationException ex)
+            catch (Exception ex)
             {
-                await host.DisposeAsync().ConfigureAwait(false);
+                // A taken pipe name (InvalidOperationException) or anything else that stops it (user SID, ACL): told, never thrown.
+                if (host is not null)
+                    await host.DisposeAsync().ConfigureAwait(false);
                 return ex.Message;
             }
             Volatile.Write(ref _host, host);

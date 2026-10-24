@@ -134,10 +134,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Hosts or releases the pipe after the previous change; a pipe that cannot be hosted puts the switch back off.</summary>
     private async Task ApplyMcpAsync(bool enabled, Task previous)
     {
-        await previous.ConfigureAwait(true);
+        // An earlier change that failed must not break the chain of later ones.
+        try { await previous.ConfigureAwait(true); }
+        catch (Exception) { }
         if (_mcpControl is null)
             return;
-        var error = await _mcpControl.ApplyAsync(enabled).ConfigureAwait(true);
+        string? error;
+        try { error = await _mcpControl.ApplyAsync(enabled).ConfigureAwait(true); }
+        catch (Exception ex) { error = ex.Message; }
         if (error is null || !enabled)
             return;
 

@@ -72,7 +72,7 @@
     "mcp": {
       "title": "CONTROL VIA MCP",
       "allow": "Allow control via MCP",
-      "allowHint": "Lets an MCP client such as Claude look at your plans, versions and ignore rules and propose changes. It only sees names, sizes and dates, never file contents, and every change asks you first.",
+      "allowHint": "Lets an MCP client such as Claude look at your plans, versions and ignore rules and propose changes. It only sees names, sizes and dates, never file contents, a change is only proposed first and applied after you agree in Claude, and each one is announced in the tray.",
       "copy": "Copy configuration",
       "copied": "Copied",
       "startFailed": "ReBackup could not open the control connection: {error}"
