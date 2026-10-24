@@ -85,6 +85,13 @@ public sealed class IgnoreMatcher
         return MatchEntry(relativePath, isDirectory);
     }
 
+    /// <summary>
+    /// Same decision as <see cref="Match"/> for an entry whose parent folder was already decided: <paramref name="parent"/> is
+    /// that folder's full result (<see cref="IgnoreResult.NotMatched"/> for a child of the source root).
+    /// </summary>
+    public IgnoreResult MatchBelow(IgnoreResult parent, string relativePath, bool isDirectory) =>
+        parent.IsIgnored ? parent : MatchEntry(relativePath, isDirectory);
+
     private static void AddLines(List<IgnorePattern> patterns, IEnumerable<string> lines, string origin, string baseDirectory)
     {
         foreach (var line in lines)

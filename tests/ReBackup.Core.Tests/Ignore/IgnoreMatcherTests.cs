@@ -126,4 +126,33 @@ public class IgnoreMatcherTests
         planOnly.Match("a.plan", false).IsIgnored.Should().BeTrue();
         planOnly.Match("a.nested", false).IsIgnored.Should().BeFalse();
     }
+
+    [Fact]
+    public void MatchBelow_agrees_with_Match_for_every_entry()
+    {
+        var matcher = IgnoreMatcher.Create(["*.swp"], ["build/", "*.log", "!keep.log", "/a/b/gen/"],
+        [
+            new NestedIgnoreFile("a", ["*.tmp", "!/c/keep.tmp", "d/"]),
+            new NestedIgnoreFile("a/c", ["*.bak", "!x.tmp"]),
+        ]);
+        (string Path, bool IsDir)[] tree =
+        [
+            ("a", true), ("a/b", true), ("a/b/gen", true), ("a/b/gen/x.txt", false), ("a/b/gen/keep.log", false),
+            ("a/b/ok.txt", false), ("a/c", true), ("a/c/x.tmp", false), ("a/c/keep.tmp", false), ("a/c/y.bak", false),
+            ("a/d", true), ("a/d/z.txt", false), ("a/d/keep.log", false), ("build", true), ("build/keep.log", false),
+            ("keep.log", false), ("x.log", false), ("a/e", true), ("a/e/build", true), ("a/e/build/q", false),
+            ("a/e/f.swp", false), ("a/e/g.tmp", false),
+        ];
+        var results = new Dictionary<string, IgnoreResult>();
+
+        foreach (var (path, isDir) in tree)
+        {
+            var slash = path.LastIndexOf('/');
+            var parent = slash < 0 ? IgnoreResult.NotMatched : results[path[..slash]];
+            var below = matcher.MatchBelow(parent, path, isDir);
+            results[path] = below;
+            below.Should().Be(matcher.Match(path, isDir), path);
+        }
+        results.Values.Should().Contain(r => r.IsIgnored).And.Contain(r => !r.IsIgnored);
+    }
 }

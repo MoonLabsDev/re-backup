@@ -253,4 +253,35 @@ public class IgnoreRelocationProposeTests : IDisposable
             .Should().BeOfType<EquivalenceResult.NotChecked>()
             .Which.ReasonKey.Should().Be("ignore.relocation.unreadableFile");
     }
+
+    [Fact]
+    public async Task Equivalence_prunes_folders_ignored_on_both_sides()
+    {
+        _tmp.WriteFile("P/X/.backupignore", "*.tmp\n");
+        _tmp.WriteFile("build/deep/a.tmp", "1");
+        _tmp.WriteFile("build/deep/b.txt", "1");
+        _tmp.WriteFile("P/X/c.tmp", "1");
+        var context = await ContextAsync(["build/"]);
+
+        var proposal = IgnoreRelocation.ProposeIntegrate(context, "P/X");
+
+        proposal.Equivalence.Should().BeOfType<EquivalenceResult.Identical>();
+    }
+
+    [Fact]
+    public async Task Equivalence_counts_entries_below_a_folder_whose_status_changes()
+    {
+        _tmp.WriteFile("P/X/docs/a.txt", "1");
+        _tmp.WriteFile("P/X/docs/sub/b.txt", "1");
+        _tmp.WriteFile("P/X/other/c.txt", "1");
+        var context = await ContextAsync(["/P/X/docs/", "!/P/X/docs/"]);
+
+        var proposal = IgnoreRelocation.ProposeExtract(context, [0], "P/X");
+
+        var differs = proposal.Equivalence.Should().BeOfType<EquivalenceResult.Differs>().Subject;
+        differs.Count.Should().Be(4);
+        differs.Examples.Select(e => e.Path).Should()
+            .BeEquivalentTo("P/X/docs", "P/X/docs/a.txt", "P/X/docs/sub", "P/X/docs/sub/b.txt");
+        differs.Examples.Should().OnlyContain(e => !e.IgnoredBefore && e.IgnoredAfter);
+    }
 }

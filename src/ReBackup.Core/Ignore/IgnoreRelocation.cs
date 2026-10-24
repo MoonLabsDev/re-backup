@@ -286,16 +286,16 @@ public static class IgnoreRelocation
         var count = 0;
         var examples = new List<EquivalenceExample>();
         foreach (var child in index.RootNode.Children)
-            Compare(child, "", before, after, ref count, examples);
+            Compare(child, "", IgnoreResult.NotMatched, IgnoreResult.NotMatched, before, after, ref count, examples);
         return count == 0 ? new EquivalenceResult.Identical() : new EquivalenceResult.Differs(count, examples);
     }
 
-    private static void Compare(IndexNode node, string parentPath, IgnoreMatcher before, IgnoreMatcher after,
+    private static void Compare(IndexNode node, string parentPath, IgnoreResult parentWas, IgnoreResult parentNow, IgnoreMatcher before, IgnoreMatcher after,
         ref int count, List<EquivalenceExample> examples)
     {
         var path = parentPath.Length == 0 ? node.Name : parentPath + "/" + node.Name;
-        var was = before.Match(path, node.IsDirectory);
-        var now = after.Match(path, node.IsDirectory);
+        var was = before.MatchBelow(parentWas, path, node.IsDirectory);
+        var now = after.MatchBelow(parentNow, path, node.IsDirectory);
         if (was.IsIgnored != now.IsIgnored)
         {
             count++;
@@ -306,6 +306,6 @@ public static class IgnoreRelocation
         // Below a folder ignored both before and after, every entry is ignored in both.
         if (node.IsDirectory && !(was.IsIgnored && now.IsIgnored))
             foreach (var child in node.Children)
-                Compare(child, path, before, after, ref count, examples);
+                Compare(child, path, was, now, before, after, ref count, examples);
     }
 }
