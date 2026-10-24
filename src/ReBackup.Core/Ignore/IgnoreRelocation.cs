@@ -17,7 +17,7 @@ public static class IgnoreRelocation
     /// <summary>Moves every line of <c>directory/.backupignore</c> to the end of the plan patterns.</summary>
     public static RelocationProposal ProposeIntegrate(RelocationContext context, string directory)
     {
-        var dir = IgnorePattern.NormalizeDirectory(directory);
+        var dir = CheckedDirectory(context.SourceRoot, directory);
         var before = context.Settings.Patterns;
         var content = ReadFile(context, dir);
         var moved = new List<string>();
@@ -44,7 +44,7 @@ public static class IgnoreRelocation
         if (!context.Settings.HonorNestedFiles)
             throw new InvalidOperationException("The plan does not honor nested ignore files.");
 
-        var dir = IgnorePattern.NormalizeDirectory(directory);
+        var dir = CheckedDirectory(context.SourceRoot, directory);
         var before = context.Settings.Patterns;
         var content = ReadFile(context, dir);
 
@@ -107,7 +107,7 @@ public static class IgnoreRelocation
         if (proposal.Kind == RelocationKind.Extract && proposal.FileContentAfter is null)
             throw new InvalidOperationException("An extract proposal has no file content.");
 
-        var path = Path.Combine(sourceRoot, proposal.Directory, IgnoreOrigins.NestedFileName);
+        var path = Path.Combine(sourceRoot, CheckedDirectory(sourceRoot, proposal.Directory), IgnoreOrigins.NestedFileName);
         var current = File.Exists(path) ? File.ReadAllText(path) : null;
         if (Hash(currentPlanPatterns) != proposal.PlanPatternsHash || HashContent(current) != proposal.FileHash)
             throw new RelocationStaleException();
@@ -200,6 +200,23 @@ public static class IgnoreRelocation
 
     private static string HashText(string text) =>
         Convert.ToHexString(XxHash64.Hash(Encoding.UTF8.GetBytes(text)));
+
+    /// <summary>
+    /// <paramref name="directory"/> normalized, after checking that it stays below <paramref name="sourceRoot"/>
+    /// (no <c>..</c> that leaves it, no rooted path).
+    /// </summary>
+    /// <exception cref="ArgumentException">The directory leaves the source root.</exception>
+    private static string CheckedDirectory(string sourceRoot, string directory)
+    {
+        var dir = IgnorePattern.NormalizeDirectory(directory);
+        if (Path.IsPathRooted(directory))
+            throw new ArgumentException("The directory must be relative to the source root.", nameof(directory));
+        var root = Path.GetFullPath(sourceRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var full = Path.GetFullPath(Path.Combine(root, dir));
+        if (dir.Length > 0 && !full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The directory leaves the source root.", nameof(directory));
+        return dir;
+    }
 
     private static string? ReadFile(RelocationContext context, string directory)
     {

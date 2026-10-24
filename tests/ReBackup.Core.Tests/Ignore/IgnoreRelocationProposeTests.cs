@@ -21,6 +21,30 @@ public class IgnoreRelocationProposeTests : IDisposable
     }
 
     [Fact]
+    public void ExtractableLines_skips_a_line_with_nothing_below_the_folder()
+    {
+        var settings = new IgnoreSettings { Patterns = ["/P/X/**/", "!/P/X/**/", "/P/X/build/"] };
+
+        IgnoreRelocation.ExtractableLines(settings, "P/X").Should().Equal(2);
+    }
+
+    [Theory]
+    [InlineData("..")]
+    [InlineData("../x")]
+    [InlineData("a/../..")]
+    [InlineData("C:/Windows")]
+    [InlineData("/etc")]
+    public async Task Directories_outside_the_source_are_rejected(string directory)
+    {
+        var context = await ContextAsync([]);
+
+        FluentActions.Invoking(() => IgnoreRelocation.ProposeIntegrate(context, directory))
+            .Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => IgnoreRelocation.ProposeExtract(context, [], directory))
+            .Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public async Task Integrate_moves_lines_to_the_end_of_the_plan_under_a_comment()
     {
         _tmp.WriteFile("P/X/.backupignore", "foo/\n");

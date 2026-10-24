@@ -126,7 +126,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
                 IgnoreSelectedExtensionCommand.NotifyCanExecuteChanged();
                 UnignoreSelectedCommand.NotifyCanExecuteChanged();
             }
-            if (e.PropertyName is nameof(IgnorePreviewViewModel.SelectedNode) or nameof(IgnorePreviewViewModel.SelectedIgnoreFile))
+            if (e.PropertyName is nameof(IgnorePreviewViewModel.SelectedNode) or nameof(IgnorePreviewViewModel.SelectedIgnoreFile)
+                or nameof(IgnorePreviewViewModel.CompletedIndex))
                 RefreshRelocation();
         };
         IsNew = isNew;

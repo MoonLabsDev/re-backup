@@ -119,6 +119,21 @@ public class IgnoreFilePanelTests : IDisposable
     }
 
     [Fact]
+    public async Task Hits_text_has_a_singular_and_a_plural()
+    {
+        AddIgnore(".backupignore", "*.tmp\n*.log\n");
+        _source.AddFile("a.tmp", new byte[10]);
+        _source.AddFile("b.log", new byte[10]);
+        _source.AddFile("c.log", new byte[10]);
+        var vm = await ScannedAsync();
+        vm.Tree.SelectedRow = vm.Tree.Rows.Single(r => r.Name == ".backupignore");
+
+        var lines = vm.SelectedIgnoreFile!.Lines;
+        lines[0].HitsText.Should().StartWith("1 entry ");
+        lines[1].HitsText.Should().StartWith("2 entries ");
+    }
+
+    [Fact]
     public async Task Panel_closes_when_selection_moves_away()
     {
         AddIgnore(".backupignore", "*.tmp\n");

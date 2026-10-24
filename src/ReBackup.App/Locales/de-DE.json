@@ -697,7 +697,10 @@
       "openFailed": "Die Datei konnte nicht geöffnet werden:\n{path}",
       "folderOnly": "Nur für Ordnerquellen verfügbar",
       "integrate": "In den Plan übernehmen…",
-      "hits": "{entries} Einträge · {bytes}",
+      "hits": {
+        "one": "{count} Eintrag · {bytes}",
+        "other": "{count:N0} Einträge · {bytes}"
+      },
       "unused": "keine Treffer"
     },
     "relocation": {
@@ -727,7 +730,8 @@
       "applyAnyway": "Trotzdem übernehmen",
       "applyAnywayCheck": "Mir ist klar, dass sich der Backup-Umfang ändert",
       "stale": "Der Plan oder die Datei hat sich seit der Vorschau geändert. Es wurde nichts geschrieben.",
-      "noScan": "Nicht geprüft: Zuerst die Quelle indexieren.",
+      "alreadyIntegrated": "Diese Datei wurde bereits übernommen – zum Aktualisieren des Baums neu scannen.",
+      "noScan": "Nicht geprüft: Zuerst die Quelle indizieren.",
       "scanRunning": "Der Backup-Umfang lässt sich nur an einem fertigen Scan prüfen. Nach dem Scan erneut versuchen.",
       "unreadableFile": "Nicht geprüft: Die .backupignore konnte beim Scan nicht gelesen werden.",
       "saveFirst": "Zuerst den Plan speichern",

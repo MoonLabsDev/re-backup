@@ -39,6 +39,19 @@ public class IgnoreRelocationApplyTests : IDisposable
     private string FilePath(string dir) => _tmp.PathOf(Path.Combine(dir, ".backupignore"));
 
     [Fact]
+    public async Task Apply_rejects_a_directory_outside_the_source()
+    {
+        _tmp.WriteFile("P/.backupignore", "x\n");
+        var context = await ContextAsync([]);
+        var proposal = IgnoreRelocation.ProposeIntegrate(context, "P") with { Directory = ".." };
+        var bin = new FakeBin();
+
+        FluentActions.Invoking(() => IgnoreRelocation.Apply(proposal, _tmp.Root, [], _ => { }, bin))
+            .Should().Throw<ArgumentException>();
+        bin.Recycled.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Apply_writes_the_file_and_saves_the_patterns()
     {
         _tmp.WriteFile("P/a.txt", "1");

@@ -27,6 +27,15 @@ public sealed partial class PlanEditorViewModel
     public string? ExtractDisabledReason =>
         RelocationDisabledReason ?? (HonorNestedIgnoreFiles ? null : Loc.T("ignore.relocation.honorOff"));
 
+    /// <summary>
+    /// Why "Integrate into plan" is not possible now: as <see cref="RelocationDisabledReason"/>, or the shown file is no longer
+    /// in the scan (it was integrated; the tree keeps its row until the next scan). Null when it is possible.
+    /// </summary>
+    public string? IntegrateDisabledReason =>
+        RelocationDisabledReason ?? (IntegrateDirectory() is { } directory && !IsInScan(directory)
+            ? Loc.T("ignore.relocation.alreadyIntegrated")
+            : null);
+
     /// <summary>"Move selected rules to sub/.backupignore…" for the folder selected in the tree.</summary>
     public string ExtractMenuText => Loc.F("ignore.tree.extract", ("folder", ExtractFolder() switch
     {
@@ -42,7 +51,17 @@ public sealed partial class PlanEditorViewModel
             Relocate(context => IgnoreRelocation.ProposeIntegrate(context, directory));
     }
 
-    private bool CanIntegrateIgnoreFile() => RelocationDisabledReason is null && IntegrateDirectory() is not null;
+    private bool CanIntegrateIgnoreFile() => IntegrateDisabledReason is null && IntegrateDirectory() is not null;
+
+    /// <summary>True without a finished scan (nothing to compare with); else the file was scanned, readable or not.</summary>
+    private bool IsInScan(string directory)
+    {
+        if (Preview.CompletedIndex is not { } index)
+            return true;
+        var origin = IgnoreOrigins.ForNestedFile(directory);
+        return index.IgnoreFiles.Any(f => string.Equals(f.DirectoryRelativePath, directory, StringComparison.OrdinalIgnoreCase)) ||
+               index.UnreadableIgnoreFiles.Any(f => string.Equals(f, origin, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <param name="lines">The plan lines selected in the pattern box; none takes every line that can move.</param>
     [RelayCommand(CanExecute = nameof(CanExtractToFolder))]
@@ -109,6 +128,7 @@ public sealed partial class PlanEditorViewModel
     private void RefreshRelocation()
     {
         OnPropertyChanged(nameof(RelocationDisabledReason));
+        OnPropertyChanged(nameof(IntegrateDisabledReason));
         OnPropertyChanged(nameof(ExtractDisabledReason));
         OnPropertyChanged(nameof(ExtractMenuText));
         IntegrateIgnoreFileCommand.NotifyCanExecuteChanged();

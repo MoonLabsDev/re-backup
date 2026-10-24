@@ -697,7 +697,10 @@
       "openFailed": "Could not open the file:\n{path}",
       "folderOnly": "Only available for folder sources",
       "integrate": "Integrate into plan…",
-      "hits": "{entries} entries · {bytes}",
+      "hits": {
+        "one": "{count} entry · {bytes}",
+        "other": "{count:N0} entries · {bytes}"
+      },
       "unused": "no hits"
     },
     "relocation": {
@@ -727,6 +730,7 @@
       "applyAnyway": "Apply anyway",
       "applyAnywayCheck": "I understand that the backup scope changes",
       "stale": "The plan or the file changed since the preview. Nothing was written.",
+      "alreadyIntegrated": "This file was already integrated — rescan to refresh the tree.",
       "noScan": "Not checked: index the source first.",
       "scanRunning": "The backup scope can only be checked against a finished scan. Try again when the scan is done.",
       "unreadableFile": "Not checked: the .backupignore could not be read during the scan.",

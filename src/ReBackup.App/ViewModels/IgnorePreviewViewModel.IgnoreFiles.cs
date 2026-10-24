@@ -22,7 +22,7 @@ public sealed record IgnoreFileLine(int Number, string Text, int? Entries, strin
         ? ""
         : IsUnused
             ? Loc.T("ignore.files.unused")
-            : Loc.F("ignore.files.hits", ("entries", entries), ("bytes", BytesText));
+            : Loc.F("ignore.files.hits", ("count", entries), ("bytes", BytesText));
 }
 
 /// <summary>The panel's content: the file's lines with what each pattern line decides in the current evaluation.</summary>

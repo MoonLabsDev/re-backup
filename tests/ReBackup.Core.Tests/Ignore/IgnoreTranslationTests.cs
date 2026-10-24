@@ -35,8 +35,14 @@ public class IgnoreTranslationTests
     [InlineData("node_modules/", "P/X", RejectReason.MatchesOutsideFolder)]
     [InlineData("/Q/build/", "P/X", RejectReason.NotBelowFolder)]
     [InlineData("/P/XY/a", "P/X", RejectReason.NotBelowFolder)]   // prefix must end at a slash
-    public void ToNestedLine_rejects(string line, string dir, RejectReason reason) =>
-        IgnoreTranslation.ToNestedLine(line, dir).Reason.Should().Be(reason);
+    [InlineData("/P/X/**/", "P/X", RejectReason.NotBelowFolder)]  // nothing left below the folder
+    [InlineData("!/P/X/**/", "P/X", RejectReason.NotBelowFolder)]
+    public void ToNestedLine_rejects(string line, string dir, RejectReason reason)
+    {
+        var (nested, why) = IgnoreTranslation.ToNestedLine(line, dir);
+        nested.Should().BeNull();
+        why.Should().Be(reason);
+    }
 
     // Pattern rows only. "**/x" and "a/b" come back in their canonical spelling ("x", "/a/b"): section 3.2 has no
     // way to produce the original text, and both spellings mean the same.

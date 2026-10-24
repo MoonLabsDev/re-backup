@@ -137,6 +137,26 @@ public class RelocationTests : IDisposable
     }
 
     [Fact]
+    public async Task Integrate_is_disabled_for_a_file_that_was_just_integrated()
+    {
+        Write(".backupignore", "*.tmp\n");
+        var editor = await ScannedAsync([]);
+        editor.Preview.Tree.SelectedRow = editor.Preview.Tree.Rows.Single(r => r.Name == ".backupignore");
+        editor.IntegrateIgnoreFileCommand.CanExecute(null).Should().BeTrue();
+        editor.IntegrateDisabledReason.Should().BeNull();
+
+        editor.IntegrateIgnoreFileCommand.Execute(null);
+
+        // The tree keeps the row (and its icon) until the next scan, but the file is gone from the scan.
+        editor.Preview.Tree.SelectedRow.Should().NotBeNull();
+        editor.IntegrateIgnoreFileCommand.CanExecute(null).Should().BeFalse();
+        editor.IntegrateDisabledReason.Should().Be(Loc.T("ignore.relocation.alreadyIntegrated"));
+        var dialogs = _fixture.Dialogs.Relocations.Count;
+        editor.IntegrateIgnoreFileCommand.Execute(null);
+        _fixture.Dialogs.Relocations.Count.Should().Be(dialogs, "no second dialog opens");
+    }
+
+    [Fact]
     public async Task Extract_with_selected_lines_moves_them()
     {
         Write("sub/a.tmp");

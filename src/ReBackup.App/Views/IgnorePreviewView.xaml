@@ -269,7 +269,7 @@
                             <MenuItem Header="{l:Loc ignore.tree.unignore}" Command="{Binding UnignoreSelectedCommand}" />
                             <Separator />
                             <MenuItem Header="{l:Loc ignore.tree.integrate}" Command="{Binding IntegrateIgnoreFileCommand}"
-                                      ToolTip="{Binding RelocationDisabledReason}" ToolTipService.ShowOnDisabled="True" />
+                                      ToolTip="{Binding IntegrateDisabledReason}" ToolTipService.ShowOnDisabled="True" />
                             <!-- Its parameter, the pattern lines selected on the left, is set when the menu opens. -->
                             <MenuItem x:Name="ExtractMenuItem" Header="{Binding ExtractMenuText}" Command="{Binding ExtractToFolderCommand}"
                                       ToolTip="{Binding ExtractDisabledReason}" ToolTipService.ShowOnDisabled="True" />
@@ -537,7 +537,7 @@
                         <TextBlock Text="{l:Loc ignore.files.openInEditor}" />
                     </Button>
                     <Button Command="{Binding IntegrateIgnoreFileCommand}"
-                            ToolTip="{Binding RelocationDisabledReason}" ToolTipService.ShowOnDisabled="True"
+                            ToolTip="{Binding IntegrateDisabledReason}" ToolTipService.ShowOnDisabled="True"
                             AutomationProperties.Name="{l:Loc ignore.files.integrate}">
                         <TextBlock Text="{l:Loc ignore.files.integrate}" />
                     </Button>

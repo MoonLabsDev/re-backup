@@ -66,6 +66,9 @@ public static class IgnoreTranslation
             return (negation + "/" + rest, null);
 
         var deeper = rest[AnyDepth.Length..];
+        if (deeper.TrimEnd('/').Length == 0)
+            return (null, RejectReason.NotBelowFolder);   // "/D/**/": nothing below the folder
+
         return (negation + (deeper.TrimEnd('/').Contains('/') ? rest : deeper), null);
     }
 }

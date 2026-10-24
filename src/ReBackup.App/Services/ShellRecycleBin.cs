@@ -12,6 +12,7 @@ public sealed class ShellRecycleBin : IRecycleBin
     private const ushort FofNoConfirmation = 0x0010;
     private const ushort FofAllowUndo = 0x0040;
     private const ushort FofNoErrorUi = 0x0400;
+    private const ushort FofWantNukeWarning = 0x4000;
 
     public RecycleOutcome Recycle(string path)
     {
@@ -23,11 +24,14 @@ public sealed class ShellRecycleBin : IRecycleBin
             return RecycleOutcome.Renamed;
         }
 
+        // FOF_WANTNUKEWARNING: on a fixed drive whose recycle bin is disabled (or for a file over the bin's size limit) the
+        // shell deletes permanently. FOF_NOCONFIRMATION would do that silently; with this flag it asks first, and a "No"
+        // sets fAnyOperationsAborted, which throws below so the caller restores the plan.
         var operation = new ShFileOpStruct
         {
             wFunc = FoDelete,
             pFrom = Path.GetFullPath(path) + "\0\0",   // a double-null-terminated list
-            fFlags = (ushort)(FofAllowUndo | FofNoConfirmation | FofSilent | FofNoErrorUi),
+            fFlags = (ushort)(FofAllowUndo | FofNoConfirmation | FofSilent | FofNoErrorUi | FofWantNukeWarning),
         };
         var result = SHFileOperationW(ref operation);
         if (result != 0 || operation.fAnyOperationsAborted)
