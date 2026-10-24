@@ -93,6 +93,8 @@ public class ControlReadTests : IDisposable
         p1.GetProperty("lastRun").GetProperty("trigger").GetString().Should().Be("manual");
         p1.GetProperty("lastRun").GetProperty("start").GetDateTime().Should().Be(Utc(2026, 9, 29, 12, 5));
         p1.TryGetProperty("nextRun", out _).Should().BeFalse("the plan has no triggers");
+        result.GetProperty("total").GetInt32().Should().Be(2);
+        result.GetProperty("truncated").GetBoolean().Should().BeFalse();
         plans[0].GetProperty("kind").GetString().Should().Be("incremental");
         plans[0].TryGetProperty("lastRun", out _).Should().BeFalse("it never ran");
     }
@@ -428,6 +430,105 @@ public class ControlReadTests : IDisposable
             response.Ok.Should().BeTrue($"{op} {JsonSerializer.Serialize(args)}: {response.Error?.Message}");
             JsonSerializer.Serialize(response, ControlJson.Options).Should().NotContain(Secret, $"{op} returns metadata only");
         }
+    }
+
+    // ------------------------------------------------------------------ the character budget
+
+    [Fact]
+    public async Task Huge_ignore_file_stays_within_the_character_budget()
+    {
+        var lines = Enumerable.Range(0, 10_000).Select(i => $"generated/pattern-number-{i:00000}/**/*.cache");
+        WriteFile(_source, "huge/.backupignore", string.Join('\n', lines));
+        var (service, _) = Create();
+
+        var response = await service.HandleAsync(Request(ControlOps.GetIgnoreRules, new { plan = "Projects" }), CancellationToken.None);
+
+        response.Ok.Should().BeTrue(response.Error?.Message);
+        JsonSerializer.Serialize(response, ControlJson.Options).Length.Should().BeLessThanOrEqualTo(ControlService.MaxChars);
+        var result = response.Result!.Value;
+        result.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        result.GetProperty("hint").GetString().Should().Contain("path");
+        var huge = result.GetProperty("ignoreFiles").EnumerateArray().Single(f => f.GetProperty("path").GetString() == "huge/.backupignore");
+        huge.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        huge.GetProperty("lineCount").GetInt32().Should().Be(10_000);
+        huge.GetProperty("lines").GetArrayLength().Should().Be(ControlService.MaxRulesPerOrigin);
+    }
+
+    [Fact]
+    public async Task Get_ignore_rules_path_lists_only_the_ignore_files_in_that_folder()
+    {
+        WriteFile(_source, "other/.backupignore", "*.o");
+        var (service, _) = Create();
+
+        var result = await OkAsync(service, ControlOps.GetIgnoreRules, new { plan = "Projects", path = "docs" });
+
+        result.GetProperty("ignoreFiles").EnumerateArray().Select(f => f.GetProperty("path").GetString())
+            .Should().Equal("docs/.backupignore");
+        result.GetProperty("truncated").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Two_hundred_bulky_runs_stay_within_the_character_budget()
+    {
+        for (var i = 0; i < 200; i++)
+        {
+            AppendRun("p1", new RunLogEntry
+            {
+                RunId = $"run-{i:000}", Trigger = RunTrigger.Scheduled, Status = RunStatus.Error,
+                Reason = new string('r', 300), StartUtc = Utc(2026, 9, 1, 0, 0).AddHours(i), EndUtc = Utc(2026, 9, 1, 0, 0).AddHours(i),
+                Warnings = Enumerable.Range(0, 12).Select(w => $"Warning {w} of run {i}.").ToList(),
+            });
+        }
+        var (service, _) = Create();
+
+        var response = await service.HandleAsync(Request(ControlOps.GetRunHistory, new { plan = "Projects", n = 200 }), CancellationToken.None);
+
+        response.Ok.Should().BeTrue(response.Error?.Message);
+        JsonSerializer.Serialize(response, ControlJson.Options).Length.Should().BeLessThanOrEqualTo(ControlService.MaxChars);
+        var result = response.Result!.Value;
+        result.GetProperty("truncated").GetBoolean().Should().BeTrue();
+        result.GetProperty("total").GetInt32().Should().Be(200);
+        result.GetProperty("hint").GetString().Should().Contain("'n'");
+        var runs = result.GetProperty("runs").EnumerateArray().ToList();
+        runs.Count.Should().BeInRange(1, 199);
+        runs[0].GetProperty("runId").GetString().Should().Be("run-199", "the newest runs are kept");
+        var warnings = runs[0].GetProperty("warnings").EnumerateArray().Select(w => w.GetString()).ToList();
+        warnings.Should().HaveCount(ControlService.MaxWarningsPerRow + 1);
+        warnings[^1].Should().Be("… and 7 more warnings.");
+    }
+
+    // ------------------------------------------------------------------ robustness
+
+    [Fact]
+    public async Task Unreadable_run_log_does_not_fail_list_versions()
+    {
+        AppendRun("p1", new RunLogEntry { RunId = "r1", Status = RunStatus.Completed, Version = Newer });
+        var (service, _) = await CreateWithVersionsAsync();
+        using var locked = new FileStream(_fixture.Paths.LogFileFor("p1"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var result = await OkAsync(service, ControlOps.ListVersions, new { plan = "Projects" });
+
+        result.GetProperty("versions").GetArrayLength().Should().Be(3);
+        (await FailAsync(service, ControlOps.GetRunHistory, new { plan = "Projects" })).Key.Should().Be(ControlErrors.InternalError);
+    }
+
+    [Fact]
+    public async Task Canceled_request_does_not_wait_for_the_ui_thread()
+    {
+        var vm = _fixture.Create();
+        var service = new ControlService(vm, new StalledContext());
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        var call = service.HandleAsync(Request(ControlOps.ListPlans, new { }), cts.Token);
+
+        await FluentActions.Awaiting(() => call.WaitAsync(TimeSpan.FromSeconds(10)))
+            .Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>A UI thread that never gets to what is posted to it (e.g. a modal dialog that does not end).</summary>
+    private sealed class StalledContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) { }
     }
 
     [Fact]

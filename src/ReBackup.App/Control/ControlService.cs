@@ -17,6 +17,18 @@ public sealed partial class ControlService : IControlHandler
     /// <summary>Lists return at most this many rows; the rest is reported as truncated with a hint how to narrow.</summary>
     public const int MaxRows = 200;
 
+    /// <summary>A serialized result stays at or below this many characters; rows are dropped from the end until it fits.</summary>
+    public const int MaxChars = 50_000;
+
+    /// <summary>Pattern lines listed per origin (plan, global defaults, one ignore file) in <c>get_ignore_rules</c>.</summary>
+    public const int MaxRulesPerOrigin = 200;
+
+    /// <summary>The characters of one ignore file's text listed in <c>get_ignore_rules</c>.</summary>
+    public const int MaxIgnoreFileChars = 10_000;
+
+    /// <summary>Warnings listed per row (a version, a run); the rest are counted in one more line.</summary>
+    public const int MaxWarningsPerRow = 5;
+
     private readonly MainViewModel _main;
     private readonly SynchronizationContext _ui;
     private readonly Dictionary<string, Func<ControlArgs, CancellationToken, Task<object>>> _ops;
@@ -56,31 +68,38 @@ public sealed partial class ControlService : IControlHandler
         }
     }
 
-    /// <summary>Runs <paramref name="read"/> on the UI thread (at once when already on it) and hands back its result.</summary>
-    private Task<T> OnUiAsync<T>(Func<T> read)
+    /// <summary>
+    /// Runs <paramref name="read"/> on the UI thread (at once when already on it) and hands back its result. Canceling
+    /// <paramref name="ct"/> stops the wait (the posted read then does nothing when it comes).
+    /// </summary>
+    private async Task<T> OnUiAsync<T>(Func<T> read, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (SynchronizationContext.Current == _ui)
-            return Task.FromResult(read());
+            return read();
         var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = ct.Register(() => done.TrySetCanceled(ct));
         _ui.Post(_ =>
         {
+            if (done.Task.IsCompleted)
+                return;   // canceled meanwhile
             try
             {
-                done.SetResult(read());
+                done.TrySetResult(read());
             }
             catch (Exception ex)
             {
-                done.SetException(ex);
+                done.TrySetException(ex);
             }
         }, null);
-        return done.Task;
+        return await done.Task.ConfigureAwait(false);
     }
 
     /// <summary>
     /// The saved plan the <c>plan</c> argument names: by id, else by exact name, both case-insensitive. Unsaved new
     /// plans do not count. No match, or several plans of that name, is <c>plan_not_found</c> naming the candidates.
     /// </summary>
-    private Task<PlanContext> ResolvePlanAsync(ControlArgs args)
+    private Task<PlanContext> ResolvePlanAsync(ControlArgs args, CancellationToken ct)
     {
         var key = args.RequiredString("plan").Trim();
         return OnUiAsync(() =>
@@ -95,7 +114,43 @@ public sealed partial class ControlService : IControlHandler
                     $"No plan has the id or name '{key}'. Plans: {Candidates(saved.Select(p => p.Plan))}.");
             throw new ControlFailure(ControlErrors.PlanNotFound,
                 $"Several plans are named '{key}': {Candidates(matches.Select(p => p.Plan))}. Name the plan by its id.");
-        });
+        }, ct);
+    }
+
+    /// <summary>
+    /// The result <paramref name="build"/> makes from the first n of <paramref name="rowCount"/> rows, with the largest n
+    /// whose serialization stays within <see cref="MaxChars"/> (at least one row when there are rows). The builder sets
+    /// <c>truncated</c> and the hint itself when n is less than what it lists. Shared by every list result.
+    /// </summary>
+    internal static T FitToBudget<T>(int rowCount, Func<int, T> build)
+    {
+        var all = build(rowCount);
+        if (rowCount == 0 || Length(all) <= MaxChars)
+            return all;
+        // Binary search for the largest count that fits; the length grows with the count.
+        int low = 1, high = rowCount - 1;
+        while (low < high)
+        {
+            var middle = (low + high + 1) / 2;
+            if (Length(build(middle)) <= MaxChars)
+                low = middle;
+            else
+                high = middle - 1;
+        }
+        return build(low);
+    }
+
+    private static int Length<T>(T result) => JsonSerializer.Serialize(result, ControlJson.Options).Length;
+
+    /// <summary>At most <see cref="MaxWarningsPerRow"/> warnings, then "… and N more warnings."; null for none.</summary>
+    internal static IReadOnlyList<string>? CapWarnings(IReadOnlyList<string> warnings)
+    {
+        if (warnings.Count == 0)
+            return null;
+        if (warnings.Count <= MaxWarningsPerRow)
+            return warnings;
+        var more = warnings.Count - MaxWarningsPerRow;
+        return [.. warnings.Take(MaxWarningsPerRow), $"… and {more} more warning{(more == 1 ? "" : "s")}."];
     }
 
     private static string Candidates(IEnumerable<BackupPlan> plans)

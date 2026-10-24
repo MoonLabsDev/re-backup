@@ -16,7 +16,7 @@ public sealed record SizeValue(long Bytes, string Text)
 /// <summary>The pattern that decided an entry, where it is written (origin and 1-based line) and whether it re-includes.</summary>
 public sealed record RuleInfo(string Pattern, string Origin, int? Line, bool Negated);
 
-public sealed record PlanListResult(IReadOnlyList<PlanRow> Plans);
+public sealed record PlanListResult(IReadOnlyList<PlanRow> Plans, int Total, bool Truncated, string? Hint);
 
 /// <summary><paramref name="State"/>: idle, queued, running or deleting (versions are being deleted).</summary>
 public sealed record PlanRow(string Id, string Name, string Source, string Target, string Kind, LastRunInfo? LastRun,
@@ -40,7 +40,7 @@ public sealed record VersionRow(string Name, DateTimeOffset Date, SizeValue? Siz
 
 public sealed record IgnoreRulesResult(string Plan, bool UseGlobalDefaults, bool HonorNestedFiles,
     IReadOnlyList<LineHitRow> PlanPatterns, GlobalDefaultsInfo GlobalDefaults, IReadOnlyList<IgnoreFileInfo> IgnoreFiles,
-    IReadOnlyList<string> UnreadableIgnoreFiles, int ScannedFiles, int ScannedFolders);
+    IReadOnlyList<string> UnreadableIgnoreFiles, int ScannedFiles, int ScannedFolders, bool Truncated, string? Hint);
 
 /// <summary>A pattern line and what it decides in the source: entries and their total size.</summary>
 public sealed record LineHitRow(int Line, string Pattern, int Entries, SizeValue Size)
@@ -51,8 +51,11 @@ public sealed record LineHitRow(int Line, string Pattern, int Entries, SizeValue
 /// <summary>The global defaults; their lines have no hits while <paramref name="Used"/> is false.</summary>
 public sealed record GlobalDefaultsInfo(bool Used, IReadOnlyList<LineHitRow> Lines);
 
-/// <summary>A <c>.backupignore</c> file: its path in the source, its text (rules, not data) and the hits per pattern line.</summary>
-public sealed record IgnoreFileInfo(string Path, string Content, IReadOnlyList<LineHitRow> Lines);
+/// <summary>
+/// A <c>.backupignore</c> file: its path in the source, its text (rules, not data), how many lines it has and the hits per
+/// pattern line. <paramref name="Truncated"/>: the text or the pattern lines were cut to the limits.
+/// </summary>
+public sealed record IgnoreFileInfo(string Path, string Content, int LineCount, IReadOnlyList<LineHitRow> Lines, bool Truncated);
 
 /// <summary>
 /// <paramref name="IgnoredFolder"/>: the parent folder whose rule ignores the entry (everything below an ignored folder

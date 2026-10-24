@@ -20,16 +20,22 @@ public sealed partial class ControlService
 
     private async Task<PlanListResult> ListPlansAsync(CancellationToken ct)
     {
-        var plans = await OnUiAsync(() => _main.Plans.Where(p => !p.IsNew).Select(p => ContextOf(p, p.SavedPlan())).ToList());
-        return await Task.Run(() => new PlanListResult(plans.Take(MaxRows).Select(context => new PlanRow(
-            context.Plan.Id,
-            context.Plan.Name,
-            context.Source,
-            context.Target,
-            context.Plan.Incremental ? "incremental" : "full",
-            LastRunOf(context.Plan.Id),
-            context.NextRunUtc is { } next ? AsUtc(next) : null,
-            context.State)).ToList()), ct);
+        var plans = await OnUiAsync(() => _main.Plans.Where(p => !p.IsNew).Select(p => ContextOf(p, p.SavedPlan())).ToList(), ct);
+        return await Task.Run(() =>
+        {
+            var rows = plans.Take(MaxRows).Select(context => new PlanRow(
+                context.Plan.Id,
+                context.Plan.Name,
+                context.Source,
+                context.Target,
+                context.Plan.Incremental ? "incremental" : "full",
+                LastRunOf(context.Plan.Id),
+                context.NextRunUtc is { } next ? AsUtc(next) : null,
+                context.State)).ToList();
+            return FitToBudget(rows.Count, count => new PlanListResult(rows.Take(count).ToList(), plans.Count,
+                count < plans.Count,
+                count < plans.Count ? $"Only the first {count} of {plans.Count} plans are listed; address the others by id or name." : null));
+        }, ct);
     }
 
     private LastRunInfo? LastRunOf(string planId)
@@ -50,7 +56,7 @@ public sealed partial class ControlService
 
     private async Task<VersionListResult> ListVersionsAsync(ControlArgs args, CancellationToken ct)
     {
-        var context = await ResolvePlanAsync(args);
+        var context = await ResolvePlanAsync(args, ct);
         var plan = context.Plan;
         var folders = await ListTargetAsync(plan, ct);
         var (indexed, exclusive, runs) = await Task.Run(() =>
@@ -60,7 +66,7 @@ public sealed partial class ControlService
             IReadOnlyDictionary<long, long> unique = plan.Incremental
                 ? versions.ToDictionary(v => v.Id, v => index.UniqueBytes(v.Id))
                 : new Dictionary<long, long>();
-            return (versions, unique, ReadRuns(plan.Id));
+            return (versions, unique, TryReadRuns(plan.Id));
         }, ct);
 
         var byName = indexed.ToDictionary(v => v.Name, StringComparer.OrdinalIgnoreCase);
@@ -87,11 +93,11 @@ public sealed partial class ControlService
         }
 
         if (rows.Any(r => !r.Indexed))
-            await OnUiAsync(() => { context.Editor.Versions.EnsureLoaded(); return true; });   // indexes them
+            await OnUiAsync(() => { context.Editor.Versions.EnsureLoaded(); return true; }, ct);   // indexes them
 
-        var truncated = rows.Count > MaxRows;
-        return new VersionListResult(plan.Name, rows.Take(MaxRows).ToList(), rows.Count, truncated,
-            truncated ? $"Only the newest {MaxRows} of {rows.Count} versions are listed." : null, warnings);
+        return FitToBudget(Math.Min(rows.Count, MaxRows), count => new VersionListResult(plan.Name, rows.Take(count).ToList(),
+            rows.Count, count < rows.Count,
+            count < rows.Count ? $"Only the newest {count} of {rows.Count} versions are listed." : null, warnings));
 
         VersionRow Row(string name, DateTime localTime, IndexedVersion? version, long? bytes, int? files, bool managed)
         {
@@ -111,7 +117,7 @@ public sealed partial class ControlService
             return new VersionRow(name, new DateTimeOffset(DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified)),
                 bytes is { } b ? SizeValue.Of(b) : null, files,
                 version is not null && exclusive.TryGetValue(version.Id, out var unique) ? SizeValue.Of(unique) : null,
-                version is not null, managed, notes);
+                version is not null, managed, CapWarnings(notes) ?? []);
         }
     }
 
@@ -148,7 +154,7 @@ public sealed partial class ControlService
         var folders = await ListTargetAsync(plan, ct);
         if (folders is not null && folders.Any(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
-            await OnUiAsync(() => { context.Editor.Versions.EnsureLoaded(); return true; });
+            await OnUiAsync(() => { context.Editor.Versions.EnsureLoaded(); return true; }, ct);
             throw new ControlFailure(ControlErrors.VersionNotIndexed,
                 $"The version '{name}' is not indexed yet; indexing has started, retry later.");
         }
@@ -161,24 +167,51 @@ public sealed partial class ControlService
 
     private async Task<IgnoreRulesResult> GetIgnoreRulesAsync(ControlArgs args, CancellationToken ct)
     {
-        var context = await ResolvePlanAsync(args);
+        var context = await ResolvePlanAsync(args, ct);
+        var folder = NormalizePath(args.OptionalString("path") ?? "");
         var index = await ScanAsync(context, ct);
         return await Task.Run(() =>
         {
             var plan = context.Plan;
             var root = IndexEvaluator.Evaluate(index, Matcher(context, index), ct);
-            IReadOnlyList<LineHitRow> Hits(string origin, IReadOnlyList<string> lines) =>
-                IgnoreLineStats.ForOrigin(root, origin, lines).Select(LineHitRow.Of).ToList();
+            var cut = false;   // some origin's lines or some file's text was cut
+            (IReadOnlyList<LineHitRow> Rows, bool Cut) Hits(string origin, IReadOnlyList<string> lines)
+            {
+                var hits = IgnoreLineStats.ForOrigin(root, origin, lines);
+                cut |= hits.Count > MaxRulesPerOrigin;
+                return (hits.Take(MaxRulesPerOrigin).Select(LineHitRow.Of).ToList(), hits.Count > MaxRulesPerOrigin);
+            }
 
-            var files = index.IgnoreFiles
-                .Select(file => (Origin: NestedOrigin(file), file.Lines))
+            var inFolder = index.IgnoreFiles
+                .Select(file => (Origin: NestedOrigin(file), Directory: NestedDirectory(file), file.Lines))
+                .Where(file => folder.Length == 0 || file.Directory.Equals(folder, StringComparison.OrdinalIgnoreCase) ||
+                               file.Directory.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(file => file.Origin, StringComparer.OrdinalIgnoreCase)
-                .Select(file => new IgnoreFileInfo(file.Origin, string.Join("\n", file.Lines), Hits(file.Origin, file.Lines)))
                 .ToList();
-            return new IgnoreRulesResult(plan.Name, plan.Ignore.UseGlobalDefaults, plan.Ignore.HonorNestedFiles,
-                Hits(IgnoreOrigins.Plan, plan.Ignore.Patterns),
-                new GlobalDefaultsInfo(plan.Ignore.UseGlobalDefaults, Hits(IgnoreOrigins.GlobalDefaults, context.GlobalDefaults)),
-                files, index.UnreadableIgnoreFiles, index.FileCount, index.DirectoryCount);
+            var files = inFolder.Take(MaxRows).Select(file =>
+            {
+                var content = string.Join("\n", file.Lines);
+                var (hits, linesCut) = Hits(file.Origin, file.Lines);
+                var textCut = content.Length > MaxIgnoreFileChars;
+                cut |= textCut;
+                return new IgnoreFileInfo(file.Origin, textCut ? content[..MaxIgnoreFileChars] : content, file.Lines.Count, hits,
+                    linesCut || textCut);
+            }).ToList();
+            var planPatterns = Hits(IgnoreOrigins.Plan, plan.Ignore.Patterns).Rows;
+            var globals = new GlobalDefaultsInfo(plan.Ignore.UseGlobalDefaults, Hits(IgnoreOrigins.GlobalDefaults, context.GlobalDefaults).Rows);
+
+            return FitToBudget(files.Count, count =>
+            {
+                var truncated = cut || count < inFolder.Count;
+                return new IgnoreRulesResult(plan.Name, plan.Ignore.UseGlobalDefaults, plan.Ignore.HonorNestedFiles,
+                    planPatterns, globals, files.Take(count).ToList(), index.UnreadableIgnoreFiles, index.FileCount,
+                    index.DirectoryCount, truncated,
+                    truncated
+                        ? $"Cut to fit: at most {MaxRulesPerOrigin} pattern lines per origin and {MaxIgnoreFileChars} characters per ignore file; " +
+                          $"{count} of {inFolder.Count} ignore files listed. Narrow with 'path' (a folder: only the .backupignore files in it and below), " +
+                          "or ask explain_path for the rule that decides one entry."
+                        : null);
+            });
         }, ct);
     }
 
@@ -186,7 +219,7 @@ public sealed partial class ControlService
 
     private async Task<ExplainResult> ExplainPathAsync(ControlArgs args, CancellationToken ct)
     {
-        var context = await ResolvePlanAsync(args);
+        var context = await ResolvePlanAsync(args, ct);
         var raw = args.RequiredString("path");
         var path = NormalizePath(raw);
         if (path.Length == 0)
@@ -224,7 +257,7 @@ public sealed partial class ControlService
 
     private async Task<FileListResult> ListFilesAsync(ControlArgs args, CancellationToken ct)
     {
-        var context = await ResolvePlanAsync(args);
+        var context = await ResolvePlanAsync(args, ct);
         var path = NormalizePath(args.OptionalString("path") ?? "");
         var listing = args.OptionalString("in") is { Length: > 0 } given ? given.Trim() : SourceListing;
         var sort = (args.OptionalString("sort") ?? "name").Trim().ToLowerInvariant();
@@ -252,11 +285,12 @@ public sealed partial class ControlService
             "date" => rows.OrderByDescending(r => r.Date ?? DateTime.MinValue).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
             _ => rows.OrderBy(r => r.Kind == "folder" ? 0 : 1).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
         };
-        var truncated = rows.Count > limit;
-        return new FileListResult(context.Plan.Name, path, listing, sorted.Take(limit).ToList(), rows.Count, truncated,
-            truncated
-                ? $"Showing {limit} of {rows.Count} entries. Narrow with 'path' (a subfolder), or raise 'limit' (at most {MaxRows})."
-                : null);
+        var shown = sorted.Take(limit).ToList();
+        return FitToBudget(shown.Count, count => new FileListResult(context.Plan.Name, path, listing, shown.Take(count).ToList(),
+            rows.Count, count < rows.Count,
+            count < rows.Count
+                ? $"Showing {count} of {rows.Count} entries. Narrow with 'path' (a subfolder), or raise 'limit' (at most {MaxRows})."
+                : null));
     }
 
     private IReadOnlyList<FileRow> SourceRows(PlanContext context, SourceIndex index, string path, CancellationToken ct)
@@ -304,18 +338,20 @@ public sealed partial class ControlService
 
     private async Task<RunHistoryResult> GetRunHistoryAsync(ControlArgs args, CancellationToken ct)
     {
-        var context = await ResolvePlanAsync(args);
+        var context = await ResolvePlanAsync(args, ct);
         var n = Math.Clamp(args.OptionalInt("n") ?? DefaultRuns, 1, MaxRows);
         var runs = await Task.Run(() => ReadRuns(context.Plan.Id), ct);
         var rows = runs.Reverse().Take(n).Select(run => new RunRow(run.RunId, Name(run.Trigger), AsUtc(run.StartUtc),
             AsUtc(run.EndUtc), run.DurationMs, Name(run.Status), run.Reason, run.Version, run.FilesCopied,
-            SizeValue.Of(run.BytesCopied), run.SkippedCount, run.Warnings.Count > 0 ? run.Warnings : null)).ToList();
-        var truncated = runs.Count > n;
-        return new RunHistoryResult(context.Plan.Name, rows, runs.Count, truncated,
-            truncated ? $"Showing the newest {n} of {runs.Count} runs; raise 'n' (at most {MaxRows}) for more." : null);
+            SizeValue.Of(run.BytesCopied), run.SkippedCount, CapWarnings(run.Warnings))).ToList();
+        return FitToBudget(rows.Count, count => new RunHistoryResult(context.Plan.Name, rows.Take(count).ToList(), runs.Count,
+            count < runs.Count,
+            count < runs.Count
+                ? $"Showing the newest {count} of {runs.Count} runs; ask with a smaller or larger 'n' (at most {MaxRows}) as needed."
+                : null));
     }
 
-    /// <summary>The plan's run log, oldest first; empty when it cannot be read.</summary>
+    /// <summary>The plan's run log, oldest first; an unreadable log is an <c>internal_error</c>.</summary>
     private IReadOnlyList<RunLogEntry> ReadRuns(string planId)
     {
         try
@@ -325,6 +361,19 @@ public sealed partial class ControlService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             throw new ControlFailure(ControlErrors.InternalError, $"The run log could not be read: {ex.Message}");
+        }
+    }
+
+    /// <summary>The plan's run log, oldest first; empty when it cannot be read (its runs then add no warnings).</summary>
+    private IReadOnlyList<RunLogEntry> TryReadRuns(string planId)
+    {
+        try
+        {
+            return _main.RunLogFor(planId).ReadAll();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
         }
     }
 
@@ -357,8 +406,10 @@ public sealed partial class ControlService
         IgnoreMatcher.ForPlan(context.Plan.Ignore, context.GlobalDefaults, index.IgnoreFiles);
 
     /// <summary>The origin the matcher gives the patterns of a nested ignore file ("docs/.backupignore").</summary>
-    private static string NestedOrigin(NestedIgnoreFile file) =>
-        IgnoreOrigins.ForNestedFile(file.DirectoryRelativePath.Replace('\\', '/').Trim('/'));
+    private static string NestedOrigin(NestedIgnoreFile file) => IgnoreOrigins.ForNestedFile(NestedDirectory(file));
+
+    /// <summary>The folder of a nested ignore file, as the matcher normalizes it ("docs"; "" for the root).</summary>
+    private static string NestedDirectory(NestedIgnoreFile file) => file.DirectoryRelativePath.Replace('\\', '/').Trim('/');
 
     /// <summary>Finds where a deciding pattern is written: its origin's lines, and the line (the last equal one wins).</summary>
     private sealed class RuleLocator(PlanContext context, SourceIndex index)
