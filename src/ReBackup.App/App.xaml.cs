@@ -12,6 +12,7 @@ using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Win32;
 using ReBackup.Shared.Wpf.Localization;
+using ReBackup.App.Mcp;
 using ReBackup.App.Services;
 using ReBackup.Shared.Wpf.Services;
 using ReBackup.App.ViewModels;
@@ -67,6 +68,13 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // An MCP client started the exe: serve it over stdio, before the mutex, settings, tray and windows.
+        if (e.Args.Contains("--mcp", StringComparer.OrdinalIgnoreCase))
+        {
+            RunMcpBridge(e.Args);
+            return;
+        }
+
         // Label files (later sources override earlier ones) and the recognizers of stored English texts.
         Loc.Configure(
             [
@@ -122,6 +130,22 @@ public partial class App : Application
         _singleInstance.ListenForActivation(() => Dispatcher.InvokeAsync(ShowMainWindow));
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
+    }
+
+    private async void RunMcpBridge(string[] args)
+    {
+        int exitCode;
+        try
+        {
+            exitCode = await McpBridge.RunAsync(args, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // stderr, never stdout: stdout carries the protocol.
+            Console.Error.WriteLine(ex);
+            exitCode = 1;
+        }
+        Shutdown(exitCode);
     }
 
     /// <summary>Resolves the configuration folder and loads everything that lives in it; false means the app must exit.</summary>
