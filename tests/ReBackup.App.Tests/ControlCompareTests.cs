@@ -147,6 +147,39 @@ public class ControlCompareTests : IDisposable
             .Key.Should().Be(ControlErrors.BadRequest);
     }
 
+    [Fact]
+    public async Task Source_comparison_matches_a_folder_renamed_in_case_only()
+    {
+        WriteFile(_target, Newer + "/Docs/a.txt", "alpha");
+        WriteFile(_source, "docs/a.txt", "alpha");   // the same file: unchanged despite the spelling
+        WriteFile(_source, "docs/b.txt", "bb");
+        var service = await CreateWithIndexedTargetAsync();
+
+        var result = await OkAsync(service, ControlOps.CompareSourceWithVersion, new { plan = "Projects" });
+
+        var rows = Rows(result.GetProperty("byFolder")).ToList();
+        rows.Should().ContainSingle();
+        rows[0].Key.Should().BeEquivalentTo("docs/");
+        rows[0].Should().Be((rows[0].Key, 1, 0, 0, 2L, 0L, 2L));
+        Row(result.GetProperty("total")).Should().Be(("", 1, 0, 0, 2L, 0L, 2L));
+    }
+
+    [Fact]
+    public async Task Source_comparison_picks_the_newest_of_versions_created_out_of_order()
+    {
+        const string newest = "2026_10_02-09_00 Projects";
+        WriteFile(_target, newest + "/a.txt", "alpha");
+        WriteFile(_target, Older + "/a.txt", "a");
+        WriteFile(_target, Newer + "/a.txt", "al");
+        WriteFile(_source, "a.txt", "alpha");
+        var service = await CreateWithIndexedTargetAsync();
+
+        var result = await OkAsync(service, ControlOps.CompareSourceWithVersion, new { plan = "Projects" });
+
+        result.GetProperty("from").GetString().Should().Be(newest);
+        result.GetProperty("byFolder").GetArrayLength().Should().Be(0, "the source equals the newest version");
+    }
+
     // ------------------------------------------------------------------ the character budget
 
     [Fact]

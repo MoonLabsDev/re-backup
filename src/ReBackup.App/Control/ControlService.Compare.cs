@@ -28,8 +28,8 @@ public sealed partial class ControlService
             var index = _main.VersionIndexes.For(context.Plan.Id);
             if (index.FindPath(path, isDirectory: true) is not { } folderId)
                 throw new ControlFailure(ControlErrors.BadRequest, $"Neither version has a folder '{path}'.");
-            return Growth(context.Plan.Name, a.Name, b.Name, path, index.GrowthByFolder(a.Id, b.Id, folderId),
-                index.GrowthByExtension(a.Id, b.Id, folderId), top);
+            var growth = index.Growth(a.Id, b.Id, folderId);
+            return Growth(context.Plan.Name, a.Name, b.Name, path, growth.ByFolder, growth.ByExtension, top);
         }, ct);
     }
 
@@ -55,7 +55,7 @@ public sealed partial class ControlService
             var folderPath = folder.RelativePath;
             var index = _main.VersionIndexes.For(context.Plan.Id);
             var inVersion = (index.FindPath(folderPath, isDirectory: true) is { } folderId ? index.FilesBelow(version.Id, folderId) : [])
-                .ToDictionary(file => file.Path, StringComparer.Ordinal);
+                .ToDictionary(file => file.Path, StringComparer.OrdinalIgnoreCase);   // the index's paths ignore case too
 
             var byFolder = new GrowthTally();
             var byExtension = new GrowthTally();
@@ -98,7 +98,7 @@ public sealed partial class ControlService
     /// </summary>
     private async Task<IndexedVersion> NewestVersionAsync(PlanContext context, CancellationToken ct)
     {
-        var folders = await ListTargetAsync(context.Plan, ct);
+        var folders = await ListTargetAsync(context.Plan, ct);   // oldest first (VersionCatalog sorts by date, then name)
         if (folders is { Count: > 0 })
             return await ResolveVersionAsync(context, folders[^1].Name, ct);
         var indexed = await Task.Run(() => _main.VersionIndexes.For(context.Plan.Id).Versions(), ct);

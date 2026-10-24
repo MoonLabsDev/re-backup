@@ -7,13 +7,19 @@ namespace ReBackup.Core.Versions;
 /// </summary>
 public sealed record GrowthRow(string Key, int Added, int Changed, int Deleted, long AddedBytes, long DeletedBytes, long NetBytes);
 
+/// <summary>The growth below one folder, by direct child and by extension (see <see cref="GrowthTally"/>).</summary>
+public sealed record GrowthComparison(IReadOnlyList<GrowthRow> ByFolder, IReadOnlyList<GrowthRow> ByExtension);
+
 /// <summary>A file of a version: its path below the version root (forward slashes), size and time.</summary>
 public sealed record IndexedFile(string Path, long Size, DateTime MtimeUtc);
 
-/// <summary>Adds up file differences into <see cref="GrowthRow"/>s by key.</summary>
+/// <summary>
+/// Adds up file differences into <see cref="GrowthRow"/>s by key. Keys ignore case, as paths do on Windows and in the
+/// version index: "Docs/" and "docs/" (a case-only rename) are one row, under the spelling seen first.
+/// </summary>
 public sealed class GrowthTally
 {
-    private readonly Dictionary<string, Totals> _rows = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Totals> _rows = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// One file that differs: null <paramref name="olderSize"/> = added, null <paramref name="newerSize"/> = deleted,
@@ -21,6 +27,7 @@ public sealed class GrowthTally
     /// </summary>
     public void Add(string key, long? olderSize, long? newerSize)
     {
+        // Setting an existing entry keeps its key: the first spelling stays.
         var totals = _rows.GetValueOrDefault(key);
         switch (olderSize, newerSize)
         {

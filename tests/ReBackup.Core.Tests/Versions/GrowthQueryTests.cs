@@ -53,6 +53,52 @@ public class GrowthQueryTests : IDisposable
     }
 
     [Fact]
+    public void Growth_after_a_case_only_folder_rename_is_one_row_and_drills_down_into_both_spellings()
+    {
+        Write(_target, "2026_09_29-14_05", [File("Docs/a.txt", "aaaa")]);
+        Write(_target, "2026_09_30-14_05", [File("docs/a.txt", "aaaaaa"), File("docs/b.txt", "bb")]);
+        var versions = Sync();
+
+        var root = _index.GrowthByFolder(versions[0].Id, versions[1].Id, Folder(""));
+
+        root.Should().ContainSingle();
+        root[0].Key.Should().BeEquivalentTo("docs/");
+        root[0].Should().Be(new GrowthRow(root[0].Key, 1, 1, 0, 2, 0, 4));
+        foreach (var spelling in new[] { "Docs", "docs" })
+        {
+            _index.GrowthByFolder(versions[0].Id, versions[1].Id, Folder(spelling)).Should().Equal(
+                new GrowthRow("a.txt", 0, 1, 0, 0, 0, 2),
+                new GrowthRow("b.txt", 1, 0, 0, 2, 0, 2));
+        }
+        _index.FilesBelow(versions[1].Id, Folder("Docs")).Select(f => f.Path.ToLowerInvariant())
+            .Should().Equal("docs/a.txt", "docs/b.txt");
+    }
+
+    [Fact]
+    public void Same_size_with_another_hash_counts_as_changed_with_no_net_growth()
+    {
+        Write(_target, "2026_09_29-14_05", [File("data.bin", "abcd")]);
+        Write(_target, "2026_09_30-14_05", [File("data.bin", "abce")]);
+        var versions = Sync();
+
+        _index.GrowthByFolder(versions[0].Id, versions[1].Id, Folder("")).Should().Equal(new GrowthRow("data.bin", 0, 1, 0, 0, 0, 0));
+    }
+
+    [Fact]
+    public void Growth_gives_both_groupings_in_one_pass()
+    {
+        Write(_target, "2026_09_29-14_05", [File("a/x.txt", "x"), File("b.JPG", "jj")]);
+        Write(_target, "2026_09_30-14_05", [File("a/x.txt", "xxx"), File("c.jpg", "cccc")]);
+        var versions = Sync();
+
+        var growth = _index.Growth(versions[0].Id, versions[1].Id, Folder(""));
+
+        growth.ByFolder.Should().Equal(_index.GrowthByFolder(versions[0].Id, versions[1].Id, Folder("")));
+        growth.ByExtension.Should().Equal(_index.GrowthByExtension(versions[0].Id, versions[1].Id, Folder("")));
+        growth.ByExtension.Should().Equal(new GrowthRow(".jpg", 1, 0, 1, 4, 2, 2), new GrowthRow(".txt", 0, 1, 0, 0, 0, 2));
+    }
+
+    [Fact]
     public void Growth_by_extension_groups_case_insensitively()
     {
         Write(_target, "2026_09_29-14_05", [File("a.JPG", "aaa"), File("notes.txt", "nn"), File("sub/gone.TXT", "g")]);

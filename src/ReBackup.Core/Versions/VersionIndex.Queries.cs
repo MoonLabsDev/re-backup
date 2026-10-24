@@ -266,16 +266,8 @@ public sealed partial class VersionIndex
     /// "name/", a file as its name) holding files that were added, changed or deleted (§11, as <see cref="Compare"/>),
     /// the largest net growth first. Empty when the folder is unknown or nothing below it differs.
     /// </summary>
-    public IReadOnlyList<GrowthRow> GrowthByFolder(long versionA, long versionB, long folderPathId)
-    {
-        using var connection = OpenConnection();
-        if (FolderPath(connection, folderPathId) is not { } folder)
-            return [];
-        var tally = new GrowthTally();
-        ForEachDifferingFile(connection, versionA, versionB, folder,
-            (path, _, sizeA, sizeB) => tally.Add(GrowthTally.ChildKey(folder, path), sizeA, sizeB));
-        return tally.Rows();
-    }
+    public IReadOnlyList<GrowthRow> GrowthByFolder(long versionA, long versionB, long folderPathId) =>
+        Growth(versionA, versionB, folderPathId).ByFolder;
 
     /// <summary>
     /// The growth from version A to version B by file extension (lower case, ".jpg"; "" for none), the largest net growth
@@ -287,14 +279,34 @@ public sealed partial class VersionIndex
         var folder = folderPathId is { } id ? FolderPath(connection, id) : "";
         if (folder is null)
             return [];
-        var tally = new GrowthTally();
+        var byExtension = new GrowthTally();
         ForEachDifferingFile(connection, versionA, versionB, folder,
-            (_, name, sizeA, sizeB) => tally.Add(GrowthTally.ExtensionKey(name), sizeA, sizeB));
-        return tally.Rows();
+            (_, name, sizeA, sizeB) => byExtension.Add(GrowthTally.ExtensionKey(name), sizeA, sizeB));
+        return byExtension.Rows();
+    }
+
+    /// <summary>
+    /// <see cref="GrowthByFolder"/> and <see cref="GrowthByExtension"/> below the same folder in one pass over the files.
+    /// Both empty when the folder is unknown.
+    /// </summary>
+    public GrowthComparison Growth(long versionA, long versionB, long folderPathId)
+    {
+        using var connection = OpenConnection();
+        if (FolderPath(connection, folderPathId) is not { } folder)
+            return new GrowthComparison([], []);
+        var byFolder = new GrowthTally();
+        var byExtension = new GrowthTally();
+        ForEachDifferingFile(connection, versionA, versionB, folder, (path, name, sizeA, sizeB) =>
+        {
+            byFolder.Add(GrowthTally.ChildKey(folder, path), sizeA, sizeB);
+            byExtension.Add(GrowthTally.ExtensionKey(name), sizeA, sizeB);
+        });
+        return new GrowthComparison(byFolder.Rows(), byExtension.Rows());
     }
 
     /// <summary>
     /// The files of a version below a folder (at any depth), by path; empty when the version or the folder is unknown.
+    /// Paths are matched ignoring case, as the index stores them (a folder renamed in case only keeps one row).
     /// </summary>
     public IReadOnlyList<IndexedFile> FilesBelow(long versionId, long folderPathId)
     {
@@ -303,7 +315,7 @@ public sealed partial class VersionIndex
             return [];
         using var command = Command(connection, null, """
             SELECT p.path, f.size, f.mtime_ticks FROM files f JOIN paths p ON p.id = f.path_id
-            WHERE f.version_id = $v AND ($prefix = '' OR substr(p.path, 1, length($prefix) + 1) = $prefix || '/')
+            WHERE f.version_id = $v AND ($prefix = '' OR substr(p.path, 1, length($prefix) + 1) = $prefix || '/' COLLATE NOCASE)
             ORDER BY p.path
             """);
         command.Parameters.AddWithValue("$v", versionId);
@@ -325,7 +337,8 @@ public sealed partial class VersionIndex
 
     /// <summary>
     /// Calls <paramref name="visit"/> (path, name, size in A, size in B) for every file below <paramref name="folder"/>
-    /// that is only in A (size in B null), only in B (size in A null) or differs between them (§11).
+    /// that is only in A (size in B null), only in B (size in A null) or differs between them (§11). "Below" ignores case:
+    /// the index keeps one row per path ignoring case, so files added after a case-only rename carry the new spelling.
     /// </summary>
     private static void ForEachDifferingFile(SqliteConnection connection, long versionA, long versionB, string folder,
         Action<string, string, long?, long?> visit)
@@ -334,7 +347,7 @@ public sealed partial class VersionIndex
         using var command = Command(connection, null, """
             WITH below(id, path, name) AS (
                 SELECT id, path, name FROM paths
-                WHERE is_dir = 0 AND ($prefix = '' OR substr(path, 1, length($prefix) + 1) = $prefix || '/'))
+                WHERE is_dir = 0 AND ($prefix = '' OR substr(path, 1, length($prefix) + 1) = $prefix || '/' COLLATE NOCASE))
             SELECT p.path, p.name, a.size, a.mtime_ticks, a.hash, b.size, b.mtime_ticks, b.hash
             FROM files a JOIN below p ON p.id = a.path_id
             LEFT JOIN files b ON b.version_id = $b AND b.path_id = a.path_id
