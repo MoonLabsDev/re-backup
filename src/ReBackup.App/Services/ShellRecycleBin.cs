@@ -13,8 +13,16 @@ public sealed class ShellRecycleBin : IRecycleBin
     private const ushort FofAllowUndo = 0x0040;
     private const ushort FofNoErrorUi = 0x0400;
 
-    public void Recycle(string path)
+    public RecycleOutcome Recycle(string path)
     {
+        path = Path.GetFullPath(path);
+        if (!IsOnFixedDrive(path))
+        {
+            // Without a recycle bin the shell would delete permanently, so keep the file under another name.
+            File.Move(path, IgnoreRelocation.IntegratedFileName(Path.GetDirectoryName(path)!));
+            return RecycleOutcome.Renamed;
+        }
+
         var operation = new ShFileOpStruct
         {
             wFunc = FoDelete,
@@ -24,6 +32,16 @@ public sealed class ShellRecycleBin : IRecycleBin
         var result = SHFileOperationW(ref operation);
         if (result != 0 || operation.fAnyOperationsAborted)
             throw new IOException($"Could not move '{path}' to the recycle bin (shell error {result}).");
+        return RecycleOutcome.Recycled;
+    }
+
+    private static bool IsOnFixedDrive(string fullPath)
+    {
+        var root = Path.GetPathRoot(fullPath);
+        if (string.IsNullOrEmpty(root) || root.StartsWith(@"\\", StringComparison.Ordinal))
+            return false;
+        try { return new DriveInfo(root).DriveType == DriveType.Fixed; }
+        catch (ArgumentException) { return false; }
     }
 
     // Natural alignment matches the 64-bit layout of SHFILEOPSTRUCTW; the app runs as x64.

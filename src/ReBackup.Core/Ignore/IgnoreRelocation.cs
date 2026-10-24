@@ -99,7 +99,7 @@ public static class IgnoreRelocation
     /// </summary>
     /// <exception cref="RelocationStaleException">The plan or the file changed since the proposal.</exception>
     /// <exception cref="InvalidOperationException">The proposal moves nothing.</exception>
-    public static void Apply(RelocationProposal proposal, string sourceRoot, IReadOnlyList<string> currentPlanPatterns,
+    public static RecycleOutcome? Apply(RelocationProposal proposal, string sourceRoot, IReadOnlyList<string> currentPlanPatterns,
         Action<IReadOnlyList<string>> savePlanPatterns, IRecycleBin recycleBin)
     {
         if (proposal.MovedLines.Count == 0)
@@ -117,14 +117,13 @@ public static class IgnoreRelocation
             savePlanPatterns(proposal.PlanPatternsAfter);
             try
             {
-                recycleBin.Recycle(path);
+                return recycleBin.Recycle(path);
             }
             catch
             {
                 RestorePlan(savePlanPatterns, proposal.PlanPatternsBefore);
                 throw;
             }
-            return;
         }
 
         WriteAtomically(path, proposal.FileContentAfter!);
@@ -137,6 +136,20 @@ public static class IgnoreRelocation
             RestoreFile(path, proposal.FileContentBefore);
             throw;
         }
+        return null;
+    }
+
+    /// <summary>
+    /// The path an integrated file is renamed to when it cannot go to the recycle bin: <c>.backupignore.integrated</c> in
+    /// <paramref name="directoryPath"/>, or <c>.integrated-2</c>, <c>-3</c>, … when that name is taken.
+    /// </summary>
+    public static string IntegratedFileName(string directoryPath)
+    {
+        var baseName = IgnoreOrigins.NestedFileName + ".integrated";
+        var candidate = Path.Combine(directoryPath, baseName);
+        for (var n = 2; File.Exists(candidate) || Directory.Exists(candidate); n++)
+            candidate = Path.Combine(directoryPath, baseName + "-" + n);
+        return candidate;
     }
 
     private static void RestorePlan(Action<IReadOnlyList<string>> savePlanPatterns, IReadOnlyList<string> before)
@@ -167,8 +180,8 @@ public static class IgnoreRelocation
         }
         finally
         {
-            if (File.Exists(temp))
-                File.Delete(temp);
+            try { File.Delete(temp); }
+            catch { /* must not replace the original failure */ }
         }
     }
 

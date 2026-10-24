@@ -19,12 +19,13 @@ public class IgnoreRelocationApplyTests : IDisposable
         public List<string> Recycled { get; } = [];
         public Exception? Fail { get; set; }
 
-        public void Recycle(string path)
+        public RecycleOutcome Recycle(string path)
         {
             order?.Add("recycle");
             if (Fail is not null)
                 throw Fail;
             Recycled.Add(path);
+            return RecycleOutcome.Recycled;
         }
     }
 
@@ -224,5 +225,55 @@ public class IgnoreRelocationApplyTests : IDisposable
         IgnoreRelocation.Apply(proposal, _tmp.Root, ["/P/**/foo/"], _ => { }, new FakeBin());
 
         File.ReadAllText(FilePath("P")).Should().Be("a/\n# from plan\nfoo/\n");
+    }
+
+    [Fact]
+    public async Task Apply_returns_the_recycle_outcome_for_integrate_and_null_for_extract()
+    {
+        _tmp.WriteFile("P/.backupignore", "foo/\n");
+        var context = await ContextAsync([]);
+        var integrate = IgnoreRelocation.ProposeIntegrate(context, "P");
+        IgnoreRelocation.Apply(integrate, _tmp.Root, [], _ => { }, new FakeBin()).Should().Be(RecycleOutcome.Recycled);
+
+        _tmp.WriteFile("Q/a.txt", "1");
+        context = await ContextAsync(["/Q/**/foo/"]);
+        var extract = IgnoreRelocation.ProposeExtract(context, [0], "Q");
+        IgnoreRelocation.Apply(extract, _tmp.Root, ["/Q/**/foo/"], _ => { }, new FakeBin()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Apply_leaves_everything_untouched_when_the_file_cannot_be_written()
+    {
+        var path = _tmp.WriteFile("P/.backupignore", "old/\n");
+        var context = await ContextAsync(["/P/**/foo/"]);
+        var proposal = IgnoreRelocation.ProposeExtract(context, [0], "P");
+        var saves = 0;
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            var act = () => IgnoreRelocation.Apply(proposal, _tmp.Root, ["/P/**/foo/"], _ => saves++, new FakeBin());
+
+            act.Should().Throw<Exception>();
+            saves.Should().Be(0);
+            File.ReadAllText(path).Should().Be("old/\n");
+            Directory.GetFiles(_tmp.PathOf("P")).Should().ContainSingle();
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public void IntegratedFileName_picks_the_first_free_name()
+    {
+        var dir = _tmp.CreateDir("P");
+        IgnoreRelocation.IntegratedFileName(dir).Should().Be(Path.Combine(dir, ".backupignore.integrated"));
+
+        _tmp.WriteFile("P/.backupignore.integrated", "x");
+        IgnoreRelocation.IntegratedFileName(dir).Should().Be(Path.Combine(dir, ".backupignore.integrated-2"));
+
+        _tmp.WriteFile("P/.backupignore.integrated-2", "x");
+        IgnoreRelocation.IntegratedFileName(dir).Should().Be(Path.Combine(dir, ".backupignore.integrated-3"));
     }
 }
