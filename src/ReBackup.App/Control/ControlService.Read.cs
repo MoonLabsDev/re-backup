@@ -347,15 +347,17 @@ public sealed partial class ControlService
         var context = await ResolvePlanAsync(args, ct);
         var n = Math.Clamp(args.OptionalInt("n") ?? DefaultRuns, 1, MaxRows);
         var runs = await Task.Run(() => ReadRuns(context.Plan.Id), ct);
-        var rows = runs.Reverse().Take(n).Select(run => new RunRow(run.RunId, Name(run.Trigger), AsUtc(run.StartUtc),
-            AsUtc(run.EndUtc), run.DurationMs, Name(run.Status), run.Reason, run.Version, run.FilesCopied,
-            SizeValue.Of(run.BytesCopied), run.SkippedCount, CapWarnings(run.Warnings))).ToList();
+        var rows = runs.Reverse().Take(n).Select(RunRowOf).ToList();
         return FitToBudget(rows.Count, count => new RunHistoryResult(context.Plan.Name, rows.Take(count).ToList(), runs.Count,
             count < runs.Count,
             count < runs.Count
                 ? $"Showing the newest {count} of {runs.Count} runs; ask with a smaller or larger 'n' (at most {MaxRows}) as needed."
                 : null));
     }
+
+    private static RunRow RunRowOf(RunLogEntry run) => new(run.RunId, Name(run.Trigger), AsUtc(run.StartUtc),
+        AsUtc(run.EndUtc), run.DurationMs, Name(run.Status), run.Reason, run.Version, run.FilesCopied,
+        SizeValue.Of(run.BytesCopied), run.SkippedCount, CapWarnings(run.Warnings));
 
     /// <summary>The plan's run log, oldest first; an unreadable log is an <c>internal_error</c>.</summary>
     private IReadOnlyList<RunLogEntry> ReadRuns(string planId)

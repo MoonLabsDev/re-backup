@@ -39,7 +39,7 @@
       "Friday": "Friday", "Saturday": "Saturday", "Sunday": "Sunday"
     },
     "weekdayShort": { "Mon": "Mon", "Tue": "Tue", "Wed": "Wed", "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun" },
-    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up" },
+    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up", "Mcp": "MCP" },
     "includeStatus": { "Included": "Included", "Ignored": "Ignored", "Partial": "Partial" },
     "diffStatus": { "Unchanged": "Unchanged", "Added": "Added", "Changed": "Changed", "Deleted": "Deleted" },
     "historyStatus": { "New": "New", "Changed": "Changed", "Unchanged": "Unchanged", "Deleted": "Deleted", "Absent": "—" },
@@ -404,6 +404,15 @@
       "full": "Aborted: target full",
       "error": "Aborted: error",
       "canceled": "Canceled"
+    }
+  },
+  "control": {
+    "notification": {
+      "title": "Claude via MCP",
+      "backupStarted": "Claude started a backup of \"{plan}\".",
+      "ignoreChanged": "Claude changed the ignore rules of \"{plan}\".",
+      "integrated": "Claude moved the rules of {file} into the plan \"{plan}\".",
+      "extracted": "Claude moved rules of the plan \"{plan}\" into {file}."
     }
   },
   "tray": {

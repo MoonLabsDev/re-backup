@@ -11,4 +11,9 @@ public static class ControlOps
     public const string GetRunHistory = "get_run_history";
     public const string CompareVersions = "compare_versions";
     public const string CompareSourceWithVersion = "compare_source_with_version";
+    public const string GetRunStatus = "get_run_status";
+    public const string PreviewIgnoreChange = "preview_ignore_change";
+    public const string ProposeRelocation = "propose_relocation";
+    public const string ApplyChange = "apply_change";
+    public const string StartBackup = "start_backup";
 }

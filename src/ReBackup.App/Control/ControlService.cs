@@ -9,8 +9,9 @@ namespace ReBackup.App.Control;
 
 /// <summary>
 /// The app side of the control pipe: answers the <c>--mcp</c> bridge's requests from the app's own state and services.
-/// The view models are read on the UI thread (posted to <c>ui</c>); index queries, scans and log reads run in the
-/// background. Every answer is metadata: names, sizes, counts, dates, rules; never a file's content.
+/// The view models are read and changed on the UI thread (posted to <c>ui</c>); index queries, scans and log reads run in
+/// the background. Every answer is metadata: names, sizes, counts, dates, rules; never a file's content. Writes are two
+/// steps: a proposal, then <c>apply_change</c>; starting a backup is the one direct write.
 /// </summary>
 public sealed partial class ControlService : IControlHandler
 {
@@ -47,14 +48,17 @@ public sealed partial class ControlService : IControlHandler
 
     private readonly MainViewModel _main;
     private readonly SynchronizationContext _ui;
+    private readonly ProposalStore _proposals;
     private readonly Dictionary<string, Func<ControlArgs, CancellationToken, Task<object>>> _ops;
 
     /// <param name="main">The app's main view model: the plans, the scan cache, the indexes and run logs.</param>
-    /// <param name="ui">The UI thread's context (the dispatcher's); the view models are read through it.</param>
-    public ControlService(MainViewModel main, SynchronizationContext ui)
+    /// <param name="ui">The UI thread's context (the dispatcher's); the view models are read and changed through it.</param>
+    /// <param name="proposals">Where the write proposals wait for <c>apply_change</c>; a new store when null.</param>
+    public ControlService(MainViewModel main, SynchronizationContext ui, ProposalStore? proposals = null)
     {
         _main = main;
         _ui = ui;
+        _proposals = proposals ?? new ProposalStore();
         _ops = new(StringComparer.Ordinal)
         {
             [ControlOps.ListPlans] = async (_, ct) => await ListPlansAsync(ct),
@@ -65,6 +69,11 @@ public sealed partial class ControlService : IControlHandler
             [ControlOps.GetRunHistory] = async (args, ct) => await GetRunHistoryAsync(args, ct),
             [ControlOps.CompareVersions] = async (args, ct) => await CompareVersionsAsync(args, ct),
             [ControlOps.CompareSourceWithVersion] = async (args, ct) => await CompareSourceWithVersionAsync(args, ct),
+            [ControlOps.GetRunStatus] = async (args, ct) => await GetRunStatusAsync(args, ct),
+            [ControlOps.PreviewIgnoreChange] = async (args, ct) => await PreviewIgnoreChangeAsync(args, ct),
+            [ControlOps.ProposeRelocation] = async (args, ct) => await ProposeRelocationAsync(args, ct),
+            [ControlOps.ApplyChange] = async (args, ct) => await ApplyChangeAsync(args, ct),
+            [ControlOps.StartBackup] = async (args, ct) => await StartBackupAsync(args, ct),
         };
     }
 
@@ -233,6 +242,16 @@ internal readonly struct ControlArgs(JsonElement args)
         OptionalString(name) is { } value && !string.IsNullOrWhiteSpace(value)
             ? value
             : throw new ControlFailure(ControlErrors.BadRequest, $"The argument '{name}' is required.");
+
+    /// <summary>The argument's strings; null when it is missing. Anything but an array of strings is a <c>bad_request</c>.</summary>
+    public IReadOnlyList<string>? OptionalStringArray(string name)
+    {
+        if (!TryGet(name, out var value))
+            return null;
+        if (value.ValueKind != JsonValueKind.Array || value.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String))
+            throw new ControlFailure(ControlErrors.BadRequest, $"The argument '{name}' must be an array of strings.");
+        return value.EnumerateArray().Select(item => item.GetString()!).ToList();
+    }
 
     public int? OptionalInt(string name)
     {

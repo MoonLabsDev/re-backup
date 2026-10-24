@@ -324,6 +324,22 @@ public partial class App : Application
             }
         };
         _mainViewModel.RunFinished += ShowRunNotification;
+        _mainViewModel.ControlNotified += ShowControlNotification;
+    }
+
+    /// <summary>Claude changed something through the control pipe (MCP): the user sees it at once.</summary>
+    private void ShowControlNotification(string title, string message)
+    {
+        if (_exitRequested || _tray is null)
+            return;
+        try
+        {
+            _tray.ShowNotification(title, message, NotificationIcon.Info);
+        }
+        catch (Exception)
+        {
+            // A tray failure must never take the app down.
+        }
     }
 
     private void ShowRunNotification(string planName, RunLogEntry result)

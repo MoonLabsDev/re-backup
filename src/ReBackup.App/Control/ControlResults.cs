@@ -108,3 +108,67 @@ public sealed record GrowthRowInfo(string? Key, int Added, int Changed, int Dele
         rows.Sum(r => r.Changed), rows.Sum(r => r.Deleted), SizeValue.Of(rows.Sum(r => r.AddedBytes)),
         SizeValue.Of(rows.Sum(r => r.DeletedBytes)), SizeValue.Signed(rows.Sum(r => r.NetBytes)));
 }
+
+// The results of the write operations (spec section 4.2) and of get_run_status. A proposal changes nothing; its
+// proposalId is what apply_change takes, within ProposalStore.Lifetime.
+
+/// <summary>
+/// What adding and removing plan patterns would change in the scanned source. <paramref name="PlanPatternsAfter"/>: the
+/// plan's pattern lines after the change (cut to the first lines when <paramref name="Truncated"/>).
+/// </summary>
+public sealed record IgnoreChangeResult(string ProposalId, string Plan, IReadOnlyList<string> PlanPatternsAfter,
+    ScopeChangeInfo NewlyIgnored, ScopeChangeInfo NewlyIncluded, int ScannedFiles, int ScannedFolders, bool Truncated,
+    string? Hint);
+
+/// <summary>
+/// Files that change sides (and their size), and the largest places they are in: a folder ("name/") whose whole content
+/// changes side is one example. <paramref name="TotalExamples"/>: all such places, of which the first are listed.
+/// </summary>
+public sealed record ScopeChangeInfo(int Files, SizeValue Size, IReadOnlyList<ScopeExample> Examples, int TotalExamples);
+
+/// <param name="Kind">"file" or "folder".</param>
+public sealed record ScopeExample(string Path, string Kind, int Files, SizeValue Size);
+
+/// <summary>
+/// A proposed move of ignore rules between the plan and the <c>.backupignore</c> <paramref name="File"/>.
+/// <paramref name="ProposalId"/> is null when nothing can move (see <paramref name="Rejected"/>).
+/// <paramref name="Kind"/>: integrate (the file's rules become plan lines, the file goes to the recycle bin) or extract (plan
+/// lines move into the file). <paramref name="FileContentBefore"/>/<paramref name="FileContentAfter"/>: the file's rules
+/// (null: no file). <paramref name="Equivalence"/>: whether the backup scope stays identical, checked over the scan.
+/// </summary>
+public sealed record RelocationResult(string? ProposalId, string Plan, string Kind, string File,
+    IReadOnlyList<string> PlanLinesAdded, IReadOnlyList<string> PlanLinesRemoved, string? FileContentBefore,
+    string? FileContentAfter, IReadOnlyList<RejectedLineInfo> Rejected, EquivalenceInfo Equivalence, bool Truncated,
+    string? Hint);
+
+/// <summary>A plan line that cannot move into the file and stays in the plan; <paramref name="Reason"/> is camelCase.</summary>
+public sealed record RejectedLineInfo(string Line, string Reason);
+
+/// <summary>
+/// <paramref name="State"/>: identical, differs (<paramref name="Differing"/> entries, up to 20 <paramref name="Examples"/>)
+/// or notChecked (<paramref name="Reason"/>: scanRunning, noScan, unreadableFile).
+/// </summary>
+public sealed record EquivalenceInfo(string State, int? Differing, IReadOnlyList<EquivalenceExampleInfo>? Examples, string? Reason);
+
+/// <summary>An entry the move would change; <paramref name="Rule"/> decides it afterwards.</summary>
+public sealed record EquivalenceExampleInfo(string Path, bool IgnoredBefore, bool IgnoredAfter, string? Rule);
+
+/// <summary>
+/// An applied proposal. <paramref name="Applied"/>: ignoreChange or relocation. <paramref name="FileOutcome"/> (relocations):
+/// written, recycled, or renamed (no recycle bin on that drive: <paramref name="RenamedTo"/>).
+/// </summary>
+public sealed record ApplyResult(string Applied, string Plan, IReadOnlyList<string> PlanPatterns, string? FileOutcome,
+    string? RenamedTo, bool Truncated);
+
+/// <summary>A backup queued; <paramref name="RunId"/> is what get_run_status takes.</summary>
+public sealed record StartBackupResult(string RunId, string Plan, string State);
+
+/// <summary>
+/// <paramref name="State"/>: queued (<paramref name="QueuePosition"/>, 1 = next), running (<paramref name="Progress"/>),
+/// finished (<paramref name="Result"/>) or unknown (never started, removed from the queue, or the log lost it).
+/// </summary>
+public sealed record RunStatusResult(string RunId, string Plan, string State, int? QueuePosition, RunProgressInfo? Progress,
+    RunRow? Result);
+
+/// <summary>The running job's phase (camelCase) and how far it is; <paramref name="Fraction"/> is 0..1.</summary>
+public sealed record RunProgressInfo(string Phase, int FilesDone, int FilesTotal, SizeValue Done, SizeValue Total, double Fraction);
