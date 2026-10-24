@@ -38,7 +38,8 @@ public sealed class McpControlHost : IMcpControlHost, IAsyncDisposable
         _hostFactory = hostFactory ?? (() => new ControlServerHost(_handler, _appVersion, _pipeName));
     }
 
-    public bool IsRunning => Volatile.Read(ref _host) is not null;
+    /// <summary>True while a host listens; false once its listener faulted (it could not create the next pipe instance).</summary>
+    public bool IsRunning => Volatile.Read(ref _host) is { IsFaulted: false };
 
     public async Task<string?> ApplyAsync(bool enabled)
     {
@@ -52,8 +53,9 @@ public sealed class McpControlHost : IMcpControlHost, IAsyncDisposable
                 await StopAsync().ConfigureAwait(false);
                 return null;
             }
-            if (_host is not null)
+            if (_host is { IsFaulted: false })
                 return null;
+            await StopAsync().ConfigureAwait(false);   // a faulted listener is replaced
 
             ControlServerHost? host = null;
             try
@@ -86,6 +88,23 @@ public sealed class McpControlHost : IMcpControlHost, IAsyncDisposable
     }
 
     /// <summary>Releases the pipe for good (the app exits); a later <see cref="ApplyAsync"/> does nothing.</summary>
+    /// <summary>
+    /// <see cref="IMcpControlHost.ApplyAsync"/>(true), tried again every <paramref name="interval"/> while it fails, for up
+    /// to <paramref name="retryFor"/> (zero: once). After a restart the old process may still be releasing the pipe name.
+    /// Null once hosted; otherwise the last failure.
+    /// </summary>
+    public static async Task<string?> ApplyRetryingAsync(IMcpControlHost host, TimeSpan retryFor, TimeSpan interval)
+    {
+        var end = DateTime.UtcNow + retryFor;
+        while (true)
+        {
+            var error = await host.ApplyAsync(true).ConfigureAwait(false);
+            if (error is null || DateTime.UtcNow + interval > end)
+                return error;
+            await Task.Delay(interval).ConfigureAwait(false);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _gate.WaitAsync().ConfigureAwait(false);

@@ -23,14 +23,28 @@ public static class ControlErrors
 }
 
 /// <summary>Nothing listens on the pipe, or the connection broke.</summary>
-public sealed class ControlUnavailableException(string message, Exception? inner = null)
+/// <param name="notSent">
+/// The request provably never reached the app (the connection was found broken before or while writing it), so sending
+/// it again on a new connection cannot carry it out twice.
+/// </param>
+public sealed class ControlUnavailableException(string message, Exception? inner = null, bool notSent = false)
     : IOException(message, inner)
 {
     public string Key => ControlErrors.AppNotRunning;
+
+    /// <summary>True when the request was never sent: it may be sent again on a new connection, even a write.</summary>
+    public bool NotSent { get; } = notSent;
 }
 
-/// <summary>The peer speaks a different protocol version.</summary>
-public sealed class ControlProtocolException(string message, Exception? inner = null) : Exception(message, inner)
+/// <summary>The peer speaks a different protocol version, or runs under another identity (elevation).</summary>
+/// <param name="identityMismatch">
+/// The pipe belongs to a different identity than this process (one runs as administrator), not another version.
+/// </param>
+public sealed class ControlProtocolException(string message, Exception? inner = null, bool identityMismatch = false)
+    : Exception(message, inner)
 {
     public string Key => ControlErrors.ProtocolMismatch;
+
+    /// <summary>True when the cause is the owner check (elevation), not the protocol version.</summary>
+    public bool IdentityMismatch { get; } = identityMismatch;
 }

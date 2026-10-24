@@ -13,7 +13,7 @@ namespace ReBackup.App.Mcp;
 /// </summary>
 public sealed class McpTools(IControlChannel channel)
 {
-    /// <summary>The ops that only read: their tools are read-only, and they may be resent after a broken connection.</summary>
+    /// <summary>The ops that only read: they may be resent after a broken connection even when the request had left.</summary>
     public static IReadOnlySet<string> ReadOps { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         ControlOps.ListPlans, ControlOps.ListVersions, ControlOps.CompareVersions, ControlOps.CompareSourceWithVersion,
@@ -23,6 +23,9 @@ public sealed class McpTools(IControlChannel channel)
 
     public const string ProtocolMismatchMessage =
         "ReBackup and its MCP bridge are different versions; restart Claude after updating ReBackup.";
+
+    public const string ElevationMismatchMessage =
+        "ReBackup and Claude run with different elevation (one as administrator) — start both the same way.";
 
     private const string PlanArg = "The plan's id or name (list_plans lists them).";
     private const string Metadata = "Metadata only, never file contents.";
@@ -130,7 +133,7 @@ public sealed class McpTools(IControlChannel channel)
 
     // ------------------------------------------------------------------ write
 
-    [McpServerTool(Name = ControlOps.PreviewIgnoreChange, ReadOnly = false, Destructive = false)]
+    [McpServerTool(Name = ControlOps.PreviewIgnoreChange, ReadOnly = true, Destructive = false)]
     [Description("Previews adding and removing patterns in a plan's own ignore patterns, changing nothing: the files and " +
                  "bytes that become ignored and that become included, with the largest examples, the plan's patterns " +
                  "after the change, and a proposalId. Show the numbers to the user; apply_change(proposalId) makes the " +
@@ -142,7 +145,7 @@ public sealed class McpTools(IControlChannel channel)
         CancellationToken ct = default) =>
         CallAsync(ControlOps.PreviewIgnoreChange, new { plan, add, remove }, ct);
 
-    [McpServerTool(Name = ControlOps.ProposeRelocation, ReadOnly = false, Destructive = false)]
+    [McpServerTool(Name = ControlOps.ProposeRelocation, ReadOnly = true, Destructive = false)]
     [Description("Proposes moving ignore rules between a plan's own patterns and a .backupignore in its folder source, " +
                  "changing nothing. Either 'integrate' (move all lines of one .backupignore into the plan) or 'extract' " +
                  "with 'folder' (move plan lines into that folder's .backupignore). Returns the diffs of both, lines that " +
@@ -188,7 +191,8 @@ public sealed class McpTools(IControlChannel channel)
         }
         catch (ControlProtocolException ex)
         {
-            return Error(ControlErrors.ProtocolMismatch, ProtocolMismatchMessage + " Detail: " + ex.Message);
+            var message = ex.IdentityMismatch ? ElevationMismatchMessage : ProtocolMismatchMessage;
+            return Error(ControlErrors.ProtocolMismatch, message + " Detail: " + ex.Message);
         }
     }
 

@@ -147,15 +147,19 @@ public partial class App : Application
         _mcpHost = new McpControlHost(
             new ControlService(_mainViewModel, new System.Windows.Threading.DispatcherSynchronizationContext(Dispatcher)), LocVersionExtension.Version);
         if (_settings.AllowMcpControl)
-            _ = StartMcpControlAsync();
+            _ = StartMcpControlAsync(restarted);
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
     }
 
-    /// <summary>Hosts the control pipe at startup; another process owning the pipe name is told in a notification.</summary>
-    private async Task StartMcpControlAsync()
+    /// <summary>
+    /// Hosts the control pipe at startup; another process owning the pipe name is told in a notification. After a restart
+    /// (<paramref name="restarted"/>) the old process may still be releasing the name: tried again for up to 10 s first.
+    /// </summary>
+    private async Task StartMcpControlAsync(bool restarted)
     {
-        var error = await _mcpHost!.ApplyAsync(true);
+        var error = await McpControlHost.ApplyRetryingAsync(_mcpHost!,
+            restarted ? TimeSpan.FromSeconds(10) : TimeSpan.Zero, TimeSpan.FromMilliseconds(500));
         if (error is not null)
             ShowControlNotification(Loc.T("settings.mcp.title"), Loc.F("settings.mcp.startFailed", ("error", error)));
     }

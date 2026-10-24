@@ -118,6 +118,100 @@ public sealed class ControlPipeTests
     }
 
     [Fact]
+    public async Task Request_written_to_a_closed_pipe_is_unavailable_and_marked_not_sent()
+    {
+        var name = UniquePipe();
+        var host = new ControlServerHost(new EchoHandler(), "1", name);
+        try
+        {
+            host.Start();
+            await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+            (await client.SendAsync("ping", null, default)).Ok.Should().BeTrue();
+            await host.DisposeAsync();   // the app closed (or restarted): the old pipe is dead
+
+            var act = () => client.SendAsync("start_backup", null, default);
+
+            (await act.Should().ThrowAsync<ControlUnavailableException>()).Which.NotSent
+                .Should().BeTrue("writing the request failed, so the app never saw it");
+            (await act.Should().ThrowAsync<ControlUnavailableException>()).Which.NotSent
+                .Should().BeTrue("a broken client sends nothing either");
+        }
+        finally
+        {
+            await host.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Connection_lost_after_the_request_left_is_unavailable_and_not_marked_not_sent()
+    {
+        var name = UniquePipe();
+        var received = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var fake = FakeServer.Start(name, async (stream, reader) =>
+        {
+            await FakeServer.WriteLineAsync(stream, "{\"protocol\":1,\"appVersion\":\"1\"}");
+            received.SetResult(await reader.ReadLineAsync(default));
+            await stream.DisposeAsync();   // the app went away while handling the request
+        });
+        await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+
+        var act = () => client.SendAsync("start_backup", null, default);
+
+        (await act.Should().ThrowAsync<ControlUnavailableException>()).Which.NotSent
+            .Should().BeFalse("the app may have carried the request out before the pipe broke");
+        (await received.Task).Should().Contain("start_backup");
+    }
+
+    [Fact]
+    public async Task Listener_that_cannot_create_the_next_instance_is_marked_faulted()
+    {
+        var name = UniquePipe();
+        var creates = 0;
+        await using var host = new ControlServerHost(new EchoHandler(), "1", name,
+            (pipe, first) => Interlocked.Increment(ref creates) == 1
+                ? ControlPipe.CreateServerStream(pipe, first)
+                : throw new InvalidOperationException("no more instances"),
+            TimeSpan.FromMilliseconds(10));
+        host.Start();
+        host.IsFaulted.Should().BeFalse();
+
+        await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+        (await client.SendAsync("ping", null, default)).Ok.Should().BeTrue("the connection that came is still served");
+
+        await WaitUntilAsync(() => host.IsFaulted);
+        creates.Should().BeGreaterThan(2, "the listener retried before it gave up");
+    }
+
+    [Fact]
+    public async Task Listener_retries_an_instance_that_failed_once_and_keeps_listening()
+    {
+        var name = UniquePipe();
+        var creates = 0;
+        await using var host = new ControlServerHost(new EchoHandler(), "1", name,
+            (pipe, first) => Interlocked.Increment(ref creates) == 2
+                ? throw new UnauthorizedAccessException("for a moment")
+                : ControlPipe.CreateServerStream(pipe, first),
+            TimeSpan.FromMilliseconds(10));
+        host.Start();
+
+        await using var a = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+        await using var b = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+
+        (await b.SendAsync("ping", null, default)).Ok.Should().BeTrue();
+        host.IsFaulted.Should().BeFalse();
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var end = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            DateTime.UtcNow.Should().BeBefore(end);
+            await Task.Delay(10);
+        }
+    }
+
+    [Fact]
     public void Start_refuses_to_join_a_pipe_name_that_already_exists()
     {
         var name = UniquePipe();
@@ -240,6 +334,7 @@ public sealed class ControlPipeTests
         var mapped = ControlClient.MapConnectFailure(new UnauthorizedAccessException("owner"));
 
         mapped.Should().BeOfType<ControlProtocolException>().Which.Message.Should().Contain("owned by a different identity");
+        ((ControlProtocolException)mapped!).IdentityMismatch.Should().BeTrue("the bridge tells elevation apart from versions");
         ControlClient.MapConnectFailure(new InvalidOperationException()).Should().BeNull();
     }
 

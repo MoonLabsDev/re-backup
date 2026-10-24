@@ -151,6 +151,74 @@ public class McpSettingsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_listener_that_faulted_shows_as_off_and_switching_on_hosts_the_pipe_again()
+    {
+        var creates = 0;
+        var failing = true;
+        await using var host = new McpControlHost(new EchoHandler(), "1", _pipe, () => new ControlServerHost(new EchoHandler(), "1",
+            _pipe, (pipe, first) => Interlocked.Increment(ref creates) > 1 && failing
+                ? throw new InvalidOperationException("no more instances")
+                : ControlPipe.CreateServerStream(pipe, first), TimeSpan.FromMilliseconds(10)));
+        (await host.ApplyAsync(true)).Should().BeNull();
+        await using (var client = await ControlClient.ConnectAsync(_pipe, TimeSpan.FromSeconds(5), default))
+            (await client.SendAsync("ping", null, default)).Ok.Should().BeTrue();
+
+        await WaitUntilAsync(() => !host.IsRunning);
+
+        failing = false;
+        (await host.ApplyAsync(true)).Should().BeNull("a faulted listener is replaced");
+        host.IsRunning.Should().BeTrue();
+        await using var again = await ControlClient.ConnectAsync(_pipe, TimeSpan.FromSeconds(5), default);
+        (await again.SendAsync("ping", null, default)).Ok.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Start_after_a_restart_retries_until_the_old_process_released_the_pipe()
+    {
+        var host = new FailingHost(failures: 2);
+
+        var error = await McpControlHost.ApplyRetryingAsync(host, TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(10));
+
+        error.Should().BeNull();
+        host.Calls.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Start_retrying_reports_the_last_failure_when_the_time_is_up()
+    {
+        var host = new FailingHost(failures: int.MaxValue);
+
+        var error = await McpControlHost.ApplyRetryingAsync(host, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(10));
+
+        error.Should().Be("taken");
+        host.Calls.Should().BeGreaterThan(1);
+        (await McpControlHost.ApplyRetryingAsync(new FailingHost(1), TimeSpan.Zero, TimeSpan.FromMilliseconds(10)))
+            .Should().Be("taken", "a normal start tries once");
+    }
+
+    private sealed class FailingHost(int failures) : IMcpControlHost
+    {
+        public int Calls { get; private set; }
+        public bool IsRunning { get; private set; }
+        public Task<string?> ApplyAsync(bool enabled)
+        {
+            Calls++;
+            IsRunning = Calls > failures;
+            return Task.FromResult(IsRunning ? null : "taken");
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var end = DateTime.UtcNow.AddSeconds(10);
+        while (!condition())
+        {
+            DateTime.UtcNow.Should().BeBefore(end);
+            await Task.Delay(10);
+        }
+    }
+
+    [Fact]
     public void Copy_configuration_puts_the_exe_path_json_on_the_clipboard()
     {
         var settings = Create();

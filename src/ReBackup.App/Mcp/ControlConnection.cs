@@ -9,8 +9,10 @@ namespace ReBackup.App.Mcp;
 /// </summary>
 /// <param name="connect">Opens a new connection; <see cref="ControlClient.ConnectAsync"/> in the bridge.</param>
 /// <param name="resendableOps">
-/// Ops sent once more on a new connection when an existing one turns out to be broken: reads only. A write is never
-/// repeated, because the app may have carried it out before the pipe broke.
+/// Ops sent once more on a new connection when an existing one turns out to be broken: reads only. Any other op is sent
+/// again only when it provably never left (<see cref="ControlUnavailableException.NotSent"/>: the old connection broke
+/// before or while the request was written, typically the first call after the app restarted). A write that may have
+/// reached the app is never repeated, because the app may have carried it out before the pipe broke.
 /// </param>
 public sealed class ControlConnection(Func<CancellationToken, Task<IControlChannel>> connect, IReadOnlySet<string> resendableOps)
     : IControlChannel, IAsyncDisposable
@@ -25,9 +27,10 @@ public sealed class ControlConnection(Func<CancellationToken, Task<IControlChann
         {
             return await SendOnAsync(channel, op, args, ct).ConfigureAwait(false);
         }
-        catch (ControlUnavailableException) when (reused && resendableOps.Contains(op))
+        catch (ControlUnavailableException ex) when (reused && (ex.NotSent || resendableOps.Contains(op)))
         {
-            // The app went away since this connection was opened: a read is safe to send again on a new one.
+            // The app went away since this connection was opened: a read, or any request the old app never received,
+            // is safe to send again on a new one.
             (channel, _) = await ChannelAsync(ct).ConfigureAwait(false);
             return await SendOnAsync(channel, op, args, ct).ConfigureAwait(false);
         }

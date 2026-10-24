@@ -12,18 +12,16 @@ public sealed class ControlClient : IControlChannel, IAsyncDisposable
 
     private readonly NamedPipeClientStream _pipe;
     private readonly BoundedLineReader _reader;
-    private readonly StreamWriter _writer;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private long _nextId;
     private volatile bool _broken;
 
     public string AppVersion { get; }
 
-    private ControlClient(NamedPipeClientStream pipe, BoundedLineReader reader, StreamWriter writer, string appVersion)
+    private ControlClient(NamedPipeClientStream pipe, BoundedLineReader reader, string appVersion)
     {
         _pipe = pipe;
         _reader = reader;
-        _writer = writer;
         AppVersion = appVersion;
     }
 
@@ -44,12 +42,10 @@ public sealed class ControlClient : IControlChannel, IAsyncDisposable
 
             string? line;
             BoundedLineReader reader;
-            StreamWriter writer;
             try
             {
                 await pipe.ConnectAsync(linked.Token).ConfigureAwait(false);
                 reader = new BoundedLineReader(pipe);
-                writer = new StreamWriter(pipe, Utf8, 4096, leaveOpen: true) { NewLine = "\n", AutoFlush = true };
                 line = await reader.ReadLineAsync(linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -79,7 +75,7 @@ public sealed class ControlClient : IControlChannel, IAsyncDisposable
                 throw new ControlProtocolException(
                     $"ReBackup (version {hello.AppVersion}) speaks control protocol {hello.Protocol}, but this client speaks {ControlPipe.Protocol}. Update ReBackup so both match.");
 
-            return new ControlClient(pipe, reader, writer, hello.AppVersion);
+            return new ControlClient(pipe, reader, hello.AppVersion);
         }
         catch
         {
@@ -88,21 +84,42 @@ public sealed class ControlClient : IControlChannel, IAsyncDisposable
         }
     }
 
+    /// <exception cref="ControlUnavailableException">
+    /// The app is gone. <see cref="ControlUnavailableException.NotSent"/> tells that the request never left (the client
+    /// was broken already, or writing it failed), so it may be sent again on a new connection.
+    /// </exception>
     public async Task<ControlResponse> SendAsync(string op, object? args, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_broken) throw Unavailable();
+            if (_broken) throw Unavailable(notSent: true);
             var id = Interlocked.Increment(ref _nextId).ToString();
             var request = new ControlRequest(id, op,
                 JsonSerializer.SerializeToElement(args ?? new { }, ControlJson.Options));
+            // The whole line in one write: when it fails, the pipe was found broken and the app has read none of it
+            // (a line without its newline is never a request it carries out).
+            var line = Utf8.GetBytes(JsonSerializer.Serialize(request, ControlJson.Options) + "\n");
             try
             {
-                await _writer.WriteLineAsync(JsonSerializer.Serialize(request, ControlJson.Options)).ConfigureAwait(false);
-                var line = await _reader.ReadLineAsync(ct).ConfigureAwait(false);
-                if (line is null) throw Unavailable();
-                var response = JsonSerializer.Deserialize<ControlResponse>(line, ControlJson.Options)
+                await _pipe.WriteAsync(line, ct).ConfigureAwait(false);
+                await _pipe.FlushAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+                Break();
+                throw Unavailable(ex, notSent: true);
+            }
+            catch
+            {
+                Break();   // canceled mid-write: what went out is unknown
+                throw;
+            }
+            try
+            {
+                var answer = await _reader.ReadLineAsync(ct).ConfigureAwait(false);
+                if (answer is null) throw Unavailable();
+                var response = JsonSerializer.Deserialize<ControlResponse>(answer, ControlJson.Options)
                                ?? throw new ControlProtocolException("The server sent an empty response.");
                 if (response.Id != id)
                     throw new ControlProtocolException(
@@ -112,7 +129,7 @@ public sealed class ControlClient : IControlChannel, IAsyncDisposable
             catch (Exception ex)
             {
                 // Once the request has left, an unread or half-read answer would be mistaken for the next call's:
-                // the connection is unusable from here on.
+                // the connection is unusable from here on. The app may have carried the request out: not NotSent.
                 Break();
                 Exception? mapped = ex switch
                 {
@@ -135,7 +152,8 @@ public sealed class ControlClient : IControlChannel, IAsyncDisposable
     /// <summary>Maps the owner-check failure of <c>CurrentUserOnly</c>; null for exceptions it does not know.</summary>
     internal static Exception? MapConnectFailure(Exception ex) => ex is UnauthorizedAccessException
         ? new ControlProtocolException(
-            "The ReBackup control pipe is owned by a different identity than this process (for example a different elevation level), so it was not trusted.", ex)
+            "The ReBackup control pipe is owned by a different identity than this process (for example a different elevation level), so it was not trusted.", ex,
+            identityMismatch: true)
         : null;
 
     private void Break()
@@ -144,8 +162,8 @@ public sealed class ControlClient : IControlChannel, IAsyncDisposable
         try { _pipe.Dispose(); } catch { /* already closed */ }
     }
 
-    private static ControlUnavailableException Unavailable(Exception? inner = null) =>
-        new(ControlErrors.AppNotRunningMessage, inner);
+    private static ControlUnavailableException Unavailable(Exception? inner = null, bool notSent = false) =>
+        new(ControlErrors.AppNotRunningMessage, inner, notSent);
 
     public async ValueTask DisposeAsync()
     {

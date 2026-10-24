@@ -21,15 +21,39 @@ public sealed class ControlServerHost : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentDictionary<NamedPipeServerStream, Task> _connections = new();
     private readonly object _startLock = new();
+    private readonly Func<string, bool, NamedPipeServerStream> _createStream;
+    private readonly TimeSpan _retryDelay;
     private bool _started;
+    private volatile bool _faulted;
     private Task? _listener;
 
     public ControlServerHost(IControlHandler handler, string appVersion, string? pipeName = null)
+        : this(handler, appVersion, pipeName, (name, first) => ControlPipe.CreateServerStream(name, first), DefaultRetryDelay)
+    {
+    }
+
+    /// <param name="createStream">Creates a listening instance (name, first instance); the seam for tests.</param>
+    /// <param name="retryDelay">The pause before another try when creating the next instance failed.</param>
+    internal ControlServerHost(IControlHandler handler, string appVersion, string? pipeName,
+        Func<string, bool, NamedPipeServerStream> createStream, TimeSpan retryDelay)
     {
         _handler = handler;
         _appVersion = appVersion;
         _pipeName = pipeName ?? ControlPipe.NameForCurrentUser();
+        _createStream = createStream;
+        _retryDelay = retryDelay;
     }
+
+    /// <summary>How often the listener tries to create the next pipe instance before it gives up.</summary>
+    internal const int CreateAttempts = 5;
+
+    private static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// True once the listener stopped because it could not create the next pipe instance (after
+    /// <see cref="CreateAttempts"/> tries): new clients cannot connect any more. Connections already open are still served.
+    /// </summary>
+    public bool IsFaulted => _faulted;
 
     /// <exception cref="InvalidOperationException">The pipe name is already taken by another process.</exception>
     public void Start()
@@ -42,7 +66,7 @@ public sealed class ControlServerHost : IAsyncDisposable
             NamedPipeServerStream first;
             try
             {
-                first = ControlPipe.CreateServerStream(_pipeName, firstInstance: true);
+                first = _createStream(_pipeName, true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -54,48 +78,79 @@ public sealed class ControlServerHost : IAsyncDisposable
         }
     }
 
-    private async Task ListenAsync(NamedPipeServerStream pending)
+    private async Task ListenAsync(NamedPipeServerStream first)
     {
         var ct = _cts.Token;
-        while (!ct.IsCancellationRequested)
+        NamedPipeServerStream? pending = first;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await pending.WaitForConnectionAsync(ct).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    if (ct.IsCancellationRequested)
+                        return;
+                    // Create the replacement while the failed instance still holds the name, so nobody can slip in.
+                    var replacement = await NextInstanceAsync(ct).ConfigureAwait(false);
+                    await pending.DisposeAsync().ConfigureAwait(false);
+                    pending = replacement;
+                    if (pending is null)
+                        return;
+                    continue;
+                }
+
+                var connected = pending;
+                pending = null;
+                // Register before the task can run, so its cleanup in finally always finds the entry. The connected
+                // instance keeps the name taken while the next one is created.
+                var serve = new Task<Task>(() => ServeAsync(connected, ct), CancellationToken.None);
+                _connections[connected] = serve.Unwrap();
+                serve.Start();
+                pending = await NextInstanceAsync(ct).ConfigureAwait(false);
+                if (pending is null)
+                    return;
+            }
+        }
+        finally
+        {
+            if (pending is not null)
+                await pending.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The next listening instance. Any failure is tried again after a pause, up to <see cref="CreateAttempts"/> times;
+    /// then the host is <see cref="IsFaulted"/> and null comes back (also when the host is disposed meanwhile).
+    /// </summary>
+    private async Task<NamedPipeServerStream?> NextInstanceAsync(CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= CreateAttempts; attempt++)
         {
             try
             {
-                await pending.WaitForConnectionAsync(ct).ConfigureAwait(false);
+                return _createStream(_pipeName, false);
             }
-            catch (Exception)
+            catch (Exception) when (!ct.IsCancellationRequested)
             {
-                if (ct.IsCancellationRequested)
+                if (attempt == CreateAttempts)
+                    break;
+                try
                 {
-                    await pending.DisposeAsync().ConfigureAwait(false);
-                    return;
+                    await Task.Delay(_retryDelay, ct).ConfigureAwait(false);
                 }
-                // Create the replacement while the failed instance still holds the name, so nobody can slip in.
-                NamedPipeServerStream replacement;
-                try { replacement = ControlPipe.CreateServerStream(_pipeName); }
-                catch (IOException)
+                catch (OperationCanceledException)
                 {
-                    await pending.DisposeAsync().ConfigureAwait(false);
-                    return;
+                    return null;
                 }
-                await pending.DisposeAsync().ConfigureAwait(false);
-                pending = replacement;
-                continue;
             }
-
-            var connected = pending;
-            try { pending = ControlPipe.CreateServerStream(_pipeName); }
-            catch (IOException)
-            {
-                await connected.DisposeAsync().ConfigureAwait(false);
-                return;
-            }
-            // Register before the task can run, so its cleanup in finally always finds the entry.
-            var serve = new Task<Task>(() => ServeAsync(connected, ct), CancellationToken.None);
-            _connections[connected] = serve.Unwrap();
-            serve.Start();
         }
-        await pending.DisposeAsync().ConfigureAwait(false);
+        if (!ct.IsCancellationRequested)
+            _faulted = true;
+        return null;
     }
 
     private async Task ServeAsync(NamedPipeServerStream stream, CancellationToken ct)

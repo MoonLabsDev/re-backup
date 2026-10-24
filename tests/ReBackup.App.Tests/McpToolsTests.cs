@@ -75,11 +75,15 @@ public class McpToolsTests : IAsyncDisposable
         tools.Keys.Should().BeEquivalentTo(ReadTools.Concat(WriteTools), "one tool per operation of the spec, and no ping");
         foreach (var name in ReadTools)
             tools[name].Annotations!.ReadOnlyHint.Should().BeTrue(name + " only reads");
-        foreach (var name in WriteTools)
+        foreach (var name in new[] { "preview_ignore_change", "propose_relocation" })
         {
-            tools[name].Annotations!.ReadOnlyHint.Should().BeFalse(name + " writes");
-            tools[name].Annotations!.DestructiveHint.Should().Be(name == "apply_change", name);
+            tools[name].Annotations!.ReadOnlyHint.Should().BeTrue(name + " only stores a proposal in memory");
+            tools[name].Annotations!.DestructiveHint.Should().BeFalse(name);
         }
+        tools["apply_change"].Annotations!.ReadOnlyHint.Should().BeFalse("apply_change writes");
+        tools["apply_change"].Annotations!.DestructiveHint.Should().BeTrue("apply_change changes the rules");
+        tools["start_backup"].Annotations!.ReadOnlyHint.Should().BeFalse("start_backup starts a run");
+        tools["start_backup"].Annotations!.DestructiveHint.Should().BeFalse("a run adds a version");
         foreach (var tool in tools.Values)
             tool.Description.Should().NotBeNullOrWhiteSpace(tool.Name);
 
@@ -179,6 +183,21 @@ public class McpToolsTests : IAsyncDisposable
         Text(result).Should().Contain("speaks control protocol 2", "the detail tells other mismatches (elevation) apart");
     }
 
+    [Fact]
+    public async Task Elevation_mismatch_tells_to_start_both_the_same_way()
+    {
+        await using var connection = new ControlConnection(
+            _ => throw new ControlProtocolException("owned by a different identity", identityMismatch: true), McpTools.ReadOps);
+        var client = await ConnectAsync(connection);
+
+        var result = await client.CallToolAsync("list_plans", new Dictionary<string, object?>());
+
+        result.IsError.Should().BeTrue();
+        Text(result).Should().StartWith(
+            "protocol_mismatch: ReBackup and Claude run with different elevation (one as administrator) — start both the same way.");
+        Text(result).Should().NotContain("different versions");
+    }
+
     // ------------------------------------------------------------------ the connection
 
     [Fact]
@@ -246,6 +265,85 @@ public class McpToolsTests : IAsyncDisposable
         await connection.SendAsync(ControlOps.ListPlans, null, CancellationToken.None);
 
         fresh.Calls.Select(c => c.Op).Should().Equal([ControlOps.ListPlans], "the next call reconnects; the write is not repeated");
+    }
+
+    [Fact]
+    public async Task Connection_resends_a_write_that_never_left_on_a_new_client()
+    {
+        var broken = new BrokenChannel { Answer = true, NotSent = true };
+        var fresh = new RecordingChannel();
+        var channels = new Queue<IControlChannel>([broken, fresh]);
+        await using var connection = new ControlConnection(_ => Task.FromResult(channels.Dequeue()), McpTools.ReadOps);
+        await connection.SendAsync(ControlOps.ListPlans, null, CancellationToken.None);
+        broken.Answer = false;
+
+        var response = await connection.SendAsync(ControlOps.StartBackup, new { plan = "Projects" }, CancellationToken.None);
+
+        response.Ok.Should().BeTrue("the request provably never reached the old app");
+        fresh.Calls.Should().ContainSingle().Which.Op.Should().Be(ControlOps.StartBackup);
+    }
+
+    [Fact]
+    public async Task First_write_after_the_app_restarted_reaches_the_new_app()
+    {
+        // The real client and pipe: the bridge's connection outlives the app, which comes back on the same pipe name.
+        var pipe = "ReBackup.Control.Test." + Guid.NewGuid().ToString("N");
+        var before = new CountingHandler();
+        var after = new CountingHandler();
+        await using var connection = new ControlConnection(
+            async ct => await ControlClient.ConnectAsync(pipe, TimeSpan.FromSeconds(5), ct), McpTools.ReadOps);
+        var first = new ControlServerHost(before, "1", pipe);
+        first.Start();
+        (await connection.SendAsync(ControlOps.ListPlans, null, CancellationToken.None)).Ok.Should().BeTrue();
+        await first.DisposeAsync();
+        await using var second = new ControlServerHost(after, "1", pipe);
+        second.Start();
+
+        var response = await connection.SendAsync(ControlOps.StartBackup, new { plan = "Projects" }, CancellationToken.None);
+
+        response.Ok.Should().BeTrue("not app_not_running: the write never reached the old app, so it went to the new one");
+        before.Ops.Should().Equal(ControlOps.ListPlans);
+        after.Ops.Should().Equal(ControlOps.StartBackup);
+    }
+
+    [Fact]
+    public async Task A_write_the_app_received_before_the_pipe_broke_is_never_resent()
+    {
+        var pipe = "ReBackup.Control.Test." + Guid.NewGuid().ToString("N");
+        var after = new CountingHandler();
+        var second = new ControlServerHost(after, "1", pipe);
+        ControlServerHost? first = null;
+        var dying = new CountingHandler(async request =>
+        {
+            if (request.Op != ControlOps.StartBackup)
+                return;
+            // The app goes away while carrying out the write, and a new one is up before the bridge could resend.
+            _ = Task.Run(async () =>
+            {
+                await first!.DisposeAsync();
+                second.Start();
+            });
+            await Task.Delay(TimeSpan.FromSeconds(10));
+        });
+        first = new ControlServerHost(dying, "1", pipe);
+        first.Start();
+        await using var connection = new ControlConnection(
+            async ct => await ControlClient.ConnectAsync(pipe, TimeSpan.FromSeconds(5), ct), McpTools.ReadOps);
+        (await connection.SendAsync(ControlOps.ListPlans, null, CancellationToken.None)).Ok.Should().BeTrue();
+
+        try
+        {
+            var thrown = await connection.Invoking(c => c.SendAsync(ControlOps.StartBackup, new { plan = "Projects" }, CancellationToken.None))
+                .Should().ThrowAsync<ControlUnavailableException>("the old app may have started the run");
+            thrown.Which.NotSent.Should().BeFalse();
+            dying.Ops.Should().Equal(ControlOps.ListPlans, ControlOps.StartBackup);
+            after.Ops.Should().BeEmpty("the write is not repeated on the new app");
+        }
+        finally
+        {
+            await first.DisposeAsync();
+            await second.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -368,20 +466,48 @@ public class McpToolsTests : IAsyncDisposable
         }
     }
 
-    /// <summary>Answers while <see cref="Answer"/> is set, else fails as a broken pipe does.</summary>
+    /// <summary>
+    /// Answers while <see cref="Answer"/> is set, else fails as a broken pipe does: after sending the request, or before
+    /// it left (<see cref="NotSent"/>).
+    /// </summary>
     private sealed class BrokenChannel : IControlChannel, IAsyncDisposable
     {
         public bool Answer { get; set; }
+        public bool NotSent { get; init; }
         public bool Disposed { get; private set; }
 
         public Task<ControlResponse> SendAsync(string op, object? args, CancellationToken ct) => Answer
             ? Task.FromResult(ControlResponse.Success("1", new { }))
-            : throw new ControlUnavailableException(ControlErrors.AppNotRunningMessage);
+            : throw new ControlUnavailableException(ControlErrors.AppNotRunningMessage, notSent: NotSent);
 
         public ValueTask DisposeAsync()
         {
             Disposed = true;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>A pipe-side handler that records the ops it received (and may act on one first); answers <c>{}</c>.</summary>
+    private sealed class CountingHandler(Func<ControlRequest, Task>? before = null) : IControlHandler
+    {
+        private readonly List<string> _ops = [];
+
+        public IReadOnlyList<string> Ops
+        {
+            get
+            {
+                lock (_ops)
+                    return _ops.ToList();
+            }
+        }
+
+        public async Task<ControlResponse> HandleAsync(ControlRequest request, CancellationToken ct)
+        {
+            lock (_ops)
+                _ops.Add(request.Op);
+            if (before is not null)
+                await before(request);
+            return ControlResponse.Success(request.Id, new { });
         }
     }
 
