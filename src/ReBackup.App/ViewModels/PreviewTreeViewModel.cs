@@ -49,9 +49,23 @@ public sealed partial class PreviewTreeViewModel : ObservableObject
         set
         {
             _ignoreFileDirectories = value;
-            foreach (var row in Rows)
-                row.Refresh();
+            IgnoreFileGeneration++;   // rows recompute their flag lazily; the caller refreshes the rows (Refresh / SetRoot)
         }
+    }
+
+    /// <summary>Changes with every new <see cref="IgnoreFileDirectories"/>; rows cache their flag against it.</summary>
+    public int IgnoreFileGeneration { get; private set; }
+
+    /// <summary>
+    /// Takes the folders found by a running scan. The list only grows during a scan, so an equal count means nothing
+    /// new: the set is kept (no new generation) and false returned. The caller refreshes the rows afterwards.
+    /// </summary>
+    public bool UpdateLiveIgnoreFileDirectories(IReadOnlyList<string> found)
+    {
+        if (found.Count == _ignoreFileDirectories.Count)
+            return false;
+        IgnoreFileDirectories = new HashSet<string>(found, StringComparer.OrdinalIgnoreCase);
+        return true;
     }
 
     /// <summary>Raised when a folder is expanded that is not finished yet.</summary>

@@ -61,7 +61,8 @@ public class IgnoreFileMarkingTests : IDisposable
         var tree = new PreviewTreeViewModel();
         tree.SetRoot(scan.Root);
         tree.Rows.Single(r => r.Name == "sub").ContainsIgnoreFile.Should().BeFalse("the tree does not know the folders yet");
-        tree.IgnoreFileDirectories = scan.IgnoreFileDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        tree.UpdateLiveIgnoreFileDirectories(scan.IgnoreFileDirectories).Should().BeTrue();
+        tree.Refresh();
         tree.Rows.Single(r => r.Name == "sub").ContainsIgnoreFile.Should().BeTrue();
         tree.Rows.Single(r => r.Name == "plain").ContainsIgnoreFile.Should().BeFalse();
         tree.Rows.Single(r => r.Name == "deep").ContainsIgnoreFile.Should().BeFalse("only the folder that holds the file directly");
@@ -73,6 +74,34 @@ public class IgnoreFileMarkingTests : IDisposable
         vm.Tree.Rows.Single(r => r.Name == "plain").ContainsIgnoreFile.Should().BeFalse();
         vm.Tree.Rows.Single(r => r.Name == "deep").ContainsIgnoreFile.Should().BeFalse();
         vm.Tree.Rows.First().ContainsIgnoreFile.Should().BeFalse("the source root holds none");
+    }
+
+    [Fact]
+    public async Task Folder_flag_follows_the_folders_and_an_unchanged_live_snapshot_is_kept()
+    {
+        _source.AddFile("sub/.backupignore", new byte[3]);
+        _source.AddFile("other/a.txt", new byte[3]);
+        var scan = LiveScan.Start(_source, "src", new IgnoreSettings(), []);
+        await scan.Completion;
+        var tree = new PreviewTreeViewModel();
+        tree.SetRoot(scan.Root);
+        var sub = tree.Rows.Single(r => r.Name == "sub");
+        var other = tree.Rows.Single(r => r.Name == "other");
+
+        tree.IgnoreFileDirectories = new HashSet<string>(["other"], StringComparer.OrdinalIgnoreCase);
+        (sub.ContainsIgnoreFile, other.ContainsIgnoreFile).Should().Be((false, true));
+        tree.IgnoreFileDirectories = new HashSet<string>(["sub"], StringComparer.OrdinalIgnoreCase);
+        (sub.ContainsIgnoreFile, other.ContainsIgnoreFile).Should().Be((true, false),
+            "a new set is read again, not the cached flag");
+
+        // The same number of folders as before: nothing new, the set and its generation stay.
+        var current = tree.IgnoreFileDirectories;
+        var generation = tree.IgnoreFileGeneration;
+        tree.UpdateLiveIgnoreFileDirectories(["sub"]).Should().BeFalse();
+        tree.IgnoreFileDirectories.Should().BeSameAs(current);
+        tree.IgnoreFileGeneration.Should().Be(generation);
+        tree.UpdateLiveIgnoreFileDirectories(["sub", "other"]).Should().BeTrue();
+        other.ContainsIgnoreFile.Should().BeTrue();
     }
 
     [Fact]

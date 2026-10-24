@@ -303,7 +303,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
 
     private void ShowLive(LiveScan scan)
     {
-        Tree.IgnoreFileDirectories = DirectoriesOf(scan.IgnoreFileDirectories);
+        Tree.UpdateLiveIgnoreFileDirectories(scan.IgnoreFileDirectories);
         Tree.Refresh();
         Progress = LocText.Of("ignore.progress.live",
             ("files", Formats.Files(scan.Files)), ("folders", Formats.Folders(scan.Directories)),
