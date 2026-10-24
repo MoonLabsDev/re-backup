@@ -3,6 +3,7 @@ using System.Security;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
+using ReBackup.App.Control;
 using ReBackup.App.Services;
 using ReBackup.Shared.Wpf.Services;
 using ReBackup.Core.Config;
@@ -27,6 +28,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly Action _manageS3Connections;
     private readonly Action _manageDriveAccounts;
     private readonly Action _manageDriveConnections;
+    private readonly IMcpControlHost? _mcpControl;
+    private readonly Action<string> _copyToClipboard;
+    private bool _revertingMcp;
+    private int _copiedVersion;
     private readonly bool _ready;
     private bool _saved;
     private ConfigPaths _paths;
@@ -35,6 +40,15 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _defaultIgnorePatterns = "";
     [ObservableProperty] private bool _closeToTray;
     [ObservableProperty] private bool _startWithWindows;
+
+    /// <summary>"Allow control via MCP": switching it hosts or releases the control pipe at once; OK stores it.</summary>
+    [ObservableProperty] private bool _allowMcpControl;
+
+    /// <summary>"Copied": shown for a few seconds after the client configuration went to the clipboard.</summary>
+    [ObservableProperty] private bool _mcpCopied;
+
+    /// <summary>The latest start or stop of the pipe; completes when the pipe is in the state the switch shows.</summary>
+    public Task McpApplyTask { get; private set; } = Task.CompletedTask;
 
     /// <summary>The theme; applied at once while the dialog is open, restored on Cancel.</summary>
     [ObservableProperty]
@@ -49,8 +63,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     public SettingsViewModel(SettingsStore store, AppSettings settings, ConfigPaths paths, string appDataRoot,
         IDialogService dialogs, Func<bool> confirmRestart, Func<bool> isBackupActive, Action<ThemeMode> previewTheme,
         string language, Action<string> previewLanguage, Action? manageS3Accounts = null, Action? manageS3Connections = null,
-        Action? manageDriveAccounts = null, Action? manageDriveConnections = null)
+        Action? manageDriveAccounts = null, Action? manageDriveConnections = null,
+        IMcpControlHost? mcpControl = null, Action<string>? copyToClipboard = null)
     {
+        _mcpControl = mcpControl;
+        _copyToClipboard = copyToClipboard ?? (_ => { });
         _manageS3Accounts = manageS3Accounts ?? (() => { });
         _manageS3Connections = manageS3Connections ?? (() => { });
         _manageDriveAccounts = manageDriveAccounts ?? (() => { });
@@ -68,6 +85,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         DefaultIgnorePatterns = string.Join(Environment.NewLine, settings.DefaultIgnorePatterns);
         CloseToTray = settings.CloseToTray;
         StartWithWindows = settings.StartWithWindows;
+        AllowMcpControl = settings.AllowMcpControl;
         Theme = settings.Theme;   // already applied: previewing it again changes nothing
         _previewLanguage = previewLanguage;
         _initialLanguage = language;
@@ -107,6 +125,44 @@ public sealed partial class SettingsViewModel : ObservableObject
             _previewLanguage(value);
     }
 
+    partial void OnAllowMcpControlChanged(bool value)
+    {
+        if (_ready && !_revertingMcp)
+            McpApplyTask = ApplyMcpAsync(value, McpApplyTask);
+    }
+
+    /// <summary>Hosts or releases the pipe after the previous change; a pipe that cannot be hosted puts the switch back off.</summary>
+    private async Task ApplyMcpAsync(bool enabled, Task previous)
+    {
+        await previous.ConfigureAwait(true);
+        if (_mcpControl is null)
+            return;
+        var error = await _mcpControl.ApplyAsync(enabled).ConfigureAwait(true);
+        if (error is null || !enabled)
+            return;
+
+        _revertingMcp = true;
+        try { AllowMcpControl = false; }
+        finally { _revertingMcp = false; }
+        _dialogs.ShowError(Loc.T("settings.mcp.title"), Loc.F("settings.mcp.startFailed", ("error", error)));
+    }
+
+    /// <summary>"Copy configuration": the client JSON with the path of this exe goes to the clipboard.</summary>
+    [RelayCommand]
+    private void CopyMcpConfiguration()
+    {
+        _copyToClipboard(McpClientConfiguration.Json(Environment.ProcessPath ?? "ReBackup.exe"));
+        McpCopied = true;
+        _ = HideCopiedAsync(++_copiedVersion);
+    }
+
+    private async Task HideCopiedAsync(int version)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+        if (version == _copiedVersion)
+            McpCopied = false;
+    }
+
     partial void OnThemeChanged(ThemeMode value) => _previewTheme(value);
 
     /// <summary>The dialog closed: without a save the theme and the language go back to what they were.</summary>
@@ -116,6 +172,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             _previewTheme(_settings.Theme);
         if (!_saved && Language != _initialLanguage)
             _previewLanguage(_initialLanguage);
+        // The pipe was switched while the dialog was open; without a save it goes back to the saved setting.
+        if (!_saved && AllowMcpControl != _settings.AllowMcpControl)
+            McpApplyTask = ApplyMcpAsync(_settings.AllowMcpControl, McpApplyTask);
     }
 
     /// <summary>Raised with the dialog result (true = saved).</summary>
@@ -174,6 +233,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         || Theme != _settings.Theme
         || Language != _initialLanguage
         || StartWithWindows != _settings.StartWithWindows
+        || AllowMcpControl != _settings.AllowMcpControl
         || !ParsePatterns().SequenceEqual(_settings.DefaultIgnorePatterns);
 
     private List<string> ParsePatterns() => DefaultIgnorePatterns
@@ -188,6 +248,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         var oldPatterns = _settings.DefaultIgnorePatterns.ToList();
         var oldCloseToTray = _settings.CloseToTray;
         var oldStartWithWindows = _settings.StartWithWindows;
+        var oldAllowMcpControl = _settings.AllowMcpControl;
         var oldTheme = _settings.Theme;
         var oldLanguage = _settings.Language;
         var registryChanged = false;
@@ -200,6 +261,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             _settings.DefaultIgnorePatterns = ParsePatterns();
             _settings.CloseToTray = CloseToTray;
             _settings.StartWithWindows = StartWithWindows;
+            _settings.AllowMcpControl = AllowMcpControl;
             _settings.Theme = Theme;
             // Unchanged in this dialog: an unset language stays unset (it keeps following Windows).
             if (Language != _initialLanguage)
@@ -211,6 +273,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             _settings.DefaultIgnorePatterns = oldPatterns;
             _settings.CloseToTray = oldCloseToTray;
             _settings.StartWithWindows = oldStartWithWindows;
+            _settings.AllowMcpControl = oldAllowMcpControl;
             _settings.Theme = oldTheme;
             _settings.Language = oldLanguage;
             if (registryChanged)

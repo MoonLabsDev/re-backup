@@ -3,13 +3,17 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf"
         xmlns:appl="clr-namespace:ReBackup.App.Localization"
-        Title="{l:Loc settings.windowTitle}" Width="600" Height="910" MinWidth="480" MinHeight="810"
+        Title="{l:Loc settings.windowTitle}" Width="600" Height="1010" MinWidth="480" MinHeight="900"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Style="{StaticResource {x:Type Window}}">
     <Grid Margin="20,16">
+        <Grid.Resources>
+            <BooleanToVisibilityConverter x:Key="Converter.Visible" />
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -90,6 +94,25 @@
 
         <Border Grid.Row="4" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <DockPanel>
+                <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Button Content="{l:Loc settings.mcp.copy}" Command="{Binding CopyMcpConfigurationCommand}"
+                            AutomationProperties.Name="{l:Loc settings.mcp.copy}" />
+                    <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,4,0,0" FontSize="12" HorizontalAlignment="Center"
+                               Text="{l:Loc settings.mcp.copied}" Visibility="{Binding McpCopied, Converter={StaticResource Converter.Visible}}" />
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,10" Text="{l:Loc settings.mcp.title}" />
+                    <CheckBox Style="{StaticResource CheckBox.Switch}" IsChecked="{Binding AllowMcpControl}">
+                        <TextBlock TextWrapping="Wrap" Text="{l:Loc settings.mcp.allow}" />
+                    </CheckBox>
+                    <TextBlock Style="{StaticResource TextBlock.Muted}" Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
+                               Text="{l:Loc settings.mcp.allowHint}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="5" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+            <DockPanel>
                 <Border DockPanel.Dock="Right" VerticalAlignment="Center" Padding="3" CornerRadius="8" BorderThickness="1"
                         Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
                         AutomationProperties.Name="{l:Loc settings.theme.name}">
@@ -108,7 +131,7 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="5" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
+        <Border Grid.Row="6" Style="{StaticResource Border.Card}" Margin="0,12,0,0">
             <DockPanel>
                 <Border DockPanel.Dock="Right" VerticalAlignment="Center" Padding="3" CornerRadius="8" BorderThickness="1"
                         Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
@@ -142,7 +165,7 @@
             </DockPanel>
         </Border>
 
-        <DockPanel Grid.Row="6" Margin="0,16,0,0" LastChildFill="False">
+        <DockPanel Grid.Row="7" Margin="0,16,0,0" LastChildFill="False">
             <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{appl:LocVersion}" />
                 <!-- Copyright with a link to the company's site. -->

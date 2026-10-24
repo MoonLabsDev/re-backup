@@ -12,9 +12,11 @@ using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Win32;
 using ReBackup.Shared.Wpf.Localization;
+using ReBackup.App.Control;
 using ReBackup.App.Mcp;
 using ReBackup.App.Services;
 using ReBackup.Shared.Wpf.Services;
+using ReBackup.App.Localization;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
@@ -64,6 +66,7 @@ public partial class App : Application
     private ThemeToggleViewModel _themeToggle = null!;
     private VersionIndexWorker _versionIndex = null!;
     private TempOpener _tempOpener = null!;
+    private McpControlHost? _mcpHost;
 
     public App()
     {
@@ -140,8 +143,48 @@ public partial class App : Application
         _scheduler.Start(planId => new RunLog(_paths.LogFileFor(planId)).ReadLast()?.StartUtc);
         SystemEvents.TimeChanged += OnSystemTimeChanged;
         _singleInstance.ListenForActivation(() => Dispatcher.InvokeAsync(ShowMainWindow));
+        // "Allow control via MCP": the one control service serves the pipe while the setting is on.
+        _mcpHost = new McpControlHost(
+            new ControlService(_mainViewModel, new System.Windows.Threading.DispatcherSynchronizationContext(Dispatcher)), LocVersionExtension.Version);
+        if (_settings.AllowMcpControl)
+            _ = StartMcpControlAsync();
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
+    }
+
+    /// <summary>Hosts the control pipe at startup; another process owning the pipe name is told in a notification.</summary>
+    private async Task StartMcpControlAsync()
+    {
+        var error = await _mcpHost!.ApplyAsync(true);
+        if (error is not null)
+            ShowControlNotification(Loc.T("settings.mcp.title"), Loc.F("settings.mcp.startFailed", ("error", error)));
+    }
+
+    /// <summary>Releases the control pipe (bounded); the process that replaces this one hosts it again.</summary>
+    private void StopMcpControl()
+    {
+        try
+        {
+            _mcpHost?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(6));
+        }
+        catch (AggregateException)
+        {
+            // Releasing the pipe never blocks an exit or a restart.
+        }
+    }
+
+    /// <summary>Settings → "Copy configuration": the text goes to the clipboard and stays there after the app exits.</summary>
+    private void CopyToClipboard(string text)
+    {
+        try
+        {
+            Clipboard.SetDataObject(text, true);
+        }
+        catch (System.Runtime.InteropServices.ExternalException ex)
+        {
+            // Another program holds the clipboard.
+            _dialogs.ShowError(Loc.T("settings.mcp.title"), ex.Message);
+        }
     }
 
     private async void RunMcpBridge(string[] args)
@@ -476,7 +519,8 @@ public partial class App : Application
             },
             manageS3Connections: ShowS3Connections,
             manageDriveAccounts: ShowDriveAccounts,
-            manageDriveConnections: ShowDriveConnections);
+            manageDriveConnections: ShowDriveConnections,
+            mcpControl: _mcpHost, copyToClipboard: CopyToClipboard);
         var window = new SettingsWindow(viewModel);
         if (_window.IsVisible)
             window.Owner = _window;
@@ -571,6 +615,7 @@ public partial class App : Application
 
         DisposeTray();
         _planStore.Dispose();
+        StopMcpControl();   // the new process hosts the pipe name
         _singleInstance?.Dispose();   // the new process needs the lock; released only after the backups stopped
         try
         {
@@ -610,6 +655,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         base.OnExit(e);
+        StopMcpControl();
         // The Drive and S3 clients; backups and restores were stopped before the app shut down.
         _storages?.Dispose();
         _s3Storages?.Dispose();

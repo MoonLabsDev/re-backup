@@ -69,6 +69,14 @@
       "note": "Ein Muster pro Zeile, gitignore-Syntax.",
       "name": "Standard-Ignoriermuster"
     },
+    "mcp": {
+      "title": "STEUERUNG PER MCP",
+      "allow": "Steuerung per MCP erlauben",
+      "allowHint": "Erlaubt einem MCP-Client wie Claude, Pläne, Versionen und Ignorier-Regeln einzusehen und Änderungen vorzuschlagen. Er sieht nur Namen, Größen und Datum, nie Dateiinhalte, und jede Änderung wird zuvor bei dir erfragt.",
+      "copy": "Konfiguration kopieren",
+      "copied": "Kopiert",
+      "startFailed": "ReBackup konnte die Steuerungsverbindung nicht öffnen: {error}"
+    },
     "app": {
       "title": "APP",
       "closeToTray": "Schließen des Fensters minimiert in den Infobereich",

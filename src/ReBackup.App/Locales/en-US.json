@@ -69,6 +69,14 @@
       "note": "One per line, gitignore syntax.",
       "name": "Default ignore patterns"
     },
+    "mcp": {
+      "title": "CONTROL VIA MCP",
+      "allow": "Allow control via MCP",
+      "allowHint": "Lets an MCP client such as Claude look at your plans, versions and ignore rules and propose changes. It only sees names, sizes and dates, never file contents, and every change asks you first.",
+      "copy": "Copy configuration",
+      "copied": "Copied",
+      "startFailed": "ReBackup could not open the control connection: {error}"
+    },
     "app": {
       "title": "APP",
       "closeToTray": "Closing the window minimizes to the tray",
