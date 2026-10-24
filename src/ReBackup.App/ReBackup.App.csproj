@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\ReBackup.Control\ReBackup.Control.csproj" />
     <ProjectReference Include="..\ReBackup.Core\ReBackup.Core.csproj" />
     <ProjectReference Include="..\ReBackup.Shared\ReBackup.Shared.csproj" />
     <ProjectReference Include="..\ReBackup.Shared.Wpf\ReBackup.Shared.Wpf.csproj" />
