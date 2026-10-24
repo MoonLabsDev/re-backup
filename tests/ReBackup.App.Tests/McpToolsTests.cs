@@ -92,14 +92,17 @@ public class McpToolsTests : IAsyncDisposable
         Arguments(tools["compare_versions"]).Should().BeEquivalentTo(
             [("plan", true), ("a", true), ("b", true), ("path", false), ("top", false), ("sort", false)]);
         Arguments(tools["compare_source_with_version"]).Should().BeEquivalentTo(
-            [("plan", true), ("version", false), ("path", false), ("top", false), ("sort", false)]);
-        Arguments(tools["get_ignore_rules"]).Should().BeEquivalentTo([("plan", true), ("path", false)]);
-        Arguments(tools["explain_path"]).Should().BeEquivalentTo([("plan", true), ("path", true)]);
+            [("plan", true), ("version", false), ("path", false), ("top", false), ("sort", false), ("rescan", false)]);
+        Arguments(tools["get_ignore_rules"]).Should().BeEquivalentTo([("plan", true), ("path", false), ("rescan", false)]);
+        Arguments(tools["explain_path"]).Should().BeEquivalentTo([("plan", true), ("path", true), ("rescan", false)]);
         Arguments(tools["list_files"]).Should().BeEquivalentTo(
-            [("plan", true), ("path", false), ("in", false), ("sort", false), ("limit", false)]);
+            [("plan", true), ("path", false), ("in", false), ("sort", false), ("limit", false), ("rescan", false)]);
         Arguments(tools["get_run_history"]).Should().BeEquivalentTo([("plan", true), ("n", false)]);
         Arguments(tools["get_run_status"]).Should().BeEquivalentTo([("runId", true)]);
-        Arguments(tools["preview_ignore_change"]).Should().BeEquivalentTo([("plan", true), ("add", false), ("remove", false)]);
+        Arguments(tools["preview_ignore_change"]).Should().BeEquivalentTo(
+            [("plan", true), ("add", false), ("remove", false), ("rescan", false)]);
+        foreach (var name in new[] { "compare_source_with_version", "get_ignore_rules", "explain_path", "list_files", "preview_ignore_change" })
+            tools[name].Description.Should().Contain("scannedAt", name + " says its answer comes from a scan of a given time");
         Arguments(tools["propose_relocation"]).Should().BeEquivalentTo(
             [("plan", true), ("integrate", false), ("extract", false), ("folder", false)]);
         Arguments(tools["apply_change"]).Should().BeEquivalentTo([("proposalId", true)]);

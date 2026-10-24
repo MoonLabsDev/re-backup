@@ -253,6 +253,18 @@ internal readonly struct ControlArgs(JsonElement args)
         return value.EnumerateArray().Select(item => item.GetString()!).ToList();
     }
 
+    public bool? OptionalBool(string name)
+    {
+        if (!TryGet(name, out var value))
+            return null;
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => throw new ControlFailure(ControlErrors.BadRequest, $"The argument '{name}' must be true or false."),
+        };
+    }
+
     public int? OptionalInt(string name)
     {
         if (!TryGet(name, out var value))

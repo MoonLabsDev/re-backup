@@ -824,6 +824,10 @@ public sealed partial class MainViewModel : ObservableObject
             RefreshQueuePositions();   // the queue changed: a job was added, started, removed or finished
         UpdateQueueStatus(update, editor?.Run);
 
+        // A finished run made a version newer than any cached scan of its source: the next answer scans again.
+        if (update.State == JobState.Finished)
+            ScanCache.Invalidate(update.PlanId);
+
         if (update.State == JobState.Removed)
         {
             SetStatus(LocText.Of("shell.status.removed", ("plan", update.PlanName)));

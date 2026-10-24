@@ -32,6 +32,11 @@ public sealed class McpTools(IControlChannel channel)
     private const string Sizes = "Sizes are bytes plus a human-readable text.";
     private const string PathArg = "A folder relative to the plan's source root, with '/' separators; empty or left out for the root.";
     private const string TopArg = "How many folders and extensions to list (default 20, at most 200).";
+    private const string RescanArg = "true scans the source anew instead of answering from the cached scan (then the " +
+                                     "usual wait: scan_running after a minute, retry shortly; the retry takes the scan " +
+                                     "the first try started). Use it when files changed since 'scannedAt'.";
+    private const string Scanned = "Answers from a scan of the source; 'scannedAt' (ISO 8601, UTC) says when it was made " +
+                                   "(a cached scan is reused until a run finishes, a newer version exists, or 'rescan').";
     private const string SortArg = "'copied' (the most bytes an incremental run copies first: added plus changed files " +
                                    "whole) or 'net' (the largest net growth first). Default: copied for incremental " +
                                    "plans, net for full plans (they copy everything anyway). The result names the sort used.";
@@ -79,42 +84,46 @@ public sealed class McpTools(IControlChannel channel)
                  "version (the newest by default), grouped like compare_versions by the direct subfolders of 'path' and " +
                  "by extension, largest first by 'sort', " + GrowthColumns + " " + Sizes + " Needs a scan of the source; " +
                  "when the scan takes longer than a minute the answer is scan_running with its progress: retry shortly. " +
-                 Metadata)]
+                 Scanned + " " + Metadata)]
     public Task<CallToolResult> CompareSourceWithVersion(
         [Description(PlanArg)] string plan,
         [Description("The version's name; the newest version when left out.")] string? version = null,
         [Description(PathArg)] string? path = null,
         [Description(TopArg)] int? top = null,
         [Description(SortArg)] string? sort = null,
+        [Description(RescanArg)] bool? rescan = null,
         CancellationToken ct = default) =>
-        CallAsync(ControlOps.CompareSourceWithVersion, new { plan, version, path, top, sort }, ct);
+        CallAsync(ControlOps.CompareSourceWithVersion, new { plan, version, path, top, sort, rescan }, ct);
 
     [McpServerTool(Name = ControlOps.GetIgnoreRules, ReadOnly = true)]
     [Description("A plan's ignore rules: its own patterns, the global defaults and whether the plan uses them, and every " +
                  ".backupignore file in the source with its text; for each line the entries it ignores and their bytes. " +
-                 "Read these before suggesting rules, to match their notation and placement. " + Sizes + " The rule files " +
-                 "are the only text returned; never other file contents.")]
+                 "Read these before suggesting rules, to match their notation and placement. " + Sizes + " " + Scanned +
+                 " The rule files are the only text returned; never other file contents.")]
     public Task<CallToolResult> GetIgnoreRules(
         [Description(PlanArg)] string plan,
         [Description("Only the .backupignore files in this folder and below (relative to the source root, '/' separators).")]
         string? path = null,
+        [Description(RescanArg)] bool? rescan = null,
         CancellationToken ct = default) =>
-        CallAsync(ControlOps.GetIgnoreRules, new { plan, path }, ct);
+        CallAsync(ControlOps.GetIgnoreRules, new { plan, path, rescan }, ct);
 
     [McpServerTool(Name = ControlOps.ExplainPath, ReadOnly = true)]
     [Description("Whether one entry of the source is ignored, and the rule that decides it: the pattern, its origin (the " +
-                 "plan, the global defaults or a .backupignore) and line, or the ignored folder that contains it. " + Metadata)]
+                 "plan, the global defaults or a .backupignore) and line, or the ignored folder that contains it. " + Scanned +
+                 " " + Metadata)]
     public Task<CallToolResult> ExplainPath(
         [Description(PlanArg)] string plan,
         [Description("The entry, relative to the source root with '/' separators; end a folder with '/' when it may not exist.")]
         string path,
-        CancellationToken ct) =>
-        CallAsync(ControlOps.ExplainPath, new { plan, path }, ct);
+        [Description(RescanArg)] bool? rescan = null,
+        CancellationToken ct = default) =>
+        CallAsync(ControlOps.ExplainPath, new { plan, path, rescan }, ct);
 
     [McpServerTool(Name = ControlOps.ListFiles, ReadOnly = true)]
     [Description("Lists one folder of the source or of a version: name, kind (file or folder), size, modification date " +
                  "(UTC), file count of a folder, extension, and for the source whether the entry is ignored and by which " +
-                 "rule. " + Sizes + " At most 200 entries. " + Metadata)]
+                 "rule. " + Sizes + " At most 200 entries. For the source: " + Scanned + " " + Metadata)]
     public Task<CallToolResult> ListFiles(
         [Description(PlanArg)] string plan,
         [Description("The folder, relative to the source or version root with '/' separators; the root when left out.")]
@@ -122,8 +131,9 @@ public sealed class McpTools(IControlChannel channel)
         [Description("'source' (default) for the source as it is now, or a version's name.")] string? @in = null,
         [Description("'name' (default; folders first), 'size' (largest first) or 'date' (newest first).")] string? sort = null,
         [Description("How many entries to return (default and at most 200).")] int? limit = null,
+        [Description("With the source: " + RescanArg)] bool? rescan = null,
         CancellationToken ct = default) =>
-        CallAsync(ControlOps.ListFiles, new { plan, path, @in, sort, limit }, ct);
+        CallAsync(ControlOps.ListFiles, new { plan, path, @in, sort, limit, rescan }, ct);
 
     [McpServerTool(Name = ControlOps.GetRunHistory, ReadOnly = true)]
     [Description("A plan's last runs, newest first: run id, trigger (manual, scheduled, catchUp, mcp), start and end (UTC), " +
@@ -146,13 +156,14 @@ public sealed class McpTools(IControlChannel channel)
     [Description("Previews adding and removing patterns in a plan's own ignore patterns, changing nothing: the files and " +
                  "bytes that become ignored and that become included, with the largest examples, the plan's patterns " +
                  "after the change, and a proposalId. Show the numbers to the user; apply_change(proposalId) makes the " +
-                 "change, within 5 minutes. " + Sizes + " " + Metadata)]
+                 "change, within 5 minutes. " + Sizes + " " + Scanned + " " + Metadata)]
     public Task<CallToolResult> PreviewIgnoreChange(
         [Description(PlanArg)] string plan,
         [Description("Pattern lines to add, in .gitignore syntax like the existing rules.")] string[]? add = null,
         [Description("Existing pattern lines of the plan to remove, exactly as get_ignore_rules lists them.")] string[]? remove = null,
+        [Description(RescanArg)] bool? rescan = null,
         CancellationToken ct = default) =>
-        CallAsync(ControlOps.PreviewIgnoreChange, new { plan, add, remove }, ct);
+        CallAsync(ControlOps.PreviewIgnoreChange, new { plan, add, remove, rescan }, ct);
 
     [McpServerTool(Name = ControlOps.ProposeRelocation, ReadOnly = true, Destructive = false)]
     [Description("Proposes moving ignore rules between a plan's own patterns and a .backupignore in its folder source, " +

@@ -21,6 +21,7 @@ public class SourceScanCacheTests : IDisposable
     private readonly FakeTimeProvider _time = new();
     private readonly ListGatedStorage _gated;
     private int _opens;
+    private int _compactions;
     private bool _useGate;
 
     public SourceScanCacheTests()
@@ -36,7 +37,7 @@ public class SourceScanCacheTests : IDisposable
     {
         _opens++;
         return _useGate ? _gated : _source;
-    }), () => [], _time);
+    }), () => [], _time, compactMemory: () => _compactions++);
 
     private static BackupPlan Plan(string id, string path = "") =>
         new() { Id = id, Name = id, Source = new StorageLocation("mem", path, "conn-1") };
@@ -96,7 +97,7 @@ public class SourceScanCacheTests : IDisposable
     }
 
     [Fact]
-    public async Task A_scan_the_cache_started_is_shown_on_the_tabs_first_open()
+    public async Task The_scan_button_always_scans_anew_even_when_the_cache_holds_a_scan()
     {
         var cache = NewCache();
         var plan = Plan("p1");
@@ -107,9 +108,103 @@ public class SourceScanCacheTests : IDisposable
 
         await vm.IndexCommand.ExecuteAsync(null);
 
-        vm.CompletedIndex.Should().BeSameAs(started);
+        tabOpens.Should().Be(1, "Scan means a fresh scan, not the cached one");
+        vm.CompletedIndex.Should().NotBeSameAs(started);
         vm.Root!.IncludedFiles.Should().Be(2);
-        tabOpens.Should().Be(0);
+        cache.TryGetCompleted("p1", plan.Source)!.Index.Should().BeSameAs(vm.CompletedIndex, "the fresh scan replaces the cached one");
+    }
+
+    // ------------------------------------------------------------------ freshness
+
+    [Fact]
+    public async Task Lookups_report_when_the_scan_was_made()
+    {
+        var cache = NewCache();
+        var plan = Plan("p1");
+        var scannedAt = _time.GetUtcNow();
+
+        var first = await cache.GetAsync(plan, Wait, CancellationToken.None);
+        _time.Advance(TimeSpan.FromMinutes(3));
+        var second = await cache.GetAsync(plan, Wait, CancellationToken.None);
+
+        first.ScannedUtc.Should().Be(scannedAt);
+        second.ScannedUtc.Should().Be(scannedAt, "a hit keeps the time of its scan");
+        var put = DateTimeOffset.Parse("2026-10-01T08:00:00Z");
+        cache.Put("p2", await IndexAsync(), Plan("p2").Source, put);
+        (await cache.GetAsync(Plan("p2"), Wait, CancellationToken.None)).ScannedUtc.Should().Be(put);
+        cache.TryGetCompleted("p2", Plan("p2").Source)!.ScannedUtc.Should().Be(put);
+    }
+
+    [Fact]
+    public async Task Rescan_replaces_a_finished_scan_even_right_after_it()
+    {
+        var cache = NewCache();
+        var plan = Plan("p1");
+        var first = await cache.GetAsync(plan, Wait, CancellationToken.None);
+        _time.Advance(TimeSpan.FromSeconds(5));
+
+        var again = await cache.GetAsync(plan, Wait, CancellationToken.None, rescan: true);
+
+        _opens.Should().Be(2);
+        again.Index.Should().NotBeSameAs(first.Index);
+        again.ScannedUtc.Should().Be(_time.GetUtcNow());
+    }
+
+    [Fact]
+    public async Task A_rescan_that_answered_scan_running_is_picked_up_by_the_retry_not_restarted()
+    {
+        _useGate = true;
+        var cache = NewCache();
+        var plan = Plan("p1");
+        cache.Put("p1", await IndexAsync(), plan.Source);
+        var pending = cache.GetAsync(plan, Wait, CancellationToken.None, rescan: true);
+        while (!pending.IsCompleted)
+        {
+            _time.Advance(Wait);
+            await Task.Delay(10);
+        }
+        (await pending).Running.Should().BeTrue();
+        _gated.Gate.SetResult();
+        await WaitUntilAsync(() => cache.TryGetCompleted("p1", plan.Source) is not null);
+
+        var retry = await cache.GetAsync(plan, Wait, CancellationToken.None, rescan: true);
+
+        retry.Running.Should().BeFalse();
+        _opens.Should().Be(1, "the retry takes the scan its first try started, which nobody has seen yet");
+        (await cache.GetAsync(plan, Wait, CancellationToken.None, rescan: true)).Index.Should().NotBeSameAs(retry.Index);
+        _opens.Should().Be(2, "once delivered, a rescan scans again");
+    }
+
+    [Fact]
+    public async Task A_scan_older_than_the_newest_version_is_replaced()
+    {
+        var cache = NewCache();
+        var plan = Plan("p1");
+        var old = await IndexAsync();
+        cache.Put("p1", old, plan.Source, _time.GetUtcNow());
+
+        var same = await cache.GetAsync(plan, Wait, CancellationToken.None, staleBefore: _time.GetUtcNow().AddSeconds(-1));
+        var fresh = await cache.GetAsync(plan, Wait, CancellationToken.None, staleBefore: _time.GetUtcNow().AddSeconds(1));
+
+        same.Index.Should().BeSameAs(old);
+        fresh.Index.Should().NotBeSameAs(old, "a version made after the scan may hold changes the scan does not");
+        _opens.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Dropping_idle_scans_hands_their_memory_back()
+    {
+        var cache = NewCache();
+        cache.Put("p1", await IndexAsync());
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _compactions.Should().Be(0, "nothing was dropped yet");
+        _time.Advance(TimeSpan.FromMinutes(6));
+
+        cache.Count.Should().Be(0);
+        _compactions.Should().Be(1);
+        _time.Advance(TimeSpan.FromMinutes(11));
+        _compactions.Should().Be(1, "a sweep that drops nothing compacts nothing");
     }
 
     [Fact]

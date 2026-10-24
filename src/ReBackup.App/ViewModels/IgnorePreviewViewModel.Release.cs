@@ -1,4 +1,4 @@
-using System.Runtime;
+using ReBackup.App.Services;
 using ReBackup.Shared.Wpf.Localization;
 
 namespace ReBackup.App.ViewModels;
@@ -72,14 +72,6 @@ public sealed partial class IgnorePreviewViewModel
         CompactMemory();
     }
 
-    /// <summary>
-    /// Hands memory that is no longer used back to Windows now. After a scan of millions of entries, the live tree it
-    /// grew and any older evaluation are garbage of the same size as the result; the runtime would keep that memory
-    /// until a full collection happens to run.
-    /// </summary>
-    private static void CompactMemory()
-    {
-        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-    }
+    /// <summary>Hands the freed scan's memory back to Windows now (<see cref="MemoryCompaction.Compact"/>).</summary>
+    private static void CompactMemory() => MemoryCompaction.Compact();
 }

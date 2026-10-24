@@ -169,7 +169,7 @@ public sealed partial class ControlService
     {
         var context = await ResolvePlanAsync(args, ct);
         var folder = NormalizePath(args.OptionalString("path") ?? "");
-        var index = await ScanAsync(context, ct);
+        var (index, scannedAt) = await ScanAsync(context, Rescan(args), ct);
         return await Task.Run(() =>
         {
             var plan = context.Plan;
@@ -205,7 +205,7 @@ public sealed partial class ControlService
                 var truncated = cut || count < inFolder.Count;
                 return new IgnoreRulesResult(plan.Name, plan.Ignore.UseGlobalDefaults, plan.Ignore.HonorNestedFiles,
                     planPatterns, globals, files.Take(count).ToList(), index.UnreadableIgnoreFiles, index.FileCount,
-                    index.DirectoryCount, truncated,
+                    index.DirectoryCount, scannedAt, truncated,
                     truncated
                         ? $"Cut to fit: at most {MaxRulesPerOrigin} pattern lines per origin and {MaxIgnoreFileChars} characters per ignore file; " +
                           $"{count} of {inFolder.Count} ignore files listed. Narrow with 'path' (a folder: only the .backupignore files in it and below), " +
@@ -224,7 +224,7 @@ public sealed partial class ControlService
         var path = NormalizePath(raw);
         if (path.Length == 0)
             throw new ControlFailure(ControlErrors.BadRequest, "The argument 'path' must name an entry below the source root.");
-        var index = await ScanAsync(context, ct);
+        var (index, scannedAt) = await ScanAsync(context, Rescan(args), ct);
         return await Task.Run(() =>
         {
             var node = FindNode(index.RootNode, path);
@@ -249,7 +249,7 @@ public sealed partial class ControlService
                 result = matcher.MatchEntry(path, isDirectory);
 
             return new ExplainResult(path, exists, isDirectory ? "folder" : "file", result.IsIgnored,
-                new RuleLocator(context, index).Of(result.Pattern), ignoredFolder);
+                new RuleLocator(context, index).Of(result.Pattern), ignoredFolder, scannedAt);
         }, ct);
     }
 
@@ -264,12 +264,14 @@ public sealed partial class ControlService
         if (sort is not ("name" or "size" or "date"))
             throw new ControlFailure(ControlErrors.BadRequest, $"The argument 'sort' must be name, size or date, not '{sort}'.");
         var limit = Math.Clamp(args.OptionalInt("limit") ?? MaxRows, 1, MaxRows);
+        var rescan = Rescan(args);
 
         IReadOnlyList<FileRow> rows;
+        DateTime? scannedAt = null;
         if (listing.Equals(SourceListing, StringComparison.OrdinalIgnoreCase))
         {
             listing = SourceListing;
-            var index = await ScanAsync(context, ct);
+            (var index, scannedAt) = await ScanAsync(context, rescan, ct);
             rows = await Task.Run(() => SourceRows(context, index, path, ct), ct);
         }
         else
@@ -290,7 +292,7 @@ public sealed partial class ControlService
             rows.Count, count < rows.Count,
             count < rows.Count
                 ? $"Showing {count} of {rows.Count} entries. Narrow with 'path' (a subfolder), or raise 'limit' (at most {MaxRows})."
-                : null));
+                : null, scannedAt));
     }
 
     private IReadOnlyList<FileRow> SourceRows(PlanContext context, SourceIndex index, string path, CancellationToken ct)
@@ -388,15 +390,18 @@ public sealed partial class ControlService
     // ------------------------------------------------------------------ the source scan and its rules
 
     /// <summary>
-    /// The finished scan of the plan's source from the scan cache (started when none is held). Not finished within
-    /// <see cref="ScanWait"/>: <c>scan_running</c> with the progress, the scan goes on and a retry joins it.
+    /// The finished scan of the plan's source from the scan cache (started when none is held) and when it was made (UTC).
+    /// A scan older than the plan's newest indexed version, or any finished scan when <paramref name="rescan"/> is set, is
+    /// replaced by a new one. Not finished within <see cref="ScanWait"/>: <c>scan_running</c> with the progress, the scan
+    /// goes on and a retry joins it.
     /// </summary>
-    private async Task<SourceIndex> ScanAsync(PlanContext context, CancellationToken ct)
+    private async Task<(SourceIndex Index, DateTime ScannedAt)> ScanAsync(PlanContext context, bool rescan, CancellationToken ct)
     {
+        var newestVersion = await NewestVersionTimeAsync(context.Plan.Id, ct);
         ScanLookup lookup;
         try
         {
-            lookup = await _main.ScanCache.GetAsync(context.Plan, ScanWait, ct);
+            lookup = await _main.ScanCache.GetAsync(context.Plan, ScanWait, ct, rescan, newestVersion);
         }
         catch (StorageNotFoundException)
         {
@@ -406,8 +411,29 @@ public sealed partial class ControlService
         {
             throw new ControlFailure(ControlErrors.BadRequest, $"The plan's source could not be read: {ex.Message}");
         }
-        return lookup.Index ?? throw new ControlFailure(ControlErrors.ScanRunning,
-            $"The source is still being scanned ({Count(lookup.Files, "file")}, {Count(lookup.Directories, "folder")} so far); retry in a moment.");
+        if (lookup.Index is not { } index)
+            throw new ControlFailure(ControlErrors.ScanRunning,
+                $"The source is still being scanned ({Count(lookup.Files, "file")}, {Count(lookup.Directories, "folder")} so far); retry in a moment.");
+        return (index, (lookup.ScannedUtc ?? DateTimeOffset.UtcNow).UtcDateTime);
+    }
+
+    /// <summary>The <c>rescan</c> argument: true asks for a new scan of the source.</summary>
+    private static bool Rescan(ControlArgs args) => args.OptionalBool("rescan") ?? false;
+
+    /// <summary>When the plan's newest indexed version was made (its folder's local time); null when none or unreadable.</summary>
+    private async Task<DateTimeOffset?> NewestVersionTimeAsync(string planId, CancellationToken ct)
+    {
+        try
+        {
+            var versions = await Task.Run(() => _main.VersionIndexes.For(planId).Versions(), ct);
+            return versions.Count == 0
+                ? null
+                : new DateTimeOffset(DateTime.SpecifyKind(versions.Max(v => v.LocalTime), DateTimeKind.Local));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;   // the index cannot be read: the scan is judged by itself
+        }
     }
 
     private static IgnoreMatcher Matcher(PlanContext context, SourceIndex index) =>

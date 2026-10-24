@@ -91,6 +91,7 @@ public sealed partial class MainViewModel
         if (editor.Preview.CompletedIndex is not null)
             editor.Preview.ReplaceNestedIgnoreFile(directory, lines);   // updates the cache too
         else if (ScanCache.TryGetCompleted(plan.Id, plan.Source) is { } cached)
-            ScanCache.Put(plan.Id, IgnorePreviewViewModel.WithNestedIgnoreFile(cached, directory, lines), plan.Source);
+            ScanCache.Put(plan.Id, IgnorePreviewViewModel.WithNestedIgnoreFile(cached.Index, directory, lines), plan.Source,
+                cached.ScannedUtc);   // the same scan with the new file: it keeps its time
     }
 }

@@ -42,9 +42,11 @@ public sealed record VersionListResult(string Plan, IReadOnlyList<VersionRow> Ve
 public sealed record VersionRow(string Name, DateTimeOffset Date, SizeValue? Size, int? Files, SizeValue? Exclusive,
     bool Indexed, bool Managed, IReadOnlyList<string> Warnings);
 
+/// <summary>The rules and their hits in the source scan; <paramref name="ScannedAt"/>: when that scan was made (UTC).</summary>
 public sealed record IgnoreRulesResult(string Plan, bool UseGlobalDefaults, bool HonorNestedFiles,
     IReadOnlyList<LineHitRow> PlanPatterns, GlobalDefaultsInfo GlobalDefaults, IReadOnlyList<IgnoreFileInfo> IgnoreFiles,
-    IReadOnlyList<string> UnreadableIgnoreFiles, int ScannedFiles, int ScannedFolders, bool Truncated, string? Hint);
+    IReadOnlyList<string> UnreadableIgnoreFiles, int ScannedFiles, int ScannedFolders, DateTime ScannedAt, bool Truncated,
+    string? Hint);
 
 /// <summary>A pattern line and what it decides in the source: entries and their total size.</summary>
 public sealed record LineHitRow(int Line, string Pattern, int Entries, SizeValue Size)
@@ -63,12 +65,14 @@ public sealed record IgnoreFileInfo(string Path, string Content, int LineCount, 
 
 /// <summary>
 /// <paramref name="IgnoredFolder"/>: the parent folder whose rule ignores the entry (everything below an ignored folder
-/// is ignored); null when the entry's own rule decided.
+/// is ignored); null when the entry's own rule decided. <paramref name="ScannedAt"/>: when the source scan was made (UTC).
 /// </summary>
-public sealed record ExplainResult(string Path, bool Exists, string Kind, bool Ignored, RuleInfo? Rule, string? IgnoredFolder);
+public sealed record ExplainResult(string Path, bool Exists, string Kind, bool Ignored, RuleInfo? Rule, string? IgnoredFolder,
+    DateTime ScannedAt);
 
+/// <summary>One folder's entries; <paramref name="ScannedAt"/>: when the source scan was made (UTC; null for a version).</summary>
 public sealed record FileListResult(string Plan, string Path, string In, IReadOnlyList<FileRow> Entries, int Total,
-    bool Truncated, string? Hint);
+    bool Truncated, string? Hint, DateTime? ScannedAt);
 
 /// <summary>
 /// One entry of a folder. <paramref name="Files"/>: the files below a folder (null for a file). <paramref name="Ignored"/>,
@@ -120,10 +124,11 @@ public sealed record GrowthRowInfo(string? Key, int Added, int Changed, int Dele
 /// <summary>
 /// What adding and removing plan patterns would change in the scanned source. <paramref name="PlanPatternsAfter"/>: the
 /// plan's pattern lines after the change (cut to the first lines when <paramref name="Truncated"/>).
+/// <paramref name="ScannedAt"/>: when the source scan the numbers come from was made (UTC).
 /// </summary>
 public sealed record IgnoreChangeResult(string ProposalId, string Plan, IReadOnlyList<string> PlanPatternsAfter,
     ScopeChangeInfo NewlyIgnored, ScopeChangeInfo NewlyIncluded, int ScannedFiles, int ScannedFolders, bool Truncated,
-    string? Hint);
+    string? Hint, DateTime ScannedAt);
 
 /// <summary>
 /// Files that change sides (and their size), and the largest places they are in: a folder ("name/") whose whole content

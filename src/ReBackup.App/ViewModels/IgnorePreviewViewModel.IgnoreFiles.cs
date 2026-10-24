@@ -150,7 +150,7 @@ public sealed partial class IgnorePreviewViewModel
             return;
         _index = WithNestedIgnoreFile(index, directory, lines);
         if (_planId is not null && _source() is { } source)
-            _scanCache?.Put(_planId, _index, source);   // the control service reads the same rules
+            _scanCache?.Put(_planId, _index, source, _scannedUtc);   // the control service reads the same rules
         // An evaluation of the previous index still running must not publish it (and bring the old file back).
         _evaluationVersion++;
         OnPropertyChanged(nameof(CompletedIndex));

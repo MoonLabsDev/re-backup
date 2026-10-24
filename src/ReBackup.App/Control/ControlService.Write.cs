@@ -44,7 +44,7 @@ public sealed partial class ControlService
         }
         after.AddRange(add);
 
-        var index = await ScanAsync(context, ct);
+        var (index, scannedAt) = await ScanAsync(context, Rescan(args), ct);
         var (ignored, included) = await Task.Run(() =>
         {
             var changed = new IgnoreSettings
@@ -66,7 +66,7 @@ public sealed partial class ControlService
         var truncated = after.Count > MaxRulesPerOrigin;
         return new IgnoreChangeResult(id, context.Plan.Name, after.Take(MaxRulesPerOrigin).ToList(), ignored, included,
             index.FileCount, index.DirectoryCount, truncated,
-            truncated ? $"Only the first {MaxRulesPerOrigin} of the plan's {after.Count} pattern lines are listed." : null);
+            truncated ? $"Only the first {MaxRulesPerOrigin} of the plan's {after.Count} pattern lines are listed." : null, scannedAt);
     }
 
     /// <summary>A line to add: a comment, or a pattern that parses (a blank line or a lone "!" or "/" is no pattern).</summary>
@@ -169,7 +169,7 @@ public sealed partial class ControlService
             throw new ControlFailure(ControlErrors.BadRequest,
                 $"'{context.Plan.Name}' does not honor .backupignore files, so rules moved into one would do nothing.");
 
-        var index = await ScanAsync(context, ct);
+        var (index, _) = await ScanAsync(context, rescan: false, ct);
         var proposal = await Task.Run(() =>
         {
             var relocation = new RelocationContext(context.Plan.Ignore, context.GlobalDefaults, index, root);

@@ -359,6 +359,97 @@ public class ControlReadTests : IDisposable
             .GetProperty("scannedFiles").GetInt32().Should().Be(7, "the retry joins the scan that went on");
     }
 
+    // ------------------------------------------------------------------ scan freshness
+
+    [Fact]
+    public async Task Every_scan_based_answer_says_when_the_scan_was_made()
+    {
+        var (service, _) = await CreateWithVersionsAsync();
+        var before = DateTime.UtcNow.AddSeconds(-1);
+
+        var answers = new[]
+        {
+            await OkAsync(service, ControlOps.CompareSourceWithVersion, new { plan = "Projects", version = Newer }),
+            await OkAsync(service, ControlOps.PreviewIgnoreChange, new { plan = "Projects", add = new[] { "*.md" } }),
+            await OkAsync(service, ControlOps.ExplainPath, new { plan = "Projects", path = "a.txt" }),
+            await OkAsync(service, ControlOps.GetIgnoreRules, new { plan = "Projects" }),
+            await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects" }),
+        };
+
+        foreach (var answer in answers)
+        {
+            var text = answer.GetProperty("scannedAt").GetString()!;
+            text.Should().EndWith("Z", "an ISO time in UTC");
+            var scannedAt = answer.GetProperty("scannedAt").GetDateTime();
+            scannedAt.Kind.Should().Be(DateTimeKind.Utc);
+            scannedAt.Should().BeAfter(before).And.BeOnOrBefore(DateTime.UtcNow);
+        }
+        answers.Select(a => a.GetProperty("scannedAt").GetString()).Distinct().Should().ContainSingle("all came from one scan");
+        (await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects", @in = Newer }))
+            .TryGetProperty("scannedAt", out _).Should().BeFalse("a version listing needs no scan");
+    }
+
+    [Fact]
+    public async Task Rescan_sees_what_changed_in_the_source_since_the_cached_scan()
+    {
+        var (service, _) = Create();
+        var first = await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects" });
+        WriteFile(_source, "late.txt", "late");
+
+        var cached = await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects" });
+        var rescanned = await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects", rescan = true });
+
+        Names(cached).Should().NotContain("late.txt", "without rescan the cached scan answers");
+        cached.GetProperty("scannedAt").GetString().Should().Be(first.GetProperty("scannedAt").GetString());
+        Names(rescanned).Should().Contain("late.txt");
+        rescanned.GetProperty("scannedAt").GetDateTime().Should().BeAfter(first.GetProperty("scannedAt").GetDateTime());
+        foreach (var op in new[] { ControlOps.ExplainPath, ControlOps.GetIgnoreRules, ControlOps.PreviewIgnoreChange, ControlOps.CompareSourceWithVersion })
+        {
+            object args = op switch
+            {
+                ControlOps.ExplainPath => new { plan = "Projects", path = "a.txt", rescan = true },
+                ControlOps.PreviewIgnoreChange => new { plan = "Projects", add = new[] { "*.md" }, rescan = true },
+                _ => new { plan = "Projects", rescan = true },
+            };
+            var response = await service.HandleAsync(Request(op, args), CancellationToken.None);
+            (response.Error?.Key ?? "ok").Should().NotBe(ControlErrors.BadRequest, op + " takes 'rescan'");
+        }
+        (await FailAsync(service, ControlOps.ListFiles, new { plan = "Projects", rescan = "yes" })).Key.Should().Be(ControlErrors.BadRequest);
+    }
+
+    [Fact]
+    public async Task A_version_newer_than_the_scan_makes_the_next_answer_scan_again()
+    {
+        var (service, vm) = Create();
+        var first = await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects" });
+        WriteFile(_source, "late.txt", "late");
+        var name = VersionName.Format(DateTime.Now.AddMinutes(1), "Projects");
+        vm.VersionIndexes.For("p1").Add(new VersionInfo(name, name, DateTime.Now.AddMinutes(1), VersionOwnership.Owned, null, null),
+            new BackupManifest { Files = [] }, new StorageFactory().Open(StorageLocation.FileSystem(_target)));
+
+        var after = await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects" });
+
+        Names(after).Should().Contain("late.txt", "the scan was older than the newest version");
+        after.GetProperty("scannedAt").GetDateTime().Should().BeAfter(first.GetProperty("scannedAt").GetDateTime());
+    }
+
+    [Fact]
+    public async Task A_finished_run_drops_the_plans_cached_scan()
+    {
+        var (service, vm) = Create();
+        await OkAsync(service, ControlOps.ListFiles, new { plan = "Projects" });
+        vm.ScanCache.Has("p1").Should().BeTrue();
+
+        _fixture.Queue.Enqueue(new BackupRequest(vm.Plans.Single(p => p.Id == "p1").SavedPlan(), [], RunTrigger.Manual))
+            .Should().BeTrue();
+        await _fixture.Queue.WhenIdleAsync();
+
+        vm.ScanCache.Has("p1").Should().BeFalse("the run made a version newer than the scan");
+    }
+
+    private static IEnumerable<string> Names(JsonElement listing) =>
+        listing.GetProperty("entries").EnumerateArray().Select(e => e.GetProperty("name").GetString()!).ToList();
+
     // ------------------------------------------------------------------ get_run_history
 
     [Fact]

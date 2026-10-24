@@ -50,7 +50,7 @@ public sealed partial class ControlService
         var version = args.OptionalString("version") is { Length: > 0 } name && name.Trim().Length > 0
             ? await ResolveVersionAsync(context, name.Trim(), ct)
             : await NewestVersionAsync(context, ct);
-        var scan = await ScanAsync(context, ct);
+        var (scan, scannedAt) = await ScanAsync(context, Rescan(args), ct);
         return await Task.Run(() =>
         {
             var folder = SourceFolder(IndexEvaluator.Evaluate(scan, Matcher(context, scan), ct), path);
@@ -91,7 +91,7 @@ public sealed partial class ControlService
                 Add(gone.Path, gone.Size, null);
 
             return Growth(context.Plan.Name, version.Name, SourceListing, folderPath, sort, byFolder.Rows(sort),
-                byExtension.Rows(sort), top);
+                byExtension.Rows(sort), top) with { ScannedAt = scannedAt };
         }, ct);
     }
 
