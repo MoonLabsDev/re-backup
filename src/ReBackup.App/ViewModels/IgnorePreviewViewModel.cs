@@ -227,6 +227,7 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             IsIndexing = false;
             Progress = LocText.Of("ignore.progress.indexed", ("files", Formats.Files(index.FileCount)),
                 ("folders", Formats.Folders(index.DirectoryCount)));
+            CompactMemory();   // the live tree of the scan is garbage now
             RequestReevaluate();   // in case the patterns were edited while the result was being evaluated
         }
         catch (OperationCanceledException)
