@@ -24,6 +24,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private readonly Func<IgnoreSettings> _ignoreSettings;
     private readonly Func<IReadOnlyList<string>> _globalDefaults;
     private readonly IStorageFactory _storages;
+    private readonly SourceScanCache? _scanCache;
+    private readonly string? _planId;
     private SourceIndex? _index;
     private LiveScan? _scan;
     private CancellationTokenSource? _indexCts;
@@ -96,11 +98,15 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     /// <param name="openFile">Opens a file with its program (the editor of "Open in editor"); tests record instead.</param>
     /// <param name="openInNotepad">Fallback when <paramref name="openFile"/> fails (no program for the file type).</param>
     /// <param name="dialogs">Shows the error when neither could open the file; none shows nothing.</param>
+    /// <param name="scanCache">Where a finished index is shared with the control service, and read from after a release; with <paramref name="planId"/>.</param>
     public IgnorePreviewViewModel(Func<StorageLocation?> source, Func<IgnoreSettings> ignoreSettings,
         Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages,
         Func<Func<VersionIndex>?>? versionIndex = null, Action? requestIndexSync = null,
-        Func<string, bool>? openFile = null, Func<string, bool>? openInNotepad = null, IDialogService? dialogs = null)
+        Func<string, bool>? openFile = null, Func<string, bool>? openInNotepad = null, IDialogService? dialogs = null,
+        SourceScanCache? scanCache = null, string? planId = null)
     {
+        _scanCache = planId is null ? null : scanCache;
+        _planId = planId;
         _openFile = openFile ?? ShellFileOpener.Open;
         _openInNotepad = openInNotepad ?? ShellFileOpener.OpenInNotepad;
         _dialogs = dialogs;
@@ -138,6 +144,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     /// <summary>Drops the cached index, e.g. after the source folder changed.</summary>
     public void Invalidate()
     {
+        if (_planId is not null)
+            _scanCache?.Invalidate(_planId);
         _indexCts?.Cancel();
         _indexCts = null;   // the aborted scan must not touch the state below any more
         _scan = null;
@@ -185,6 +193,12 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     private async Task IndexAsync()
     {
         var source = _source();
+        // Freed earlier (or never shown) but still held by the cache: show that index instead of scanning again.
+        if (_index is null && source is not null && _planId is not null && _scanCache?.TryGetCompleted(_planId, source) is { } cached)
+        {
+            await ShowCachedAsync(cached);
+            return;
+        }
         IStorage? storage = null;
         // A folder needs a path; on other kinds (e.g. S3) an empty path is the storage's root.
         if (source is not null && (!source.IsFileSystem || !string.IsNullOrWhiteSpace(source.Path)))
@@ -242,6 +256,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
             IsIndexing = false;
             Progress = LocText.Of("ignore.progress.indexed", ("files", Formats.Files(index.FileCount)),
                 ("folders", Formats.Folders(index.DirectoryCount)));
+            if (_planId is not null)
+                _scanCache?.Put(_planId, index, source);   // the same instance the tab holds, not a copy
             CompactMemory();   // the live tree of the scan is garbage now
             RequestReevaluate();   // in case the patterns were edited while the result was being evaluated
         }
@@ -282,6 +298,33 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         {
             if (ReferenceEquals(_indexCts, cts))
                 IsIndexing = false;
+        }
+    }
+
+    /// <summary>Shows an index the cache held; evaluated with the current patterns like a finished scan.</summary>
+    private async Task ShowCachedAsync(SourceIndex index)
+    {
+        _indexCts?.Cancel();
+        _evaluateCts?.Cancel();
+        _evaluationVersion++;
+        var cts = _indexCts = new CancellationTokenSource();
+        ErrorText = null;
+        try
+        {
+            while (!await EvaluateAsync(index, cts.Token))
+            {
+            }
+            Progress = LocText.Of("ignore.progress.indexed", ("files", Formats.Files(index.FileCount)),
+                ("folders", Formats.Folders(index.DirectoryCount)));
+            RequestReevaluate();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_indexCts, cts))
+                ErrorText = LocText.Known(ex.Message);
         }
     }
 

@@ -60,6 +60,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <param name="saveSettings">Saves <paramref name="settings"/> (the plan order) to settings.json.</param>
     /// <param name="settingsLoadError">Why settings.json could not be read; the plan order then is not saved over it.</param>
+    /// <summary>The finished source scans of the plans last looked at; shared by the Ignore tabs and the control service.</summary>
+    public SourceScanCache ScanCache { get; }
+
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, Action saveSettings,
         Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
@@ -71,8 +74,10 @@ public sealed partial class MainViewModel : ObservableObject
         _recycleBin = recycleBin ?? new ShellRecycleBin();
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
         _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
+        ScanCache = new SourceScanCache(storages, GlobalIgnoreDefaults);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
-            DescribeLocation: DescribeLocation, TempOpener: tempOpener, TrackJob: (job, running) => Track(job, running));
+            DescribeLocation: DescribeLocation, TempOpener: tempOpener, TrackJob: (job, running) => Track(job, running),
+            ScanCache: ScanCache);
         // A connection added, edited or deleted (Settings, "New connection…"): the plans that use one validate again.
         _s3.Changed += (_, _) => RevalidateAll();
         _drive.Changed += (_, _) => RevalidateAll();
