@@ -20,8 +20,9 @@ public sealed class ControlServerHost : IAsyncDisposable
     private readonly string _pipeName;
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentDictionary<NamedPipeServerStream, Task> _connections = new();
+    private readonly object _startLock = new();
+    private bool _started;
     private Task? _listener;
-    private int _started;
 
     public ControlServerHost(IControlHandler handler, string appVersion, string? pipeName = null)
     {
@@ -30,12 +31,27 @@ public sealed class ControlServerHost : IAsyncDisposable
         _pipeName = pipeName ?? ControlPipe.NameForCurrentUser();
     }
 
+    /// <exception cref="InvalidOperationException">The pipe name is already taken by another process.</exception>
     public void Start()
     {
-        if (Interlocked.Exchange(ref _started, 1) != 0) return;
-        // The first instance exists before Start returns, so a client connecting right after never misses the pipe.
-        var first = ControlPipe.CreateServerStream(_pipeName);
-        _listener = Task.Run(() => ListenAsync(first));
+        lock (_startLock)
+        {
+            if (_started) return;
+            // The first instance exists before Start returns, so a client connecting right after never misses the
+            // pipe. FirstPipeInstance makes this fail when someone else already owns the name (squatting).
+            NamedPipeServerStream first;
+            try
+            {
+                first = ControlPipe.CreateServerStream(_pipeName, firstInstance: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new InvalidOperationException(
+                    $"The control pipe '{_pipeName}' already exists and belongs to another process; refusing to join it.", ex);
+            }
+            _started = true;
+            _listener = Task.Run(() => ListenAsync(first));
+        }
     }
 
     private async Task ListenAsync(NamedPipeServerStream pending)
@@ -63,7 +79,10 @@ public sealed class ControlServerHost : IAsyncDisposable
                 await connected.DisposeAsync().ConfigureAwait(false);
                 return;
             }
-            _connections[connected] = Task.Run(() => ServeAsync(connected, ct), CancellationToken.None);
+            // Register before the task can run, so its cleanup in finally always finds the entry.
+            var serve = new Task<Task>(() => ServeAsync(connected, ct), CancellationToken.None);
+            _connections[connected] = serve.Unwrap();
+            serve.Start();
         }
         await pending.DisposeAsync().ConfigureAwait(false);
     }
@@ -72,7 +91,7 @@ public sealed class ControlServerHost : IAsyncDisposable
     {
         try
         {
-            using var reader = new StreamReader(stream, Utf8, false, 4096, leaveOpen: true);
+            var reader = new BoundedLineReader(stream);
             using var writer = new StreamWriter(stream, Utf8, 4096, leaveOpen: true) { NewLine = "\n", AutoFlush = true };
 
             await writer.WriteLineAsync(JsonSerializer.Serialize(
@@ -80,7 +99,17 @@ public sealed class ControlServerHost : IAsyncDisposable
 
             while (!ct.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                string? line;
+                try
+                {
+                    line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                }
+                catch (LineTooLongException)
+                {
+                    var tooLong = ControlResponse.Failure("", ControlErrors.BadRequest, "The request line is too long.");
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(tooLong, ControlJson.Options)).ConfigureAwait(false);
+                    break; // framing is lost; close the connection
+                }
                 if (line is null) break;
                 if (line.Length == 0) continue;
                 var response = await RespondAsync(line, ct).ConfigureAwait(false);
@@ -140,7 +169,9 @@ public sealed class ControlServerHost : IAsyncDisposable
         {
             try { await _listener.ConfigureAwait(false); } catch { /* listener ends on cancel */ }
         }
-        await Task.WhenAll(_connections.Values.ToArray()).ConfigureAwait(false);
-        _cts.Dispose();
+        // A handler that ignores cancellation must not hang shutdown; stragglers finish in the background.
+        var drained = Task.WhenAll(_connections.Values.ToArray());
+        await Task.WhenAny(drained, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+        if (drained.IsCompleted) _cts.Dispose();
     }
 }

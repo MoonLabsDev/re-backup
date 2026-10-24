@@ -11,14 +11,15 @@ public sealed class ControlClient : IAsyncDisposable
     private static readonly UTF8Encoding Utf8 = new(false);
 
     private readonly NamedPipeClientStream _pipe;
-    private readonly StreamReader _reader;
+    private readonly BoundedLineReader _reader;
     private readonly StreamWriter _writer;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private long _nextId;
+    private volatile bool _broken;
 
     public string AppVersion { get; }
 
-    private ControlClient(NamedPipeClientStream pipe, StreamReader reader, StreamWriter writer, string appVersion)
+    private ControlClient(NamedPipeClientStream pipe, BoundedLineReader reader, StreamWriter writer, string appVersion)
     {
         _pipe = pipe;
         _reader = reader;
@@ -32,25 +33,32 @@ public sealed class ControlClient : IAsyncDisposable
     public static async Task<ControlClient> ConnectAsync(string? pipeName, TimeSpan timeout, CancellationToken ct)
     {
         pipeName ??= ControlPipe.NameForCurrentUser();
-        var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        // CurrentUserOnly refuses a server owned by another user. It also compares elevation, so an elevated
+        // bridge talking to a non-elevated app (or the reverse) is refused.
+        var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         try
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
             linked.CancelAfter(timeout);
 
             string? line;
-            StreamReader reader;
+            BoundedLineReader reader;
             StreamWriter writer;
             try
             {
                 await pipe.ConnectAsync(linked.Token).ConfigureAwait(false);
-                reader = new StreamReader(pipe, Utf8, false, 4096, leaveOpen: true);
+                reader = new BoundedLineReader(pipe);
                 writer = new StreamWriter(pipe, Utf8, 4096, leaveOpen: true) { NewLine = "\n", AutoFlush = true };
                 line = await reader.ReadLineAsync(linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
                 throw Unavailable();
+            }
+            catch (LineTooLongException)
+            {
+                throw new ControlProtocolException("The server sent an oversized handshake.");
             }
             catch (IOException ex)
             {
@@ -81,6 +89,7 @@ public sealed class ControlClient : IAsyncDisposable
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (_broken) throw Unavailable();
             var id = Interlocked.Increment(ref _nextId).ToString();
             var request = new ControlRequest(id, op,
                 JsonSerializer.SerializeToElement(args ?? new { }, ControlJson.Options));
@@ -89,20 +98,26 @@ public sealed class ControlClient : IAsyncDisposable
                 await _writer.WriteLineAsync(JsonSerializer.Serialize(request, ControlJson.Options)).ConfigureAwait(false);
                 var line = await _reader.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null) throw Unavailable();
-                return JsonSerializer.Deserialize<ControlResponse>(line, ControlJson.Options)
-                       ?? throw new ControlProtocolException("The server sent an empty response.");
+                var response = JsonSerializer.Deserialize<ControlResponse>(line, ControlJson.Options)
+                               ?? throw new ControlProtocolException("The server sent an empty response.");
+                if (response.Id != id)
+                    throw new ControlProtocolException(
+                        $"The server answered request '{response.Id}' while '{id}' was pending.");
+                return response;
             }
-            catch (IOException ex) when (ex is not ControlUnavailableException)
+            catch (Exception ex)
             {
-                throw Unavailable(ex);
-            }
-            catch (ObjectDisposedException ex)
-            {
-                throw Unavailable(ex);
-            }
-            catch (JsonException ex)
-            {
-                throw new ControlProtocolException("The server sent an unreadable response: " + ex.Message);
+                // Once the request has left, an unread or half-read answer would be mistaken for the next call's:
+                // the connection is unusable from here on.
+                Break();
+                throw ex switch
+                {
+                    ControlUnavailableException or ControlProtocolException or OperationCanceledException => ex,
+                    LineTooLongException => new ControlProtocolException("The server sent an oversized response."),
+                    IOException or ObjectDisposedException => Unavailable(ex),
+                    JsonException => new ControlProtocolException("The server sent an unreadable response: " + ex.Message),
+                    _ => ex,
+                };
             }
         }
         finally
@@ -111,12 +126,18 @@ public sealed class ControlClient : IAsyncDisposable
         }
     }
 
+    private void Break()
+    {
+        _broken = true;
+        try { _pipe.Dispose(); } catch { /* already closed */ }
+    }
+
     private static ControlUnavailableException Unavailable(Exception? inner = null) =>
         new(ControlErrors.AppNotRunningMessage, inner);
 
     public async ValueTask DisposeAsync()
     {
+        _broken = true;
         await _pipe.DisposeAsync().ConfigureAwait(false);
-        _gate.Dispose();
     }
 }

@@ -13,18 +13,24 @@ public static class ControlPipe
     [SupportedOSPlatform("windows")]
     public static string NameForCurrentUser() => "ReBackup.Control." + WindowsIdentity.GetCurrent().User!.Value;
 
-    /// <summary>Creates a listening instance whose ACL grants the current user only.</summary>
+    /// <summary>
+    /// Creates a listening instance whose ACL grants the current user only. The first instance of a pipe must pass
+    /// <paramref name="firstInstance"/> so the call fails when the name is already taken (no joining a foreign pipe).
+    /// </summary>
     [SupportedOSPlatform("windows")]
-    public static NamedPipeServerStream CreateServerStream(string pipeName)
+    public static NamedPipeServerStream CreateServerStream(string pipeName, bool firstInstance = false)
     {
+        var user = WindowsIdentity.GetCurrent().User!;
         var security = new PipeSecurity();
+        security.SetOwner(user); // clients using CurrentUserOnly compare the owner with their own user
         security.AddAccessRule(new PipeAccessRule(
-            WindowsIdentity.GetCurrent().User!,
+            user,
             PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance,
             AccessControlType.Allow));
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        var options = PipeOptions.Asynchronous | (firstInstance ? PipeOptions.FirstPipeInstance : PipeOptions.None);
         return NamedPipeServerStreamAcl.Create(
             pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, security);
+            PipeTransmissionMode.Byte, options, 0, 0, security);
     }
 }

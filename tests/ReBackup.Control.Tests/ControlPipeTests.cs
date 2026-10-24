@@ -89,7 +89,7 @@ public sealed class ControlPipeTests
 
         var act = () => ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
         var ex = (await act.Should().ThrowAsync<ControlProtocolException>()).Which;
-        ex.Message.Should().Contain("99").And.Contain("1");
+        ex.Message.Should().Contain("version 9.9").And.Contain("control protocol 99").And.Contain("this client speaks 1");
         ex.Key.Should().Be(ControlErrors.ProtocolMismatch);
         raw.Dispose();
         try { await serve; } catch { }
@@ -100,14 +100,209 @@ public sealed class ControlPipeTests
     {
         var name = UniquePipe();
         var host = new ControlServerHost(new EchoHandler(), "1", name);
+        try
+        {
+            host.Start();
+            await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+            (await client.SendAsync("ping", null, default)).Ok.Should().BeTrue();
+
+            await host.DisposeAsync();
+
+            var act = () => client.SendAsync("ping", null, default);
+            await act.Should().ThrowAsync<ControlUnavailableException>();
+        }
+        finally
+        {
+            await host.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public void Start_refuses_to_join_a_pipe_name_that_already_exists()
+    {
+        var name = UniquePipe();
+        using var squatter = new NamedPipeServerStream(name, PipeDirection.InOut, 4, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        var host = new ControlServerHost(new EchoHandler(), "1", name);
+
+        var act = host.Start;
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already exists*");
+    }
+
+    [Fact]
+    public async Task Failed_start_can_be_retried_once_the_name_is_free()
+    {
+        var name = UniquePipe();
+        var squatter = new NamedPipeServerStream(name, PipeDirection.InOut, 4, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        await using var host = new ControlServerHost(new EchoHandler(), "1", name);
+        var act = host.Start;
+        act.Should().Throw<InvalidOperationException>();
+        squatter.Dispose();
+
         host.Start();
         await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
         (await client.SendAsync("ping", null, default)).Ok.Should().BeTrue();
+    }
 
-        await host.DisposeAsync();
+    [Fact]
+    public async Task Cancelled_call_breaks_the_client_so_a_stale_response_is_never_returned()
+    {
+        var name = UniquePipe();
+        var handler = new GateHandler();
+        await using var host = new ControlServerHost(handler, "1", name);
+        host.Start();
+        await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+
+        using var cts = new CancellationTokenSource();
+        var blocked = client.SendAsync("block", null, cts.Token);
+        await Task.Delay(200);
+        cts.Cancel();
+        var waiting = async () => await blocked;
+        await waiting.Should().ThrowAsync<OperationCanceledException>();
+        handler.Release.SetResult(); // the late answer for "block" is now on its way
+
+        var next = () => client.SendAsync("fast", null, default);
+        await next.Should().ThrowAsync<ControlUnavailableException>();
+    }
+
+    [Fact]
+    public async Task Response_with_a_foreign_id_is_a_protocol_error()
+    {
+        var name = UniquePipe();
+        await using var fake = FakeServer.Start(name, async (stream, reader) =>
+        {
+            await FakeServer.WriteLineAsync(stream, "{\"protocol\":1,\"appVersion\":\"1\"}");
+            await reader.ReadLineAsync(default);
+            await FakeServer.WriteLineAsync(stream, "{\"id\":\"999\",\"ok\":true}");
+        });
+        await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
 
         var act = () => client.SendAsync("ping", null, default);
-        await act.Should().ThrowAsync<ControlUnavailableException>();
+        await act.Should().ThrowAsync<ControlProtocolException>().WithMessage("*999*");
+    }
+
+    [Fact]
+    public async Task Oversized_response_is_a_protocol_error()
+    {
+        var name = UniquePipe();
+        await using var fake = FakeServer.Start(name, async (stream, reader) =>
+        {
+            await FakeServer.WriteLineAsync(stream, "{\"protocol\":1,\"appVersion\":\"1\"}");
+            await reader.ReadLineAsync(default);
+            await FakeServer.WriteLineAsync(stream, new string('x', 1024 * 1024 + 10));
+        });
+        await using var client = await ControlClient.ConnectAsync(name, TimeSpan.FromSeconds(5), default);
+
+        var act = () => client.SendAsync("ping", null, default);
+        await act.Should().ThrowAsync<ControlProtocolException>().WithMessage("*oversized*");
+    }
+
+    [Fact]
+    public async Task Oversized_request_gets_bad_request_and_the_connection_closes()
+    {
+        var name = UniquePipe();
+        await using var host = new ControlServerHost(new EchoHandler(), "1", name);
+        host.Start();
+        await using var raw = await RawClient.ConnectAsync(name);
+
+        await raw.SendRawAsync(new string('x', 1024 * 1024 + 10) + "\n");
+
+        var response = JsonSerializer.Deserialize<ControlResponse>((await raw.ReadLineAsync())!, ControlJson.Options)!;
+        response.Ok.Should().BeFalse();
+        response.Error!.Key.Should().Be(ControlErrors.BadRequest);
+        (await raw.ReadLineAsync()).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("this is not json")]
+    [InlineData("{\"id\":\"5\",\"args\":{}}")]
+    public async Task Malformed_line_or_missing_op_gets_bad_request_and_session_survives(string line)
+    {
+        var name = UniquePipe();
+        await using var host = new ControlServerHost(new EchoHandler(), "1", name);
+        host.Start();
+        await using var raw = await RawClient.ConnectAsync(name);
+
+        await raw.SendRawAsync(line + "\n");
+        var bad = JsonSerializer.Deserialize<ControlResponse>((await raw.ReadLineAsync())!, ControlJson.Options)!;
+        bad.Ok.Should().BeFalse();
+        bad.Error!.Key.Should().Be(ControlErrors.BadRequest);
+
+        await raw.SendRawAsync("{\"id\":\"6\",\"op\":\"ping\"}\n");
+        var good = JsonSerializer.Deserialize<ControlResponse>((await raw.ReadLineAsync())!, ControlJson.Options)!;
+        good.Ok.Should().BeTrue();
+        good.Id.Should().Be("6");
+    }
+
+    private sealed class RawClient : IAsyncDisposable
+    {
+        private readonly NamedPipeClientStream _pipe;
+        private readonly StreamReader _reader;
+
+        private RawClient(NamedPipeClientStream pipe)
+        {
+            _pipe = pipe;
+            _reader = new StreamReader(pipe, new System.Text.UTF8Encoding(false));
+        }
+
+        public static async Task<RawClient> ConnectAsync(string name)
+        {
+            var pipe = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(5000);
+            var client = new RawClient(pipe);
+            (await client.ReadLineAsync()).Should().Contain("\"protocol\":1"); // handshake
+            return client;
+        }
+
+        public Task<string?> ReadLineAsync() => _reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        public async Task SendRawAsync(string text)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(text);
+            await _pipe.WriteAsync(bytes);
+            await _pipe.FlushAsync();
+        }
+
+        public ValueTask DisposeAsync() => _pipe.DisposeAsync();
+    }
+
+    private sealed class FakeServer : IAsyncDisposable
+    {
+        private readonly NamedPipeServerStream _stream;
+        private readonly Task _task;
+
+        private FakeServer(NamedPipeServerStream stream, Task task)
+        {
+            _stream = stream;
+            _task = task;
+        }
+
+        public static FakeServer Start(string name, Func<NamedPipeServerStream, StreamReader, Task> script)
+        {
+            var stream = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            var task = Task.Run(async () =>
+            {
+                try
+                {
+                    await stream.WaitForConnectionAsync();
+                    await script(stream, new StreamReader(stream, new System.Text.UTF8Encoding(false)));
+                    await Task.Delay(1000);
+                }
+                catch (Exception) { /* client went away */ }
+            });
+            return new FakeServer(stream, task);
+        }
+
+        public static async Task WriteLineAsync(Stream s, string line)
+        {
+            await s.WriteAsync(System.Text.Encoding.UTF8.GetBytes(line + "\n"));
+            await s.FlushAsync();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stream.DisposeAsync();
+            try { await _task; } catch { }
+        }
     }
 
     [Fact]
