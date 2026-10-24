@@ -24,7 +24,7 @@ public class IgnoreFileFoldersTests : IDisposable
         _index.FindPath(path, isDirectory: true) ?? throw new InvalidOperationException($"{path} is not indexed");
 
     [Fact]
-    public void FoldersWithIgnoreFile_returns_parent_ids_of_the_version_only()
+    public async Task FoldersWithIgnoreFile_returns_parent_ids_of_the_version_only()
     {
         Write(_target, "2026_09_29-14_05", [File("keep.txt", "k"), File("old/.backupignore", "*.tmp"), File("old/a.txt", "a")]);
         Write(_target, "2026_09_30-14_05",
@@ -32,7 +32,7 @@ public class IgnoreFileFoldersTests : IDisposable
             File(".backupignore", "x"), File("sub/.BackupIgnore", "y"), File("sub/deep/f.txt", "f"),
             File("other/.backupignore.bak", "z"), File("docs/a.txt", "a"),
         ]);
-        _index.Sync(ListAsync(_target).GetAwaiter().GetResult(), TargetStorage(_target));
+        _index.Sync(await ListAsync(_target), TargetStorage(_target));
         var versions = _index.Versions();
 
         var newer = _index.FoldersWithIgnoreFile(versions[1].Id);

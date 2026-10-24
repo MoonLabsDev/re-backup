@@ -382,6 +382,45 @@ public class MainWindowSmokeTests
         });
     }
 
+    [Fact]
+    public void The_ignore_view_offers_the_relocation_commands_and_the_relocation_dialog_loads()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddPlan("a", "Alpha");
+            var vm = fixture.Create();
+            var view = new ReBackup.App.Views.IgnorePreviewView { DataContext = vm.Plans[0] };
+            view.Measure(new Size(1280, 800));
+            view.Arrange(new Rect(new Size(1280, 800)));
+            view.UpdateLayout();
+
+            var tree = (ListView)view.FindName("RowsList");
+            tree.ContextMenu!.Items.OfType<MenuItem>()
+                .Select(item => BindingOperations.GetBinding(item, MenuItem.CommandProperty)?.Path.Path)
+                .Should().Contain([nameof(PlanEditorViewModel.IntegrateIgnoreFileCommand), nameof(PlanEditorViewModel.ExtractToFolderCommand)]);
+            FindAll<Button>(view).Select(b => BindingOperations.GetBinding(b, ButtonBase.CommandProperty)?.Path.Path)
+                .Should().Contain(nameof(PlanEditorViewModel.IntegrateIgnoreFileCommand), "the detail panel has the button");
+
+            var proposal = new ReBackup.Core.Ignore.RelocationProposal(ReBackup.Core.Ignore.RelocationKind.Extract, "sub",
+                ["/sub/*.tmp", "*.log"], ["*.log"], null, "# from plan\n/*.tmp\n",
+                [new ReBackup.Core.Ignore.RejectedLine("*.log", ReBackup.Core.Ignore.RejectReason.MatchesOutsideFolder)],
+                new ReBackup.Core.Ignore.EquivalenceResult.Differs(1,
+                    [new ReBackup.Core.Ignore.EquivalenceExample("sub/keep.tmp", false, true, "/*.tmp")]), "h", null)
+            {
+                MovedLines = ["/sub/*.tmp"],
+            };
+            var model = new RelocationDialogViewModel(proposal);
+            var content = Layout(new ReBackup.App.Views.RelocationDialog(model));
+            FindAll<CheckBox>(content).Should().ContainSingle(c => Shown(c), "Apply anyway needs the checkbox in the red state");
+            FindAll<Button>(content).Single(b => b.IsDefault).IsEnabled.Should().BeFalse();
+            model.ApplyAnyway = true;
+            content.UpdateLayout();
+            FindAll<Button>(content).Single(b => b.IsDefault).IsEnabled.Should().BeTrue();
+        });
+    }
+
     /// <summary>Whether the element and all its ancestors are Visible (IsVisible needs a shown window).</summary>
     private static bool Shown(DependencyObject element)
     {

@@ -141,6 +141,9 @@ public sealed class MainViewModelFixture : IDisposable
 
     public FakeDialogs Dialogs { get; } = new();
 
+    /// <summary>Where the editors put integrated <c>.backupignore</c> files; moves them into a folder of its own.</summary>
+    public FakeRecycleBin RecycleBin { get; } = new();
+
     /// <summary>How often the view model saved the settings.</summary>
     public int SettingsSaves { get; private set; }
 
@@ -168,7 +171,8 @@ public sealed class MainViewModelFixture : IDisposable
         var versionIndex = new VersionIndexWorker(new VersionIndexSet(Path.Combine(Root, "index")));
         return new MainViewModel(Store, Paths, Settings, SaveSettings, () => LoadError, Dialogs, () => { }, queue, scheduler,
             action => action(), new ThemeToggleViewModel(() => ThemeMode.Dark, _ => { }),
-            new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages, S3, Drive);
+            new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages, S3, Drive,
+            recycleBin: RecycleBin);
     }
 
     /// <summary>The English labels, as the app registers them, so texts in the tests read as in the app.</summary>
@@ -224,6 +228,21 @@ public sealed class FakeDialogs : IDialogService
     public List<VerifyViewModel> VerifyDialogs { get; } = [];
 
     public void ShowCopyPlan(CopyPlanViewModel viewModel) => CopyDialogs.Add(viewModel);
+
+    /// <summary>The relocation dialogs shown, in order.</summary>
+    public List<RelocationDialogViewModel> Relocations { get; } = [];
+
+    /// <summary>What a relocation dialog answers when <see cref="OnRelocation"/> is not set.</summary>
+    public bool RelocationAnswer { get; set; } = true;
+
+    /// <summary>Plays the user in the relocation dialog (ticks boxes, changes files meanwhile); answers the dialog.</summary>
+    public Func<RelocationDialogViewModel, bool>? OnRelocation { get; set; }
+
+    public bool ConfirmRelocation(RelocationDialogViewModel model)
+    {
+        Relocations.Add(model);
+        return OnRelocation?.Invoke(model) ?? RelocationAnswer;
+    }
 
     public void ShowVerify(VerifyViewModel viewModel) => VerifyDialogs.Add(viewModel);
 
@@ -301,6 +320,24 @@ public sealed class FakeDialogs : IDialogService
     public void ShowFailures(string title, string message, IReadOnlyList<string> lines) { }
 
     public bool ConfirmFailures(string title, string message, IReadOnlyList<string> lines, string confirmText) => false;
+}
+
+/// <summary>Moves recycled files into a folder of its own (never deletes them) and answers <see cref="Outcome"/>.</summary>
+public sealed class FakeRecycleBin : ReBackup.Core.Ignore.IRecycleBin
+{
+    private readonly string _bin = Path.Combine(Path.GetTempPath(), "rebackup-app-tests-bin", Guid.NewGuid().ToString("N"));
+
+    public List<string> Recycled { get; } = [];
+
+    public ReBackup.Core.Ignore.RecycleOutcome Outcome { get; set; } = ReBackup.Core.Ignore.RecycleOutcome.Recycled;
+
+    public ReBackup.Core.Ignore.RecycleOutcome Recycle(string path)
+    {
+        Directory.CreateDirectory(_bin);
+        File.Move(path, Path.Combine(_bin, Recycled.Count + "-" + Path.GetFileName(path)));
+        Recycled.Add(path);
+        return Outcome;
+    }
 }
 
 /// <summary>Opens nothing (every call answers false) and records the files it was asked to open or show.</summary>

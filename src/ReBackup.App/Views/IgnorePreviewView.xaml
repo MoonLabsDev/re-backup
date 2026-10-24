@@ -82,7 +82,9 @@
                           IsChecked="{Binding UseGlobalIgnoreDefaults}">
                     <TextBlock TextWrapping="Wrap" Text="{l:Loc ignore.patterns.global}" />
                 </CheckBox>
-                <TextBox AcceptsReturn="True" Style="{StaticResource TextBox.Code}" AutomationProperties.Name="{l:Loc ignore.patterns.name}"
+                <!-- The selected lines are what "Move selected rules to …" moves; the selection stays visible without focus. -->
+                <TextBox x:Name="PatternsBox" AcceptsReturn="True" Style="{StaticResource TextBox.Code}" AutomationProperties.Name="{l:Loc ignore.patterns.name}"
+                         IsInactiveSelectionHighlightEnabled="True"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          Text="{Binding IgnorePatternsText, UpdateSourceTrigger=PropertyChanged}" />
             </DockPanel>
@@ -260,11 +262,17 @@
                         </Style>
                     </ListView.Style>
                     <ListView.ContextMenu>
-                        <ContextMenu>
+                        <ContextMenu Opened="OnTreeMenuOpened">
                             <MenuItem Header="{l:Loc ignore.tree.ignoreThis}" Command="{Binding IgnoreSelectedCommand}" />
                             <MenuItem Header="{l:Loc ignore.tree.ignoreExtension}"
                                       Command="{Binding IgnoreSelectedExtensionCommand}" />
                             <MenuItem Header="{l:Loc ignore.tree.unignore}" Command="{Binding UnignoreSelectedCommand}" />
+                            <Separator />
+                            <MenuItem Header="{l:Loc ignore.tree.integrate}" Command="{Binding IntegrateIgnoreFileCommand}"
+                                      ToolTip="{Binding RelocationDisabledReason}" ToolTipService.ShowOnDisabled="True" />
+                            <!-- Its parameter, the pattern lines selected on the left, is set when the menu opens. -->
+                            <MenuItem x:Name="ExtractMenuItem" Header="{Binding ExtractMenuText}" Command="{Binding ExtractToFolderCommand}"
+                                      ToolTip="{Binding ExtractDisabledReason}" ToolTipService.ShowOnDisabled="True" />
                         </ContextMenu>
                     </ListView.ContextMenu>
                     <ListView.ItemContainerStyle>
@@ -522,12 +530,18 @@
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" Style="{StaticResource TextBlock.Small}" Margin="0,4,0,10"
                            Text="{Binding Preview.SelectedIgnoreFile.Path}" ToolTip="{Binding Preview.SelectedIgnoreFile.Path}" />
-                <Button DockPanel.Dock="Bottom" Margin="0,10,0,0" HorizontalAlignment="Left"
-                        Command="{Binding Preview.OpenIgnoreFileInEditorCommand}"
-                        ToolTip="{Binding Preview.IgnoreFileEditorToolTip}"
-                        AutomationProperties.Name="{l:Loc ignore.files.openInEditor}">
-                    <TextBlock Text="{l:Loc ignore.files.openInEditor}" />
-                </Button>
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                    <Button Margin="0,0,8,0" Command="{Binding Preview.OpenIgnoreFileInEditorCommand}"
+                            ToolTip="{Binding Preview.IgnoreFileEditorToolTip}" ToolTipService.ShowOnDisabled="True"
+                            AutomationProperties.Name="{l:Loc ignore.files.openInEditor}">
+                        <TextBlock Text="{l:Loc ignore.files.openInEditor}" />
+                    </Button>
+                    <Button Command="{Binding IntegrateIgnoreFileCommand}"
+                            ToolTip="{Binding RelocationDisabledReason}" ToolTipService.ShowOnDisabled="True"
+                            AutomationProperties.Name="{l:Loc ignore.files.integrate}">
+                        <TextBlock Text="{l:Loc ignore.files.integrate}" />
+                    </Button>
+                </WrapPanel>
                 <ListView Style="{StaticResource ListView.Table}" SelectionMode="Single"
                           AutomationProperties.Name="{l:Loc ignore.files.lines}"
                           ItemsSource="{Binding Preview.SelectedIgnoreFile.Lines}"

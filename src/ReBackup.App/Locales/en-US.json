@@ -676,7 +676,9 @@
       "percent": "% of parent",
       "compareSize": "In version",
       "sizeChange": "Difference",
-      "sizeChangeToolTip": "What the next backup would hold minus what the version holds"
+      "sizeChangeToolTip": "What the next backup would hold minus what the version holds",
+      "integrate": "Integrate into plan…",
+      "extract": "Move selected rules to {folder}/.backupignore…"
     },
     "treemap": {
       "resize": "Resize the treemap",
@@ -697,6 +699,43 @@
       "integrate": "Integrate into plan…",
       "hits": "{entries} entries · {bytes}",
       "unused": "no hits"
+    },
+    "relocation": {
+      "title": "Move ignore rules",
+      "integrateHeading": "Integrate {path} into the plan",
+      "extractHeading": "Move plan rules to {path}",
+      "planPatterns": "Plan patterns",
+      "identical": "Backup scope unchanged",
+      "differs": {
+        "one": "{count} entry changes",
+        "other": "{count:N0} entries change"
+      },
+      "waiting": "Waiting for the scan…",
+      "existingOnly": "Checked against the files that exist now.",
+      "rejectedTitle": "These lines stay in the plan:",
+      "rejected": {
+        "notBelowFolder": "Anchored outside this folder",
+        "matchesOutsideFolder": "Also matches outside this folder"
+      },
+      "nothing": "No line can be moved.",
+      "examples": "Entries that change",
+      "change": "Change",
+      "pattern": "Deciding pattern",
+      "nowIgnored": "included → ignored",
+      "nowIncluded": "ignored → included",
+      "apply": "Apply",
+      "applyAnyway": "Apply anyway",
+      "applyAnywayCheck": "I understand that the backup scope changes",
+      "stale": "The plan or the file changed since the preview. Nothing was written.",
+      "noScan": "Not checked: index the source first.",
+      "scanRunning": "The backup scope can only be checked against a finished scan. Try again when the scan is done.",
+      "unreadableFile": "Not checked: the .backupignore could not be read during the scan.",
+      "saveFirst": "Save the plan first",
+      "notFolder": "Only available for folder sources",
+      "honorOff": "Turn on \"Honor .backupignore files inside the source\" first",
+      "notSaved": "The plan could not be saved. Nothing was changed.",
+      "failed": "The change could not be written: {error}",
+      "renamed": "This drive has no recycle bin, so the integrated file was renamed to {name}."
     },
     "patternNote": "Changes to the patterns are applied when the scan is finished.",
     "sourceMissing": "The source folder does not exist.",

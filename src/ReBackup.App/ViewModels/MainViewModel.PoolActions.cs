@@ -186,7 +186,7 @@ public sealed partial class MainViewModel
         var editor = CopyEditor(plan);
         if (editor is null)   // else a reload from disk was quicker
         {
-            editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3, _drive);
+            editor = NewEditor(plan, isNew: false);
             AddEditor(editor);
         }
         editor.IsCopying = true;   // the copy runs: neither run nor delete it meanwhile

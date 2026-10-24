@@ -7,6 +7,7 @@ using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
 using ReBackup.Core.Config;
+using ReBackup.Core.Ignore;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
@@ -43,6 +44,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly VersionsContext _versions;
     private readonly S3Connections _s3;
     private readonly DriveConnections _drive;
+    private readonly IRecycleBin _recycleBin;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedPlan))]
@@ -62,9 +64,11 @@ public sealed partial class MainViewModel : ObservableObject
         Func<string?> settingsLoadError, IDialogService dialogs,
         Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
-        IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null, ITempOpener? tempOpener = null)
+        IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null, ITempOpener? tempOpener = null,
+        IRecycleBin? recycleBin = null)
     {
         _folders = folders;
+        _recycleBin = recycleBin ?? new ShellRecycleBin();
         _s3 = s3 ?? new S3Connections(paths.ConnectionsFile);
         _drive = drive ?? new DriveConnections(paths.DriveConnectionsFile);
         _versions = new VersionsContext(versionIndex, dialogs, text => SetStatus(text), storages,
@@ -95,7 +99,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var result = _store.LoadAll();
         foreach (var plan in PlanOrder.Apply(result.Plans, _settings.PlanOrder))
-            AddEditor(new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3, _drive));
+            AddEditor(NewEditor(plan, isNew: false));
         RevalidateAll();
         SelectedPlan = Plans.FirstOrDefault();
         SetStatus(LoadErrorText(result) ?? LocText.Of("shell.status.configuration", ("path", _paths.Root)));
@@ -273,7 +277,7 @@ public sealed partial class MainViewModel : ObservableObject
         // Plans that appeared go where the saved order puts them, the others to the end (by name).
         foreach (var plan in PlanOrder.Apply(loaded.Values, _settings.PlanOrder))
         {
-            var editor = new PlanEditorViewModel(plan, isNew: false, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3, _drive);
+            var editor = NewEditor(plan, isNew: false);
             AddEditor(editor, PlanOrder.InsertionIndex(Plans, p => p.Id, plan.Id, _settings.PlanOrder));
         }
 
@@ -289,8 +293,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void NewPlan()
     {
-        var editor = new PlanEditorViewModel(new BackupPlan { Name = UniqueName(Loc.T("shell.plans.newName")) }, isNew: true, AllPlans, GlobalIgnoreDefaults,
-            _folders, _versions, _s3, _drive);
+        var editor = NewEditor(new BackupPlan { Name = UniqueName(Loc.T("shell.plans.newName")) }, isNew: true);
         AddEditor(editor);
         RevalidateAll();
         SelectedPlan = editor;
@@ -859,6 +862,10 @@ public sealed partial class MainViewModel : ObservableObject
             SetStatus(LocText.Of("shell.status.historyUnreadable", ("plan", editor.Name), ("error", ex.Message)));
         }
     }
+
+    /// <summary>An editor on <paramref name="plan"/>; it saves through <see cref="SaveEditor"/>, as the Save button does.</summary>
+    private PlanEditorViewModel NewEditor(BackupPlan plan, bool isNew) =>
+        new(plan, isNew, AllPlans, GlobalIgnoreDefaults, _folders, _versions, _s3, _drive, _recycleBin, SaveEditor);
 
     private void AddEditor(PlanEditorViewModel editor, int? index = null)
     {

@@ -74,11 +74,16 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     /// <param name="s3">The saved S3 connections: the pickers, validation and "Test".</param>
     /// <param name="drive">The saved Google Drive connections: the pickers, validation and "Test".</param>
+    /// <param name="recycleBin">Where an integrated <c>.backupignore</c> goes.</param>
+    /// <param name="save">Saves this editor as the Save button does (and reports a failure); true when it was saved.</param>
     public PlanEditorViewModel(BackupPlan plan, bool isNew, Func<IEnumerable<BackupPlan>> allPlans,
         Func<IReadOnlyList<string>> globalIgnoreDefaults, IFolderOpener folders, VersionsContext versions, S3Connections s3,
-        DriveConnections drive)
+        DriveConnections drive, IRecycleBin recycleBin, Func<PlanEditorViewModel, bool> save)
     {
         _saved = plan.Clone();
+        _globalIgnoreDefaults = globalIgnoreDefaults;
+        _recycleBin = recycleBin;
+        _save = save;
         _allPlans = allPlans;
         _folders = folders;
         _s3 = s3;
@@ -121,6 +126,8 @@ public sealed partial class PlanEditorViewModel : ObservableObject
                 IgnoreSelectedExtensionCommand.NotifyCanExecuteChanged();
                 UnignoreSelectedCommand.NotifyCanExecuteChanged();
             }
+            if (e.PropertyName is nameof(IgnorePreviewViewModel.SelectedNode) or nameof(IgnorePreviewViewModel.SelectedIgnoreFile))
+                RefreshRelocation();
         };
         IsNew = isNew;
         LoadFrom(_saved);
@@ -338,6 +345,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     private void SourceKindChanged()
     {
+        RefreshRelocation();
         Preview.Invalidate();
         Touch();
     }
@@ -376,7 +384,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     partial void OnChangeDetectionChanged(ChangeDetection value) => Touch();
 
-    partial void OnIsDirtyChanged(bool value) => RefreshNextRuns();
+    partial void OnIsDirtyChanged(bool value)
+    {
+        RefreshNextRuns();
+        RefreshRelocation();
+    }
 
     partial void OnSchedulerPausedChanged(bool value) => RefreshNextRuns();
 
@@ -394,6 +406,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
 
     partial void OnHonorNestedIgnoreFilesChanged(bool value)
     {
+        RefreshRelocation();
         Preview.RequestReevaluate();
         Touch();
     }
@@ -625,6 +638,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Versions.RefreshTexts();
         HistoryCoverage.RefreshTexts();
         OnPropertyChanged(nameof(LockBanner));
+        RefreshRelocation();
     }
 
     public bool TrySave(PlanStore store)

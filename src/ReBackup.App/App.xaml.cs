@@ -198,7 +198,7 @@ public partial class App : Application
             var mainViewModel = new MainViewModel(planStore, paths, settings, () => settingsStore.Save(settings),
                 () => settingsStore.LastLoadError, _dialogs, ShowSettings, queue, scheduler,
                 action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(),
-                versionIndex, storages, s3, drive, tempOpener);
+                versionIndex, storages, s3, drive, tempOpener, new ShellRecycleBin());
             created = mainViewModel;
             scheduler.Changed += () => Dispatcher.InvokeAsync(mainViewModel.RefreshSchedule);
             planStore.ExternalChange += (_, _) => Dispatcher.InvokeAsync(mainViewModel.ReloadFromDisk);

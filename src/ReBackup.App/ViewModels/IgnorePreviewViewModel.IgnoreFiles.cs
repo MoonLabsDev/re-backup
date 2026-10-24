@@ -138,6 +138,32 @@ public sealed partial class IgnorePreviewViewModel
             ShowIgnoreFile(open.Directory, open.Path);
     }
 
+    /// <summary>
+    /// The <c>.backupignore</c> in <paramref name="directory"/> was written (<paramref name="lines"/>) or taken away (null),
+    /// e.g. by a relocation: the cached scan takes it over and is evaluated again, without scanning. The file's own row
+    /// changes with the next scan. Nothing happens while a scan runs (it reads the file itself) or without a scan.
+    /// </summary>
+    public void ReplaceNestedIgnoreFile(string directory, IReadOnlyList<string>? lines)
+    {
+        if (IsIndexing || _index is not { } index)
+            return;
+        var files = index.IgnoreFiles
+            .Where(f => !string.Equals(f.DirectoryRelativePath, directory, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (lines is not null)
+            files.Add(new NestedIgnoreFile(directory, lines));
+        var origin = IgnoreOrigins.ForNestedFile(directory);
+        _index = index with
+        {
+            IgnoreFiles = files,
+            UnreadableIgnoreFiles = [.. index.UnreadableIgnoreFiles.Where(f => !string.Equals(f, origin, StringComparison.OrdinalIgnoreCase))],
+        };
+        // An evaluation of the previous index still running must not publish it (and bring the old file back).
+        _evaluationVersion++;
+        OnPropertyChanged(nameof(CompletedIndex));
+        RequestReevaluate();
+    }
+
     /// <summary>The scan is dropped, freed or restarted: nothing of it stays in the list or the panel.</summary>
     private void ClearIgnoreFiles()
     {
