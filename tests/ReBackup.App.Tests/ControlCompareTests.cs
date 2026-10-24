@@ -82,6 +82,9 @@ public class ControlCompareTests : IDisposable
         total.GetProperty("net").GetProperty("text").GetString().Should().Be("49 B");
         root.GetProperty("byFolder")[3].GetProperty("net").GetProperty("text").GetString().Should().Be("-2 B");
         root.GetProperty("truncated").GetBoolean().Should().BeFalse();
+        root.GetProperty("sort").GetString().Should().Be("net", "a full plan copies everything anyway");
+        total.GetProperty("changedSize").GetProperty("bytes").GetInt64().Should().Be(12, "a.txt is 12 bytes now");
+        total.GetProperty("copiedSize").GetProperty("bytes").GetInt64().Should().Be(56, "44 added + 12 changed");
 
         var sub = await OkAsync(service, ControlOps.CompareVersions, new { plan = "Projects", a = Older, b = Newer, path = @"\sub\" });
 
@@ -180,6 +183,53 @@ public class ControlCompareTests : IDisposable
         result.GetProperty("byFolder").GetArrayLength().Should().Be(0, "the source equals the newest version");
     }
 
+    [Fact]
+    public async Task Incremental_plan_ranks_growth_by_copied_bytes_and_reports_changed_bytes()
+    {
+        // A mailbox rewritten in place: ~0 net growth, but an incremental run copies all of it every time.
+        SaveIncremental();
+        WriteFile(_source, "mail/inbox.pst", new string('c', 1002));
+        WriteFile(_source, "notes/new.txt", new string('n', 50));
+        WriteFile(_source, "notes/x.txt", new string('x', 60));
+        var vm = _fixture.Create();
+        var index = vm.VersionIndexes.For("p1");
+        var target = new StorageFactory().Open(StorageLocation.FileSystem(_target));
+        index.Add(new VersionInfo(Older, Older, new DateTime(2026, 9, 29, 14, 5, 0), VersionOwnership.Owned, null, null),
+            new BackupManifest { Files = [new ManifestFile("mail/inbox.pst", 1000, Time, "xxh64:0000000000000001")] }, target);
+        index.Add(new VersionInfo(Newer, Newer, new DateTime(2026, 9, 30, 14, 5, 0), VersionOwnership.Owned, null, null),
+            new BackupManifest
+            {
+                Files = [new ManifestFile("mail/inbox.pst", 1001, Time, "xxh64:0000000000000002"),
+                    new ManifestFile("notes/new.txt", 50, Time, "xxh64:0000000000000003")],
+            }, target);
+        var service = new ControlService(vm, _ui);
+
+        var versions = await OkAsync(service, ControlOps.CompareVersions, new { plan = "Projects", a = Older, b = Newer });
+
+        versions.GetProperty("sort").GetString().Should().Be("copied", "the default for an incremental plan");
+        Rows(versions.GetProperty("byFolder")).Select(r => r.Key).Should().Equal("mail/", "notes/");
+        var mail = versions.GetProperty("byFolder")[0];
+        mail.GetProperty("changedSize").GetProperty("bytes").GetInt64().Should().Be(1001);
+        mail.GetProperty("copiedSize").GetProperty("bytes").GetInt64().Should().Be(1001);
+        mail.GetProperty("net").GetProperty("bytes").GetInt64().Should().Be(1);
+        versions.GetProperty("total").GetProperty("copiedSize").GetProperty("bytes").GetInt64().Should().Be(1051);
+        Rows(versions.GetProperty("byExtension")).Select(r => r.Key).Should().Equal(".pst", ".txt");
+
+        var byNet = await OkAsync(service, ControlOps.CompareVersions, new { plan = "Projects", a = Older, b = Newer, sort = "net" });
+        byNet.GetProperty("sort").GetString().Should().Be("net");
+        Rows(byNet.GetProperty("byFolder")).Select(r => r.Key).Should().Equal("notes/", "mail/");
+
+        var source = await OkAsync(service, ControlOps.CompareSourceWithVersion, new { plan = "Projects" });
+        source.GetProperty("sort").GetString().Should().Be("copied");
+        Rows(source.GetProperty("byFolder")).Select(r => r.Key).Should().Equal("mail/", "notes/");
+        source.GetProperty("byFolder")[0].GetProperty("copiedSize").GetProperty("bytes").GetInt64().Should().Be(1002);
+        var sourceByNet = await OkAsync(service, ControlOps.CompareSourceWithVersion, new { plan = "Projects", sort = "net" });
+        Rows(sourceByNet.GetProperty("byFolder")).Select(r => r.Key).Should().Equal("notes/", "mail/");
+
+        (await FailAsync(service, ControlOps.CompareVersions, new { plan = "Projects", a = Older, b = Newer, sort = "size" }))
+            .Key.Should().Be(ControlErrors.BadRequest);
+    }
+
     // ------------------------------------------------------------------ the character budget
 
     [Fact]
@@ -229,6 +279,16 @@ public class ControlCompareTests : IDisposable
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private void SaveIncremental() => _fixture.Store.Save(new BackupPlan
+    {
+        Id = "p1",
+        Name = "Projects",
+        Source = StorageLocation.FileSystem(_source),
+        Target = StorageLocation.FileSystem(_target),
+        Incremental = true,
+        Ignore = new IgnoreSettings { Patterns = ["logs/"] },
+    });
 
     /// <summary>The service over a view model whose Versions tab has indexed the target's version folders.</summary>
     private async Task<ControlService> CreateWithIndexedTargetAsync()

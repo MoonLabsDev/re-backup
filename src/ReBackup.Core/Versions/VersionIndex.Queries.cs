@@ -286,10 +286,10 @@ public sealed partial class VersionIndex
     }
 
     /// <summary>
-    /// <see cref="GrowthByFolder"/> and <see cref="GrowthByExtension"/> below the same folder in one pass over the files.
-    /// Both empty when the folder is unknown.
+    /// <see cref="GrowthByFolder"/> and <see cref="GrowthByExtension"/> below the same folder in one pass over the files,
+    /// both ordered by <paramref name="sort"/>. Both empty when the folder is unknown.
     /// </summary>
-    public GrowthComparison Growth(long versionA, long versionB, long folderPathId)
+    public GrowthComparison Growth(long versionA, long versionB, long folderPathId, GrowthSort sort = GrowthSort.Net)
     {
         using var connection = OpenConnection();
         if (FolderPath(connection, folderPathId) is not { } folder)
@@ -301,7 +301,7 @@ public sealed partial class VersionIndex
             byFolder.Add(GrowthTally.ChildKey(folder, path), sizeA, sizeB);
             byExtension.Add(GrowthTally.ExtensionKey(name), sizeA, sizeB);
         });
-        return new GrowthComparison(byFolder.Rows(), byExtension.Rows());
+        return new GrowthComparison(byFolder.Rows(sort), byExtension.Rows(sort));
     }
 
     /// <summary>

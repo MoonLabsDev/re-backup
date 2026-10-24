@@ -2,10 +2,29 @@ namespace ReBackup.Core.Versions;
 
 /// <summary>
 /// What changed under one key (a folder or file below the compared folder, or an extension) from an older to a newer
-/// state: the files added, changed and deleted, the bytes of the added and of the deleted files, and the net change of
-/// all of them (<paramref name="NetBytes"/> = newer sizes − older sizes, so a changed file counts with its size change).
+/// state: the files added, changed and deleted, the bytes of the added files, the newer sizes of the changed files, the
+/// bytes of the deleted files, and the net change of all of them (<paramref name="NetBytes"/> = newer sizes − older
+/// sizes, so a changed file counts with its size change only).
 /// </summary>
-public sealed record GrowthRow(string Key, int Added, int Changed, int Deleted, long AddedBytes, long DeletedBytes, long NetBytes);
+public sealed record GrowthRow(string Key, int Added, int Changed, int Deleted, long AddedBytes, long ChangedBytes,
+    long DeletedBytes, long NetBytes)
+{
+    /// <summary>
+    /// What an incremental run copies for these files: the added ones and the changed ones whole. A large file rewritten
+    /// in place (a mailbox, a VM disk, a database) costs its full size in every version although its net growth is ~0.
+    /// </summary>
+    public long CopiedBytes => AddedBytes + ChangedBytes;
+}
+
+/// <summary>How growth rows are ordered: by net growth, or by the bytes an incremental run copies.</summary>
+public enum GrowthSort
+{
+    /// <summary>The largest <see cref="GrowthRow.NetBytes"/> first.</summary>
+    Net,
+
+    /// <summary>The largest <see cref="GrowthRow.CopiedBytes"/> first (then net growth).</summary>
+    Copied,
+}
 
 /// <summary>The growth below one folder, by direct child and by extension (see <see cref="GrowthTally"/>).</summary>
 public sealed record GrowthComparison(IReadOnlyList<GrowthRow> ByFolder, IReadOnlyList<GrowthRow> ByExtension);
@@ -43,6 +62,7 @@ public sealed class GrowthTally
                 break;
             case ({ } older, { } newer):
                 totals.Changed++;
+                totals.ChangedBytes += newer;
                 totals.Net += newer - older;
                 break;
             default:
@@ -51,14 +71,22 @@ public sealed class GrowthTally
         _rows[key] = totals;
     }
 
-    /// <summary>The rows, the largest net growth first (then by key).</summary>
-    public IReadOnlyList<GrowthRow> Rows() => _rows
+    /// <summary>The rows, the largest net growth (or copied bytes, by <paramref name="sort"/>) first, then by key.</summary>
+    public IReadOnlyList<GrowthRow> Rows(GrowthSort sort = GrowthSort.Net) => Order(_rows
         .Select(row => new GrowthRow(row.Key, row.Value.Added, row.Value.Changed, row.Value.Deleted, row.Value.AddedBytes,
-            row.Value.DeletedBytes, row.Value.Net))
-        .OrderByDescending(row => row.NetBytes)
-        .ThenBy(row => row.Key, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(row => row.Key, StringComparer.Ordinal)
-        .ToList();
+            row.Value.ChangedBytes, row.Value.DeletedBytes, row.Value.Net)), sort);
+
+    /// <summary><paramref name="rows"/> in the order of <paramref name="sort"/>; ties by key.</summary>
+    public static IReadOnlyList<GrowthRow> Order(IEnumerable<GrowthRow> rows, GrowthSort sort)
+    {
+        var ordered = sort == GrowthSort.Copied
+            ? rows.OrderByDescending(row => row.CopiedBytes).ThenByDescending(row => row.NetBytes)
+            : rows.OrderByDescending(row => row.NetBytes);
+        return ordered
+            .ThenBy(row => row.Key, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(row => row.Key, StringComparer.Ordinal)
+            .ToList();
+    }
 
     /// <summary>
     /// The key of <paramref name="path"/> below <paramref name="folder"/> (both relative, forward slashes, "" = root):
@@ -77,6 +105,6 @@ public sealed class GrowthTally
     private struct Totals
     {
         public int Added, Changed, Deleted;
-        public long AddedBytes, DeletedBytes, Net;
+        public long AddedBytes, ChangedBytes, DeletedBytes, Net;
     }
 }

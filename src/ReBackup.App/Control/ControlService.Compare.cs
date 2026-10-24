@@ -21,6 +21,7 @@ public sealed partial class ControlService
         var nameB = args.RequiredString("b").Trim();
         var path = NormalizePath(args.OptionalString("path") ?? "");
         var top = Top(args);
+        var sort = Sort(args, context);
         var a = await ResolveVersionAsync(context, nameA, ct);
         var b = await ResolveVersionAsync(context, nameB, ct);
         return await Task.Run(() =>
@@ -28,8 +29,8 @@ public sealed partial class ControlService
             var index = _main.VersionIndexes.For(context.Plan.Id);
             if (index.FindPath(path, isDirectory: true) is not { } folderId)
                 throw new ControlFailure(ControlErrors.BadRequest, $"Neither version has a folder '{path}'.");
-            var growth = index.Growth(a.Id, b.Id, folderId);
-            return Growth(context.Plan.Name, a.Name, b.Name, path, growth.ByFolder, growth.ByExtension, top);
+            var growth = index.Growth(a.Id, b.Id, folderId, sort);
+            return Growth(context.Plan.Name, a.Name, b.Name, path, sort, growth.ByFolder, growth.ByExtension, top);
         }, ct);
     }
 
@@ -45,6 +46,7 @@ public sealed partial class ControlService
         var context = await ResolvePlanAsync(args, ct);
         var path = NormalizePath(args.OptionalString("path") ?? "");
         var top = Top(args);
+        var sort = Sort(args, context);
         var version = args.OptionalString("version") is { Length: > 0 } name && name.Trim().Length > 0
             ? await ResolveVersionAsync(context, name.Trim(), ct)
             : await NewestVersionAsync(context, ct);
@@ -88,7 +90,8 @@ public sealed partial class ControlService
             foreach (var gone in inVersion.Values)
                 Add(gone.Path, gone.Size, null);
 
-            return Growth(context.Plan.Name, version.Name, SourceListing, folderPath, byFolder.Rows(), byExtension.Rows(), top);
+            return Growth(context.Plan.Name, version.Name, SourceListing, folderPath, sort, byFolder.Rows(sort),
+                byExtension.Rows(sort), top);
         }, ct);
     }
 
@@ -113,11 +116,24 @@ public sealed partial class ControlService
     private static int Top(ControlArgs args) => Math.Clamp(args.OptionalInt("top") ?? DefaultTop, 1, MaxRows);
 
     /// <summary>
+    /// The <c>sort</c> argument: net or copied. Left out, an incremental plan sorts by copied bytes (a changed file is
+    /// copied whole into every version) and a full plan by net growth (it copies everything anyway).
+    /// </summary>
+    private static GrowthSort Sort(ControlArgs args, PlanContext context) =>
+        (args.OptionalString("sort")?.Trim().ToLowerInvariant()) switch
+        {
+            null or "" => context.Plan.Incremental ? GrowthSort.Copied : GrowthSort.Net,
+            "net" => GrowthSort.Net,
+            "copied" => GrowthSort.Copied,
+            var other => throw new ControlFailure(ControlErrors.BadRequest, $"The argument 'sort' must be net or copied, not '{other}'."),
+        };
+
+    /// <summary>
     /// The result: the totals of every row, then the first <paramref name="top"/> rows of each list, fewer when the
     /// character budget needs it.
     /// </summary>
-    private static GrowthResult Growth(string plan, string from, string to, string path, IReadOnlyList<GrowthRow> byFolder,
-        IReadOnlyList<GrowthRow> byExtension, int top)
+    private static GrowthResult Growth(string plan, string from, string to, string path, GrowthSort sort,
+        IReadOnlyList<GrowthRow> byFolder, IReadOnlyList<GrowthRow> byExtension, int top)
     {
         var total = GrowthRowInfo.TotalOf(byFolder);
         var folders = byFolder.Take(top).Select(GrowthRowInfo.Of).ToList();
@@ -127,7 +143,7 @@ public sealed partial class ControlService
             var shownFolders = Math.Min(count, folders.Count);
             var shownExtensions = Math.Min(count, extensions.Count);
             var truncated = shownFolders < byFolder.Count || shownExtensions < byExtension.Count;
-            return new GrowthResult(plan, from, to, path, total, folders.Take(shownFolders).ToList(), byFolder.Count,
+            return new GrowthResult(plan, from, to, path, Name(sort), total, folders.Take(shownFolders).ToList(), byFolder.Count,
                 extensions.Take(shownExtensions).ToList(), byExtension.Count, truncated,
                 truncated
                     ? $"Showing the top {shownFolders} of {byFolder.Count} folder rows and {shownExtensions} of {byExtension.Count} " +

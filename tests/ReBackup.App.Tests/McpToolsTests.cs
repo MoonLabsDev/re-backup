@@ -90,9 +90,9 @@ public class McpToolsTests : IAsyncDisposable
         Arguments(tools["list_plans"]).Should().BeEmpty();
         Arguments(tools["list_versions"]).Should().BeEquivalentTo([("plan", true)]);
         Arguments(tools["compare_versions"]).Should().BeEquivalentTo(
-            [("plan", true), ("a", true), ("b", true), ("path", false), ("top", false)]);
+            [("plan", true), ("a", true), ("b", true), ("path", false), ("top", false), ("sort", false)]);
         Arguments(tools["compare_source_with_version"]).Should().BeEquivalentTo(
-            [("plan", true), ("version", false), ("path", false), ("top", false)]);
+            [("plan", true), ("version", false), ("path", false), ("top", false), ("sort", false)]);
         Arguments(tools["get_ignore_rules"]).Should().BeEquivalentTo([("plan", true), ("path", false)]);
         Arguments(tools["explain_path"]).Should().BeEquivalentTo([("plan", true), ("path", true)]);
         Arguments(tools["list_files"]).Should().BeEquivalentTo(
@@ -107,6 +107,8 @@ public class McpToolsTests : IAsyncDisposable
 
         tools["list_files"].Description.Should().ContainEquivalentOf("metadata only", "the tool states that it never returns contents");
         tools["compare_versions"].Description.Should().Contain("bytes", "the tool states its units");
+        foreach (var name in new[] { "compare_versions", "compare_source_with_version" })
+            tools[name].Description.Should().Contain("copiedSize").And.Contain("changed", name + " explains copied bytes");
     }
 
     [Fact]

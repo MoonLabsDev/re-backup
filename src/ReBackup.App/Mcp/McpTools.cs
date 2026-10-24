@@ -32,6 +32,13 @@ public sealed class McpTools(IControlChannel channel)
     private const string Sizes = "Sizes are bytes plus a human-readable text.";
     private const string PathArg = "A folder relative to the plan's source root, with '/' separators; empty or left out for the root.";
     private const string TopArg = "How many folders and extensions to list (default 20, at most 200).";
+    private const string SortArg = "'copied' (the most bytes an incremental run copies first: added plus changed files " +
+                                   "whole) or 'net' (the largest net growth first). Default: copied for incremental " +
+                                   "plans, net for full plans (they copy everything anyway). The result names the sort used.";
+    private const string GrowthColumns = "each with added, changed and deleted file counts, addedSize, changedSize (the " +
+                                         "newer sizes of changed files), deletedSize, copiedSize (added + changed: an " +
+                                         "incremental run copies a changed file whole, so a large file rewritten in place " +
+                                         "costs its full size every run although its net growth is ~0) and net.";
 
     /// <summary>The tools, built from this instance's methods that carry <see cref="McpServerToolAttribute"/>.</summary>
     public IReadOnlyList<McpServerTool> Create() =>
@@ -55,30 +62,32 @@ public sealed class McpTools(IControlChannel channel)
 
     [McpServerTool(Name = ControlOps.CompareVersions, ReadOnly = true)]
     [Description("Where the growth from version a to version b comes from: the totals, then the direct subfolders of " +
-                 "'path' and the file extensions, largest first, each with added, changed and deleted file counts and " +
-                 "added and deleted bytes. " + Sizes + " Drill down by calling again with 'path' set to a dominant folder. " +
-                 Metadata)]
+                 "'path' and the file extensions, largest first by 'sort', " + GrowthColumns + " " + Sizes +
+                 " Drill down by calling again with 'path' set to a dominant folder. " + Metadata)]
     public Task<CallToolResult> CompareVersions(
         [Description(PlanArg)] string plan,
         [Description("The older version's name (list_versions).")] string a,
         [Description("The newer version's name (list_versions).")] string b,
         [Description(PathArg)] string? path = null,
         [Description(TopArg)] int? top = null,
+        [Description(SortArg)] string? sort = null,
         CancellationToken ct = default) =>
-        CallAsync(ControlOps.CompareVersions, new { plan, a, b, path, top }, ct);
+        CallAsync(ControlOps.CompareVersions, new { plan, a, b, path, top, sort }, ct);
 
     [McpServerTool(Name = ControlOps.CompareSourceWithVersion, ReadOnly = true)]
     [Description("What the next run would add: the source as it is now, with the plan's ignore rules, compared with a " +
                  "version (the newest by default), grouped like compare_versions by the direct subfolders of 'path' and " +
-                 "by extension, in files and bytes. " + Sizes + " Needs a scan of the source; when the scan takes longer " +
-                 "than a minute the answer is scan_running with its progress: retry shortly. " + Metadata)]
+                 "by extension, largest first by 'sort', " + GrowthColumns + " " + Sizes + " Needs a scan of the source; " +
+                 "when the scan takes longer than a minute the answer is scan_running with its progress: retry shortly. " +
+                 Metadata)]
     public Task<CallToolResult> CompareSourceWithVersion(
         [Description(PlanArg)] string plan,
         [Description("The version's name; the newest version when left out.")] string? version = null,
         [Description(PathArg)] string? path = null,
         [Description(TopArg)] int? top = null,
+        [Description(SortArg)] string? sort = null,
         CancellationToken ct = default) =>
-        CallAsync(ControlOps.CompareSourceWithVersion, new { plan, version, path, top }, ct);
+        CallAsync(ControlOps.CompareSourceWithVersion, new { plan, version, path, top, sort }, ct);
 
     [McpServerTool(Name = ControlOps.GetIgnoreRules, ReadOnly = true)]
     [Description("A plan's ignore rules: its own patterns, the global defaults and whether the plan uses them, and every " +

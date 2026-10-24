@@ -85,28 +85,33 @@ public sealed record RunRow(string RunId, string Trigger, DateTime Start, DateTi
 /// <summary>
 /// Where the growth from <paramref name="From"/> (a version) to <paramref name="To"/> (a version, or "source": what the
 /// next run would back up) comes from below <paramref name="Path"/>. <paramref name="ByFolder"/>: one row per direct
-/// child of the folder ("name/" for a folder); <paramref name="ByExtension"/>: per extension ("" = none); both the largest
-/// net growth first and cut to <c>top</c>. <paramref name="FolderRows"/> and <paramref name="ExtensionRows"/> count all
-/// rows; <paramref name="Total"/> sums them all.
+/// child of the folder ("name/" for a folder); <paramref name="ByExtension"/>: per extension ("" = none); both ordered by
+/// <paramref name="Sort"/> (net: the largest net growth first; copied: the most bytes an incremental run copies first)
+/// and cut to <c>top</c>. <paramref name="FolderRows"/> and <paramref name="ExtensionRows"/> count all rows;
+/// <paramref name="Total"/> sums them all. <paramref name="ScannedAt"/>: when the source scan was made (source comparisons).
 /// </summary>
-public sealed record GrowthResult(string Plan, string From, string To, string Path, GrowthRowInfo Total,
+public sealed record GrowthResult(string Plan, string From, string To, string Path, string Sort, GrowthRowInfo Total,
     IReadOnlyList<GrowthRowInfo> ByFolder, int FolderRows, IReadOnlyList<GrowthRowInfo> ByExtension, int ExtensionRows,
-    bool Truncated, string? Hint);
+    bool Truncated, string? Hint, DateTime? ScannedAt = null);
 
 /// <summary>
-/// Files added, changed and deleted under <paramref name="Key"/> (null for the total), the sizes of the added and the
-/// deleted files, and the net change of all of them (a changed file counts with its size change).
+/// Files added, changed and deleted under <paramref name="Key"/> (null for the total), the sizes of the added files, of
+/// the changed files (their newer sizes) and of the deleted files, what an incremental run copies
+/// (<paramref name="CopiedSize"/> = added + changed: a changed file is copied whole), and the net change of all of them
+/// (a changed file counts with its size change only).
 /// </summary>
-public sealed record GrowthRowInfo(string? Key, int Added, int Changed, int Deleted, SizeValue AddedSize, SizeValue DeletedSize,
-    SizeValue Net)
+public sealed record GrowthRowInfo(string? Key, int Added, int Changed, int Deleted, SizeValue AddedSize,
+    SizeValue ChangedSize, SizeValue DeletedSize, SizeValue CopiedSize, SizeValue Net)
 {
     public static GrowthRowInfo Of(GrowthRow row) => new(row.Key, row.Added, row.Changed, row.Deleted,
-        SizeValue.Of(row.AddedBytes), SizeValue.Of(row.DeletedBytes), SizeValue.Signed(row.NetBytes));
+        SizeValue.Of(row.AddedBytes), SizeValue.Of(row.ChangedBytes), SizeValue.Of(row.DeletedBytes),
+        SizeValue.Of(row.CopiedBytes), SizeValue.Signed(row.NetBytes));
 
     /// <summary>The sums of <paramref name="rows"/>, without a key.</summary>
     public static GrowthRowInfo TotalOf(IReadOnlyList<GrowthRow> rows) => new(null, rows.Sum(r => r.Added),
         rows.Sum(r => r.Changed), rows.Sum(r => r.Deleted), SizeValue.Of(rows.Sum(r => r.AddedBytes)),
-        SizeValue.Of(rows.Sum(r => r.DeletedBytes)), SizeValue.Signed(rows.Sum(r => r.NetBytes)));
+        SizeValue.Of(rows.Sum(r => r.ChangedBytes)), SizeValue.Of(rows.Sum(r => r.DeletedBytes)),
+        SizeValue.Of(rows.Sum(r => r.CopiedBytes)), SizeValue.Signed(rows.Sum(r => r.NetBytes)));
 }
 
 // The results of the write operations (spec section 4.2) and of get_run_status. A proposal changes nothing; its
