@@ -73,8 +73,8 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
         foreach (var row in Tree.Rows)
             row.Refresh();
         RefreshCompareChoices();   // the dates and sizes of the versions
-        if (_index is { } index)
-            RefreshIgnoreFiles(index);   // the panel's hit texts
+        if (CompletedIndex is { } index)
+            RefreshIgnoreFiles(index);   // the panel's hit texts; a running scan has its own (empty) list
     }
 
     /// <summary>The evaluated tree of the last complete scan (treemap, sizes); null while a scan runs.</summary>
@@ -94,12 +94,16 @@ public sealed partial class IgnorePreviewViewModel : ObservableObject
     /// Asks for a sync of that index; the end of every sync is to be reported to <see cref="OnIndexSyncEnded"/>.
     /// </param>
     /// <param name="openFile">Opens a file with its program (the editor of "Open in editor"); tests record instead.</param>
+    /// <param name="openInNotepad">Fallback when <paramref name="openFile"/> fails (no program for the file type).</param>
+    /// <param name="dialogs">Shows the error when neither could open the file; none shows nothing.</param>
     public IgnorePreviewViewModel(Func<StorageLocation?> source, Func<IgnoreSettings> ignoreSettings,
         Func<IReadOnlyList<string>> globalDefaults, IStorageFactory storages,
         Func<Func<VersionIndex>?>? versionIndex = null, Action? requestIndexSync = null,
-        Func<string, bool>? openFile = null)
+        Func<string, bool>? openFile = null, Func<string, bool>? openInNotepad = null, IDialogService? dialogs = null)
     {
         _openFile = openFile ?? ShellFileOpener.Open;
+        _openInNotepad = openInNotepad ?? ShellFileOpener.OpenInNotepad;
+        _dialogs = dialogs;
         _versionIndex = versionIndex ?? (() => null);
         _requestIndexSync = requestIndexSync ?? (() => { });
         _storages = storages;

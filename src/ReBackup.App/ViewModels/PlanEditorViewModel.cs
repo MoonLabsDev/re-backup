@@ -90,7 +90,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         TargetDrive = new DriveLocationViewModel(drive, versions.Dialogs, isTarget: true, () => TargetEdited(LocationKind.Drive));
         Run = new PlanRunViewModel(versions.Storages);
         Preview = new IgnorePreviewViewModel(SourceLocation, CurrentIgnoreSettings, globalIgnoreDefaults, versions.Storages,
-            versionIndex: VersionIndexFor, requestIndexSync: SyncIndex);
+            versionIndex: VersionIndexFor, requestIndexSync: SyncIndex, dialogs: versions.Dialogs);
         // The pool numbers of an incremental plan come from the index the Versions tab keeps in sync.
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
             () => Run.Entries, poolIndex: PoolIndexFor, requestIndexSync: SyncIndex);

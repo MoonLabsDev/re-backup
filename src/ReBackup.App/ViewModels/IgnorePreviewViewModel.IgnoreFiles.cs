@@ -1,6 +1,7 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReBackup.App.Services;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Shared.Wpf.Localization;
@@ -31,6 +32,8 @@ public sealed record IgnoreFileDetail(string Directory, string Path, IReadOnlyLi
 public sealed partial class IgnorePreviewViewModel
 {
     private readonly Func<string, bool> _openFile;
+    private readonly Func<string, bool> _openInNotepad;
+    private readonly IDialogService? _dialogs;
 
     /// <summary>The flat list of the source's readable <c>.backupignore</c> files, sorted by path.</summary>
     public RangeObservableCollection<IgnoreFileListItem> IgnoreFileItems { get; } = new();
@@ -122,9 +125,14 @@ public sealed partial class IgnorePreviewViewModel
     private void RefreshIgnoreFiles(SourceIndex index)
     {
         var open = SelectedIgnoreFile;
+        var chosen = SelectedIgnoreFileItem?.Directory;
         IgnoreFileItems.ReplaceAll(index.IgnoreFiles
             .Select(f => new IgnoreFileListItem(f.DirectoryRelativePath, PathOf(index, f.DirectoryRelativePath)))
             .OrderBy(i => i.Path, StringComparer.OrdinalIgnoreCase));
+        // The list view drops its selection when the collection is reset (and pushes null): choose the same file again.
+        if (chosen is not null)
+            SelectedIgnoreFileItem = IgnoreFileItems.FirstOrDefault(
+                i => string.Equals(i.Directory, chosen, StringComparison.OrdinalIgnoreCase));
         RaiseIgnoreFileCount();
         if (open is not null)
             ShowIgnoreFile(open.Directory, open.Path);
@@ -166,7 +174,11 @@ public sealed partial class IgnorePreviewViewModel
     {
         if (SelectedIgnoreFile is not { } file || _source() is not { IsFileSystem: true } source)
             return;
-        _openFile(Path.GetFullPath(Path.Combine(source.Path, file.Path.Replace('/', Path.DirectorySeparatorChar))));
+        var path = Path.GetFullPath(Path.Combine(source.Path, file.Path.Replace('/', Path.DirectorySeparatorChar)));
+        // ".backupignore" has no file association on most machines: the shell fails, Notepad always exists.
+        if (_openFile(path) || _openInNotepad(path))
+            return;
+        _dialogs?.ShowError(Loc.T("ignore.files.panelTitle"), Loc.F("ignore.files.openFailed", ("path", path)));
     }
 
     private bool CanOpenIgnoreFileInEditor() => SelectedIgnoreFile is not null && IsFolderSource;

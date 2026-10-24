@@ -692,6 +692,7 @@
       "panelTitle": "Ignore file",
       "lines": "Lines of the ignore file",
       "openInEditor": "Open in editor",
+      "openFailed": "Could not open the file:\n{path}",
       "folderOnly": "Only available for folder sources",
       "integrate": "Integrate into plan…",
       "hits": "{entries} entries · {bytes}",

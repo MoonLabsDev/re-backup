@@ -19,6 +19,10 @@ public class IgnoreFilePanelTests : IDisposable
 
     public void Dispose() => _fixture.Dispose();
 
+    private bool _shellWorks = true;
+    private bool _notepadWorks = true;
+    private readonly List<string> _notepad = [];
+
     private IgnorePreviewViewModel Create(StorageLocation? location = null, IStorage? storage = null)
     {
         location ??= StorageLocation.FileSystem(@"C:\src");
@@ -26,8 +30,14 @@ public class IgnoreFilePanelTests : IDisposable
             openFile: path =>
             {
                 _opened.Add(path);
-                return true;
-            });
+                return _shellWorks;
+            },
+            openInNotepad: path =>
+            {
+                _notepad.Add(path);
+                return _notepadWorks;
+            },
+            dialogs: _fixture.Dialogs);
     }
 
     private void AddIgnore(string path, string text) => _source.AddFile(path, Encoding.UTF8.GetBytes(text));
@@ -204,6 +214,91 @@ public class IgnoreFilePanelTests : IDisposable
         gated.Gate.SetResult();
         await rescan;
         vm.Tree.IgnoreFileDirectories.Should().BeEquivalentTo(["z"]);
+    }
+
+    [Fact]
+    public async Task Open_in_editor_falls_back_to_notepad_when_the_shell_has_no_program()
+    {
+        AddIgnore(".backupignore", "*.tmp\n");
+        _shellWorks = false;
+        var vm = await ScannedAsync();
+        vm.Tree.SelectedRow = vm.Tree.Rows.Single(r => r.Name == ".backupignore");
+
+        vm.OpenIgnoreFileInEditorCommand.Execute(null);
+
+        _opened.Should().Equal(@"C:\src\.backupignore");
+        _notepad.Should().Equal(@"C:\src\.backupignore");
+        _fixture.Dialogs.Errors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Open_in_editor_shows_an_error_when_nothing_opens_the_file()
+    {
+        AddIgnore(".backupignore", "*.tmp\n");
+        _shellWorks = false;
+        _notepadWorks = false;
+        var vm = await ScannedAsync();
+        vm.Tree.SelectedRow = vm.Tree.Rows.Single(r => r.Name == ".backupignore");
+
+        vm.OpenIgnoreFileInEditorCommand.Execute(null);
+
+        _notepad.Should().HaveCount(1);
+        _fixture.Dialogs.Errors.Should().ContainSingle().Which.Should().Contain(@"C:\src\.backupignore");
+    }
+
+    [Fact]
+    public async Task Open_in_editor_does_not_start_notepad_when_the_shell_worked()
+    {
+        AddIgnore(".backupignore", "*.tmp\n");
+        var vm = await ScannedAsync();
+        vm.Tree.SelectedRow = vm.Tree.Rows.Single(r => r.Name == ".backupignore");
+
+        vm.OpenIgnoreFileInEditorCommand.Execute(null);
+
+        _notepad.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_chosen_file_stays_chosen_when_the_list_view_drops_its_selection_on_a_reset()
+    {
+        AddIgnore("sub/.backupignore", "*.tmp\n");
+        _source.AddFile("sub/a.tmp", new byte[10]);
+        var vm = await ScannedAsync();
+        vm.ShowIgnoreFilesOnly = true;
+        vm.SelectedIgnoreFileItem = vm.IgnoreFileItems.Single();
+        // What the two-way bound ListView does when the collection is reset.
+        vm.IgnoreFileItems.CollectionChanged += (_, _) => vm.SelectedIgnoreFileItem = null;
+
+        _settings = new IgnoreSettings { HonorNestedFiles = false };
+        vm.RequestReevaluate();
+        await WaitUntilAsync(() => vm.SelectedIgnoreFile?.Lines.Single().Entries == 0);
+
+        vm.SelectedIgnoreFileItem.Should().NotBeNull("the row is highlighted again");
+        vm.SelectedIgnoreFileItem!.Path.Should().Be("sub/.backupignore");
+        vm.SelectedIgnoreFile.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task A_language_change_during_a_rescan_does_not_bring_back_the_previous_list()
+    {
+        AddIgnore("old/.backupignore", "*.tmp\n");
+        var gated = new GatedStorage(_source);
+        var vm = Create(storage: gated);
+        await vm.IndexCommand.ExecuteAsync(null);
+        vm.IgnoreFileCount.Should().Be(1);
+
+        gated.Holds = path => path == "old/.backupignore";
+        var rescan = vm.IndexCommand.ExecuteAsync(null);
+        await gated.Reached.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        vm.IgnoreFileCount.Should().Be(0);
+
+        vm.RefreshTexts();
+
+        vm.IgnoreFileCount.Should().Be(0);
+        vm.IgnoreFileItems.Should().BeEmpty();
+        gated.Gate.SetResult();
+        await rescan;
+        vm.IgnoreFileCount.Should().Be(1);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
