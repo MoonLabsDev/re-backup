@@ -119,7 +119,7 @@ public sealed partial class RelocationDialogViewModel : ObservableObject
         var lines = new List<string>();
         if (content is null)
             return lines;
-        using var reader = new StringReader(content.TrimStart('﻿'));
+        using var reader = new StringReader(content.StartsWith('\uFEFF') ? content[1..] : content);
         while (reader.ReadLine() is { } line)
             lines.Add(line);
         return lines;

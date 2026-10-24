@@ -388,6 +388,64 @@ public class RelocationTests : IDisposable
         _fixture.RecycleBin.Recycled.Should().BeEmpty();
     }
 
+    /// <summary>The plan file is read-only, so saving the plan fails (as on a locked or read-only configuration folder).</summary>
+    private string LockPlanFile()
+    {
+        var file = Directory.GetFiles(_fixture.Paths.PlansDirectory, "*.json").Single();
+        File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+        return file;
+    }
+
+    private static void Unlock(string file) => File.SetAttributes(file, File.GetAttributes(file) & ~FileAttributes.ReadOnly);
+
+    [Fact]
+    public async Task Extract_whose_plan_cannot_be_saved_takes_the_new_file_away_again()
+    {
+        Write("sub/a.tmp");
+        var editor = await ScannedAsync(["/sub/*.tmp", "*.log"]);
+        ChooseFolder(editor, "sub");
+        var planFile = LockPlanFile();
+        try
+        {
+            editor.ExtractToFolderCommand.Execute([0]);
+
+            _fixture.Dialogs.Errors.Should().HaveCount(2, "the save reports its failure, then the move says nothing changed");
+            _fixture.Dialogs.Errors[^1].Should().Be(Loc.T("ignore.relocation.notSaved"));
+            editor.CurrentIgnoreSettings().Patterns.Should().Equal("/sub/*.tmp", "*.log");
+            editor.IsDirty.Should().BeFalse();
+            File.Exists(FileIn("sub/.backupignore")).Should().BeFalse("the file written before the save is taken away again");
+        }
+        finally
+        {
+            Unlock(planFile);
+        }
+        SavedPatterns().Should().Equal("/sub/*.tmp", "*.log");
+    }
+
+    [Fact]
+    public async Task Integrate_whose_plan_cannot_be_saved_keeps_the_file()
+    {
+        Write("sub/.backupignore", "*.tmp\n");
+        var editor = await ScannedAsync(["*.log"]);
+        ChooseIgnoreFile(editor, "sub");
+        var planFile = LockPlanFile();
+        try
+        {
+            editor.IntegrateIgnoreFileCommand.Execute(null);
+
+            _fixture.Dialogs.Errors[^1].Should().Be(Loc.T("ignore.relocation.notSaved"));
+            editor.CurrentIgnoreSettings().Patterns.Should().Equal("*.log");
+            editor.IsDirty.Should().BeFalse();
+            File.ReadAllText(FileIn("sub/.backupignore")).Should().Be("*.tmp\n");
+            _fixture.RecycleBin.Recycled.Should().BeEmpty();
+        }
+        finally
+        {
+            Unlock(planFile);
+        }
+        SavedPatterns().Should().Equal("*.log");
+    }
+
     [Fact]
     public async Task Cancel_changes_nothing()
     {

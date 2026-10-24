@@ -421,6 +421,57 @@ public class MainWindowSmokeTests
         });
     }
 
+    [Fact]
+    public void The_relocation_dialog_keeps_its_buttons_in_view_with_many_lines_and_examples()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();   // the labels
+            var before = Enumerable.Range(0, 60).Select(i => $"/sub/f{i}.tmp").ToList();
+            var proposal = new ReBackup.Core.Ignore.RelocationProposal(ReBackup.Core.Ignore.RelocationKind.Extract, "sub",
+                before, before.Skip(30).ToList(), null, string.Join("\n", before.Take(30)) + "\n",
+                Enumerable.Range(0, 30).Select(i => new ReBackup.Core.Ignore.RejectedLine($"*.x{i}",
+                    ReBackup.Core.Ignore.RejectReason.MatchesOutsideFolder)).ToList(),
+                new ReBackup.Core.Ignore.EquivalenceResult.Differs(500, Enumerable.Range(0, 20)
+                    .Select(i => new ReBackup.Core.Ignore.EquivalenceExample($"sub/e{i}.tmp", false, true, "*.tmp")).ToList()), "h", null)
+            {
+                MovedLines = before.Take(30).ToList(),
+            };
+            var dialog = new ReBackup.App.Views.RelocationDialog(new RelocationDialogViewModel(proposal));
+            var content = (FrameworkElement)dialog.Content;
+            // The most the window grows to (MaxHeight, less a generous title bar and border).
+            var room = new Size(dialog.Width, dialog.MaxHeight - 60);
+            content.Measure(room);
+            content.Arrange(new Rect(room));
+            content.UpdateLayout();
+
+            var scroller = (ScrollViewer)dialog.FindName("ContentScroller");
+            var buttons = (FrameworkElement)dialog.FindName("ButtonRow");
+            scroller.ExtentHeight.Should().BeGreaterThan(scroller.ViewportHeight, "the worst case does not fit and scrolls");
+            IsInside(buttons, scroller).Should().BeFalse("the buttons do not scroll away");
+            var check = FindAll<CheckBox>(buttons).Single();
+            var apply = FindAll<Button>(buttons).Single(b => b.IsDefault);
+            foreach (var element in new FrameworkElement[] { check, apply })
+            {
+                Shown(element).Should().BeTrue();
+                var bounds = element.TransformToAncestor(content).TransformBounds(new Rect(element.RenderSize));
+                bounds.Bottom.Should().BeLessThanOrEqualTo(room.Height, "it lies inside the window");
+                bounds.Top.Should().BeGreaterThanOrEqualTo(0);
+            }
+        });
+    }
+
+    private static bool IsInside(DependencyObject element, DependencyObject ancestor)
+    {
+        for (var current = VisualTreeHelper.GetParent(element); current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (ReferenceEquals(current, ancestor))
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>Whether the element and all its ancestors are Visible (IsVisible needs a shown window).</summary>
     private static bool Shown(DependencyObject element)
     {

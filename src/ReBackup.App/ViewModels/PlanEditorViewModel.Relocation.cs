@@ -152,9 +152,9 @@ public sealed partial class PlanEditorViewModel
         {
             outcome = IgnoreRelocation.Apply(proposal, root, CurrentIgnoreSettings().Patterns, SavePatterns, _recycleBin);
         }
-        catch (RelocationStaleException ex)
+        catch (RelocationStaleException)
         {
-            dialogs.ShowError(title, Loc.T(ex.Message));
+            dialogs.ShowError(title, Loc.T("ignore.relocation.stale"));
             return;
         }
         catch (PlanNotSavedException)
