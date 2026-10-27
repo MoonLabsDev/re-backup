@@ -423,11 +423,14 @@ the real path of your exe); merge it into Claude Desktop's `claude_desktop_confi
 {"mcpServers":{"rebackup":{"command":"C:\\Path\\To\\ReBackup.exe","args":["--mcp"]}}}
 ```
 
-For **Claude Code**, register the exe with its argument instead:
+For **Claude Code**, register the exe with its argument instead (`--scope user` makes it available in every project):
 
 ```powershell
-claude mcp add rebackup -- "C:\Path\To\ReBackup.exe" --mcp
+claude mcp add rebackup --scope user '--' "C:\Path\To\ReBackup.exe" --mcp
 ```
+
+Keep the quotes around `'--'`: Windows PowerShell drops a bare `--`, and `claude` then rejects `--mcp` as an unknown
+option. In cmd or bash a plain `--` works. `claude mcp list` shows whether the server connects.
 
 `ReBackup.exe --mcp` is the same exe in a bridge mode: it has no window and only passes Claude's requests on to the
 running app. If you move the exe, copy the configuration again (or run `claude mcp add` again) and restart Claude.
