@@ -75,7 +75,15 @@
       "allowHint": "Erlaubt einem MCP-Client wie Claude, Pläne, Versionen und Ignorier-Regeln einzusehen und Änderungen vorzuschlagen. Er sieht nur Namen, Größen und Datum, nie Dateiinhalte, eine Änderung wird zuerst nur vorgeschlagen und erst nach deiner Zustimmung in Claude umgesetzt, und jede wird im Infobereich angezeigt.",
       "copy": "Konfiguration kopieren",
       "copied": "Kopiert",
-      "startFailed": "ReBackup konnte die Steuerungsverbindung nicht öffnen: {error}"
+      "startFailed": "ReBackup konnte die Steuerungsverbindung nicht öffnen: {error}",
+      "registerClaude": "Claude Code",
+      "registerClaudeToolTip": "Registriert dieses ReBackup bei Claude Code (claude mcp) und ersetzt eine ältere Registrierung",
+      "registerCodex": "Codex",
+      "registerCodexToolTip": "Registriert dieses ReBackup bei OpenAI Codex (codex mcp) und ersetzt eine ältere Registrierung. Die ChatGPT-App selbst kann keinen lokalen MCP-Server starten.",
+      "registering": "Wird bei {client} registriert …",
+      "registered": "Bei {client} registriert. Neue {client}-Sitzungen nutzen dieses ReBackup; offene bitte neu starten.",
+      "notInstalled": "{client} ist nicht installiert: der Befehl {tool} wurde nicht gefunden.",
+      "registerFailed": "{client} konnte ReBackup nicht registrieren: {error}"
     },
     "app": {
       "title": "APP",
