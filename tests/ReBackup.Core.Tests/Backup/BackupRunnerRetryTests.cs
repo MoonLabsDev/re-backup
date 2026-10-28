@@ -506,11 +506,19 @@ public class BackupRunnerRetryTests : IDisposable
         };
 
         var retrying = RetryAsync(run, Runner(gated), plan: plan);
-        await Task.WhenAny(reached.Task, retrying).WaitAsync(TimeSpan.FromSeconds(30));
-        reached.Task.IsCompleted.Should().BeTrue("the attempt stores a blob ({0})",
-            retrying.IsCompletedSuccessfully ? (await retrying).Reason : "");
-        var holder = await TargetLock.ReadAsync(TargetStorage(), CancellationToken.None);
-        release.SetResult();
+        LockInfo? holder;
+        try
+        {
+            await Task.WhenAny(reached.Task, retrying).WaitAsync(TimeSpan.FromSeconds(30));
+            reached.Task.IsCompleted.Should().BeTrue("the attempt stores a blob ({0})",
+                retrying.IsCompletedSuccessfully ? (await retrying).Reason : "");
+            holder = await TargetLock.ReadAsync(TargetStorage(), CancellationToken.None);
+        }
+        finally
+        {
+            // Whatever fails above, the attempt is let go: it must not hang on the gate.
+            release.TrySetResult();
+        }
         var retry = await retrying;
 
         holder.Should().NotBeNull("the blob is written while the attempt holds the target");
