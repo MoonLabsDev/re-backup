@@ -14,8 +14,9 @@ public enum JobState
 }
 
 /// <param name="IsRetry">The job retries the skipped files of an earlier run (<see cref="BackupQueue.EnqueueRetry"/>).</param>
+/// <param name="Plan">The plan the job runs with, as it was when the job was queued; the queue sets it on every update.</param>
 public sealed record BackupJobUpdate(string PlanId, string PlanName, JobState State, BackupProgress? Progress,
-    RunLogEntry? Result, bool IsRetry = false);
+    RunLogEntry? Result, bool IsRetry = false, BackupPlan? Plan = null);
 
 /// <summary>
 /// Where a waiting job stands: <paramref name="Position"/> 1 starts next. The job ahead is the one before it in the
@@ -74,6 +75,15 @@ public sealed class BackupQueue
     public int QueuedCount
     {
         get { lock (_gate) return _queued.Count + _lowQueued.Count; }
+    }
+
+    /// <summary>
+    /// A regular job is queued or running. Waiting and running retries do not count: they are tried again after the next
+    /// start, so nothing the user asked for is lost when they are canceled.
+    /// </summary>
+    public bool HasRegularJobs
+    {
+        get { lock (_gate) return _queued.Count > 0 || _running is { IsRetry: false }; }
     }
 
     public string? RunningPlanId
@@ -374,7 +384,7 @@ public sealed class BackupQueue
 
     private void Raise(Job job, JobState state, BackupProgress? progress = null, RunLogEntry? result = null)
     {
-        var update = new BackupJobUpdate(job.PlanId, job.PlanName, state, progress, result, job.IsRetry);
+        var update = new BackupJobUpdate(job.PlanId, job.PlanName, state, progress, result, job.IsRetry, job.Plan);
         if (Changed is null)
             return;
 
@@ -405,6 +415,7 @@ public sealed class BackupQueue
         public BackupRequest? Request { get; }
         public RetryRequest? Retry { get; }
         public bool IsRetry => Retry is not null;
+        public BackupPlan Plan => _plan;
         public string PlanId => _plan.Id;
         public string PlanName => _plan.Name;
         public CancellationTokenSource Cancellation { get; } = new();

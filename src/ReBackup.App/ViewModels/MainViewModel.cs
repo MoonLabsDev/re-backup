@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
@@ -13,6 +14,7 @@ using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Json;
 using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Wpf.Controls;
 using ReBackup.Storage;
@@ -964,7 +966,7 @@ public sealed partial class MainViewModel : ObservableObject
                     _retries.OnRunStarted(update.PlanId, update.IsRetry);
                     break;
                 case JobState.Finished when update.Result is { } result && editor is { IsNew: false }:
-                    _retries.OnRunFinished(editor.SavedPlan(), result);
+                    _retries.OnRunFinished(RetryPlanOf(editor.SavedPlan(), update), result);
                     break;
                 case JobState.Removed when update.IsRetry:
                     _retries.Defer(update.PlanId);
@@ -976,6 +978,25 @@ public sealed partial class MainViewModel : ObservableObject
             Trace.TraceWarning($"The retry planner could not take the update of plan {update.PlanId}: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// The plan to hand the planner with a finished job: the plan as saved (its retry settings and interval apply). A regular
+    /// run whose source or target was saved differently while it ran made its version from the old locations: its skipped
+    /// files must not be read from the new source into that version, so it gets no retry (the saved plan with retries off).
+    /// </summary>
+    private static BackupPlan RetryPlanOf(BackupPlan saved, BackupJobUpdate update)
+    {
+        if (update.IsRetry || update.Plan is not { } ran || SameLocations(ran, saved))
+            return saved;
+        var plan = saved.Clone();
+        plan.RetrySkipped.Enabled = false;
+        return plan;
+    }
+
+    /// <summary>Source and target compared as the retry planner compares them (their JSON).</summary>
+    private static bool SameLocations(BackupPlan a, BackupPlan b) =>
+        JsonSerializer.Serialize(a.Source, JsonDefaults.Options) == JsonSerializer.Serialize(b.Source, JsonDefaults.Options) &&
+        JsonSerializer.Serialize(a.Target, JsonDefaults.Options) == JsonSerializer.Serialize(b.Target, JsonDefaults.Options);
 
     /// <summary>
     /// The footer after a retry attempt: what it copied and what is still open. A canceled one says so; a failed one, or

@@ -524,6 +524,48 @@ public class BackupQueueTests : IDisposable
     }
 
     [Fact]
+    public async Task HasRegularJobs_ignores_waiting_and_running_retries()
+    {
+        _queue.HasRegularJobs.Should().BeFalse();
+        _queue.EnqueueRetry(Retry("c")).Should().BeTrue();
+        await _runner.Started(RetryOf("c")).WaitAsync(Timeout);
+        _queue.EnqueueRetry(Retry("d")).Should().BeTrue();
+
+        _queue.IsBusy.Should().BeTrue();
+        _queue.HasRegularJobs.Should().BeFalse("only retries are queued or running");
+
+        _queue.Enqueue(Request("a")).Should().BeTrue();
+        _queue.HasRegularJobs.Should().BeTrue("a regular job waits");
+
+        _runner.Complete(RetryOf("c"), RunStatus.Completed);
+        await _runner.Started("a").WaitAsync(Timeout);
+        _queue.HasRegularJobs.Should().BeTrue("a regular job runs");
+
+        _runner.Complete("a", RunStatus.Completed);
+        await _runner.Started(RetryOf("d")).WaitAsync(Timeout);
+        _queue.HasRegularJobs.Should().BeFalse();
+        _runner.Complete(RetryOf("d"), RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task Every_update_carries_the_plan_the_job_runs_with()
+    {
+        var request = Request("a");
+        var retry = Retry("c");
+        _queue.Enqueue(request);
+        _queue.EnqueueRetry(retry);
+        await _runner.Started("a").WaitAsync(Timeout);
+        _runner.Complete("a", RunStatus.Completed);
+        await _runner.Started(RetryOf("c")).WaitAsync(Timeout);
+        _runner.Complete(RetryOf("c"), RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _updates.Where(u => u.PlanId == "a").Should().NotBeEmpty().And.OnlyContain(u => ReferenceEquals(u.Plan, request.Plan));
+        _updates.Where(u => u.PlanId == "c").Should().NotBeEmpty().And.OnlyContain(u => ReferenceEquals(u.Plan, retry.Plan));
+    }
+
+    [Fact]
     public async Task A_normal_job_waits_for_a_running_retry()
     {
         _queue.EnqueueRetry(Retry("c")).Should().BeTrue();

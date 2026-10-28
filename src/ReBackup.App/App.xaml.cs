@@ -745,8 +745,8 @@ public partial class App : Application
             _exiting = false;
             return;
         }
-        var backupBusy = _queue.IsBusy;
-        if (backupBusy && !_dialogs.Confirm(Loc.T("app.backupRunning.title"), Loc.T("app.backupRunning.message")))
+        // Only regular work is asked about: a canceled retry is tried again after the next start.
+        if (_queue.HasRegularJobs && !_dialogs.Confirm(Loc.T("app.backupRunning.title"), Loc.T("app.backupRunning.message")))
         {
             _exiting = false;
             return;
@@ -754,7 +754,8 @@ public partial class App : Application
 
         StopRestores();
         StopPoolJobs();
-        StopBackups(backupBusy ? TimeSpan.FromSeconds(15) : TimeSpan.Zero);
+        // A running retry too gets the time to stop: an incremental one releases its lock, a copy removes its temp file.
+        StopBackups(_queue.IsBusy ? TimeSpan.FromSeconds(15) : TimeSpan.Zero);
 
         _exitRequested = true;
         DisposeTray();

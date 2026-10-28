@@ -281,6 +281,31 @@ public class MainViewModelRetryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_run_whose_source_was_changed_and_saved_meanwhile_gets_no_retry()
+    {
+        var vm = _fixture.Create();
+        var editor = Projects(vm);
+        _target.HoldCreate = path => path.EndsWith("/a.txt", StringComparison.Ordinal);
+        using (Lock(Locked))
+        {
+            vm.RunPlan("p1").Should().BeTrue();
+            await _target.Reached.Task.WaitAsync(Timeout);
+
+            // Saving during a run is allowed; the run goes on with the source it started with.
+            editor.Source = Directory.CreateDirectory(Path.Combine(_fixture.Root, "other-source")).FullName;
+            vm.SaveCommand.Execute(null);
+            editor.IsDirty.Should().BeFalse();
+            _target.Gate.SetResult();
+            await _fixture.Queue.WhenIdleAsync().WaitAsync(Timeout);
+        }
+
+        var run = Log().Should().ContainSingle().Subject;
+        run.Status.Should().Be(RunStatus.CompletedWithWarnings, "the locked file was skipped");
+        _fixture.Retries.StateOf("p1").Should().BeNull("its files would be read from the new source into the old one's version");
+        File.Exists(_fixture.Paths.RetryFileFor("p1")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Deleting_the_plan_drops_its_pending_state()
     {
         var vm = _fixture.Create();
