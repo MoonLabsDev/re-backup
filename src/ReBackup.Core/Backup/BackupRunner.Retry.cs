@@ -34,10 +34,14 @@ public sealed partial class BackupRunner
     /// with <c>core.skip.changed</c> and is not counted as copied: it is not recovered. Every other file stays open with
     /// what stopped it this time. The manifest is written, and the version handed to the index, only when at least one
     /// entry changed.
-    /// An attempt that does not complete (Error, Full, Canceled) has added nothing to the version: its entry has no files
-    /// copied and every requested file open again, so a retry state built from it keeps them all. Files it copied before
-    /// it stopped are in the version folder without being in the manifest (a replaced copy then differs from its entry);
-    /// the next attempt copies them again.
+    /// Each copy goes straight over the version's file, so an attempt that stops part-way (Error, Full, Canceled) still
+    /// writes the manifest with what it copied so far (once, conditionally on the same stamp, not cancelable; a failure of
+    /// that write is ignored) and hands it to the index: a replaced copy never stays under its old hash, where a restore
+    /// would refuse it. Its entry still has no files copied and every requested file open again, so a retry state built
+    /// from it keeps them all and the next attempt copies them again (overwriting is harmless). What remains is a crash, or
+    /// a failed manifest write, between overwriting a copy and replacing the manifest (spec 6): the copy is then newer
+    /// than its entry until an attempt copies it again. A manifest replaced meanwhile by someone else
+    /// (<see cref="StorageConflictException"/>) is never written over, also not then.
     /// </remarks>
     public async Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -150,66 +154,98 @@ public sealed partial class BackupRunner
         }
 
         Report(BackupPhase.Copying, "", force: true);
-        var replaced = 0;
-        foreach (var file in request.Files)
+        var replaced = 0;   // manifest entries added or replaced: each one is a copy already written into the version
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var done = await RetryFileAsync(source, target, version.Path, file.Path, buffer, count =>
+            foreach (var file in request.Files)
             {
-                bytesDone += count;
+                cancellationToken.ThrowIfCancellationRequested();
+                var done = await RetryFileAsync(source, target, version.Path, file.Path, buffer, count =>
+                {
+                    bytesDone += count;
+                    Report(BackupPhase.Copying, file.Path, force: false);
+                }, cancellationToken).ConfigureAwait(false);
+
+                if (done.Copied is not { } copied)
+                {
+                    // Every file fails, or seems gone, once the whole source is: that ends the attempt, the files stay listed.
+                    if (!await SourceRootExistsAsync(source, cancellationToken).ConfigureAwait(false))
+                        throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
+                    if (done.SkipReason is { } reason)
+                        entry.AddSkipped(new SkippedEntry(file.Path, reason, done.SkipKey));
+                }
+                else
+                {
+                    if (positions.TryGetValue(copied.Path, out var position))
+                        manifest.Files[position] = copied;
+                    else
+                    {
+                        positions[copied.Path] = manifest.Files.Count;
+                        manifest.Files.Add(copied);
+                    }
+                    replaced++;
+                    if (done.Changed)
+                        entry.AddSkipped(Skip(copied.Path, "core.skip.changed"));
+                    else
+                    {
+                        entry.FilesCopied++;
+                        entry.BytesCopied += copied.Size;
+                    }
+                }
+
+                filesDone++;
                 Report(BackupPhase.Copying, file.Path, force: false);
-            }, cancellationToken).ConfigureAwait(false);
-
-            if (done.Copied is not { } copied)
-            {
-                // Every file fails, or seems gone, once the whole source is: that ends the attempt, the files stay listed.
-                if (!await SourceRootExistsAsync(source, cancellationToken).ConfigureAwait(false))
-                    throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
-                if (done.SkipReason is { } reason)
-                    entry.AddSkipped(new SkippedEntry(file.Path, reason, done.SkipKey));
-            }
-            else
-            {
-                if (positions.TryGetValue(copied.Path, out var position))
-                    manifest.Files[position] = copied;
-                else
-                {
-                    positions[copied.Path] = manifest.Files.Count;
-                    manifest.Files.Add(copied);
-                }
-                replaced++;
-                if (done.Changed)
-                    entry.AddSkipped(Skip(copied.Path, "core.skip.changed"));
-                else
-                {
-                    entry.FilesCopied++;
-                    entry.BytesCopied += copied.Size;
-                }
             }
 
-            filesDone++;
-            Report(BackupPhase.Copying, file.Path, force: false);
+            Report(BackupPhase.Finishing, "", force: true);
+            if (replaced > 0)
+                await WriteRetriedManifestAsync(target, manifestPath, manifest, manifestEntry.Stamp, cancellationToken)
+                    .ConfigureAwait(false);
         }
-
-        Report(BackupPhase.Finishing, "", force: true);
-        if (replaced > 0)
+        catch (Exception ex) when (replaced > 0 && ex is not StorageConflictException)
         {
-            manifest.FileCount = manifest.Files.Count;
-            manifest.TotalBytes = manifest.Files.Sum(f => f.Size);
-            // Durable: the manifest is what the version is. Written to a temporary file and moved over the old one on commit.
-            var writer = await target.CreateAsync(manifestPath,
-                new CreateOptions(Overwrite: true, Durable: true, ExpectedStamp: manifestEntry.Stamp), cancellationToken)
-                .ConfigureAwait(false);
-            await using (writer.ConfigureAwait(false))
+            // The copies written so far are already in the version: the manifest must describe them, or a restore refuses
+            // a replaced copy whose old hash it still lists. One try, not cancelable; the attempt fails as it did anyway.
+            var committed = false;
+            try
             {
-                await JsonSerializer.SerializeAsync(writer, manifest, JsonDefaults.Options, cancellationToken).ConfigureAwait(false);
-                await writer.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await WriteRetriedManifestAsync(target, manifestPath, manifest, manifestEntry.Stamp, CancellationToken.None)
+                    .ConfigureAwait(false);
+                committed = true;
             }
-            if (_indexSink is not null)
+            catch (Exception)
+            {
+                // Deliberately broad: the copies stay newer than their entries until an attempt copies them again (spec 6).
+            }
+            // The version did change: the index learns it as after a finished attempt.
+            if (committed && _indexSink is not null)
                 AddToIndex(plan, target, entry, version.Name, manifest);
+            throw;
         }
 
+        if (replaced > 0 && _indexSink is not null)
+            AddToIndex(plan, target, entry, version.Name, manifest);
         entry.Status = entry.SkippedCount > 0 ? RunStatus.CompletedWithWarnings : RunStatus.Completed;
+    }
+
+    /// <summary>
+    /// Replaces a version's manifest with the retried one, conditionally on <paramref name="expectedStamp"/> (the stamp it
+    /// had when it was read; <see cref="StorageConflictException"/> when it was replaced meanwhile). Durable, because the
+    /// manifest is what the version is; written to a temporary file and moved over the old one on commit.
+    /// </summary>
+    private static async Task WriteRetriedManifestAsync(IStorage target, string manifestPath, BackupManifest manifest,
+        string? expectedStamp, CancellationToken cancellationToken)
+    {
+        manifest.FileCount = manifest.Files.Count;
+        manifest.TotalBytes = manifest.Files.Sum(f => f.Size);
+        var writer = await target.CreateAsync(manifestPath,
+            new CreateOptions(Overwrite: true, Durable: true, ExpectedStamp: expectedStamp), cancellationToken)
+            .ConfigureAwait(false);
+        await using (writer.ConfigureAwait(false))
+        {
+            await JsonSerializer.SerializeAsync(writer, manifest, JsonDefaults.Options, cancellationToken).ConfigureAwait(false);
+            await writer.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

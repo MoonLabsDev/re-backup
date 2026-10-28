@@ -1030,7 +1030,9 @@ public sealed partial class BackupRunner : IBackupRunner
             }
         }
 
-        var changed = await ChangedAfterReadAsync(source, node, size, cancellationToken).ConfigureAwait(false);
+        // Not canceled: the copy is committed, and a caller that is told nothing about it cannot record it (a retry has
+        // just overwritten the version's copy, whose manifest entry must follow).
+        var changed = await ChangedAfterReadAsync(source, node, size, CancellationToken.None).ConfigureAwait(false);
         return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
             "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false, null);
     }

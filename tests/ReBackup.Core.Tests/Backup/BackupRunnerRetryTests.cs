@@ -312,6 +312,88 @@ public class BackupRunnerRetryTests : IDisposable
         File.Exists(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().BeFalse();
     }
 
+    /// <summary>
+    /// A run in which "a.txt" changed while it was copied (it is in the version with that copy's hash) and the locked
+    /// file was skipped; then "a.txt" gets new content. Returns the run and its two files, "a.txt" first.
+    /// </summary>
+    private async Task<(RunLogEntry Run, IReadOnlyList<SkippedEntry> Files)> RunWithChangedAndLockedAsync()
+    {
+        var appended = false;
+        var changing = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (appended || operation != "create" || path != $"{Version}/a.txt")
+                    return;
+                appended = true;
+                using var append = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                append.Write("-more"u8);
+            },
+        };
+        RunLogEntry run;
+        using (Lock(Locked))
+            run = await Runner(changing).RunAsync(new BackupRequest(Plan(), [], RunTrigger.Manual));
+        ReadManifest().Files.Should().ContainSingle(f => f.Path == "a.txt");
+        File.WriteAllText(Path.Combine(_source, "a.txt"), "alpha-final");
+        return (run, [
+            run.RetryCandidates.Single(c => c.Path == "a.txt"),
+            run.RetryCandidates.Single(c => c.Path == "a/b/locked.txt"),
+        ]);
+    }
+
+    [Fact]
+    public async Task A_retry_that_runs_out_of_space_part_way_keeps_the_manifest_true_to_the_copies()
+    {
+        var (run, files) = await RunWithChangedAndLockedAsync();
+        var full = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && path == $"{Version}/a/b/locked.txt")
+                    throw new StorageFullException(path);
+            },
+        };
+
+        var retry = await RetryAsync(run, Runner(full), files);
+
+        retry.Status.Should().Be(RunStatus.Full);
+        var copy = File.ReadAllText(Path.Combine(VersionPath, "a.txt"));
+        copy.Should().Be("alpha-final", "the first file was copied over the version's copy before the target was full");
+        var manifest = ReadManifest();
+        manifest.Files.Should().ContainSingle(f => f.Path == "a.txt").Which.Hash.Should().Be(Hash(copy));
+        manifest.Files.Should().NotContain(f => f.Path == "a/b/locked.txt");
+        manifest.FileCount.Should().Be(manifest.Files.Count);
+        retry.FilesCopied.Should().Be(0);
+        retry.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a.txt", "a/b/locked.txt");
+    }
+
+    [Fact]
+    public async Task A_retry_canceled_part_way_keeps_the_manifest_true_to_the_copies_and_tells_the_index()
+    {
+        var (run, files) = await RunWithChangedAndLockedAsync();
+        using var cancel = new CancellationTokenSource();
+        var canceling = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && path == $"{Version}/a/b/locked.txt")
+                    cancel.Cancel();
+            },
+        };
+        var sink = new RecordingSink();
+
+        var retry = await Runner(canceling, sink).RetryAsync(RequestFor(run, Plan(), files), cancellationToken: cancel.Token);
+
+        retry.Status.Should().Be(RunStatus.Canceled);
+        var copy = File.ReadAllText(Path.Combine(VersionPath, "a.txt"));
+        copy.Should().Be("alpha-final");
+        ReadManifest().Files.Should().ContainSingle(f => f.Path == "a.txt").Which.Hash.Should().Be(Hash(copy));
+        File.Exists(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().BeFalse("its copy was never committed");
+        sink.Added.Should().ContainSingle().Which.Manifest.Files.Should()
+            .ContainSingle(f => f.Path == "a.txt").Which.Hash.Should().Be(Hash(copy));
+        retry.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a.txt", "a/b/locked.txt");
+    }
+
     private sealed class RecordingSink : IVersionIndexSink
     {
         public List<(string PlanId, VersionInfo Version, BackupManifest Manifest)> Added { get; } = [];
