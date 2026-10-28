@@ -88,6 +88,7 @@ public class ConfigLocationTests : IDisposable
         _tmp.WriteFile(@"appdata\settings.json", "{}");
         _tmp.WriteFile(@"appdata\plans\p1.json", "plan");
         _tmp.WriteFile(@"appdata\logs\p1.jsonl", "log");
+        _tmp.WriteFile(@"appdata\retries\p1.json", "retry");
         _tmp.WriteFile(@"appdata\connections.json", "connections");
         _tmp.WriteFile(@"appdata\drive-connections.json", "drive");
         var newRoot = _tmp.PathOf("newcfg");
@@ -98,6 +99,7 @@ public class ConfigLocationTests : IDisposable
         File.ReadAllText(moved.SettingsFile).Should().Be("{}");
         File.ReadAllText(Path.Combine(moved.PlansDirectory, "p1.json")).Should().Be("plan");
         File.ReadAllText(moved.LogFileFor("p1")).Should().Be("log");
+        File.ReadAllText(moved.RetryFileFor("p1")).Should().Be("retry", "a pending retry moves with its plan");
         File.ReadAllText(moved.ConnectionsFile).Should().Be("connections", "the plans' S3 connections move with them");
         File.ReadAllText(moved.DriveConnectionsFile).Should().Be("drive", "the plans' Drive connections move with them");
         File.Exists(Path.Combine(appData, "plans", "p1.json")).Should().BeTrue("old files are kept");
