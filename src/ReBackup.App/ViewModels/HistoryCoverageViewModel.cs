@@ -22,7 +22,7 @@ public sealed partial class HistoryCoverageViewModel : ObservableObject
     private CancellationTokenSource? _loadCts;
     private IReadOnlyList<VersionInfo>? _versions;   // null until listed; empty for a target that is not there yet
     private bool _unreachable;
-    private (DateTime StartUtc, string? Version)? _reselect;   // the selected run while the history is read again
+    private (DateTime StartUtc, string? Version, bool IsRetryLine)? _reselect;   // the selected run while the history is read again
 
     /// <param name="savedPlan">The plan as saved; null while it is new (a new plan has no versions).</param>
     /// <param name="storages">Opens the plan's target.</param>
@@ -130,30 +130,34 @@ public sealed partial class HistoryCoverageViewModel : ObservableObject
             CoverageLabels = CoverageLanes.Select(lane => CoverageBuilder.Label(lane.Rule)).ToList();
     }
 
-    /// <summary>Selects the run that wrote the version a slot holds; nothing when no run in the history wrote it.</summary>
+    /// <summary>
+    /// Selects the run that wrote the version a slot holds; nothing when no run in the history wrote it. A retry line names
+    /// the version it added to, but did not write it: it is passed over.
+    /// </summary>
     [RelayCommand]
     private void SelectCoverage(string? id)
     {
         if (id is null)
             return;
-        if (_run.History.FirstOrDefault(r => string.Equals(r.VersionName, id, StringComparison.OrdinalIgnoreCase)) is { } row)
+        if (_run.History.FirstOrDefault(r => !r.IsRetryLine && string.Equals(r.VersionName, id, StringComparison.OrdinalIgnoreCase))
+            is { } row)
             SelectedRun = row;
     }
 
     /// <summary>The runs are about to be read again: remembers which run is selected (the rows are replaced).</summary>
     private void OnHistoryLoading() =>
-        _reselect = SelectedRun is { } run ? (run.Entry.StartUtc, run.VersionName) : null;
+        _reselect = SelectedRun is { } run ? (run.Entry.StartUtc, run.VersionName, run.IsRetryLine) : null;
 
     /// <summary>
-    /// The runs were read again: the same run (start and version) is selected among the new rows, none when it is gone;
-    /// the log's warnings mark the versions again.
+    /// The runs were read again: the same run (start, version, and whether it is a retry line) is selected among the new
+    /// rows, none when it is gone; the log's warnings mark the versions again.
     /// </summary>
     private void OnHistoryLoaded()
     {
         var key = _reselect;
         _reselect = null;
         SelectedRun = key is { } k
-            ? _run.History.FirstOrDefault(r => r.Entry.StartUtc == k.StartUtc &&
+            ? _run.History.FirstOrDefault(r => r.Entry.StartUtc == k.StartUtc && r.IsRetryLine == k.IsRetryLine &&
                                                string.Equals(r.VersionName, k.Version, StringComparison.OrdinalIgnoreCase))
             : null;
         if (_versions is not null)

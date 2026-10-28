@@ -503,6 +503,44 @@ public class RetentionCoverageTests : IDisposable
     }
 
     [Fact]
+    public async Task Clicking_a_slot_selects_the_run_that_wrote_its_version_not_a_later_retry_line()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var original = editor.Run.Entries.Single(e => e.Version == logged);
+        var retry = new RunLogEntry
+        {
+            RunId = "retry-1", Trigger = RunTrigger.Retry, RetryOf = original.RunId, Attempt = 1, Attempts = 3,
+            Version = logged, Status = RunStatus.Completed, StartUtc = DaysAgo(1).ToUniversalTime().AddMinutes(-1),
+        };
+        editor.Run.LoadHistory([.. editor.Run.Entries, retry]);   // the newest row is the retry line of that version
+        editor.Run.History[0].IsRetryLine.Should().BeTrue();
+        var coverage = editor.HistoryCoverage;
+
+        coverage.SelectCoverageCommand.Execute(logged);
+
+        coverage.SelectedRun.Should().BeSameAs(editor.Run.History.Single(r => r.VersionName == logged && !r.IsRetryLine));
+    }
+
+    [Fact]
+    public async Task Reloading_keeps_the_selected_run_and_not_its_retry_line_of_the_same_start()
+    {
+        var (editor, logged, _) = await HistoryPlanAsync([Daily(3)]);
+        var original = editor.Run.Entries.Single(e => e.Version == logged);
+        var retry = new RunLogEntry
+        {
+            RunId = "retry-1", Trigger = RunTrigger.Retry, RetryOf = original.RunId, Attempt = 1, Attempts = 3,
+            Version = logged, Status = RunStatus.Completed, StartUtc = original.StartUtc,   // same start, still told apart
+        };
+        editor.Run.LoadHistory([.. editor.Run.Entries, retry]);
+        var coverage = editor.HistoryCoverage;
+        coverage.SelectedRun = editor.Run.History.Single(r => r.VersionName == logged && !r.IsRetryLine);
+
+        editor.Run.LoadHistory(editor.Run.Entries.ToList());
+
+        coverage.SelectedRun.Should().BeSameAs(editor.Run.History.Single(r => r.VersionName == logged && !r.IsRetryLine));
+    }
+
+    [Fact]
     public async Task Clicking_a_slot_whose_version_no_run_wrote_changes_nothing()
     {
         var (editor, logged, unlogged) = await HistoryPlanAsync([Daily(3)]);
