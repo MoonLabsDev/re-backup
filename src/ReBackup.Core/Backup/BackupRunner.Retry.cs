@@ -3,6 +3,7 @@ using System.Text.Json;
 using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Localization;
+using ReBackup.Core.Plans;
 using ReBackup.Core.Pool;
 using ReBackup.Shared.Json;
 using ReBackup.Shared.Schedule;
@@ -13,13 +14,11 @@ namespace ReBackup.Core.Backup;
 /// <summary>
 /// A retry (spec 4.4): copies only the files a finished run skipped and adds them to the version that run created. The
 /// version is finished and visible all along; the retry changes it by replacing its manifest, conditionally on the
-/// manifest being the one it read.
+/// manifest being the one it read. A full plan copies into the version folder; an incremental plan stores the files as
+/// blobs in the target's pool, under the target's lock, and the manifest names them.
 /// </summary>
 public sealed partial class BackupRunner
 {
-    /// <summary>Why a retry of an incremental plan ends at once: its blobs and lock are not handled yet.</summary>
-    private const string IncrementalRetryUnsupported = "Retry of incremental plans is not implemented yet.";
-
     /// <summary>The key of the reason a file that is gone gives (<see cref="SourceSkipReason"/>).</summary>
     private const string NoLongerExistsKey = "core.file.noLongerExists";
 
@@ -34,14 +33,22 @@ public sealed partial class BackupRunner
     /// with <c>core.skip.changed</c> and is not counted as copied: it is not recovered. Every other file stays open with
     /// what stopped it this time. The manifest is written, and the version handed to the index, only when at least one
     /// entry changed.
-    /// Each copy goes straight over the version's file, so an attempt that stops part-way (Error, Full, Canceled) still
-    /// writes the manifest with what it copied so far (once, conditionally on the same stamp, not cancelable; a failure of
-    /// that write is ignored) and hands it to the index: a replaced copy never stays under its old hash, where a restore
-    /// would refuse it. Its entry still has no files copied and every requested file open again, so a retry state built
-    /// from it keeps them all and the next attempt copies them again (overwriting is harmless). What remains is a crash, or
-    /// a failed manifest write, between overwriting a copy and replacing the manifest (spec 6): the copy is then newer
-    /// than its entry until an attempt copies it again. A manifest replaced meanwhile by someone else
-    /// (<see cref="StorageConflictException"/>) is never written over, also not then.
+    /// An attempt that stops part-way (Error, Full, Canceled) still writes the manifest with what it copied so far (once,
+    /// conditionally on the same stamp, not cancelable; a failure of that write is ignored) and hands it to the index. A
+    /// full plan's copy goes straight over the version's file, so this keeps a replaced copy from staying under its old
+    /// hash, where a restore would refuse it. An incremental plan's blob replaces nothing (the old one stays until a
+    /// collection finds it unreferenced), so its version is consistent either way; the write keeps the entries that point
+    /// at the blobs already stored, which a collection would otherwise remove. The entry still has no files copied and
+    /// every requested file open again, so a retry state built from it keeps them all and the next attempt copies them
+    /// again (overwriting is harmless, a blob that is there is not written twice). What remains is a crash, or a failed
+    /// manifest write, between storing a copy and replacing the manifest (spec 6): a full plan's copy is then newer than
+    /// its entry until an attempt copies it again; an incremental plan's blob is named by no manifest until then, and the
+    /// next run collects it. A manifest replaced meanwhile by someone else (<see cref="StorageConflictException"/>) is
+    /// never written over, also not then.
+    /// An incremental plan holds the target's lock for the whole attempt, from before it looks for the version, as a
+    /// regular run does (spec 4.4 step 2): no run, delete or collection changes the version or its blobs meanwhile. A
+    /// target locked by another holder ends the attempt as an Error, with nothing written. A retry applies no retention
+    /// and collects no garbage: the next regular run does.
     /// </remarks>
     public async Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -60,9 +67,7 @@ public sealed partial class BackupRunner
 
         try
         {
-            if (request.Plan.Incremental)
-                throw new BackupAbortException(RunStatus.Error, IncrementalRetryUnsupported);
-            await Task.Run(() => RetryIntoFullCopyAsync(request, entry, progress, cancellationToken), cancellationToken);
+            await Task.Run(() => RetryUnderLockAsync(request, entry, progress, cancellationToken), cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -94,16 +99,38 @@ public sealed partial class BackupRunner
     }
 
     /// <summary>
-    /// The retry of a full plan: copies the files into the version folder, overwriting a copy that is there, and replaces
-    /// the manifest. Sets <see cref="RunLogEntry.VersionGone"/> and changes nothing when the version is no longer one of the
-    /// plan's (deleted, being deleted, or never finished).
+    /// Opens the plan's storages and runs the attempt (<see cref="RetryIntoVersionAsync"/>); an incremental plan first takes
+    /// the target's lock and releases it when the attempt ends, whatever the outcome. A release that fails is a warning
+    /// on <paramref name="entry"/>, as in a regular run.
     /// </summary>
-    private async Task RetryIntoFullCopyAsync(RetryRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress,
+    private async Task RetryUnderLockAsync(RetryRequest request, RunLogEntry entry, IProgress<BackupProgress>? progress,
         CancellationToken cancellationToken)
     {
         var plan = request.Plan;
         var source = _storages.Open(plan.Source);
         var target = _storages.Open(plan.Target);
+        var held = plan.Incremental ? await AcquireLockAsync(target, cancellationToken).ConfigureAwait(false) : null;
+        try
+        {
+            await RetryIntoVersionAsync(request, source, target, entry, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (held is not null)
+                await ReleaseLockAsync(held, entry).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Copies the files into the version and replaces its manifest: a full plan into the version folder, overwriting a
+    /// copy that is there; an incremental plan into the target's pool, as blobs the manifest names. Sets
+    /// <see cref="RunLogEntry.VersionGone"/> and changes nothing when the version is no longer one of the plan's (deleted,
+    /// being deleted, or never finished).
+    /// </summary>
+    private async Task RetryIntoVersionAsync(RetryRequest request, IStorage source, IStorage target, RunLogEntry entry,
+        IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
+    {
+        var plan = request.Plan;
 
         // Being written or deleted (a marker), deleted, or renamed by hand: the catalog does not list it as owned.
         var versions = await VersionCatalog.ListAsync(target, plan.Id, plan.Name, cancellationToken).ConfigureAwait(false);
@@ -113,7 +140,8 @@ public sealed partial class BackupRunner
             entry.VersionGone = true;
             return;
         }
-        // Copies never go into a pool, whatever happened to the target since the run.
+        // The target still holds what the plan expects, whatever happened to it since the run: copies never go into a pool,
+        // blobs only into this plan's pool. The pool's store file is there already, it is never created here.
         var guard = await StoreGuard.CheckAsync(target, plan, createIfMissing: false, cancellationToken).ConfigureAwait(false);
         if (guard != StoreGuardOutcome.Ok)
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English(StoreGuard.MessageKey(guard)));
@@ -140,6 +168,15 @@ public sealed partial class BackupRunner
         for (var index = 0; index < manifest.Files.Count; index++)
             positions.TryAdd(manifest.Files[index].Path, index);
 
+        // Safe detection without a previous version: every file is read and hashed, an earlier entry is never reused.
+        PoolRun? pool = null;
+        if (plan.Incremental)
+        {
+            var writer = new PoolWriter(target);
+            await writer.LoadKnownAsync(cancellationToken).ConfigureAwait(false);
+            pool = new PoolRun(writer, ChangeDetection.Safe, previous: new());
+        }
+
         var buffer = new byte[BufferSize];
         var sinceReport = Stopwatch.StartNew();
         var filesDone = 0;
@@ -154,13 +191,13 @@ public sealed partial class BackupRunner
         }
 
         Report(BackupPhase.Copying, "", force: true);
-        var replaced = 0;   // manifest entries added or replaced: each one is a copy already written into the version
+        var replaced = 0;   // manifest entries added or replaced: each one is a copy already written (version or pool)
         try
         {
             foreach (var file in request.Files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var done = await RetryFileAsync(source, target, version.Path, file.Path, buffer, count =>
+                var done = await RetryFileAsync(source, target, pool, version.Path, file.Path, buffer, count =>
                 {
                     bytesDone += count;
                     Report(BackupPhase.Copying, file.Path, force: false);
@@ -205,7 +242,8 @@ public sealed partial class BackupRunner
         catch (Exception ex) when (replaced > 0 && ex is not StorageConflictException)
         {
             // The copies written so far are already in the version: the manifest must describe them, or a restore refuses
-            // a replaced copy whose old hash it still lists. One try, not cancelable; the attempt fails as it did anyway.
+            // a replaced copy whose old hash it still lists (a blob stored so far is kept instead of collected). One try,
+            // not cancelable; the attempt fails as it did anyway.
             var committed = false;
             try
             {
@@ -249,12 +287,14 @@ public sealed partial class BackupRunner
     }
 
     /// <summary>
-    /// Copies one file of a retry from what the source says about it now, overwriting the copy in the version if there is
-    /// one. A file the source no longer has gives neither a copy nor a reason: it is resolved. A file the source cannot
-    /// examine or open gives the reason, as in <see cref="CopyFileAsync"/>; a source that cannot be reached propagates.
+    /// Copies one file of a retry from what the source says about it now: into <paramref name="pool"/> when the plan is
+    /// incremental (<see cref="CopyFileToPoolAsync"/>), otherwise into the version folder, overwriting the copy there if
+    /// there is one. A file the source no longer has gives neither a copy nor a reason: it is resolved. A file the source
+    /// cannot examine or open gives the reason, as in <see cref="CopyFileAsync"/>; a source that cannot be reached
+    /// propagates.
     /// </summary>
-    private static async Task<FileOutcome> RetryFileAsync(IStorage source, IStorage target, string versionPath, string path,
-        byte[] buffer, Action<int> onBytes, CancellationToken cancellationToken)
+    private static async Task<FileOutcome> RetryFileAsync(IStorage source, IStorage target, PoolRun? pool, string versionPath,
+        string path, byte[] buffer, Action<int> onBytes, CancellationToken cancellationToken)
     {
         StorageEntry? now;
         try
@@ -269,10 +309,19 @@ public sealed partial class BackupRunner
         if (now is null || now.IsDirectory)
             return Resolved;
 
-        var (copied, skipReason, changed, denied, skipKey) = await CopyFileAsync(source, target, versionPath,
-            IndexNode.ForFile(path, now), buffer, onBytes, cancellationToken, overwrite: true).ConfigureAwait(false);
+        var node = IndexNode.ForFile(path, now);
+        FileOutcome done;
+        if (pool is not null)
+            done = await CopyFileToPoolAsync(source, pool, node, buffer, onBytes, cancellationToken, storageFailuresStop: false)
+                .ConfigureAwait(false);
+        else
+        {
+            var (copied, skipReason, changed, denied, skipKey) = await CopyFileAsync(source, target, versionPath, node, buffer,
+                onBytes, cancellationToken, overwrite: true).ConfigureAwait(false);
+            done = new FileOutcome(copied, skipReason, changed, denied, skipKey);
+        }
         // Gone between the look and the open (ruling R2): resolved like a file that was not there at all.
-        return skipKey == NoLongerExistsKey ? Resolved : new FileOutcome(copied, skipReason, changed, denied, skipKey);
+        return done.SkipKey == NoLongerExistsKey ? Resolved : done;
     }
 
     /// <summary>
