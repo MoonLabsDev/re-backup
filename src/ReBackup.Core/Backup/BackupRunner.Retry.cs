@@ -31,7 +31,8 @@ public sealed partial class BackupRunner
     /// that out). A file copied cleanly counts in <see cref="RunLogEntry.FilesCopied"/>. A file copied but changed again
     /// meanwhile replaces its copy and its manifest entry all the same (the entry describes the new copy), yet stays open
     /// with <c>core.skip.changed</c> and is not counted as copied: it is not recovered. Every other file stays open with
-    /// what stopped it this time. The manifest is written, and the version handed to the index, only when at least one
+    /// what stopped it this time, and stays a retry candidate whatever that is (ruling R14): a file archived or unreadable
+    /// now is still not in the version, so it stays in the state until the attempts run out. The manifest is written, and the version handed to the index, only when at least one
     /// entry changed.
     /// An attempt that stops part-way (Error, Full, Canceled) still writes the manifest with what it copied so far (once,
     /// conditionally on the same stamp, not cancelable; a failure of that write is ignored) and hands it to the index. A
@@ -209,7 +210,7 @@ public sealed partial class BackupRunner
                     if (!await SourceRootExistsAsync(source, cancellationToken).ConfigureAwait(false))
                         throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
                     if (done.SkipReason is { } reason)
-                        entry.AddSkipped(new SkippedEntry(file.Path, reason, done.SkipKey));
+                        entry.AddStillOpen(new SkippedEntry(file.Path, reason, done.SkipKey));
                 }
                 else
                 {
@@ -222,7 +223,7 @@ public sealed partial class BackupRunner
                     }
                     replaced++;
                     if (done.Changed)
-                        entry.AddSkipped(Skip(copied.Path, "core.skip.changed"));
+                        entry.AddStillOpen(Skip(copied.Path, "core.skip.changed"));
                     else
                     {
                         entry.FilesCopied++;
@@ -337,6 +338,6 @@ public sealed partial class BackupRunner
         entry.Skipped.Clear();
         entry.RetryCandidates.Clear();
         foreach (var file in files)
-            entry.AddSkipped(file);
+            entry.AddStillOpen(file);
     }
 }

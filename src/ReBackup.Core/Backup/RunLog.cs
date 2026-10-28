@@ -93,6 +93,20 @@ public sealed class RunLogEntry
             RetryCandidates.Add(entry);
         }
     }
+
+    /// <summary>
+    /// For a retry run: a requested file that is still open, counted as skipped and kept as a candidate whatever its
+    /// reason now (ruling R14). A file that comes back with a reason <see cref="RetryPolicy"/> would not retry (archived,
+    /// or a raw message of the storage) is still not copied: dropping it would show it as recovered.
+    /// </summary>
+    internal void AddStillOpen(SkippedEntry entry)
+    {
+        SkippedCount++;
+        if (Skipped.Count < MaxSkippedEntries)
+            Skipped.Add(entry);
+        RetryableCount++;
+        RetryCandidates.Add(entry);
+    }
 }
 
 /// <summary>Append-only JSON Lines file with one entry per run of a plan.</summary>

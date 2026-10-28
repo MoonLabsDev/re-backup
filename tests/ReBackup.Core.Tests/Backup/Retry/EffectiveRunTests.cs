@@ -178,6 +178,29 @@ public class EffectiveRunTests
     }
 
     [Fact]
+    public void A_retried_file_open_for_a_reason_never_retried_stays_counted()
+    {
+        // Ruling R14: the retry line counts every requested file it could not copy, also one archived or unreadable now.
+        var retry = new RunLogEntry
+        {
+            RunId = "retry-1",
+            Trigger = RunTrigger.Retry,
+            RetryOf = "run-1",
+            Status = RunStatus.CompletedWithWarnings,
+            SkippedCount = 1,
+            RetryableCount = 1,
+            Skipped = [new SkippedEntry("locked0.txt", "too large to export")],
+        };
+
+        var merged = Merged(Original(2, 2), retry);
+
+        merged.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        merged.SkippedCount.Should().Be(1);
+        merged.Skipped.Should().ContainSingle(e => e.Path == "locked0.txt" && e.Key == null);
+        merged.RetryRecovered.Should().Be(1);
+    }
+
+    [Fact]
     public void A_run_without_retries_is_returned_as_is()
     {
         var orig = Original(3, 3);

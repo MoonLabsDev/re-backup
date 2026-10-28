@@ -44,12 +44,16 @@ public class BackupRunnerRetryTests : IDisposable
         Target = StorageLocation.FileSystem(_target),
     };
 
-    /// <param name="target">Wraps the target's storage, e.g. in a <see cref="FaultyStorage"/>; the source is never wrapped.</param>
-    private BackupRunner Runner(Func<IStorage, IStorage>? target = null, IVersionIndexSink? sink = null) =>
-        new(target is null ? null : new TestStorageFactory(location =>
+    /// <param name="target">Wraps the target's storage, e.g. in a <see cref="FaultyStorage"/>.</param>
+    /// <param name="source">Wraps the source's storage the same way.</param>
+    private BackupRunner Runner(Func<IStorage, IStorage>? target = null, IVersionIndexSink? sink = null,
+        Func<IStorage, IStorage>? source = null) =>
+        new(target is null && source is null ? null : new TestStorageFactory(location =>
         {
             var storage = new StorageFactory().Open(location);
-            return location.Path == _target ? target(storage) : storage;
+            return location.Path == _target ? target?.Invoke(storage) ?? storage
+                : location.Path == _source ? source?.Invoke(storage) ?? storage
+                : storage;
         }), _time, indexSink: sink);
 
     private string VersionPath => Path.Combine(_target, Version);
@@ -186,6 +190,53 @@ public class BackupRunnerRetryTests : IDisposable
         File.ReadAllBytes(ManifestPath).Should().Equal(manifestBytes);
         File.Exists(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().BeFalse();
         sink.Added.Should().BeEmpty("nothing changed in the version");
+    }
+
+    [Fact]
+    public async Task A_file_unreadable_for_a_reason_never_retried_stays_open_until_the_attempts_run_out()
+    {
+        // Ruling R14: a requested file that is not resolved stays a candidate whatever stops it now, so the state keeps
+        // it and the next line still counts it; it is never shown as recovered without having been copied.
+        const string unreadable = "x.txt";
+        _tmp.WriteFile(@"source\" + unreadable, "x-content");
+        var plan = Plan();
+        RunLogEntry run;
+        using (Lock(Locked))
+        using (Lock(unreadable))
+            run = await Runner().RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+        run.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a/b/locked.txt", unreadable);
+        var refusing = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "open" && path == unreadable)
+                    throw new StorageIOException(path, "too large to export") { NotReadable = true };
+            },
+        };
+        using var planner = new RetryPlanner(_tmp.PathOf("retries"), _ => { }, _time);
+        planner.OnRunFinished(plan, run);
+
+        RunLogEntry first;
+        using (Lock(Locked))
+            first = await Runner(source: refusing).RetryAsync(
+                new RetryRequest(plan, run.RunId, run.Version!, planner.StateOf(plan.Id)!.Files, Attempt: 1, Attempts: 3));
+        planner.OnRunFinished(plan, first);
+        var second = await Runner(source: refusing).RetryAsync(
+            new RetryRequest(plan, run.RunId, run.Version!, planner.StateOf(plan.Id)!.Files, Attempt: 2, Attempts: 3));
+        planner.OnRunFinished(plan, second);
+
+        first.SkippedCount.Should().Be(2);
+        first.RetryableCount.Should().Be(2, "every requested file not resolved is still a candidate");
+        first.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a/b/locked.txt", unreadable);
+        second.FilesCopied.Should().Be(1);
+        second.SkippedCount.Should().Be(1);
+        second.RetryCandidates.Should().ContainSingle(c => c.Path == unreadable && c.Key == null);
+        planner.StateOf(plan.Id)!.Files.Should().ContainSingle(c => c.Path == unreadable, "the file is still open");
+        var merged = EffectiveRun.Apply([run, first, second])[0];
+        merged.SkippedCount.Should().BeGreaterThanOrEqualTo(1);
+        merged.Status.Should().NotBe(RunStatus.Completed);
+        merged.Skipped.Should().Contain(e => e.Path == unreadable);
+        merged.RetryRecovered.Should().Be(1, "only the locked file was copied");
     }
 
     [Fact]
