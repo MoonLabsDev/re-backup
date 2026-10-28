@@ -19,6 +19,7 @@ using ReBackup.Shared.Wpf.Services;
 using ReBackup.App.Localization;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Config;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
@@ -56,6 +57,7 @@ public partial class App : Application
     private PlanStore _planStore = null!;
     private BackupQueue _queue = null!;
     private Scheduler _scheduler = null!;
+    private RetryPlanner _retries = null!;
     private MainViewModel _mainViewModel = null!;
     private MainWindow _window = null!;
     private bool _exitRequested;
@@ -140,7 +142,8 @@ public partial class App : Application
         _window = new MainWindow { DataContext = _mainViewModel };
         _window.Closing += OnMainWindowClosing;
         CreateTrayIcon();
-        _scheduler.Start(planId => new RunLog(_paths.LogFileFor(planId)).ReadLast()?.StartUtc);
+        _scheduler.Start(_mainViewModel.LastRegularRunStartUtc);
+        _mainViewModel.StartRetries();
         SystemEvents.TimeChanged += OnSystemTimeChanged;
         _singleInstance.ListenForActivation(() => Dispatcher.InvokeAsync(ShowMainWindow));
         // "Allow control via MCP": the one control service serves the pipe while the setting is on.
@@ -276,12 +279,16 @@ public partial class App : Application
             // Called on a timer thread: InvokeAsync, never Invoke — the UI thread may be waiting for the queue.
             var scheduler = new Scheduler((planId, trigger) =>
                 Dispatcher.InvokeAsync(() => created?.RunScheduled(planId, trigger)));
+            // The skipped files of a run are tried again in retries\<planId>.json; due attempts arrive like scheduled runs.
+            // Its clock is the runner's: a run's end time sets when its first attempt is due.
+            var retries = new RetryPlanner(paths.RetriesDirectory, state =>
+                Dispatcher.InvokeAsync(() => created?.RunRetry(state)), clock);
             var themeToggle = new ThemeToggleViewModel(() => ThemeManager.Mode, ChooseTheme);
             var languageToggle = new LanguageToggleViewModel(() => Loc.Instance.Language, ChooseLanguage);
             // Files and folders of versions that cannot be opened in place go through %TEMP%\ReBackup\open.
             var tempOpener = new TempOpener();
             var mainViewModel = new MainViewModel(planStore, paths, settings, () => settingsStore.Save(settings),
-                () => settingsStore.LastLoadError, _dialogs, ShowSettings, queue, scheduler,
+                () => settingsStore.LastLoadError, _dialogs, ShowSettings, queue, scheduler, retries,
                 action => Dispatcher.InvokeAsync(action), themeToggle, languageToggle, new ExplorerFolderOpener(),
                 versionIndex, storages, s3, drive, tempOpener, new ShellRecycleBin());
             created = mainViewModel;
@@ -297,6 +304,7 @@ public partial class App : Application
             _themeToggle = themeToggle;
             _queue = queue;
             _scheduler = scheduler;
+            _retries = retries;
             _s3 = s3;
             _drive = drive;
             _s3Storages = s3Storages;
@@ -451,13 +459,15 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Stops the scheduler, closes the queue (canceling queued and running backups) and waits briefly for the running
-    /// one to clean up its unfinished version folder. False when it did not stop in time.
+    /// Stops the scheduler and the retry planner, closes the queue (canceling queued and running backups) and waits briefly
+    /// for the running one to clean up its unfinished version folder. False when it did not stop in time. A canceled retry
+    /// keeps its saved state: it is tried again after the next start.
     /// </summary>
     private bool StopBackups(TimeSpan wait)
     {
         SystemEvents.TimeChanged -= OnSystemTimeChanged;
         _scheduler?.Dispose();
+        _retries?.Dispose();
         _queue.Close();
         try
         {

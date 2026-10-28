@@ -100,8 +100,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         // The pool numbers of an incremental plan come from the index the Versions tab keeps in sync.
         RetentionPreview = new RetentionPreviewViewModel(ToPlan, () => Preview.LastEvaluatedIncludedSize, folders, versions.Storages,
             () => Run.Entries, poolIndex: PoolIndexFor, requestIndexSync: SyncIndex);
-        Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive, folders, versions, () => Run.Entries,
-            () => IsCopying);
+        // A retry writes into one of the versions: none is deleted meanwhile.
+        Versions = new VersionsViewModel(() => IsNew ? null : SavedPlan(), () => Run.IsActive || Run.IsRetryActive, folders,
+            versions, () => Run.Entries, () => IsCopying);
         Versions.IndexSyncEnded += RetentionPreview.OnIndexSyncEnded;
         Versions.IndexSyncEnded += Preview.OnIndexSyncEnded;
         HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);

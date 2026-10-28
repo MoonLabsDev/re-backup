@@ -2,10 +2,12 @@ using System.IO;
 using ReBackup.App.Services;
 using ReBackup.Control;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Schedule;
 using ReBackup.Storage;
 
 namespace ReBackup.App.Control;
@@ -38,11 +40,13 @@ public sealed partial class ControlService
         }, ct);
     }
 
+    /// <summary>The plan's newest run as it effectively ended (its retries applied); a retry line is no run of its own.</summary>
     private LastRunInfo? LastRunOf(string planId)
     {
         try
         {
-            return _main.RunLogFor(planId).ReadLast() is { } last
+            var runs = EffectiveRun.Apply(_main.RunLogFor(planId).ReadAll());
+            return runs.LastOrDefault(run => run.Trigger != RunTrigger.Retry) is { } last
                 ? new LastRunInfo(AsUtc(last.StartUtc), AsUtc(last.EndUtc), Name(last.Status), Name(last.Trigger), last.Version)
                 : null;
         }
@@ -71,8 +75,9 @@ public sealed partial class ControlService
 
         var byName = indexed.ToDictionary(v => v.Name, StringComparer.OrdinalIgnoreCase);
         var runByVersion = new Dictionary<string, RunLogEntry>(StringComparer.OrdinalIgnoreCase);
-        foreach (var run in runs.Where(r => r.Version is not null))
-            runByVersion[run.Version!] = run;   // the log is oldest first: the newest run wins
+        // The log is oldest first: the newest run wins. A retry line names the version it amended, not one it made.
+        foreach (var run in runs.Where(r => r.Version is not null && r.Trigger != RunTrigger.Retry))
+            runByVersion[run.Version!] = run;
 
         List<VersionRow> rows;
         List<string>? warnings = null;
@@ -361,12 +366,15 @@ public sealed partial class ControlService
         AsUtc(run.EndUtc), run.DurationMs, Name(run.Status), run.Reason, run.Version, run.FilesCopied,
         SizeValue.Of(run.BytesCopied), run.SkippedCount, CapWarnings(run.Warnings));
 
-    /// <summary>The plan's run log, oldest first; an unreadable log is an <c>internal_error</c>.</summary>
+    /// <summary>
+    /// The plan's run log, oldest first, every run as it effectively ended (<see cref="EffectiveRun"/>); an unreadable log
+    /// is an <c>internal_error</c>.
+    /// </summary>
     private IReadOnlyList<RunLogEntry> ReadRuns(string planId)
     {
         try
         {
-            return _main.RunLogFor(planId).ReadAll();
+            return EffectiveRun.Apply(_main.RunLogFor(planId).ReadAll());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -374,12 +382,15 @@ public sealed partial class ControlService
         }
     }
 
-    /// <summary>The plan's run log, oldest first; empty when it cannot be read (its runs then add no warnings).</summary>
+    /// <summary>
+    /// The plan's run log, oldest first, every run as it effectively ended; empty when it cannot be read (its runs then add
+    /// no warnings).
+    /// </summary>
     private IReadOnlyList<RunLogEntry> TryReadRuns(string planId)
     {
         try
         {
-            return _main.RunLogFor(planId).ReadAll();
+            return EffectiveRun.Apply(_main.RunLogFor(planId).ReadAll());
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -39,7 +39,7 @@
       "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag"
     },
     "weekdayShort": { "Mon": "Mo", "Tue": "Di", "Wed": "Mi", "Thu": "Do", "Fri": "Fr", "Sat": "Sa", "Sun": "So" },
-    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt", "Mcp": "MCP" },
+    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt", "Mcp": "MCP", "Retry": "Wiederholung" },
     "includeStatus": { "Included": "Enthalten", "Ignored": "Ignoriert", "Partial": "Teilweise" },
     "diffStatus": { "Unchanged": "Unverändert", "Added": "Hinzugefügt", "Changed": "Geändert", "Deleted": "Gelöscht" },
     "historyStatus": { "New": "Neu", "Changed": "Geändert", "Unchanged": "Unverändert", "Deleted": "Gelöscht", "Absent": "—" },
@@ -332,6 +332,7 @@
       },
       "canceled": "Backup von „{plan}“ wurde abgebrochen.",
       "aborted": "Backup von „{plan}“ ist fehlgeschlagen: {reason}",
+      "retryFinished": "Retry von {plan}: {recovered} nachgeholt, {open} offen",
       "indexError": "Der Versionsindex von „{plan}“ konnte nicht aktualisiert werden: {error}",
       "historyUnreadable": "Der Laufverlauf von „{plan}“ konnte nicht gelesen werden: {error}"
     },

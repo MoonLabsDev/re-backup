@@ -183,8 +183,8 @@ public sealed partial class VersionsViewModel
 
     /// <summary>
     /// Confirm → delete the marked versions of the plan in the background (only those the plan manages) → take them out
-    /// of the index → read the target again. Refused while a backup of the plan is queued or running, and while the plan
-    /// is copied ("Copy plan…").
+    /// of the index → read the target again. Refused while a backup or a retry of the plan is queued or running (asked
+    /// again after the confirmation), and while the plan is copied ("Copy plan…").
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDeleteVersions))]
     private async Task DeleteVersionsAsync()
@@ -224,6 +224,12 @@ public sealed partial class VersionsViewModel
             message += "\n\n" + Loc.T("versions.delete.poolCleanupNote");
         if (!dialogs.ConfirmDefaultNo(title, message))
             return;
+        // The question pumps the dispatcher: a run or a due retry of the plan may have been queued meanwhile.
+        if (_isBackupActive())
+        {
+            dialogs.ShowError(title, Loc.T("versions.delete.backupRunning"));
+            return;
+        }
 
         // A sync must not import folders that are being deleted; the target is read again afterwards.
         _syncCts?.Cancel();

@@ -77,6 +77,7 @@ public sealed partial class MainViewModel
         var plan = editor.SavedPlan();
         plan.Ignore.Patterns = [.. patterns];
         _store.Save(plan);
+        _retries.OnPlanSaved(plan);
         editor.ReplaceSaved(plan);
         RevalidateAll();
         SetStatus(LocText.Of("shell.status.saved", ("plan", plan.Name)));

@@ -138,10 +138,11 @@ public sealed partial class PlanEditorViewModel
     }
 
     /// <summary>
-    /// "Release lock…" is offered for someone else's lock: not while this app's own run, copy, verify or delete (in the
-    /// Versions tab, with its garbage collection) of the plan holds it (they release it themselves).
+    /// "Release lock…" is offered for someone else's lock: not while this app's own run (or retry), copy, verify or delete
+    /// (in the Versions tab, with its garbage collection) of the plan holds it (they release it themselves).
     /// </summary>
-    private bool CanReleaseLock() => HasLock && !Run.IsActive && !IsCopying && !IsVerifying && !Versions.IsDeleting;
+    private bool CanReleaseLock() =>
+        HasLock && !Run.IsActive && !Run.IsRetryActive && !IsCopying && !IsVerifying && !Versions.IsDeleting;
 
     /// <summary>
     /// "Release lock…": after a confirmation naming the holder and its start time, removes the lock whoever holds it. Only

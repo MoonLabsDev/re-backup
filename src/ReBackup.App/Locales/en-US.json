@@ -39,7 +39,7 @@
       "Friday": "Friday", "Saturday": "Saturday", "Sunday": "Sunday"
     },
     "weekdayShort": { "Mon": "Mon", "Tue": "Tue", "Wed": "Wed", "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun" },
-    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up", "Mcp": "MCP" },
+    "runTrigger": { "Manual": "Manual", "Scheduled": "Scheduled", "CatchUp": "Catch-up", "Mcp": "MCP", "Retry": "Retry" },
     "includeStatus": { "Included": "Included", "Ignored": "Ignored", "Partial": "Partial" },
     "diffStatus": { "Unchanged": "Unchanged", "Added": "Added", "Changed": "Changed", "Deleted": "Deleted" },
     "historyStatus": { "New": "New", "Changed": "Changed", "Unchanged": "Unchanged", "Deleted": "Deleted", "Absent": "—" },
@@ -332,6 +332,7 @@
       },
       "canceled": "Backup of \"{plan}\" was canceled.",
       "aborted": "Backup of \"{plan}\" was aborted: {reason}",
+      "retryFinished": "Retry of {plan}: {recovered} recovered, {open} open",
       "indexError": "The version index of \"{plan}\" could not be updated: {error}",
       "historyUnreadable": "The run history of \"{plan}\" could not be read: {error}"
     },

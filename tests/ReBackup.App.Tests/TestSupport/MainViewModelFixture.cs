@@ -1,7 +1,9 @@
 using System.IO;
+using Microsoft.Extensions.Time.Testing;
 using ReBackup.App.Services;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Config;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
@@ -19,7 +21,10 @@ using ReBackup.Storage.S3.Connections;
 
 namespace ReBackup.App.Tests.TestSupport;
 
-/// <summary>A <see cref="MainViewModel"/> on a temporary configuration folder; the scheduler is never started.</summary>
+/// <summary>
+/// A <see cref="MainViewModel"/> on a temporary configuration folder; the scheduler is never started. Its retry planner keeps
+/// its states in the configuration folder and runs on <see cref="Time"/>: a retry falls due only when the test moves it on.
+/// </summary>
 public sealed class MainViewModelFixture : IDisposable
 {
     private static readonly object LocLock = new();
@@ -98,6 +103,17 @@ public sealed class MainViewModelFixture : IDisposable
     /// <summary>The queue of the last <see cref="Create"/>.</summary>
     public BackupQueue Queue { get; private set; } = null!;
 
+    /// <summary>The scheduler of the last <see cref="Create"/>; never started, but it can be paused.</summary>
+    public Scheduler Scheduler { get; private set; } = null!;
+
+    /// <summary>The retry planner of the last <see cref="Create"/>; its due attempts go straight to that view model.</summary>
+    public RetryPlanner Retries { get; private set; } = null!;
+
+    /// <summary>The retry planner's clock; it starts at the real time, as the runs are stamped with that.</summary>
+    public FakeTimeProvider Time { get; } = new(DateTimeOffset.UtcNow);
+
+    private readonly List<RetryPlanner> _planners = [];
+
     /// <summary>The id of the account <see cref="AddConnection"/> stores its connections under.</summary>
     public const string AccountId = "acc-1";
 
@@ -167,10 +183,13 @@ public sealed class MainViewModelFixture : IDisposable
     {
         var storages = Storages ?? new StorageFactory();
         var queue = Queue = new BackupQueue(new BackupRunner(storages), planId => new RunLog(Paths.LogFileFor(planId)));
-        var scheduler = new Scheduler((_, _) => { });
+        var scheduler = Scheduler = new Scheduler((_, _) => { });
+        MainViewModel? created = null;
+        var retries = Retries = new RetryPlanner(Paths.RetriesDirectory, state => created?.RunRetry(state), Time);
+        _planners.Add(retries);
         var versionIndex = new VersionIndexWorker(new VersionIndexSet(Path.Combine(Root, "index")));
-        return new MainViewModel(Store, Paths, Settings, SaveSettings, () => LoadError, Dialogs, () => { }, queue, scheduler,
-            action => action(), new ThemeToggleViewModel(() => ThemeMode.Dark, _ => { }),
+        return created = new MainViewModel(Store, Paths, Settings, SaveSettings, () => LoadError, Dialogs, () => { }, queue,
+            scheduler, retries, action => action(), new ThemeToggleViewModel(() => ThemeMode.Dark, _ => { }),
             new LanguageToggleViewModel(() => "en-US", _ => { }), new FakeFolderOpener(), versionIndex, storages, S3, Drive,
             recycleBin: RecycleBin);
     }
@@ -203,6 +222,8 @@ public sealed class MainViewModelFixture : IDisposable
 
     public void Dispose()
     {
+        foreach (var planner in _planners)
+            planner.Dispose();
         Store.Dispose();
         try { Directory.Delete(Root, recursive: true); }
         catch (IOException) { }

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Storage;
 
 namespace ReBackup.App.ViewModels;
@@ -78,6 +79,17 @@ public sealed partial class PlanRunViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsActive), nameof(IsRunning))]
     private JobState? _state;
 
+    /// <summary>
+    /// The queue state of the plan's retry job (<see cref="BackupJobUpdate.IsRetry"/>): queued or running; null while none is.
+    /// It never changes <see cref="State"/>, so <see cref="IsActive"/> and the run button stay about regular runs.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRetryActive))]
+    private JobState? _retryJobState;
+
+    /// <summary>The plan's pending retry of skipped files (a copy of the planner's state); null when there is none.</summary>
+    [ObservableProperty] private RetryState? _retry;
+
     /// <summary>The remaining copy time alone, e.g. "12 min left"; "" while it is not known.</summary>
     [ObservableProperty] private string _etaText = "";
 
@@ -121,10 +133,20 @@ public sealed partial class PlanRunViewModel : ObservableObject
 
     public bool IsRunning => State is JobState.Running;
 
+    /// <summary>A retry of the plan's skipped files is queued or running: it writes into one of the plan's versions.</summary>
+    public bool IsRetryActive => RetryJobState is JobState.Queued or JobState.Running;
+
     public bool HasRun => LastRun is not null;
 
     public void Apply(BackupJobUpdate update)
     {
+        if (update.IsRetry)
+        {
+            // Beside the regular job: a regular run may wait behind its plan's running retry, and the retry's end is not its own.
+            RetryJobState = update.State is JobState.Queued or JobState.Running ? update.State : null;
+            return;
+        }
+
         switch (update.State)
         {
             case JobState.Queued:
@@ -180,6 +202,9 @@ public sealed partial class PlanRunViewModel : ObservableObject
             row.Refresh();
         UpdateCard();
     }
+
+    /// <summary>The plan's pending retry as the planner has it now; null when it has none.</summary>
+    public void SetRetry(RetryState? state) => Retry = state;
 
     /// <summary>Shows at once that the cancel was requested; the run may still need a moment to stop.</summary>
     public void MarkCanceling()
