@@ -108,25 +108,6 @@ public sealed partial class BackupRunner : IBackupRunner
         _host = host ?? Environment.MachineName;
     }
 
-    /// <remarks>Not implemented yet: every attempt ends as Error without touching the target.</remarks>
-    public Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
-        CancellationToken cancellationToken = default)
-    {
-        var now = _time.GetUtcNow().UtcDateTime;
-        return Task.FromResult(new RunLogEntry
-        {
-            RunId = Guid.NewGuid().ToString("N"),
-            Trigger = RunTrigger.Retry,
-            StartUtc = now,
-            EndUtc = now,
-            Status = RunStatus.Error,
-            Reason = "not implemented",
-            RetryOf = request.RunId,
-            Attempt = request.Attempt,
-            Attempts = request.Attempts,
-        });
-    }
-
     /// <remarks>
     /// The version is written under its final name (spec 6.1): the name is reserved by creating
     /// <see cref="VersionMarkerNames.Pending"/> in its folder exclusively, then the folders and files are copied and the
@@ -992,9 +973,13 @@ public sealed partial class BackupRunner : IBackupRunner
     /// unreachable too (revoked credentials), while one file refused on its own is skipped. Otherwise the file is skipped
     /// and the caller finds out whether the whole source is gone.
     /// </param>
+    /// <param name="overwrite">
+    /// Replace a copy that is already in the version (a retry, spec 4.4); the replace happens on commit, so a copy that
+    /// fails leaves the old one. Otherwise the create is exclusive.
+    /// </param>
     private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed, bool Denied, string? SkipKey)> CopyFileAsync(IStorage source,
         IStorage target, string versionName, IndexNode node, byte[] buffer, Action<int> onBytes,
-        CancellationToken cancellationToken, bool storageFailuresStop = false)
+        CancellationToken cancellationToken, bool storageFailuresStop = false, bool overwrite = false)
     {
         var (input, openFailure, openDenied, openKey) = await OpenSourceFileAsync(source, node, cancellationToken,
             storageFailuresStop).ConfigureAwait(false);
@@ -1010,7 +995,7 @@ public sealed partial class BackupRunner : IBackupRunner
             try
             {
                 writer = await target.CreateAsync(StoragePath.Combine(versionName, node.RelativePath),
-                    new CreateOptions(ModifiedUtc: node.LastWriteUtc), cancellationToken).ConfigureAwait(false);
+                    new CreateOptions(Overwrite: overwrite, ModifiedUtc: node.LastWriteUtc), cancellationToken).ConfigureAwait(false);
             }
             catch (ArgumentException ex)
             {

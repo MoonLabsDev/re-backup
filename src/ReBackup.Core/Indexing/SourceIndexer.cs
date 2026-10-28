@@ -45,6 +45,31 @@ public sealed class IndexNode : ITreePathNode<IndexNode>
 
     /// <summary>Why this folder could not be (fully) read, if so.</summary>
     public string? Error { get; init; }
+
+    /// <summary>
+    /// A file node for one path, as a scan would give it: under a chain of folder nodes up to a root, so that its
+    /// <see cref="RelativePath"/> is <paramref name="relativePath"/> (a bare node would be at the root). Size and time
+    /// are those of <paramref name="entry"/>; <see cref="Stamp"/> is set only for a size of 0, as in a scan.
+    /// </summary>
+    /// <param name="relativePath">The file's path relative to the source root, with forward slashes.</param>
+    internal static IndexNode ForFile(string relativePath, StorageEntry entry)
+    {
+        var names = relativePath.Split('/');
+        var file = new IndexNode
+        {
+            Name = names[^1],
+            IsDirectory = false,
+            Size = entry.Size,
+            LastWriteUtc = entry.ModifiedUtc,
+            Stamp = entry.Size == 0 ? entry.Stamp : null,
+        };
+        // Innermost folder first; the root (whose name is only a display name) closes the chain. Each folder sets the
+        // parent of the one below it.
+        var node = file;
+        for (var index = names.Length - 2; index >= -1; index--)
+            node = new IndexNode { Name = index >= 0 ? names[index] : "", IsDirectory = true, Children = [node] };
+        return file;
+    }
 }
 
 /// <summary>
