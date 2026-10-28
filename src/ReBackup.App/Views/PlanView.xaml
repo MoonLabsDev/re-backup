@@ -205,22 +205,6 @@
                         <TextBlock TextWrapping="Wrap"
                                    Text="{l:Loc plan.source.freeSpace}" />
                     </CheckBox>
-                    <!-- For every target kind; the numbers are indented to the switch's text and off with it. -->
-                    <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,10,0,0" IsChecked="{Binding RetryEnabled}"
-                              ToolTip="{l:Loc plan.source.retryToolTip}">
-                        <TextBlock TextWrapping="Wrap" Text="{l:Loc plan.source.retry}" />
-                    </CheckBox>
-                    <WrapPanel Margin="46,6,0,0">
-                        <TextBlock Style="{StaticResource TextBlock.RowText}" Margin="0,0,8,0" Text="{l:Loc plan.source.retryAttemptsBefore}" />
-                        <TextBox Style="{StaticResource TextBox.Field}" Width="44" AutomationProperties.Name="{l:Loc plan.source.retryAttemptsName}"
-                                 IsEnabled="{Binding RetryEnabled}"
-                                 Text="{Binding RetryAttemptsText, UpdateSourceTrigger=PropertyChanged}" />
-                        <TextBlock Style="{StaticResource TextBlock.RowText}" Text="{l:Loc plan.source.retryAttemptsMiddle}" />
-                        <TextBox Style="{StaticResource TextBox.Field}" Width="48" AutomationProperties.Name="{l:Loc plan.source.retryIntervalName}"
-                                 IsEnabled="{Binding RetryEnabled}"
-                                 Text="{Binding RetryIntervalMinutesText, UpdateSourceTrigger=PropertyChanged}" />
-                        <TextBlock Style="{StaticResource TextBlock.RowText}" Text="{l:Loc plan.source.retryAttemptsAfter}" />
-                    </WrapPanel>
 
                     <ItemsControl Margin="0,4,0,0" ItemsSource="{Binding Errors}" Focusable="False">
                         <ItemsControl.ItemTemplate>
@@ -233,119 +217,145 @@
                 </StackPanel>
             </Border>
 
-            <!-- ======================================================== Last run -->
-            <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource Border.Card}" VerticalAlignment="Top">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,14" Text="{l:Loc plan.lastRun.title}" />
+            <StackPanel Grid.Row="0" Grid.Column="2" VerticalAlignment="Top">
+                <!-- ======================================================== Last run -->
+                <Border Style="{StaticResource Border.Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,14" Text="{l:Loc plan.lastRun.title}" />
 
-                    <TextBlock Text="{l:Loc card.neverRun}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Run.HasRun}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                        <TextBlock Text="{l:Loc card.neverRun}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TextBlock.Muted}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Run.HasRun}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
 
-                    <StackPanel DataContext="{Binding Run.LastRun}">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding}" Value="{x:Null}">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
+                        <StackPanel DataContext="{Binding Run.LastRun}">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
 
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Ellipse Width="8" Height="8" VerticalAlignment="Top" Margin="0,6,0,0">
-                                <Ellipse.Style>
-                                    <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Width="8" Height="8" VerticalAlignment="Top" Margin="0,6,0,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Warning}">
+                                                    <Setter Property="Fill" Value="{DynamicResource Brush.WarningMark}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Failed}">
+                                                    <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Grid.Column="1" Margin="8,0,0,0" TextWrapping="Wrap">
+                                    <Run Text="{Binding StatusText, Mode=OneWay}" FontWeight="SemiBold" />
+                                    <Run Text="{Binding TriggerText, Mode=OneWay, StringFormat='· {0}'}"
+                                         Foreground="{DynamicResource Brush.TextMuted}" />
+                                    <Run Text="{Binding StartText, Mode=OneWay, StringFormat='· {0}'}"
+                                         Foreground="{DynamicResource Brush.TextMuted}" />
+                                </TextBlock>
+                            </Grid>
+
+                            <TextBlock Margin="16,4,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}"
+                                       Text="{Binding Reason}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Warning}">
-                                                <Setter Property="Fill" Value="{DynamicResource Brush.WarningMark}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Outcome}" Value="{x:Static vm:RunOutcome.Failed}">
-                                                <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
+                                            <DataTrigger Binding="{Binding Reason}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
-                                </Ellipse.Style>
-                            </Ellipse>
-                            <TextBlock Grid.Column="1" Margin="8,0,0,0" TextWrapping="Wrap">
-                                <Run Text="{Binding StatusText, Mode=OneWay}" FontWeight="SemiBold" />
-                                <Run Text="{Binding TriggerText, Mode=OneWay, StringFormat='· {0}'}"
-                                     Foreground="{DynamicResource Brush.TextMuted}" />
-                                <Run Text="{Binding StartText, Mode=OneWay, StringFormat='· {0}'}"
-                                     Foreground="{DynamicResource Brush.TextMuted}" />
+                                </TextBlock.Style>
                             </TextBlock>
-                        </Grid>
 
-                        <TextBlock Margin="16,4,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}"
-                                   Text="{Binding Reason}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Reason}" Value="">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                            <UniformGrid Margin="-5,9,-5,-5" Columns="2">
+                                <Border Style="{StaticResource Border.Tile}" Margin="5">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc plan.lastRun.duration}" />
+                                        <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding DurationText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource Border.Tile}" Margin="5">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc plan.lastRun.copied}" />
+                                        <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding SizeText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource Border.Tile}" Margin="5">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc common.files}" />
+                                        <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding FilesText}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource Border.Tile}" Margin="5">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc plan.lastRun.skipped}" />
+                                        <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding SkippedText}" />
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
 
-                        <UniformGrid Margin="-5,9,-5,-5" Columns="2">
-                            <Border Style="{StaticResource Border.Tile}" Margin="5">
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc plan.lastRun.duration}" />
-                                    <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding DurationText}" />
-                                </StackPanel>
-                            </Border>
-                            <Border Style="{StaticResource Border.Tile}" Margin="5">
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc plan.lastRun.copied}" />
-                                    <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding SizeText}" />
-                                </StackPanel>
-                            </Border>
-                            <Border Style="{StaticResource Border.Tile}" Margin="5">
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc common.files}" />
-                                    <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding FilesText}" />
-                                </StackPanel>
-                            </Border>
-                            <Border Style="{StaticResource Border.Tile}" Margin="5">
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{l:Loc plan.lastRun.skipped}" />
-                                    <TextBlock Style="{StaticResource TextBlock.TileValue}" Text="{Binding SkippedText}" />
-                                </StackPanel>
-                            </Border>
-                        </UniformGrid>
-
-                        <!-- The pending retry of the skipped files, or how the retries ended. -->
-                        <TextBlock Margin="0,10,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}"
-                                   Text="{Binding RetryHintText}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding RetryHintText}" Value="{x:Null}">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                            <!-- The pending retry of the skipped files, or how the retries ended. -->
+                            <TextBlock Margin="0,10,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}"
+                                       Text="{Binding RetryHintText}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding RetryHintText}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-            </Border>
+                </Border>
+
+                <!-- ======================================================== Retry -->
+                <!-- For every target kind; the numbers are indented to the switch's text and off with it. Their errors show in
+                     the source card with the plan's other errors. -->
+                <Border Margin="0,16,0,0" Style="{StaticResource Border.Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource TextBlock.CardTitle}" Margin="0,0,0,14" Text="{l:Loc plan.retry.title}" />
+                        <CheckBox Style="{StaticResource CheckBox.Switch}" IsChecked="{Binding RetryEnabled}"
+                                  ToolTip="{l:Loc plan.source.retryToolTip}">
+                            <TextBlock TextWrapping="Wrap" Text="{l:Loc plan.source.retry}" />
+                        </CheckBox>
+                        <WrapPanel Margin="46,6,0,0">
+                            <TextBlock Style="{StaticResource TextBlock.RowText}" Margin="0,0,8,0" Text="{l:Loc plan.source.retryAttemptsBefore}" />
+                            <TextBox Style="{StaticResource TextBox.Field}" Width="44" AutomationProperties.Name="{l:Loc plan.source.retryAttemptsName}"
+                                     IsEnabled="{Binding RetryEnabled}"
+                                     Text="{Binding RetryAttemptsText, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Style="{StaticResource TextBlock.RowText}" Text="{l:Loc plan.source.retryAttemptsMiddle}" />
+                            <TextBox Style="{StaticResource TextBox.Field}" Width="48" AutomationProperties.Name="{l:Loc plan.source.retryIntervalName}"
+                                     IsEnabled="{Binding RetryEnabled}"
+                                     Text="{Binding RetryIntervalMinutesText, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Style="{StaticResource TextBlock.RowText}" Text="{l:Loc plan.source.retryAttemptsAfter}" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
 
             <!-- ======================================================== Schedule -->
             <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Style="{StaticResource Border.Card}">

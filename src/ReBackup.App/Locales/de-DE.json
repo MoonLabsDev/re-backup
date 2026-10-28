@@ -646,6 +646,9 @@
       "retryRecovered": { "one": "{count} Datei per Retry nachgeholt", "other": "{count:N0} Dateien per Retry nachgeholt" },
       "retryExhausted": { "one": "Nach {count} Retry noch {files:N0} übersprungen", "other": "Nach {count:N0} Retries noch {files:N0} übersprungen" }
     },
+    "retry": {
+      "title": "RETRY"
+    },
     "schedule": {
       "title": "ZEITPLAN",
       "note": "Der Plan läuft zu jeder dieser Ortszeiten.",

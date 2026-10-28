@@ -646,6 +646,9 @@
       "retryRecovered": { "one": "{count} file recovered by retry", "other": "{count:N0} files recovered by retry" },
       "retryExhausted": { "one": "{files:N0} still skipped after {count} retry", "other": "{files:N0} still skipped after {count:N0} retries" }
     },
+    "retry": {
+      "title": "RETRY"
+    },
     "schedule": {
       "title": "SCHEDULE",
       "note": "The plan runs at each of these local times.",
