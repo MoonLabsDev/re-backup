@@ -30,6 +30,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly Action _manageDriveConnections;
     private readonly IMcpControlHost? _mcpControl;
     private readonly Action<string> _copyToClipboard;
+    private readonly ICommandRunner _commands;
     private bool _revertingMcp;
     private int _copiedVersion;
     private readonly bool _ready;
@@ -46,6 +47,16 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>"Copied": shown for a few seconds after the client configuration went to the clipboard.</summary>
     [ObservableProperty] private bool _mcpCopied;
+
+    /// <summary>What the last "register with Claude Code / Codex" did, or is doing; empty before the first.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(McpRegisterText))]
+    private LocText _mcpRegisterStatus = LocText.Empty;
+
+    /// <summary>The last registration failed (the status is shown as an error).</summary>
+    [ObservableProperty] private bool _mcpRegisterFailed;
+
+    public string McpRegisterText => McpRegisterStatus.ToString();
 
     /// <summary>The latest start or stop of the pipe; completes when the pipe is in the state the switch shows.</summary>
     public Task McpApplyTask { get; private set; } = Task.CompletedTask;
@@ -64,9 +75,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         IDialogService dialogs, Func<bool> confirmRestart, Func<bool> isBackupActive, Action<ThemeMode> previewTheme,
         string language, Action<string> previewLanguage, Action? manageS3Accounts = null, Action? manageS3Connections = null,
         Action? manageDriveAccounts = null, Action? manageDriveConnections = null,
-        IMcpControlHost? mcpControl = null, Action<string>? copyToClipboard = null)
+        IMcpControlHost? mcpControl = null, Action<string>? copyToClipboard = null, ICommandRunner? commands = null)
     {
         _mcpControl = mcpControl;
+        _commands = commands ?? new ShellCommandRunner();
         _copyToClipboard = copyToClipboard ?? (_ => { });
         _manageS3Accounts = manageS3Accounts ?? (() => { });
         _manageS3Connections = manageS3Connections ?? (() => { });
@@ -158,6 +170,34 @@ public sealed partial class SettingsViewModel : ObservableObject
         _copyToClipboard(McpClientConfiguration.Json(Environment.ProcessPath ?? "ReBackup.exe"));
         McpCopied = true;
         _ = HideCopiedAsync(++_copiedVersion);
+    }
+
+    /// <summary>"Claude Code": registers this exe's bridge with Claude Code, replacing an older registration.</summary>
+    [RelayCommand]
+    private Task RegisterClaudeCodeAsync() => RegisterAsync(McpClientTool.ClaudeCode, "Claude Code");
+
+    /// <summary>"Codex": the same for OpenAI's Codex (the ChatGPT app itself cannot start a local MCP server).</summary>
+    [RelayCommand]
+    private Task RegisterCodexAsync() => RegisterAsync(McpClientTool.Codex, "Codex");
+
+    private async Task RegisterAsync(McpClientTool client, string name)
+    {
+        McpRegisterFailed = false;
+        McpRegisterStatus = LocText.Of("settings.mcp.registering", ("client", name));
+        RegistrationResult result;
+        try
+        {
+            result = await McpClientRegistration.RegisterAsync(_commands, client, Environment.ProcessPath ?? "ReBackup.exe")
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            result = RegistrationResult.Failed(ex.Message);
+        }
+        McpRegisterFailed = !result.Ok;
+        McpRegisterStatus = result.Ok ? LocText.Of("settings.mcp.registered", ("client", name))
+            : result.ToolMissing ? LocText.Of("settings.mcp.notInstalled", ("client", name), ("tool", McpClientRegistration.Tool(client)))
+            : LocText.Of("settings.mcp.registerFailed", ("client", name), ("error", result.Error));
     }
 
     private async Task HideCopiedAsync(int version)
