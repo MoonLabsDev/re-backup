@@ -122,6 +122,50 @@ public class RunHistoryRowRetryTests : IDisposable
     }
 
     [Fact]
+    public void One_attempt_is_one_retry()
+    {
+        new RunHistoryRow(EffectiveRun.Apply([Original(5), RetryLine(1, 0, 5)])[0]).RetryHintText
+            .Should().Be("5 still skipped after 1 retry");
+    }
+
+    /// <summary>A run that skipped <paramref name="locked"/> locked files and <paramref name="gone"/> files never retried.</summary>
+    private static RunLogEntry OriginalWithGone(int locked, int gone)
+    {
+        var entry = new RunLogEntry
+        {
+            RunId = "r1",
+            Trigger = RunTrigger.Scheduled,
+            Status = RunStatus.CompletedWithWarnings,
+            Version = Version,
+        };
+        foreach (var file in Locked(locked))
+            entry.AddSkipped(file);
+        for (var i = 0; i < gone; i++)
+            entry.AddSkipped(new SkippedEntry($"gone{i}.txt", "gone", "core.file.noLongerExists"));
+        return entry;
+    }
+
+    [Fact]
+    public void Recovered_retryable_files_show_the_recovered_line_beside_skips_never_retried()
+    {
+        var row = new RunHistoryRow(EffectiveRun.Apply([OriginalWithGone(locked: 3, gone: 2), RetryLine(1, 3, 0)])[0]);
+
+        row.StatusText.Should().Be("Completed with warnings", "the files that are gone stay skipped");
+        row.SkippedText.Should().Be("2");
+        row.RetryHintText.Should().Be("3 files recovered by retry");
+    }
+
+    [Fact]
+    public void Exhausted_retries_count_only_the_retryable_files_still_open()
+    {
+        var row = new RunHistoryRow(EffectiveRun.Apply(
+            [OriginalWithGone(locked: 3, gone: 2), RetryLine(1, 2, 1), RetryLine(2, 0, 1), RetryLine(3, 0, 1)])[0]);
+
+        row.SkippedText.Should().Be("3");
+        row.RetryHintText.Should().Be("1 still skipped after 3 retries");
+    }
+
+    [Fact]
     public void A_run_without_retries_has_no_hint()
     {
         new RunHistoryRow(Original(5)).RetryHintText.Should().BeNull();

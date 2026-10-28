@@ -116,7 +116,8 @@ public sealed partial class RunHistoryRow : ObservableObject
 
     /// <summary>
     /// The line under the Last run card's tiles: when the pending retry runs ("Retry 2/3 at 04:30 · 12 open"), or how the
-    /// retries ended ("73 files recovered by retry", "5 still skipped after 3 retries"); null for a run without retries.
+    /// retries ended for the files they could retry ("73 files recovered by retry", "5 still skipped after 3 retries");
+    /// null for a run without retries.
     /// </summary>
     public string? RetryHintText
     {
@@ -129,10 +130,12 @@ public sealed partial class RunHistoryRow : ObservableObject
                 return Loc.F("plan.lastRun.retryPending", ("attempt", pending.Attempt + 1), ("attempts", pending.Attempts),
                     ("time", Formats.Time(pending.NextDueUtc.ToLocalTime())), ("open", pending.Files.Count));
             }
-            if (_entry.RetryRecovered > 0 && _entry.SkippedCount == 0)
+            // The retryable files the attempts left open; the skips never retried (gone, archived…) are not theirs.
+            var open = Math.Max(0, _entry.RetryableCount - _entry.RetryRecovered);
+            if (_entry.RetryRecovered > 0 && open == 0)
                 return Loc.F("plan.lastRun.retryRecovered", ("count", _entry.RetryRecovered));
-            if (_entry.RetryAttemptsMade > 0 && _entry.SkippedCount > 0)
-                return Loc.F("plan.lastRun.retryExhausted", ("count", _entry.SkippedCount), ("attempts", _entry.RetryAttemptsMade));
+            if (_entry.RetryAttemptsMade > 0 && open > 0)
+                return Loc.F("plan.lastRun.retryExhausted", ("count", _entry.RetryAttemptsMade), ("files", open));
             return null;
         }
     }

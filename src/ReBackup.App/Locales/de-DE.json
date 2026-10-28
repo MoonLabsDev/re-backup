@@ -644,7 +644,7 @@
       "skipped": "Übersprungen",
       "retryPending": "Retry {attempt}/{attempts} um {time} · {open:N0} offen",
       "retryRecovered": { "one": "{count} Datei per Retry nachgeholt", "other": "{count:N0} Dateien per Retry nachgeholt" },
-      "retryExhausted": "Nach {attempts} Retries noch {count:N0} übersprungen"
+      "retryExhausted": { "one": "Nach {count} Retry noch {files:N0} übersprungen", "other": "Nach {count:N0} Retries noch {files:N0} übersprungen" }
     },
     "schedule": {
       "title": "ZEITPLAN",

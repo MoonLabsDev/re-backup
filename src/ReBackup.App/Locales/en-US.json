@@ -644,7 +644,7 @@
       "skipped": "Skipped",
       "retryPending": "Retry {attempt}/{attempts} at {time} · {open:N0} open",
       "retryRecovered": { "one": "{count} file recovered by retry", "other": "{count:N0} files recovered by retry" },
-      "retryExhausted": "{count:N0} still skipped after {attempts} retries"
+      "retryExhausted": { "one": "{files:N0} still skipped after {count} retry", "other": "{files:N0} still skipped after {count:N0} retries" }
     },
     "schedule": {
       "title": "SCHEDULE",
