@@ -50,6 +50,8 @@ public static class CoreTexts
         ["core.plan.driveConnectionsUnreadable"] = "The Google Drive connections could not be read: {error}",
         ["core.plan.retentionRule"] = "Retention rule {index}: {problem}",
         ["core.plan.trigger"] = "Trigger {index}: {problem}",
+        ["core.plan.retryAttempts"] = "Retry attempts must be between {min} and {max}.",
+        ["core.plan.retryInterval"] = "The wait between retries must be between {min} and {max} minutes.",
 
         ["core.run.nameUnusable"] = "The plan name \"{name}\" cannot be used: {problem}",
         ["core.run.sourceMissing"] = "Source folder \"{source}\" does not exist.",

@@ -40,6 +40,15 @@ public sealed class BackupPlan
 
     public IgnoreSettings Ignore { get; set; } = new();
 
+    private RetrySkippedSettings _retrySkipped = new();
+
+    /// <summary>Whether a run tries again for the files it had to skip. Never null.</summary>
+    public RetrySkippedSettings RetrySkipped
+    {
+        get => _retrySkipped;
+        set => _retrySkipped = value ?? new();
+    }
+
     private List<RetentionRule> _retention = [];
 
     /// <summary>Which old versions to keep. Empty means: keep everything.</summary>

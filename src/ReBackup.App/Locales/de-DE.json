@@ -133,7 +133,9 @@
       "targetNotSharedDrive": "Drive-Ziele müssen auf einer geteilten Ablage liegen.",
       "driveConnectionsUnreadable": "Die Google-Drive-Verbindungen konnten nicht gelesen werden: {error}",
       "retentionRule": "Aufbewahrungsregel {index}: {problem}",
-      "trigger": "Auslöser {index}: {problem}"
+      "trigger": "Auslöser {index}: {problem}",
+      "retryAttempts": "Die Anzahl der Wiederholungen muss zwischen {min} und {max} liegen.",
+      "retryInterval": "Die Wartezeit zwischen Wiederholungen muss zwischen {min} und {max} Minuten liegen."
     },
     "run": {
       "nameUnusable": "Der Planname „{name}“ kann nicht verwendet werden: {problem}",

@@ -53,6 +53,14 @@ public static class PlanValidator
                 errors.Add(Message.Of("core.plan.trigger", ("index", i + 1), ("problem", problem)));
         }
 
+        var retry = plan.RetrySkipped;
+        if (retry.Attempts is < RetrySkippedSettings.MinAttempts or > RetrySkippedSettings.MaxAttempts)
+            errors.Add(Message.Of("core.plan.retryAttempts",
+                ("min", RetrySkippedSettings.MinAttempts), ("max", RetrySkippedSettings.MaxAttempts)));
+        if (retry.IntervalMinutes is < RetrySkippedSettings.MinIntervalMinutes or > RetrySkippedSettings.MaxIntervalMinutes)
+            errors.Add(Message.Of("core.plan.retryInterval",
+                ("min", RetrySkippedSettings.MinIntervalMinutes), ("max", RetrySkippedSettings.MaxIntervalMinutes)));
+
         return errors;
     }
 

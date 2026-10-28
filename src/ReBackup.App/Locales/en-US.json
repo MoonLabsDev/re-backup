@@ -133,7 +133,9 @@
       "targetNotSharedDrive": "Drive targets must be on a shared drive.",
       "driveConnectionsUnreadable": "The Google Drive connections could not be read: {error}",
       "retentionRule": "Retention rule {index}: {problem}",
-      "trigger": "Trigger {index}: {problem}"
+      "trigger": "Trigger {index}: {problem}",
+      "retryAttempts": "Retry attempts must be between {min} and {max}.",
+      "retryInterval": "The wait between retries must be between {min} and {max} minutes."
     },
     "run": {
       "nameUnusable": "The plan name \"{name}\" cannot be used: {problem}",
