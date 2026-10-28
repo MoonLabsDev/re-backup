@@ -198,8 +198,8 @@ public class BackupRunnerParallelTests
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
         entry.Skipped.Should().Equal(
-            new SkippedEntry(Name(3), CoreTexts.English("core.file.locked")),
-            new SkippedEntry(Name(12), CoreTexts.English("core.file.noLongerExists")));
+            new SkippedEntry(Name(3), CoreTexts.English("core.file.locked"), "core.file.locked"),
+            new SkippedEntry(Name(12), CoreTexts.English("core.file.noLongerExists"), "core.file.noLongerExists"));
         entry.FilesCopied.Should().Be(FileCount - 2);
         Manifest().Files.Select(f => f.Path).Should().Equal(
             Enumerable.Range(0, FileCount).Where(i => i is not (3 or 12)).Select(Name));
@@ -223,8 +223,8 @@ public class BackupRunnerParallelTests
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
         entry.Skipped.Should().Equal(
-            new SkippedEntry("f04.bin", CoreTexts.English("core.file.archived")),
-            new SkippedEntry("f15.bin", CoreTexts.English("core.file.archived")));
+            new SkippedEntry("f04.bin", CoreTexts.English("core.file.archived"), "core.file.archived"),
+            new SkippedEntry("f15.bin", CoreTexts.English("core.file.archived"), "core.file.archived"));
         entry.FilesCopied.Should().Be(FileCount - 2);
         _targetFiles.Files.Should().NotContain([$"{Version}/f04.bin", $"{Version}/f15.bin"]);
         _targetFiles.Files.Count(IsCopy).Should().Be(FileCount - 2);
@@ -363,7 +363,7 @@ public class BackupRunnerParallelTests
             .RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
-        entry.Skipped.Should().Equal(new SkippedEntry(Name(5), CoreTexts.English("core.file.accessDenied")));
+        entry.Skipped.Should().Equal(new SkippedEntry(Name(5), CoreTexts.English("core.file.accessDenied"), "core.file.accessDenied"));
         entry.FilesCopied.Should().Be(FileCount - 1);
         Manifest().Files.Select(f => f.Path).Should().Equal(Enumerable.Range(0, FileCount).Where(i => i != 5).Select(Name));
     }

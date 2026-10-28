@@ -142,6 +142,18 @@ public class ForeignMarkerTests : IDisposable
     }
 
     [Fact]
+    public async Task Foreign_markers_are_recorded_on_the_entry()
+    {
+        for (var day = 25; day <= 29; day++)
+            Old(day);
+        await MarkOnDisk(Marked, OtherPc, MarkerKind.Pending);
+
+        var entry = await RunShortOfSpace(FreeingPlan(), 25, 26, 27, 28);
+
+        entry.MetForeignMarkers.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task A_run_without_foreign_markers_still_completes_without_warnings()
     {
         Old(27);
@@ -151,6 +163,7 @@ public class ForeignMarkerTests : IDisposable
         var entry = await RunShortOfSpace(FreeingPlan(), 27, 28);
 
         entry.Status.Should().Be(RunStatus.Completed);
+        entry.MetForeignMarkers.Should().BeFalse();
         entry.Warnings.Should().BeEmpty();
     }
 

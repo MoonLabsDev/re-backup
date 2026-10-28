@@ -247,7 +247,7 @@ public class BackupRunnerPoolTests
         var entry = await Run(Plan(), source: source);
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
-        entry.Skipped.Should().Equal(new SkippedEntry("c.txt", CoreTexts.English("core.file.locked")));
+        entry.Skipped.Should().Equal(new SkippedEntry("c.txt", CoreTexts.English("core.file.locked"), "core.file.locked"));
         Manifest(First).Files.Select(f => f.Path).Should().Equal("a.txt", "sub/b.txt");
         Blobs(_targetFiles).Should().Equal(PoolLayout.BlobPath(HashOf("hello")));
     }

@@ -131,6 +131,7 @@ public sealed partial class BackupRunner : IBackupRunner
             {
                 var prepared = work = await Task.Run(() => PrepareAsync(request, entry, heldLock, progress, cancellationToken),
                     cancellationToken);
+                entry.MetForeignMarkers = prepared.MetForeignMarkers;
                 foreach (var skipped in prepared.Skipped)
                     entry.AddSkipped(skipped);
 
@@ -278,7 +279,7 @@ public sealed partial class BackupRunner : IBackupRunner
                 : null,
         };
         foreach (var path in index.UnreadableIgnoreFiles)
-            work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.ignoreFileUnreadable")));
+            work.Skipped.Add(Skip(path, "core.skip.ignoreFileUnreadable"));
         Collect(root, work);
 
         // A storage that cannot tell its free space (a network share, most remote storages, S3) skips the preflight; a
@@ -353,7 +354,7 @@ public sealed partial class BackupRunner : IBackupRunner
         var path = node.Node.RelativePath;
         if (IsReservedRootName(path))
         {
-            work.Skipped.Add(new SkippedEntry(path, CoreTexts.English("core.skip.reservedName")));
+            work.Skipped.Add(Skip(path, "core.skip.reservedName"));
             return;
         }
 
@@ -366,6 +367,7 @@ public sealed partial class BackupRunner : IBackupRunner
 
         if (path.Length > 0)
             work.Directories.Add(node.Node);
+        // A folder the source could not list: its reason is the scan's own text and has no key, so it is never retried.
         if (node.Node.Error is { } error)
             work.Skipped.Add(new SkippedEntry(path, error));
         foreach (var child in node.Children)
@@ -670,7 +672,7 @@ public sealed partial class BackupRunner : IBackupRunner
                         // A folder the source could not list either has been reported already, with that reason.
                         if (directory.Error is null)
                             entry.AddSkipped(new SkippedEntry(directory.RelativePath,
-                                CoreTexts.English("core.file.cannotOpen", ("error", ex.Message))));
+                                CoreTexts.English("core.file.cannotOpen", ("error", ex.Message)), "core.file.cannotOpenFolder"));
                     }
                 }
                 foldersDone++;
@@ -728,7 +730,7 @@ public sealed partial class BackupRunner : IBackupRunner
                 continue;
             }
 
-            var (copied, skipReason, changed, denied) = await StoreFileAsync(work, versionName, file, buffer, count =>
+            var (copied, skipReason, changed, denied, skipKey) = await StoreFileAsync(work, versionName, file, buffer, count =>
             {
                 bytesDone += count;
                 Report(BackupPhase.Copying, file.RelativePath, force: false);
@@ -741,14 +743,13 @@ public sealed partial class BackupRunner : IBackupRunner
                     throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
                 if (denied)
                     deniedSkips++;
-                entry.AddSkipped(new SkippedEntry(file.RelativePath, skipReason!));
+                entry.AddSkipped(new SkippedEntry(file.RelativePath, skipReason!, skipKey));
             }
             else
             {
                 if (changed)
                 {
-                    entry.AddSkipped(new SkippedEntry(file.RelativePath,
-                        CoreTexts.English("core.skip.changed")));
+                    entry.AddSkipped(Skip(file.RelativePath, "core.skip.changed"));
                 }
                 manifest.Files.Add(copied);
                 entry.FilesCopied++;
@@ -862,7 +863,7 @@ public sealed partial class BackupRunner : IBackupRunner
             }
 
             long counted = 0;
-            var (copied, skipReason, changed, denied) = await StoreFileAsync(work, versionName, file, buffer,
+            var (copied, skipReason, changed, denied, skipKey) = await StoreFileAsync(work, versionName, file, buffer,
                 count =>
                 {
                     // At most the indexed size, so that the total never runs ahead of it and never goes back.
@@ -875,7 +876,7 @@ public sealed partial class BackupRunner : IBackupRunner
             if (copied is null && !await SourceRootExistsAsync(work.Source, stop.Token).ConfigureAwait(false))
                 throw new BackupAbortException(RunStatus.Error, CoreTexts.English("core.run.sourceGone"));
             progress.FileDone(file.Size - counted, file.RelativePath);
-            return new FileOutcome(copied, skipReason, changed, denied);
+            return new FileOutcome(copied, skipReason, changed, denied, skipKey);
         }
 
         try
@@ -895,11 +896,11 @@ public sealed partial class BackupRunner : IBackupRunner
                     if (done.Denied)
                         deniedSkips++;
                     if (done.SkipReason is not null)
-                        entry.AddSkipped(new SkippedEntry(work.Files[index].RelativePath, done.SkipReason));
+                        entry.AddSkipped(new SkippedEntry(work.Files[index].RelativePath, done.SkipReason, done.SkipKey));
                     continue;
                 }
                 if (done.Changed)
-                    entry.AddSkipped(new SkippedEntry(done.Copied.Path, CoreTexts.English("core.skip.changed")));
+                    entry.AddSkipped(Skip(done.Copied.Path, "core.skip.changed"));
                 manifest.Files.Add(done.Copied);
                 entry.FilesCopied++;
                 entry.BytesCopied += done.Copied.Size;
@@ -945,14 +946,15 @@ public sealed partial class BackupRunner : IBackupRunner
         if (work.Pool is { } pool)
             return await CopyFileToPoolAsync(work.Source, pool, node, buffer, onBytes, cancellationToken, storageFailuresStop)
                 .ConfigureAwait(false);
-        var (copied, skipReason, changed, denied) = await CopyFileAsync(work.Source, work.Target, versionName, node, buffer,
-            onBytes, cancellationToken, storageFailuresStop).ConfigureAwait(false);
-        return new FileOutcome(copied, skipReason, changed, denied);
+        var (copied, skipReason, changed, denied, skipKey) = await CopyFileAsync(work.Source, work.Target, versionName, node,
+            buffer, onBytes, cancellationToken, storageFailuresStop).ConfigureAwait(false);
+        return new FileOutcome(copied, skipReason, changed, denied, skipKey);
     }
 
     /// <summary>
-    /// Copies one file while hashing it; the copy gets the indexed time of the source. Returns no copy and a reason
-    /// when the source cannot be read or the target cannot hold the name; other target errors propagate.
+    /// Copies one file while hashing it; the copy gets the indexed time of the source. Returns no copy, a reason and the
+    /// <c>CoreTexts</c> key of the reason (null when it has none) when the source cannot be read or the target cannot hold
+    /// the name; other target errors propagate.
     /// <c>Changed</c> tells that the source's size or time after the copy differs from what was indexed, except for a size
     /// only known by reading (see <see cref="ChangedWhileCopied"/>).
     /// </summary>
@@ -962,14 +964,14 @@ public sealed partial class BackupRunner : IBackupRunner
     /// unreachable too (revoked credentials), while one file refused on its own is skipped. Otherwise the file is skipped
     /// and the caller finds out whether the whole source is gone.
     /// </param>
-    private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed, bool Denied)> CopyFileAsync(IStorage source,
+    private static async Task<(ManifestFile? Copied, string? SkipReason, bool Changed, bool Denied, string? SkipKey)> CopyFileAsync(IStorage source,
         IStorage target, string versionName, IndexNode node, byte[] buffer, Action<int> onBytes,
         CancellationToken cancellationToken, bool storageFailuresStop = false)
     {
-        var (input, openFailure, openDenied) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
-            .ConfigureAwait(false);
+        var (input, openFailure, openDenied, openKey) = await OpenSourceFileAsync(source, node, cancellationToken,
+            storageFailuresStop).ConfigureAwait(false);
         if (input is null)
-            return (null, openFailure, false, openDenied);
+            return (null, openFailure, false, openDenied, openKey);
 
         var hash = new XxHash64();
         long size = 0;
@@ -984,8 +986,10 @@ public sealed partial class BackupRunner : IBackupRunner
             }
             catch (ArgumentException ex)
             {
-                // A name the target cannot hold, e.g. one ending in a blank or a dot that WSL created.
-                return (null, CoreTexts.English("core.file.cannotOpen", ("error", ex.Message)), false, false);
+                // A name the target cannot hold, e.g. one ending in a blank or a dot that WSL created. It is retried like
+                // a file the source cannot open: the name or the target may be fixed by then.
+                var (reason, key) = FileSkip("core.file.cannotOpenFile", ("error", ex.Message));
+                return (null, reason, false, false, key);
             }
             await using (writer.ConfigureAwait(false))
             {
@@ -999,7 +1003,7 @@ public sealed partial class BackupRunner : IBackupRunner
                     }
                     catch (StorageLockedException)
                     {
-                        return (null, CoreTexts.English("core.file.locked"), false, false);   // the uncommitted copy is discarded
+                        return (null, CoreTexts.English("core.file.locked"), false, false, "core.file.locked");   // the uncommitted copy is discarded
                     }
 
                     if (read == 0)
@@ -1015,29 +1019,29 @@ public sealed partial class BackupRunner : IBackupRunner
 
         var changed = await ChangedAfterReadAsync(source, node, size, cancellationToken).ConfigureAwait(false);
         return (new ManifestFile(node.RelativePath, size, node.LastWriteUtc,
-            "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false);
+            "xxh64:" + Convert.ToHexStringLower(hash.GetCurrentHash())), null, changed, false, null);
     }
 
     /// <summary>
-    /// Opens a source file for reading. A file that cannot be opened gives no stream, the reason to skip it and whether the
-    /// source refused it; see <see cref="CopyFileAsync"/> for <paramref name="storageFailuresStop"/>.
+    /// Opens a source file for reading. A file that cannot be opened gives no stream, the reason to skip it, whether the
+    /// source refused it and the <c>CoreTexts</c> key of the reason (null when it has none); see <see cref="CopyFileAsync"/> for <paramref name="storageFailuresStop"/>.
     /// </summary>
-    private static async Task<(Stream? Input, string? SkipReason, bool Denied)> OpenSourceFileAsync(IStorage source,
+    private static async Task<(Stream? Input, string? SkipReason, bool Denied, string? SkipKey)> OpenSourceFileAsync(IStorage source,
         IndexNode node, CancellationToken cancellationToken, bool storageFailuresStop)
     {
         try
         {
-            return (await source.OpenReadAsync(node.RelativePath, cancellationToken).ConfigureAwait(false), null, false);
+            return (await source.OpenReadAsync(node.RelativePath, cancellationToken).ConfigureAwait(false), null, false, null);
         }
         catch (Exception ex) when (!(storageFailuresStop && ex is StorageUnavailableException) &&
-                                   SourceSkipReason(ex) is { } reason)
+                                   SourceSkipReason(ex) is (var reason, var key))
         {
             // One file refused (its ACL, an object encrypted with a key the user may not use) is skipped; refused
             // credentials refuse the root too, and then the run stops.
             if (storageFailuresStop && ex is StorageAccessDeniedException && await IsSourceRefusedAsync(source, cancellationToken)
                     .ConfigureAwait(false))
                 ExceptionDispatchInfo.Throw(ex);
-            return (null, reason, ex is StorageAccessDeniedException);
+            return (null, reason, ex is StorageAccessDeniedException, key);
         }
     }
 
@@ -1109,25 +1113,39 @@ public sealed partial class BackupRunner : IBackupRunner
         }
     }
 
-    /// <summary>Why a source file that cannot be opened is skipped; null for a failure that does not come from opening it.</summary>
-    private static string? SourceSkipReason(Exception exception) => exception switch
+    /// <summary>
+    /// Why a source file that cannot be opened is skipped, and the <c>CoreTexts</c> key of that reason (null for the
+    /// storage's own message, which has none); null for a failure that does not come from opening it.
+    /// </summary>
+    private static (string Reason, string? Key)? SourceSkipReason(Exception exception) => exception switch
     {
-        StorageNotFoundException => NoLongerExists,
-        StorageAccessDeniedException => CoreTexts.English("core.file.accessDenied"),
-        StorageLockedException => CoreTexts.English("core.file.locked"),
+        StorageNotFoundException => (NoLongerExists, "core.file.noLongerExists"),
+        StorageAccessDeniedException => FileSkip("core.file.accessDenied"),
+        StorageLockedException => FileSkip("core.file.locked"),
         // A file the storage cannot read is skipped like a locked one: an archived object (S3 Glacier, Deep Archive) before
         // it is restored, or e.g. a Google document over the export limit (the storage's message says why).
         StorageIOException { NotReadable: true } notReadable => notReadable.Archived
-            ? CoreTexts.English("core.file.archived")
-            : notReadable.Message,
+            ? FileSkip("core.file.archived")
+            : (notReadable.Message, null),
         // Opening reads the source only, so any other failure here is the source file's own: e.g. a WSL symlink
         // (Windows cannot open it, error 1920). A source that is gone altogether is caught by the caller.
-        StorageException storage => CoreTexts.English("core.file.cannotOpen",
+        StorageException storage => FileSkip("core.file.cannotOpenFile",
             ("error", storage.InnerException?.Message ?? storage.Message)),
         // A name the storage cannot address, e.g. one ending in a space or a dot that WSL created.
-        ArgumentException argument => CoreTexts.English("core.file.cannotOpen", ("error", argument.Message)),
+        ArgumentException argument => FileSkip("core.file.cannotOpenFile", ("error", argument.Message)),
         _ => null,
     };
+
+    /// <summary>
+    /// A file-level skip reason: the English text of <paramref name="key"/> and the key. Both cannot-open keys share the
+    /// text of <c>core.file.cannotOpen</c>, which <see cref="CoreTexts"/> has once for files and folders.
+    /// </summary>
+    private static (string Reason, string? Key) FileSkip(string key, params (string Name, object? Value)[] args) =>
+        (CoreTexts.English(key == "core.file.cannotOpenFile" ? "core.file.cannotOpen" : key, args), key);
+
+    /// <summary>A skipped entry whose reason is the English text of <paramref name="key"/>.</summary>
+    private static SkippedEntry Skip(string path, string key, params (string Name, object? Value)[] args) =>
+        new(path, CoreTexts.English(key, args), key);
 
     private sealed class BackupWork(IStorage source, IStorage target, string sourceRoot)
     {
@@ -1148,8 +1166,12 @@ public sealed partial class BackupRunner : IBackupRunner
         public PoolRun? Pool { get; init; }
     }
 
-    /// <summary>What copying one file gave: the copy, or the reason it was skipped (none for a file left out with its folder).</summary>
-    private readonly record struct FileOutcome(ManifestFile? Copied, string? SkipReason, bool Changed, bool Denied);
+    /// <summary>
+    /// What copying one file gave: the copy, or the reason it was skipped (none for a file left out with its folder) with its
+    /// <c>CoreTexts</c> key (none when the reason is the storage's own message).
+    /// </summary>
+    private readonly record struct FileOutcome(ManifestFile? Copied, string? SkipReason, bool Changed, bool Denied,
+        string? SkipKey = null);
 
     /// <summary>
     /// The progress of a parallel copy. The workers share the counters; every report reads them under one lock, so the

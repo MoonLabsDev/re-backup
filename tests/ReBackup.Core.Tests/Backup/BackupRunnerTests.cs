@@ -129,6 +129,64 @@ public class BackupRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_locked_file_is_a_retry_candidate_with_its_key()
+    {
+        using var locked = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var entry = await Runner().RunAsync(Request(Plan()));
+
+        entry.RetryCandidates.Should().ContainSingle(c => c.Path == "a.txt" && c.Key == "core.file.locked");
+        entry.RetryableCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_file_that_changed_while_copied_is_a_retry_candidate()
+    {
+        var target = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation != "create" || !path.EndsWith("/a.txt", StringComparison.Ordinal))
+                    return;
+                using var append = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                append.Write("-more"u8);
+            },
+        };
+
+        var entry = await Runner(target).RunAsync(Request(Plan()));
+
+        entry.RetryCandidates.Should().ContainSingle(c => c.Path == "a.txt" && c.Key == "core.skip.changed");
+        entry.RetryableCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void More_than_a_thousand_retryable_skips_are_all_candidates()
+    {
+        var entry = new RunLogEntry();
+
+        for (var i = 0; i < 1200; i++)
+            entry.AddSkipped(new SkippedEntry($"f{i}.txt", "locked by another program", "core.file.locked"));
+
+        entry.Skipped.Should().HaveCount(RunLogEntry.MaxSkippedEntries);
+        entry.SkippedCount.Should().Be(1200);
+        entry.RetryCandidates.Should().HaveCount(1200);
+        entry.RetryableCount.Should().Be(1200);
+    }
+
+    [Fact]
+    public void A_skip_that_will_not_pass_later_is_no_retry_candidate()
+    {
+        var entry = new RunLogEntry();
+
+        entry.AddSkipped(new SkippedEntry("gone.txt", "no longer exists", "core.file.noLongerExists"));
+        entry.AddSkipped(new SkippedEntry("raw.txt", "some raw message"));
+
+        entry.SkippedCount.Should().Be(2);
+        entry.RetryCandidates.Should().BeEmpty();
+        entry.RetryableCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Locked_file_is_skipped_and_the_run_completes_with_warnings()
     {
         using var locked = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
@@ -137,7 +195,7 @@ public class BackupRunnerTests : IDisposable
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
         entry.SkippedCount.Should().Be(1);
-        entry.Skipped.Should().ContainSingle().Which.Should().Be(new SkippedEntry("a.txt", "locked by another program"));
+        entry.Skipped.Should().ContainSingle().Which.Should().Be(new SkippedEntry("a.txt", "locked by another program", "core.file.locked"));
         entry.FilesCopied.Should().Be(1);
         File.Exists(Path.Combine(VersionPath(), "a.txt")).Should().BeFalse();
         File.Exists(Path.Combine(VersionPath(), "sub", "b.bin")).Should().BeTrue();
@@ -170,6 +228,8 @@ public class BackupRunnerTests : IDisposable
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
         entry.Skipped.Should().ContainSingle().Which.Path.Should().Be("re-manifest.json");
+        entry.Skipped.Single().Key.Should().Be("core.skip.reservedName");
+        entry.RetryableCount.Should().Be(0);
         File.ReadAllText(Path.Combine(VersionPath(), "re-manifest.json")).Should().Contain("\"planId\"");
     }
 
@@ -457,7 +517,7 @@ public class BackupRunnerTests : IDisposable
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
         entry.Skipped.Should().ContainSingle().Which.Should().Be(
-            new SkippedEntry("a.txt", "changed while it was copied; the copy may be inconsistent"));
+            new SkippedEntry("a.txt", "changed while it was copied; the copy may be inconsistent", "core.skip.changed"));
         entry.FilesCopied.Should().Be(2);
         var copied = File.ReadAllBytes(Path.Combine(VersionPath(), "a.txt"));
         var manifest = JsonSerializer.Deserialize<BackupManifest>(
@@ -593,7 +653,7 @@ public class BackupRunnerTests : IDisposable
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, "a skipped entry is a warning");
         entry.Skipped.Should().ContainSingle().Which.Should().Be(
-            new SkippedEntry(name, "the name is reserved for ReBackup's own files"));
+            new SkippedEntry(name, "the name is reserved for ReBackup's own files", "core.skip.reservedName"));
         entry.FilesCopied.Should().Be(3);
         File.ReadAllText(Path.Combine(VersionPath(), "sub", name)).Should().Be(marker);
         File.Exists(Path.Combine(VersionPath(), "re-pending.json")).Should().BeFalse();
@@ -652,6 +712,8 @@ public class BackupRunnerTests : IDisposable
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
         entry.Skipped.Should().ContainSingle().Which.Path.Should().Be("re-manifest.json");
+        entry.Skipped.Single().Key.Should().Be("core.skip.reservedName");
+        entry.RetryableCount.Should().Be(0);
         File.ReadAllText(Path.Combine(VersionPath(), "re-manifest.json")).Should().Contain("\"planId\"");
         entry.FilesCopied.Should().Be(2);
     }

@@ -202,11 +202,11 @@ public sealed partial class BackupRunner
         if (pool.Detection == ChangeDetection.Fast && pool.IsUnchanged(node, out var previous) && pool.Writer.Contains(previous.Hash))
             return new FileOutcome(new ManifestFile(node.RelativePath, node.Size, node.LastWriteUtc, previous.Hash), null, false, false);
 
-        var locked = new FileOutcome(null, CoreTexts.English("core.file.locked"), false, false);
-        var (input, skipReason, denied) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
+        var locked = new FileOutcome(null, CoreTexts.English("core.file.locked"), false, false, "core.file.locked");
+        var (input, skipReason, denied, skipKey) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
             .ConfigureAwait(false);
         if (input is null)
-            return new FileOutcome(null, skipReason, false, denied);
+            return new FileOutcome(null, skipReason, false, denied, skipKey);
 
         string hash;
         long size;
@@ -224,10 +224,10 @@ public sealed partial class BackupRunner
 
         if (!pool.Writer.Contains(hash))
         {
-            (input, skipReason, denied) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
+            (input, skipReason, denied, skipKey) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
                 .ConfigureAwait(false);
             if (input is null)
-                return new FileOutcome(null, skipReason, false, denied);
+                return new FileOutcome(null, skipReason, false, denied, skipKey);
             await using (input.ConfigureAwait(false))
             {
                 try

@@ -73,7 +73,7 @@ public class BackupRunnerUnknownSizeTests
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
         entry.Skipped.Should().ContainSingle().Which.Should().Be(
-            new SkippedEntry("doc.docx", "changed while it was copied; the copy may be inconsistent"));
+            new SkippedEntry("doc.docx", "changed while it was copied; the copy may be inconsistent", "core.skip.changed"));
         entry.FilesCopied.Should().Be(2);
     }
 
@@ -100,7 +100,7 @@ public class BackupRunnerUnknownSizeTests
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings, entry.Reason);
         entry.Skipped.Should().ContainSingle().Which.Should().Be(
-            new SkippedEntry("doc.docx", "changed while it was copied; the copy may be inconsistent"));
+            new SkippedEntry("doc.docx", "changed while it was copied; the copy may be inconsistent", "core.skip.changed"));
     }
 
     [Fact]

@@ -11,6 +11,9 @@ public class CoreTextsTests
     private static readonly Regex CoreKey = new(
         @"""(core\.[A-Za-z0-9.]+)""", RegexOptions.CultureInvariant);
 
+    /// <summary>Keys that only tell a skip's kind (see <c>RetryPolicy</c>); their text is the template of <c>core.file.cannotOpen</c>.</summary>
+    private static readonly string[] SkipOnlyKeys = ["core.file.cannotOpenFile", "core.file.cannotOpenFolder"];
+
     [Fact]
     public void English_renders_a_message_and_its_nested_messages()
     {
@@ -38,7 +41,7 @@ public class CoreTextsTests
     {
         var missing = RepoPaths.SourceFiles(RepoPaths.CoreDirectory, "*.cs")
             .SelectMany(file => CoreKey.Matches(File.ReadAllText(file)).Select(match => match.Groups[1].Value))
-            .Where(key => !CoreTexts.Templates.ContainsKey(key))
+            .Where(key => !CoreTexts.Templates.ContainsKey(key) && !SkipOnlyKeys.Contains(key))
             .Distinct()
             .ToList();
 
