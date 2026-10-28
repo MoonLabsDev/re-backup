@@ -10,6 +10,7 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         DarkTitleBar.Apply(this);
+        WindowPlacement.KeepOnScreen(this);   // centred over the main window it can reach below a 1080p screen
         DataContext = viewModel;
         viewModel.CloseRequested += (_, result) => DialogResult = result;
         Closed += (_, _) => viewModel.OnClosed();

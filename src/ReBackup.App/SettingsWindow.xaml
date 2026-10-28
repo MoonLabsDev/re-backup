@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf"
         xmlns:appl="clr-namespace:ReBackup.App.Localization"
-        Title="{l:Loc settings.windowTitle}" Width="600" Height="1010" MinWidth="480" MinHeight="900"
+        Title="{l:Loc settings.windowTitle}" Width="600" Height="1010" MinWidth="480" MinHeight="560"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Style="{StaticResource {x:Type Window}}">
     <Grid Margin="20,16">
@@ -11,9 +11,17 @@
             <BooleanToVisibilityConverter x:Key="Converter.Visible" />
         </Grid.Resources>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- The cards scroll when the window is lower than they are; the buttons below always stay in view. The inner grid is
+             at least as high as the view, so in a large window the ignore patterns take the space that is left. -->
+        <ScrollViewer x:Name="ContentScroller" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid MinHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="160" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -165,7 +173,10 @@
             </DockPanel>
         </Border>
 
-        <DockPanel Grid.Row="7" Margin="0,16,0,0" LastChildFill="False">
+        </Grid>
+        </ScrollViewer>
+
+        <DockPanel x:Name="ButtonRow" Grid.Row="1" Margin="0,16,0,0" LastChildFill="False">
             <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TextBlock.Muted}" FontSize="12" Text="{appl:LocVersion}" />
                 <!-- Copyright with a link to the company's site. -->
