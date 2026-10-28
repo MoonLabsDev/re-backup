@@ -355,6 +355,68 @@ public class RetryPlannerTests : IDisposable
     }
 
     [Fact]
+    public void A_state_whose_run_ended_over_a_day_ago_is_dropped_at_start()
+    {
+        // Ruling R15: week-old files must not be written into an old version after a long shutdown.
+        var plan = Plan();
+        var run = Regular(2);
+        _planner.OnRunFinished(plan, run);
+        _planner.StateOf("p1")!.RunEndUtc.Should().Be(run.EndUtc);
+        _planner.Dispose();
+        _time.Advance(RetryPlanner.MaxAge + TimeSpan.FromSeconds(1));
+
+        using var restarted = NewPlanner();
+        restarted.Start(_ => plan, _ => run);
+
+        restarted.StateOf("p1").Should().BeNull();
+        File.Exists(FileOf("p1")).Should().BeFalse();
+        Minutes(60);
+        _due.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_state_without_the_run_end_is_not_expired()
+    {
+        // A state file written before the run end was stored.
+        var plan = Plan();
+        var run = Regular(2);
+        _planner.OnRunFinished(plan, run);
+        _planner.Dispose();
+        var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(FileOf("p1")))!.AsObject();
+        json.Remove("runEndUtc").Should().BeTrue();
+        File.WriteAllText(FileOf("p1"), json.ToJsonString());
+        _time.Advance(TimeSpan.FromDays(3));
+
+        using var restarted = NewPlanner();
+        restarted.Start(_ => plan, _ => run);
+
+        restarted.StateOf("p1").Should().NotBeNull().And.Subject.As<RetryState>().RunEndUtc.Should().BeNull();
+        Minutes(1);
+        _due.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_state_that_falls_due_over_a_day_after_its_run_is_dropped_instead_of_handed_out()
+    {
+        var plan = Plan(interval: 720);
+        _planner.OnRunFinished(plan, Regular(2));
+        Minutes(720);
+        _due.Should().ContainSingle();
+        Minutes(1);   // the attempt takes a minute: the next one is due a minute after a day
+        _planner.OnRunFinished(plan, RetryLine(RunStatus.CompletedWithWarnings, open: 1));
+        _changed.Clear();
+
+        Minutes(719);
+        _planner.StateOf("p1").Should().NotBeNull("it is not due yet");
+
+        Minutes(1);
+        _due.Should().ContainSingle("the second attempt is never handed out");
+        _planner.StateOf("p1").Should().BeNull();
+        File.Exists(FileOf("p1")).Should().BeFalse();
+        _changed.Should().Equal("p1");
+    }
+
+    [Fact]
     public void A_corrupt_state_file_is_dropped_at_start()
     {
         _dir.WriteFile(Path.Combine("retries", "broken.json"), "{ not json");

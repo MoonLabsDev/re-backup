@@ -27,6 +27,9 @@ public sealed class RetryPlanner : IDisposable
     /// <summary>A state loaded at start is due no earlier than this after the start.</summary>
     public static readonly TimeSpan StartDelay = TimeSpan.FromMinutes(1);
 
+    /// <summary>A state whose run ended longer ago than this is dropped, at start and when it falls due (ruling R15).</summary>
+    public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
+
     // An overdue state fires on the timer thread right away, never synchronously inside Change; a far one is re-armed daily.
     private static readonly TimeSpan MinTimerDelay = TimeSpan.FromMilliseconds(1);
     private static readonly TimeSpan MaxTimerDelay = TimeSpan.FromDays(1);
@@ -59,7 +62,8 @@ public sealed class RetryPlanner : IDisposable
 
     /// <summary>
     /// Loads the saved states and drops (deletes) those whose plan is gone or has retries off, whose source or target
-    /// changed, or whose run is no longer the plan's last regular run; a damaged file is dropped too. The kept states are
+    /// changed, whose run is no longer the plan's last regular run or ended more than <see cref="MaxAge"/> ago; a damaged
+    /// file is dropped too. The kept states are
     /// due no earlier than <see cref="StartDelay"/> from now. Whether the version still exists is checked by the attempt.
     /// </summary>
     /// <param name="planOf">The saved plan with that id; null when there is none.</param>
@@ -79,7 +83,8 @@ public sealed class RetryPlanner : IDisposable
         var dropped = new List<string>();
         foreach (var (planId, state) in LoadAll())
         {
-            if (state is null || !IsWellFormed(planId, state) || !StillApplies(state, planOf, lastRegularRunOf))
+            if (state is null || !IsWellFormed(planId, state) || IsExpired(state, now)
+                || !StillApplies(state, planOf, lastRegularRunOf))
             {
                 dropped.Add(planId);
                 continue;
@@ -196,6 +201,7 @@ public sealed class RetryPlanner : IDisposable
             PlanId = plan.Id,
             RunId = entry.RunId,
             Version = entry.Version,
+            RunEndUtc = entry.EndUtc,
             Source = plan.Source,
             Target = plan.Target,
             Attempt = 0,
@@ -252,6 +258,7 @@ public sealed class RetryPlanner : IDisposable
     private void Fire()
     {
         var due = new List<RetryState>();
+        var expired = new List<string>();
         lock (_gate)
         {
             if (_disposed)
@@ -259,11 +266,20 @@ public sealed class RetryPlanner : IDisposable
             var now = UtcNow;
             foreach (var state in _states.Values)
             {
-                if (state.NextDueUtc <= now && _inFlight.Add(state.PlanId))
+                if (state.NextDueUtc > now || _inFlight.Contains(state.PlanId))
+                    continue;
+                if (IsExpired(state, now))
+                    expired.Add(state.PlanId);   // too old to write into its version now: dropped, not handed out
+                else if (_inFlight.Add(state.PlanId))
                     due.Add(state.Clone());
             }
+            foreach (var planId in expired)
+                Remove(planId);
             Arm();
         }
+
+        foreach (var planId in expired)
+            RaiseChanged(planId);
 
         foreach (var state in due)
         {
@@ -354,6 +370,9 @@ public sealed class RetryPlanner : IDisposable
         && state.Source is not null && state.Target is not null
         && state.Files is { Count: > 0 } files && files.TrueForAll(f => f is not null)
         && state.Attempt < state.Attempts;
+
+    /// <summary>Whether the state's run ended more than <see cref="MaxAge"/> before <paramref name="now"/>; never without a run end.</summary>
+    private static bool IsExpired(RetryState state, DateTime now) => state.RunEndUtc is { } end && now - end > MaxAge;
 
     private static bool StillApplies(RetryState state, Func<string, BackupPlan?> planOf, Func<string, RunLogEntry?> lastRegularRunOf)
     {
