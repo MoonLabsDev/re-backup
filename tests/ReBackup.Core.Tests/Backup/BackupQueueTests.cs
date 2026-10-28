@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using FluentAssertions;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Tests.TestSupport;
 using ReBackup.Shared.Schedule;
@@ -26,8 +27,17 @@ public class BackupQueueTests : IDisposable
     private static BackupRequest Request(string planId) =>
         new(new BackupPlan { Id = planId, Name = "Plan " + planId }, [], RunTrigger.Manual);
 
-    private string[] States(string planId) =>
-        _updates.Where(u => u.PlanId == planId && u.Progress is null).Select(u => u.State.ToString()).ToArray();
+    private static RetryRequest Retry(string planId, int attempt = 1) =>
+        new(new BackupPlan { Id = planId, Name = "Plan " + planId }, "run-" + planId, "2026-10-28_120000",
+            [new SkippedEntry("a.txt", "locked", "core.file.locked")], attempt, 3);
+
+    /// <summary>The FakeRunner key of a retry of that plan, apart from its regular run.</summary>
+    private static string RetryOf(string planId) => "retry:" + planId;
+
+    /// <param name="isRetry">Only the updates of that lane; both when null.</param>
+    private string[] States(string planId, bool? isRetry = null) =>
+        _updates.Where(u => u.PlanId == planId && u.Progress is null && (isRetry is null || u.IsRetry == isRetry))
+            .Select(u => u.State.ToString()).ToArray();
 
     [Fact]
     public async Task Runs_jobs_one_at_a_time_in_order()
@@ -488,11 +498,212 @@ public class BackupQueueTests : IDisposable
         States("c").Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task A_retry_waits_while_a_normal_job_is_queued()
+    {
+        _queue.Enqueue(Request("a"));
+        await _runner.Started("a").WaitAsync(Timeout);
+        _queue.EnqueueRetry(Retry("c")).Should().BeTrue();
+        _queue.Enqueue(Request("b")).Should().BeTrue();
+
+        _runner.Complete("a", RunStatus.Completed);
+        await _runner.Started("b").WaitAsync(Timeout);
+        _runner.HasStarted(RetryOf("c")).Should().BeFalse("a normal job waits");
+
+        _runner.Complete("b", RunStatus.Completed);
+        await _runner.Started(RetryOf("c")).WaitAsync(Timeout);
+        _queue.IsRetryRunning("c").Should().BeTrue();
+        _queue.RunningPlanId.Should().Be("c");
+
+        _runner.Complete(RetryOf("c"), RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _queue.IsRetryRunning("c").Should().BeFalse();
+        States("c", isRetry: true).Should().Equal("Queued", "Running", "Finished");
+        States("c", isRetry: false).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_normal_job_waits_for_a_running_retry()
+    {
+        _queue.EnqueueRetry(Retry("c")).Should().BeTrue();
+        await _runner.Started(RetryOf("c")).WaitAsync(Timeout);
+
+        _queue.Enqueue(Request("a")).Should().BeTrue();
+        _queue.PositionOf("a").Should().Be(new QueuePosition(1, "c", "Plan c"));
+        _runner.HasStarted("a").Should().BeFalse();
+
+        _runner.Complete(RetryOf("c"), RunStatus.Completed);
+        await _runner.Started("a").WaitAsync(Timeout);
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _updates.Last(u => u.PlanId == "c").Result!.Status.Should().Be(RunStatus.Completed, "the retry was not canceled");
+        States("a").Should().Equal("Queued", "Running", "Finished");
+    }
+
+    [Fact]
+    public async Task A_regular_run_replaces_a_waiting_retry_of_its_plan()
+    {
+        _queue.Enqueue(Request("b"));
+        await _runner.Started("b").WaitAsync(Timeout);
+        _queue.EnqueueRetry(Retry("a")).Should().BeTrue();
+
+        _queue.Enqueue(Request("a")).Should().BeTrue();
+
+        States("a", isRetry: true).Should().Equal("Queued", "Removed");
+        _queue.QueuedPlanIds.Should().Equal("a");
+
+        _runner.Complete("b", RunStatus.Completed);
+        await _runner.Started("a").WaitAsync(Timeout);
+        _queue.IsRetryRunning("a").Should().BeFalse();
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _runner.HasStarted(RetryOf("a")).Should().BeFalse();
+        States("a").Should().Equal("Queued", "Removed", "Queued", "Running", "Finished");
+        States("a", isRetry: false).Should().Equal("Queued", "Running", "Finished");
+        new RunLog(_tmp.PathOf("a.jsonl")).ReadAll().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_regular_run_is_queued_behind_a_running_retry_of_its_plan()
+    {
+        _queue.EnqueueRetry(Retry("a")).Should().BeTrue();
+        await _runner.Started(RetryOf("a")).WaitAsync(Timeout);
+
+        _queue.Enqueue(Request("a")).Should().BeTrue();
+        _queue.Enqueue(Request("a")).Should().BeFalse("its regular job is queued already");
+        _queue.IsRetryRunning("a").Should().BeTrue();
+        _queue.QueuedPlanIds.Should().Equal("a");
+        _queue.PositionOf("a").Should().Be(new QueuePosition(1, "a", "Plan a"));
+
+        _runner.Complete(RetryOf("a"), RunStatus.Completed);
+        await _runner.Started("a").WaitAsync(Timeout);
+        _queue.IsRetryRunning("a").Should().BeFalse();
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        States("a", isRetry: true).Should().Equal("Queued", "Running", "Finished");
+        States("a", isRetry: false).Should().Equal("Queued", "Running", "Finished");
+        new RunLog(_tmp.PathOf("a.jsonl")).ReadAll().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task A_retry_is_refused_while_its_plan_is_queued_or_running()
+    {
+        _queue.Enqueue(Request("a"));
+        _queue.Enqueue(Request("b"));
+
+        _queue.EnqueueRetry(Retry("a")).Should().BeFalse("a is running (or about to)");
+        _queue.EnqueueRetry(Retry("b")).Should().BeFalse("b is queued");
+        _queue.EnqueueRetry(Retry("c")).Should().BeTrue();
+        _queue.EnqueueRetry(Retry("c")).Should().BeFalse("a retry of c is waiting already");
+
+        _queue.Close();
+        _queue.EnqueueRetry(Retry("d")).Should().BeFalse("the queue is closed");
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+        States("c", isRetry: true).Should().Equal("Queued", "Removed");
+        States("d").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_retry_whose_version_is_gone_is_not_logged()
+    {
+        _queue.EnqueueRetry(Retry("a")).Should().BeTrue();
+        await _runner.Started(RetryOf("a")).WaitAsync(Timeout);
+
+        _runner.CompleteWith(RetryOf("a"),
+            new RunLogEntry { RunId = "r", Trigger = RunTrigger.Retry, Status = RunStatus.Error, VersionGone = true });
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        File.Exists(_tmp.PathOf("a.jsonl")).Should().BeFalse();
+        States("a", isRetry: true).Should().Equal("Queued", "Running", "Finished");
+        _updates.Last(u => u.PlanId == "a").Result!.VersionGone.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Close_cancels_a_running_retry()
+    {
+        _queue.EnqueueRetry(Retry("a")).Should().BeTrue();
+        await _runner.Started(RetryOf("a")).WaitAsync(Timeout);
+
+        _queue.Close();
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        var finished = _updates.Last(u => u.PlanId == "a");
+        finished.State.Should().Be(JobState.Finished);
+        finished.IsRetry.Should().BeTrue();
+        finished.Result!.Status.Should().Be(RunStatus.Canceled);
+    }
+
+    [Fact]
+    public async Task A_retry_runner_that_throws_is_logged_as_an_Error_retry_line()
+    {
+        _queue.EnqueueRetry(Retry("a", attempt: 2)).Should().BeTrue();
+        await _runner.Started(RetryOf("a")).WaitAsync(Timeout);
+
+        _runner.Fail(RetryOf("a"), new InvalidOperationException("boom"));
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        var line = new RunLog(_tmp.PathOf("a.jsonl")).ReadAll().Should().ContainSingle().Subject;
+        line.Trigger.Should().Be(RunTrigger.Retry);
+        line.Status.Should().Be(RunStatus.Error);
+        line.Reason.Should().Be("boom");
+        line.RetryOf.Should().Be("run-a");
+        line.Attempt.Should().Be(2);
+        line.Attempts.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Waiting_retries_are_counted_after_the_normal_jobs()
+    {
+        _queue.Enqueue(Request("a"));
+        await _runner.Started("a").WaitAsync(Timeout);
+        _queue.EnqueueRetry(Retry("c"));
+        _queue.Enqueue(Request("b"));
+
+        _queue.IsBusy.Should().BeTrue();
+        _queue.QueuedCount.Should().Be(2);
+        _queue.QueuedPlanIds.Should().Equal("b", "c");
+        _queue.PositionOf("b").Should().Be(new QueuePosition(1, "a", "Plan a"));
+        _queue.PositionOf("c").Should().Be(new QueuePosition(2, "b", "Plan b"));
+
+        _queue.Cancel("c").Should().BeTrue();
+        _queue.QueuedPlanIds.Should().Equal("b");
+        States("c", isRetry: true).Should().Equal("Queued", "Removed");
+
+        _queue.CancelAll();
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task Cancel_targets_the_regular_job_of_a_plan_before_its_retry()
+    {
+        _queue.EnqueueRetry(Retry("a"));
+        await _runner.Started(RetryOf("a")).WaitAsync(Timeout);
+        _queue.Enqueue(Request("a"));
+
+        _queue.Cancel("a").Should().BeTrue();
+        States("a", isRetry: false).Should().Equal("Queued", "Removed");
+        _queue.IsRetryRunning("a").Should().BeTrue();
+
+        _queue.Cancel("a").Should().BeTrue();
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+        _updates.Last(u => u.PlanId == "a").Result!.Status.Should().Be(RunStatus.Canceled);
+        _queue.Cancel("a").Should().BeFalse();
+    }
+
     private sealed class ImmediateRunner : IBackupRunner
     {
         public Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new RunLogEntry { RunId = request.Plan.Id, Status = RunStatus.Completed });
+
+        public Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new RunLogEntry { RunId = request.Plan.Id, Trigger = RunTrigger.Retry, Status = RunStatus.Completed });
     }
 
     /// <summary>On cancellation, checks from another thread whether the queue's lock is free.</summary>
@@ -515,35 +726,52 @@ public class BackupQueueTests : IDisposable
             await _done.Task;
             return new RunLogEntry { RunId = request.Plan.Id, Status = RunStatus.Canceled };
         }
+
+        public Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new RunLogEntry { RunId = request.Plan.Id, Trigger = RunTrigger.Retry, Status = RunStatus.Completed });
     }
 
-    /// <summary>A runner whose runs finish when the test says so.</summary>
+    /// <summary>
+    /// A runner whose runs finish when the test says so. A run is addressed by its plan id, a retry by
+    /// <see cref="RetryOf"/> of it.
+    /// </summary>
     private sealed class FakeRunner : IBackupRunner
     {
         private readonly ConcurrentDictionary<string, Run> _runs = new();
 
-        private Run For(string planId) => _runs.GetOrAdd(planId, _ => new Run());
+        private Run For(string key) => _runs.GetOrAdd(key, _ => new Run());
 
-        public Task Started(string planId) => For(planId).Started.Task;
-        public bool HasStarted(string planId) => For(planId).Started.Task.IsCompleted;
+        public Task Started(string key) => For(key).Started.Task;
+        public bool HasStarted(string key) => For(key).Started.Task.IsCompleted;
 
-        public void Complete(string planId, RunStatus status) =>
-            For(planId).Result.TrySetResult(new RunLogEntry { RunId = planId, Status = status });
+        public void Complete(string key, RunStatus status) =>
+            For(key).Result.TrySetResult(new RunLogEntry { RunId = key, Status = status });
 
-        public void Fail(string planId, Exception exception) => For(planId).Result.TrySetException(exception);
+        public void CompleteWith(string key, RunLogEntry result) => For(key).Result.TrySetResult(result);
 
-        public void ReportProgress(string planId, BackupProgress progress) => For(planId).Progress!.Report(progress);
+        public void Fail(string key, Exception exception) => For(key).Result.TrySetException(exception);
 
-        public async Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
-            CancellationToken cancellationToken = default)
+        public void ReportProgress(string key, BackupProgress progress) => For(key).Progress!.Report(progress);
+
+        public Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            WaitForTestAsync(request.Plan.Id, progress, cancellationToken);
+
+        public Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            WaitForTestAsync(RetryOf(request.Plan.Id), progress, cancellationToken);
+
+        private async Task<RunLogEntry> WaitForTestAsync(string key, IProgress<BackupProgress>? progress,
+            CancellationToken cancellationToken)
         {
-            var run = For(request.Plan.Id);
+            var run = For(key);
             run.Progress = progress;
             using var registration = cancellationToken.Register(() =>
-                run.Result.TrySetResult(new RunLogEntry { RunId = request.Plan.Id, Status = RunStatus.Canceled }));
+                run.Result.TrySetResult(new RunLogEntry { RunId = key, Status = RunStatus.Canceled }));
             run.Started.TrySetResult();
             var result = await run.Result.Task;
-            _runs.TryRemove(request.Plan.Id, out _);
+            _runs.TryRemove(key, out _);
             return result;
         }
 

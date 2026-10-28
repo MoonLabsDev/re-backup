@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 using System.Text.Json;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Indexing;
 using ReBackup.Core.Localization;
@@ -46,6 +47,14 @@ public interface IBackupRunner
 {
     /// <summary>Runs one backup. Never throws: every outcome, including cancellation, is returned as an entry.</summary>
     Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Copies the skipped files of an earlier run into its version. Never throws: every outcome, including
+    /// cancellation, is returned as an entry with <see cref="RunTrigger.Retry"/>; a version that no longer exists is an
+    /// entry with <see cref="RunLogEntry.VersionGone"/>, which is not logged.
+    /// </summary>
+    Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -97,6 +106,25 @@ public sealed partial class BackupRunner : IBackupRunner
         _currentRules = currentRules;
         _indexSink = indexSink;
         _host = host ?? Environment.MachineName;
+    }
+
+    /// <remarks>Not implemented yet: every attempt ends as Error without touching the target.</remarks>
+    public Task<RunLogEntry> RetryAsync(RetryRequest request, IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var now = _time.GetUtcNow().UtcDateTime;
+        return Task.FromResult(new RunLogEntry
+        {
+            RunId = Guid.NewGuid().ToString("N"),
+            Trigger = RunTrigger.Retry,
+            StartUtc = now,
+            EndUtc = now,
+            Status = RunStatus.Error,
+            Reason = "not implemented",
+            RetryOf = request.RunId,
+            Attempt = request.Attempt,
+            Attempts = request.Attempts,
+        });
     }
 
     /// <remarks>
