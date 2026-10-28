@@ -319,6 +319,38 @@ public class MainViewModelRetryTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_the_plan_cancels_its_running_retry_and_leaves_no_history()
+    {
+        var vm = _fixture.Create();
+        var editor = Projects(vm);
+        var run = await RunWithLockedFileAsync(vm);
+        _target.HoldCreate = path => path == $"{run.Version}/{Locked}";
+        AdvanceToDue();
+        await _target.Reached.Task.WaitAsync(Timeout);
+        _fixture.Queue.IsRetryRunning("p1").Should().BeTrue();
+        // While the question is open a run of the plan is queued behind its retry (a schedule fires, the dispatcher pumps).
+        _fixture.Dialogs.OnConfirm = () =>
+            _fixture.Queue.Enqueue(new BackupRequest(editor.SavedPlan(), [], RunTrigger.Scheduled)).Should().BeTrue();
+        _fixture.Dialogs.YesNoCancelAnswer = true;   // delete the history too
+        var regular = new List<JobState>();
+        _fixture.Queue.Changed += update =>
+        {
+            if (update is { PlanId: "p1", IsRetry: false, Progress: null })
+                lock (regular)
+                    regular.Add(update.State);
+        };
+
+        vm.DeletePlanCommand.Execute(null);
+        await _fixture.Queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        vm.Plans.Should().BeEmpty();
+        File.Exists(_fixture.Paths.LogFileFor("p1")).Should().BeFalse("no line of the plan re-creates its history");
+        _target.Inner.Files.Should().NotContain($"{run.Version}/{Locked}", "the retry was canceled");
+        regular.Should().Equal([JobState.Queued, JobState.Removed], "the queued run of the deleted plan never ran");
+        _fixture.Retries.StateOf("p1").Should().BeNull();
+    }
+
+    [Fact]
     public async Task A_saved_retry_is_loaded_again_at_start()
     {
         var vm = _fixture.Create();

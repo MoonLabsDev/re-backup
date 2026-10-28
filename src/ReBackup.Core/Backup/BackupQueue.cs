@@ -208,6 +208,38 @@ public sealed class BackupQueue
         return true;
     }
 
+    /// <summary>
+    /// The plan was deleted: removes every waiting job of it (its regular one and its retry) and cancels its running job,
+    /// whose line is not written (its Finished is still raised), so nothing re-creates a log deleted with the plan. When
+    /// this returns, no line of the plan is appended any more. False when the plan had no job.
+    /// </summary>
+    public bool Forget(string planId)
+    {
+        var removed = new List<Job>();
+        Job? running;
+        lock (_gate)
+        {
+            if (TryRemove(_queued, planId) is { } queued)
+                removed.Add(queued);
+            if (TryRemove(_lowQueued, planId) is { } lowQueued)
+                removed.Add(lowQueued);
+            running = _running?.PlanId == planId ? _running : null;
+            foreach (var job in removed)
+                Raise(job, JobState.Removed);
+        }
+
+        foreach (var job in removed)
+            job.Cancellation.Dispose();
+        if (running is not null)
+        {
+            // Waits for a line being written; the worker checks the flag under the same lock.
+            lock (running.LogGate)
+                running.Forgotten = true;
+            CancelToken(running);
+        }
+        return removed.Count > 0 || running is not null;
+    }
+
     public void CancelAll()
     {
         List<Job> removed;
@@ -326,9 +358,12 @@ public sealed class BackupQueue
 
                 try
                 {
-                    // A retry whose version no longer exists did nothing worth a line.
-                    if (!result.VersionGone)
-                        _logForPlan(job.PlanId).Append(result);
+                    // A retry whose version no longer exists did nothing worth a line; a forgotten plan has no log.
+                    lock (job.LogGate)
+                    {
+                        if (!result.VersionGone && !job.Forgotten)
+                            _logForPlan(job.PlanId).Append(result);
+                    }
                 }
                 catch (Exception)
                 {
@@ -419,6 +454,12 @@ public sealed class BackupQueue
         public string PlanId => _plan.Id;
         public string PlanName => _plan.Name;
         public CancellationTokenSource Cancellation { get; } = new();
+
+        /// <summary>Held while the job's line is written and while <see cref="Forgotten"/> is set.</summary>
+        public object LogGate { get; } = new();
+
+        /// <summary>Its plan was deleted (<see cref="Forget"/>): its line is not written.</summary>
+        public bool Forgotten { get; set; }
     }
 
     /// <summary>Forwards progress synchronously, so updates keep their order.</summary>

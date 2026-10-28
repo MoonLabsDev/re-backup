@@ -278,9 +278,13 @@ public sealed class FakeDialogs : IDialogService
 
     public int AccountDialogs { get; private set; }
 
+    /// <summary>Runs while a Confirm question is open, as the dispatcher a modal dialog pumps would run other work.</summary>
+    public Action? OnConfirm { get; set; }
+
     public bool Confirm(string title, string message)
     {
         Confirms.Add(message);
+        OnConfirm?.Invoke();
         return ConfirmAnswer;
     }
 

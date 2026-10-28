@@ -632,6 +632,40 @@ public class BackupQueueTests : IDisposable
     }
 
     [Fact]
+    public async Task Forgetting_a_plan_removes_its_waiting_run_and_cancels_its_retry_without_a_line()
+    {
+        _queue.EnqueueRetry(Retry("a")).Should().BeTrue();
+        await _runner.Started(RetryOf("a")).WaitAsync(Timeout);
+        _queue.Enqueue(Request("a")).Should().BeTrue("a regular run waits behind the plan's retry");
+
+        _queue.Forget("a").Should().BeTrue();
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        States("a", isRetry: false).Should().Equal("Queued", "Removed");
+        States("a", isRetry: true).Should().Equal("Queued", "Running", "Finished");
+        _updates.Last(u => u.PlanId == "a" && u.IsRetry).Result!.Status.Should().Be(RunStatus.Canceled);
+        _runner.HasStarted("a").Should().BeFalse("the deleted plan's run never starts");
+        File.Exists(_tmp.PathOf("a.jsonl")).Should().BeFalse("no line re-creates the deleted plan's log");
+        _queue.Forget("a").Should().BeFalse("nothing is left of the plan");
+    }
+
+    [Fact]
+    public async Task Forgetting_a_plan_removes_its_waiting_retry()
+    {
+        _queue.Enqueue(Request("b"));
+        await _runner.Started("b").WaitAsync(Timeout);
+        _queue.EnqueueRetry(Retry("a")).Should().BeTrue();
+
+        _queue.Forget("a").Should().BeTrue();
+        _runner.Complete("b", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        States("a", isRetry: true).Should().Equal("Queued", "Removed");
+        _runner.HasStarted(RetryOf("a")).Should().BeFalse();
+        States("b").Should().Equal("Queued", "Running", "Finished");
+    }
+
+    [Fact]
     public async Task A_retry_is_refused_while_its_plan_is_queued_or_running()
     {
         _queue.Enqueue(Request("a"));

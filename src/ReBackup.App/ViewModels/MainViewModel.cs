@@ -360,6 +360,12 @@ public sealed partial class MainViewModel : ObservableObject
                 return;
             }
 
+            _retries.OnPlanDeleted(editor.Id);
+            // Every job of the plan goes, before its history: a run queued while the questions were open (dialogs pump the
+            // dispatcher) and its retry, which would write into the target of a plan that no longer exists; no line of
+            // theirs is written, so none re-creates a history deleted here.
+            _queue.Forget(editor.Id);
+
             if (deleteLog == true)
             {
                 try
@@ -373,14 +379,6 @@ public sealed partial class MainViewModel : ObservableObject
                     _dialogs.ShowError(Loc.T("shell.plans.delete"), Loc.F("shell.plans.historyNotDeleted", ("error", ex.Message)));
                 }
             }
-        }
-
-        if (!editor.IsNew)
-        {
-            _retries.OnPlanDeleted(editor.Id);
-            // Its retry would write into the target of a plan that no longer exists (its regular run is not active).
-            if (editor.Run.IsRetryActive || _queue.IsRetryRunning(editor.Id))
-                _queue.Cancel(editor.Id);
         }
 
         // Modal dialogs pump the dispatcher, so a reload may already have removed the editor.
