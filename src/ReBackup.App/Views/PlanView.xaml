@@ -205,6 +205,22 @@
                         <TextBlock TextWrapping="Wrap"
                                    Text="{l:Loc plan.source.freeSpace}" />
                     </CheckBox>
+                    <!-- For every target kind; the numbers are indented to the switch's text and off with it. -->
+                    <CheckBox Style="{StaticResource CheckBox.Switch}" Margin="0,10,0,0" IsChecked="{Binding RetryEnabled}"
+                              ToolTip="{l:Loc plan.source.retryToolTip}">
+                        <TextBlock TextWrapping="Wrap" Text="{l:Loc plan.source.retry}" />
+                    </CheckBox>
+                    <WrapPanel Margin="46,6,0,0">
+                        <TextBlock Style="{StaticResource TextBlock.RowText}" Margin="0,0,8,0" Text="{l:Loc plan.source.retryAttemptsBefore}" />
+                        <TextBox Style="{StaticResource TextBox.Field}" Width="44" AutomationProperties.Name="{l:Loc plan.source.retryAttemptsName}"
+                                 IsEnabled="{Binding RetryEnabled}"
+                                 Text="{Binding RetryAttemptsText, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Style="{StaticResource TextBlock.RowText}" Text="{l:Loc plan.source.retryAttemptsMiddle}" />
+                        <TextBox Style="{StaticResource TextBox.Field}" Width="48" AutomationProperties.Name="{l:Loc plan.source.retryIntervalName}"
+                                 IsEnabled="{Binding RetryEnabled}"
+                                 Text="{Binding RetryIntervalMinutesText, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Style="{StaticResource TextBlock.RowText}" Text="{l:Loc plan.source.retryAttemptsAfter}" />
+                    </WrapPanel>
 
                     <ItemsControl Margin="0,4,0,0" ItemsSource="{Binding Errors}" Focusable="False">
                         <ItemsControl.ItemTemplate>
@@ -313,6 +329,20 @@
                                 </StackPanel>
                             </Border>
                         </UniformGrid>
+
+                        <!-- The pending retry of the skipped files, or how the retries ended. -->
+                        <TextBlock Margin="0,10,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}"
+                                   Text="{Binding RetryHintText}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RetryHintText}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                 </StackPanel>
             </Border>

@@ -7,7 +7,7 @@ namespace ReBackup.Core.Config;
 
 public enum ConfigMoveMode
 {
-    /// <summary>Copy settings, S3 and Drive connections, plans and logs into the new folder (it must not contain a configuration yet).</summary>
+    /// <summary>Copy settings, S3 and Drive connections, plans, logs and pending retries into the new folder (it must not contain a configuration yet).</summary>
     CopyCurrent,
     /// <summary>Point at the new folder as-is without copying anything.</summary>
     UseExisting,
@@ -61,6 +61,7 @@ public static class ConfigLocation
 
             Directory.CreateDirectory(target.PlansDirectory);
             Directory.CreateDirectory(target.LogsDirectory);
+            Directory.CreateDirectory(target.RetriesDirectory);
             if (File.Exists(current.SettingsFile))
                 File.Copy(current.SettingsFile, target.SettingsFile);
             if (File.Exists(current.ConnectionsFile))
@@ -69,6 +70,7 @@ public static class ConfigLocation
                 File.Copy(current.DriveConnectionsFile, target.DriveConnectionsFile);
             CopyFiles(current.PlansDirectory, target.PlansDirectory);
             CopyFiles(current.LogsDirectory, target.LogsDirectory);
+            CopyFiles(current.RetriesDirectory, target.RetriesDirectory);
         }
 
         Directory.CreateDirectory(appDataRoot);

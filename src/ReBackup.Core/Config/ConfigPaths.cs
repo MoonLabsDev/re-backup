@@ -13,4 +13,9 @@ public sealed record ConfigPaths(string Root)
     public string DriveConnectionsFile => Path.Combine(Root, "drive-connections.json");
 
     public string LogFileFor(string planId) => Path.Combine(LogsDirectory, planId + ".jsonl");
+
+    /// <summary>The files of the skipped files still to be retried, one per plan.</summary>
+    public string RetriesDirectory => Path.Combine(Root, "retries");
+
+    public string RetryFileFor(string planId) => Path.Combine(RetriesDirectory, planId + ".json");
 }

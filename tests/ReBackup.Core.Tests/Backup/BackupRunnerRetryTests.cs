@@ -1,0 +1,620 @@
+using System.IO.Hashing;
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
+using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
+using ReBackup.Core.Plans;
+using ReBackup.Core.Pool;
+using ReBackup.Core.Tests.TestSupport;
+using ReBackup.Core.Versions;
+using ReBackup.Shared.Json;
+using ReBackup.Shared.Schedule;
+using ReBackup.Storage;
+
+namespace ReBackup.Core.Tests.Backup;
+
+public class BackupRunnerRetryTests : IDisposable
+{
+    private const string Version = "2026_09_30-16_05 Projects";   // 14:05 UTC in the fixed +02:00 test zone
+    private const string Locked = @"a\b\locked.txt";
+    private readonly TempDir _tmp = new();
+    private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 30, 14, 5, 30, TimeSpan.Zero));
+    private readonly string _source;
+    private readonly string _target;
+
+    public BackupRunnerRetryTests()
+    {
+        _time.SetLocalTimeZone(TimeZoneInfo.CreateCustomTimeZone("test", TimeSpan.FromHours(2), "test", "test"));
+        _source = _tmp.CreateDir("source");
+        _target = _tmp.PathOf("target");
+        _tmp.WriteFile(@"source\a.txt", "alpha");
+        _tmp.WriteFile(@"source\" + Locked, "locked-content");
+    }
+
+    public void Dispose() => _tmp.Dispose();
+
+    private BackupPlan Plan(bool incremental = false) => new()
+    {
+        Id = "p1",
+        Name = "Projects",
+        Incremental = incremental,
+        Source = StorageLocation.FileSystem(_source),
+        Target = StorageLocation.FileSystem(_target),
+    };
+
+    /// <param name="target">Wraps the target's storage, e.g. in a <see cref="FaultyStorage"/>.</param>
+    /// <param name="source">Wraps the source's storage the same way.</param>
+    private BackupRunner Runner(Func<IStorage, IStorage>? target = null, IVersionIndexSink? sink = null,
+        Func<IStorage, IStorage>? source = null) =>
+        new(target is null && source is null ? null : new TestStorageFactory(location =>
+        {
+            var storage = new StorageFactory().Open(location);
+            return location.Path == _target ? target?.Invoke(storage) ?? storage
+                : location.Path == _source ? source?.Invoke(storage) ?? storage
+                : storage;
+        }), _time, indexSink: sink);
+
+    private string VersionPath => Path.Combine(_target, Version);
+    private string ManifestPath => Path.Combine(VersionPath, "re-manifest.json");
+
+    private BackupManifest ReadManifest() =>
+        JsonSerializer.Deserialize<BackupManifest>(File.ReadAllText(ManifestPath), JsonDefaults.Options)!;
+
+    private static string Hash(string content) =>
+        "xxh64:" + Convert.ToHexStringLower(XxHash64.Hash(Encoding.UTF8.GetBytes(content)));
+
+    private FileStream Lock(string relative) =>
+        new(Path.Combine(_source, relative), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+    /// <summary>A regular run during which <paramref name="relative"/> is locked by another program.</summary>
+    private async Task<RunLogEntry> RunWithLockedAsync(string relative = Locked, BackupPlan? plan = null)
+    {
+        using var locked = Lock(relative);
+        var run = await Runner().RunAsync(new BackupRequest(plan ?? Plan(), [], RunTrigger.Manual));
+        run.Version.Should().Be(Version);
+        run.RetryCandidates.Should().ContainSingle();
+        return run;
+    }
+
+    private static RetryRequest RequestFor(RunLogEntry run, BackupPlan plan, IReadOnlyList<SkippedEntry>? files = null) =>
+        new(plan, run.RunId, run.Version!, files ?? [.. run.RetryCandidates], Attempt: 1, Attempts: 3);
+
+    private Task<RunLogEntry> RetryAsync(RunLogEntry run, BackupRunner? runner = null, IReadOnlyList<SkippedEntry>? files = null,
+        BackupPlan? plan = null) =>
+        (runner ?? Runner()).RetryAsync(RequestFor(run, plan ?? Plan(), files));
+
+    [Fact]
+    public async Task A_file_locked_during_the_run_is_added_to_its_version_by_the_retry()
+    {
+        var run = await RunWithLockedAsync();
+        var before = ReadManifest();
+
+        var retry = await RetryAsync(run);
+
+        File.Exists(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().BeTrue();
+        File.Exists(Path.Combine(VersionPath, "locked.txt")).Should().BeFalse("a file in a subfolder keeps its folders");
+        File.ReadAllText(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().Be("locked-content");
+        var manifest = ReadManifest();
+        manifest.Files.Should().ContainSingle(f => f.Path == "a/b/locked.txt" && f.Hash == Hash("locked-content"))
+            .Which.MtimeUtc.Should().Be(File.GetLastWriteTimeUtc(Path.Combine(_source, Locked)));
+        manifest.FileCount.Should().Be(before.FileCount + 1);
+        manifest.TotalBytes.Should().Be(before.TotalBytes + "locked-content".Length);
+        manifest.Directories.Should().BeEquivalentTo(before.Directories);
+        manifest.CreatedUtc.Should().Be(before.CreatedUtc);
+
+        retry.Status.Should().Be(RunStatus.Completed);
+        retry.Trigger.Should().Be(RunTrigger.Retry);
+        retry.RetryOf.Should().Be(run.RunId);
+        retry.RunId.Should().HaveLength(32).And.NotBe(run.RunId);
+        retry.Attempt.Should().Be(1);
+        retry.Attempts.Should().Be(3);
+        retry.Version.Should().Be(Version);
+        retry.VersionGone.Should().BeFalse();
+        retry.FilesCopied.Should().Be(1);
+        retry.BytesCopied.Should().Be("locked-content".Length);
+        retry.SkippedCount.Should().Be(0);
+        retry.RetryCandidates.Should().BeEmpty();
+        Directory.GetFiles(VersionPath, "*.rebackup-tmp", SearchOption.AllDirectories).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_file_that_changed_while_copied_gets_the_new_content_and_hash()
+    {
+        var appended = false;
+        var changing = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (appended || operation != "create" || path != $"{Version}/a.txt")
+                    return;
+                appended = true;
+                using var append = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                append.Write("-more"u8);
+            },
+        };
+        var run = await Runner(changing).RunAsync(new BackupRequest(Plan(), [], RunTrigger.Manual));
+        run.RetryCandidates.Should().ContainSingle(c => c.Path == "a.txt" && c.Key == "core.skip.changed");
+        var countBefore = ReadManifest().FileCount;
+        File.WriteAllText(Path.Combine(_source, "a.txt"), "alpha-final");
+
+        var retry = await RetryAsync(run);
+
+        retry.Status.Should().Be(RunStatus.Completed);
+        retry.FilesCopied.Should().Be(1);
+        File.ReadAllText(Path.Combine(VersionPath, "a.txt")).Should().Be("alpha-final");
+        var manifest = ReadManifest();
+        var entry = manifest.Files.Should().ContainSingle(f => f.Path == "a.txt").Subject;
+        entry.Hash.Should().Be(Hash("alpha-final"));
+        entry.Size.Should().Be("alpha-final".Length);
+        entry.MtimeUtc.Should().Be(File.GetLastWriteTimeUtc(Path.Combine(_source, "a.txt")));
+        manifest.FileCount.Should().Be(countBefore);
+        manifest.TotalBytes.Should().Be(manifest.Files.Sum(f => f.Size));
+    }
+
+    [Fact]
+    public async Task A_path_that_differs_only_in_case_replaces_its_entry()
+    {
+        _tmp.WriteFile(@"source\Foo.txt", "foo-1");
+        var run = await Runner().RunAsync(new BackupRequest(Plan(), [], RunTrigger.Manual));
+        ReadManifest().Files.Should().ContainSingle(f => f.Path == "Foo.txt");
+        var countBefore = ReadManifest().FileCount;
+        File.WriteAllText(Path.Combine(_source, "Foo.txt"), "foo-two");
+
+        var retry = await RetryAsync(run, files: [new SkippedEntry("foo.txt", "changed while it was copied", "core.skip.changed")]);
+
+        retry.Status.Should().Be(RunStatus.Completed);
+        var manifest = ReadManifest();
+        manifest.Files.Should().ContainSingle(f => f.Path.Equals("foo.txt", StringComparison.OrdinalIgnoreCase))
+            .Which.Hash.Should().Be(Hash("foo-two"));
+        manifest.FileCount.Should().Be(countBefore);
+        Directory.GetFiles(VersionPath, "foo.txt").Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_file_still_locked_stays_open_and_the_version_is_unchanged()
+    {
+        var run = await RunWithLockedAsync();
+        var manifestBytes = File.ReadAllBytes(ManifestPath);
+        var sink = new RecordingSink();
+
+        RunLogEntry retry;
+        using (Lock(Locked))
+            retry = await RetryAsync(run, Runner(sink: sink));
+
+        retry.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        retry.FilesCopied.Should().Be(0);
+        retry.SkippedCount.Should().Be(1);
+        retry.RetryCandidates.Should().ContainSingle(c => c.Path == "a/b/locked.txt" && c.Key == "core.file.locked");
+        File.ReadAllBytes(ManifestPath).Should().Equal(manifestBytes);
+        File.Exists(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().BeFalse();
+        sink.Added.Should().BeEmpty("nothing changed in the version");
+    }
+
+    [Fact]
+    public async Task A_file_unreadable_for_a_reason_never_retried_stays_open_until_the_attempts_run_out()
+    {
+        // Ruling R14: a requested file that is not resolved stays a candidate whatever stops it now, so the state keeps
+        // it and the next line still counts it; it is never shown as recovered without having been copied.
+        const string unreadable = "x.txt";
+        _tmp.WriteFile(@"source\" + unreadable, "x-content");
+        var plan = Plan();
+        RunLogEntry run;
+        using (Lock(Locked))
+        using (Lock(unreadable))
+            run = await Runner().RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+        run.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a/b/locked.txt", unreadable);
+        var refusing = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "open" && path == unreadable)
+                    throw new StorageIOException(path, "too large to export") { NotReadable = true };
+            },
+        };
+        using var planner = new RetryPlanner(_tmp.PathOf("retries"), _ => { }, _time);
+        planner.OnRunFinished(plan, run);
+
+        RunLogEntry first;
+        using (Lock(Locked))
+            first = await Runner(source: refusing).RetryAsync(
+                new RetryRequest(plan, run.RunId, run.Version!, planner.StateOf(plan.Id)!.Files, Attempt: 1, Attempts: 3));
+        planner.OnRunFinished(plan, first);
+        var second = await Runner(source: refusing).RetryAsync(
+            new RetryRequest(plan, run.RunId, run.Version!, planner.StateOf(plan.Id)!.Files, Attempt: 2, Attempts: 3));
+        planner.OnRunFinished(plan, second);
+
+        first.SkippedCount.Should().Be(2);
+        first.RetryableCount.Should().Be(2, "every requested file not resolved is still a candidate");
+        first.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a/b/locked.txt", unreadable);
+        second.FilesCopied.Should().Be(1);
+        second.SkippedCount.Should().Be(1);
+        second.RetryCandidates.Should().ContainSingle(c => c.Path == unreadable && c.Key == null);
+        planner.StateOf(plan.Id)!.Files.Should().ContainSingle(c => c.Path == unreadable, "the file is still open");
+        var merged = EffectiveRun.Apply([run, first, second])[0];
+        merged.SkippedCount.Should().BeGreaterThanOrEqualTo(1);
+        merged.Status.Should().NotBe(RunStatus.Completed);
+        merged.Skipped.Should().Contain(e => e.Path == unreadable);
+        merged.RetryRecovered.Should().Be(1, "only the locked file was copied");
+    }
+
+    [Fact]
+    public async Task A_file_deleted_since_the_run_is_resolved()
+    {
+        var run = await RunWithLockedAsync();
+        var manifestBytes = File.ReadAllBytes(ManifestPath);
+        File.Delete(Path.Combine(_source, Locked));
+
+        var retry = await RetryAsync(run);
+
+        retry.Status.Should().Be(RunStatus.Completed);
+        retry.FilesCopied.Should().Be(0);
+        retry.SkippedCount.Should().Be(0);
+        retry.RetryCandidates.Should().BeEmpty();
+        File.ReadAllBytes(ManifestPath).Should().Equal(manifestBytes);
+    }
+
+    [Fact]
+    public async Task A_version_that_is_gone_is_reported_and_nothing_is_written()
+    {
+        var run = await RunWithLockedAsync();
+        Directory.Delete(VersionPath, recursive: true);
+
+        var retry = await RetryAsync(run);
+
+        retry.VersionGone.Should().BeTrue();
+        retry.Trigger.Should().Be(RunTrigger.Retry);
+        retry.RetryOf.Should().Be(run.RunId);
+        Directory.Exists(VersionPath).Should().BeFalse();
+        Directory.GetFileSystemEntries(_target).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_manifest_changed_meanwhile_fails_the_retry()
+    {
+        var run = await RunWithLockedAsync();
+        var other = File.ReadAllText(ManifestPath) + "\n\n";
+        var rewriting = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "commit" && path == $"{Version}/re-manifest.json")
+                    File.WriteAllText(ManifestPath, other);
+            },
+        };
+
+        var retry = await RetryAsync(run, Runner(rewriting));
+
+        retry.Status.Should().Be(RunStatus.Error);
+        retry.Reason.Should().NotBeNullOrEmpty();
+        File.ReadAllText(ManifestPath).Should().Be(other, "the manifest written meanwhile is kept");
+        retry.FilesCopied.Should().Be(0, "nothing was added to the version");
+        retry.RetryCandidates.Should().ContainSingle(c => c.Path == "a/b/locked.txt", "the file is still to be retried");
+    }
+
+    [Fact]
+    public async Task The_amended_version_is_sent_to_the_index()
+    {
+        var run = await RunWithLockedAsync();
+        var sink = new RecordingSink();
+
+        var retry = await RetryAsync(run, Runner(sink: sink));
+
+        retry.Status.Should().Be(RunStatus.Completed);
+        retry.Warnings.Should().BeEmpty();
+        var (planId, version, manifest) = sink.Added.Should().ContainSingle().Subject;
+        planId.Should().Be("p1");
+        version.Name.Should().Be(Version);
+        version.Ownership.Should().Be(VersionOwnership.Owned);
+        version.FileCount.Should().Be(2);
+        version.TotalBytes.Should().Be("alpha".Length + "locked-content".Length);
+        manifest.Files.Select(f => f.Path).Should().BeEquivalentTo("a.txt", "a/b/locked.txt");
+    }
+
+    [Fact]
+    public async Task A_file_that_changes_again_while_retried_is_replaced_but_stays_open()
+    {
+        var run = await RunWithLockedAsync();
+        var changing = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation != "create" || path != $"{Version}/a/b/locked.txt")
+                    return;
+                using var append = new FileStream(Path.Combine(_source, Locked), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                append.Write("-more"u8);
+            },
+        };
+
+        var retry = await RetryAsync(run, Runner(changing));
+
+        retry.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        retry.FilesCopied.Should().Be(0, "a file that changed again is not recovered");
+        retry.RetryCandidates.Should().ContainSingle(c => c.Path == "a/b/locked.txt" && c.Key == "core.skip.changed");
+        var copy = File.ReadAllText(Path.Combine(VersionPath, "a", "b", "locked.txt"));
+        ReadManifest().Files.Should().ContainSingle(f => f.Path == "a/b/locked.txt")
+            .Which.Hash.Should().Be(Hash(copy), "the entry describes the copy on disk");
+    }
+
+    [Fact]
+    public async Task A_source_that_is_gone_fails_the_retry_and_keeps_its_files()
+    {
+        var run = await RunWithLockedAsync();
+        var manifestBytes = File.ReadAllBytes(ManifestPath);
+        Directory.Delete(_source, recursive: true);
+
+        var retry = await RetryAsync(run);
+
+        retry.Status.Should().Be(RunStatus.Error);
+        retry.RetryCandidates.Should().ContainSingle(c => c.Path == "a/b/locked.txt",
+            "a missing source does not mean the file was deleted");
+        File.ReadAllBytes(ManifestPath).Should().Equal(manifestBytes);
+    }
+
+    [Fact]
+    public async Task A_canceled_retry_is_canceled_and_keeps_its_files()
+    {
+        var run = await RunWithLockedAsync();
+        using var cancel = new CancellationTokenSource();
+        await cancel.CancelAsync();
+
+        var retry = await Runner().RetryAsync(RequestFor(run, Plan()), cancellationToken: cancel.Token);
+
+        retry.Status.Should().Be(RunStatus.Canceled);
+        retry.RetryCandidates.Should().ContainSingle(c => c.Path == "a/b/locked.txt");
+        File.Exists(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A run in which "a.txt" changed while it was copied (it is in the version with that copy's hash) and the locked
+    /// file was skipped; then "a.txt" gets new content. Returns the run and its two files, "a.txt" first.
+    /// </summary>
+    private async Task<(RunLogEntry Run, IReadOnlyList<SkippedEntry> Files)> RunWithChangedAndLockedAsync()
+    {
+        var appended = false;
+        var changing = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (appended || operation != "create" || path != $"{Version}/a.txt")
+                    return;
+                appended = true;
+                using var append = new FileStream(Path.Combine(_source, "a.txt"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                append.Write("-more"u8);
+            },
+        };
+        RunLogEntry run;
+        using (Lock(Locked))
+            run = await Runner(changing).RunAsync(new BackupRequest(Plan(), [], RunTrigger.Manual));
+        ReadManifest().Files.Should().ContainSingle(f => f.Path == "a.txt");
+        File.WriteAllText(Path.Combine(_source, "a.txt"), "alpha-final");
+        return (run, [
+            run.RetryCandidates.Single(c => c.Path == "a.txt"),
+            run.RetryCandidates.Single(c => c.Path == "a/b/locked.txt"),
+        ]);
+    }
+
+    [Fact]
+    public async Task A_retry_that_runs_out_of_space_part_way_keeps_the_manifest_true_to_the_copies()
+    {
+        var (run, files) = await RunWithChangedAndLockedAsync();
+        var full = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && path == $"{Version}/a/b/locked.txt")
+                    throw new StorageFullException(path);
+            },
+        };
+
+        var retry = await RetryAsync(run, Runner(full), files);
+
+        retry.Status.Should().Be(RunStatus.Full);
+        var copy = File.ReadAllText(Path.Combine(VersionPath, "a.txt"));
+        copy.Should().Be("alpha-final", "the first file was copied over the version's copy before the target was full");
+        var manifest = ReadManifest();
+        manifest.Files.Should().ContainSingle(f => f.Path == "a.txt").Which.Hash.Should().Be(Hash(copy));
+        manifest.Files.Should().NotContain(f => f.Path == "a/b/locked.txt");
+        manifest.FileCount.Should().Be(manifest.Files.Count);
+        retry.FilesCopied.Should().Be(0);
+        retry.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a.txt", "a/b/locked.txt");
+    }
+
+    [Fact]
+    public async Task A_retry_canceled_part_way_keeps_the_manifest_true_to_the_copies_and_tells_the_index()
+    {
+        var (run, files) = await RunWithChangedAndLockedAsync();
+        using var cancel = new CancellationTokenSource();
+        var canceling = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && path == $"{Version}/a/b/locked.txt")
+                    cancel.Cancel();
+            },
+        };
+        var sink = new RecordingSink();
+
+        var retry = await Runner(canceling, sink).RetryAsync(RequestFor(run, Plan(), files), cancellationToken: cancel.Token);
+
+        retry.Status.Should().Be(RunStatus.Canceled);
+        var copy = File.ReadAllText(Path.Combine(VersionPath, "a.txt"));
+        copy.Should().Be("alpha-final");
+        ReadManifest().Files.Should().ContainSingle(f => f.Path == "a.txt").Which.Hash.Should().Be(Hash(copy));
+        File.Exists(Path.Combine(VersionPath, "a", "b", "locked.txt")).Should().BeFalse("its copy was never committed");
+        sink.Added.Should().ContainSingle().Which.Manifest.Files.Should()
+            .ContainSingle(f => f.Path == "a.txt").Which.Hash.Should().Be(Hash(copy));
+        retry.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a.txt", "a/b/locked.txt");
+    }
+
+    // Incremental plans: a retried file is stored as a blob in the target's pool, and the manifest names it.
+
+    private string BlobPath(string content) => Path.Combine(_target, PoolVersions.BlobOf(content));
+    private string LockPath => Path.Combine(_target, PoolLayout.LockFile);
+    private IStorage TargetStorage() => new StorageFactory().Open(StorageLocation.FileSystem(_target));
+
+    [Fact]
+    public async Task An_incremental_retry_stores_the_blob_and_points_the_manifest_at_it()
+    {
+        var plan = Plan(incremental: true);
+        var run = await RunWithLockedAsync(plan: plan);
+        var before = ReadManifest();
+        File.Exists(BlobPath("locked-content")).Should().BeFalse();
+
+        var retry = await RetryAsync(run, plan: plan);
+
+        retry.Status.Should().Be(RunStatus.Completed, retry.Reason);
+        retry.FilesCopied.Should().Be(1);
+        retry.BytesCopied.Should().Be("locked-content".Length);
+        retry.RetryCandidates.Should().BeEmpty();
+        retry.Warnings.Should().BeEmpty();
+        File.ReadAllText(BlobPath("locked-content")).Should().Be("locked-content");
+        var manifest = ReadManifest();
+        manifest.FormatVersion.Should().Be(BackupManifest.PoolFormatVersion);
+        var added = manifest.Files.Should().ContainSingle(f => f.Path == "a/b/locked.txt").Subject;
+        added.Hash.Should().Be(PoolVersions.HashOf("locked-content"));
+        added.MtimeUtc.Should().Be(File.GetLastWriteTimeUtc(Path.Combine(_source, Locked)));
+        manifest.FileCount.Should().Be(before.FileCount + 1);
+        manifest.TotalBytes.Should().Be(before.TotalBytes + "locked-content".Length);
+        Directory.GetFiles(VersionPath, "*", SearchOption.AllDirectories).Select(Path.GetFileName).Should()
+            .Equal(["re-manifest.json"], "an incremental version folder holds only its manifest");
+        (await PoolVersions.RestoreAsync(TargetStorage(), Version)).Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["a.txt"] = "alpha",
+            ["a/b/locked.txt"] = "locked-content",
+        });
+        File.Exists(LockPath).Should().BeFalse("the lock is released when the attempt ends");
+    }
+
+    [Fact]
+    public async Task An_incremental_retry_holds_the_target_lock()
+    {
+        var plan = Plan(incremental: true);
+        var run = await RunWithLockedAsync(plan: plan);
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gated = (IStorage s) => new GatedStorage(s)
+        {
+            BeforeCommit = async (path, ct) =>
+            {
+                if (!path.StartsWith(PoolLayout.PoolFolder + "/", StringComparison.Ordinal))
+                    return;
+                reached.TrySetResult();
+                await release.Task.WaitAsync(ct);
+            },
+        };
+
+        var retrying = RetryAsync(run, Runner(gated), plan: plan);
+        LockInfo? holder;
+        try
+        {
+            await Task.WhenAny(reached.Task, retrying).WaitAsync(TimeSpan.FromSeconds(30));
+            reached.Task.IsCompleted.Should().BeTrue("the attempt stores a blob ({0})",
+                retrying.IsCompletedSuccessfully ? (await retrying).Reason : "");
+            holder = await TargetLock.ReadAsync(TargetStorage(), CancellationToken.None);
+        }
+        finally
+        {
+            // Whatever fails above, the attempt is let go: it must not hang on the gate.
+            release.TrySetResult();
+        }
+        var retry = await retrying;
+
+        holder.Should().NotBeNull("the blob is written while the attempt holds the target");
+        holder!.Operation.Should().Be("backup");
+        retry.Status.Should().Be(RunStatus.Completed, retry.Reason);
+        File.Exists(LockPath).Should().BeFalse("the lock is released when the attempt ends");
+    }
+
+    [Fact]
+    public async Task An_incremental_retry_refuses_a_locked_target()
+    {
+        var plan = Plan(incremental: true);
+        var run = await RunWithLockedAsync(plan: plan);
+        var manifestBytes = File.ReadAllBytes(ManifestPath);
+        var files = Directory.GetFiles(_target, "*", SearchOption.AllDirectories).ToList();
+        var foreign = await TargetLock.TryAcquireAsync(TargetStorage(), "OTHERHOST", "verify", _time, CancellationToken.None);
+        foreign.Should().NotBeNull();
+        var lockBytes = File.ReadAllBytes(LockPath);
+
+        var retry = await RetryAsync(run, plan: plan);
+
+        retry.Status.Should().Be(RunStatus.Error);
+        retry.Reason.Should().Contain("OTHERHOST");
+        retry.FilesCopied.Should().Be(0);
+        retry.RetryCandidates.Should().ContainSingle(c => c.Path == "a/b/locked.txt", "the file is still to be retried");
+        retry.Warnings.Should().BeEmpty();
+        File.ReadAllBytes(ManifestPath).Should().Equal(manifestBytes);
+        File.ReadAllBytes(LockPath).Should().Equal(lockBytes, "another holder's lock is left alone");
+        Directory.GetFiles(_target, "*", SearchOption.AllDirectories).Should().BeEquivalentTo([.. files, LockPath],
+            "nothing but the other holder's lock was added");
+    }
+
+    [Fact]
+    public async Task The_old_blob_of_a_retried_file_is_collected_by_the_next_run()
+    {
+        var plan = Plan(incremental: true);
+        // Content no other file has: once the retry points the version at the new blob, no manifest refers to this one.
+        File.WriteAllText(Path.Combine(_source, "a.txt"), "alpha-only-in-the-first-copy");
+        var run = await Runner().RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+        run.Status.Should().Be(RunStatus.Completed, run.Reason);
+        File.WriteAllText(Path.Combine(_source, "a.txt"), "alpha-final");
+
+        var retry = await RetryAsync(run, files: [new SkippedEntry("a.txt", "changed while it was copied", "core.skip.changed")],
+            plan: plan);
+
+        retry.Status.Should().Be(RunStatus.Completed, retry.Reason);
+        ReadManifest().Files.Should().ContainSingle(f => f.Path == "a.txt")
+            .Which.Hash.Should().Be(PoolVersions.HashOf("alpha-final"));
+        File.Exists(BlobPath("alpha-only-in-the-first-copy")).Should().BeTrue("a retry collects no garbage");
+
+        _time.Advance(TimeSpan.FromMinutes(1));
+        var next = await Runner().RunAsync(new BackupRequest(plan, [], RunTrigger.Manual));
+
+        next.Status.Should().Be(RunStatus.Completed, next.Reason);
+        next.Version.Should().NotBe(Version);
+        File.Exists(BlobPath("alpha-only-in-the-first-copy")).Should().BeFalse("no version refers to the earlier copy any more");
+        File.Exists(BlobPath("alpha-final")).Should().BeTrue();
+        (await PoolVersions.RestoreAsync(TargetStorage(), Version)).Should().Contain("a.txt", "alpha-final");
+    }
+
+    [Fact]
+    public async Task An_incremental_retry_that_runs_out_of_space_part_way_keeps_the_blobs_it_stored()
+    {
+        var plan = Plan(incremental: true);
+        var run = await RunWithLockedAsync(plan: plan);
+        File.WriteAllText(Path.Combine(_source, "a.txt"), "alpha-final");
+        IReadOnlyList<SkippedEntry> files =
+            [new SkippedEntry("a.txt", "changed while it was copied", "core.skip.changed"), .. run.RetryCandidates];
+        var full = (IStorage s) => new FaultyStorage(s)
+        {
+            Before = (operation, path) =>
+            {
+                if (operation == "create" && path == PoolVersions.BlobOf("locked-content"))
+                    throw new StorageFullException(path);
+            },
+        };
+
+        var retry = await RetryAsync(run, Runner(full), files, plan);
+
+        retry.Status.Should().Be(RunStatus.Full);
+        var manifest = ReadManifest();
+        manifest.Files.Should().ContainSingle(f => f.Path == "a.txt")
+            .Which.Hash.Should().Be(PoolVersions.HashOf("alpha-final"), "the blob stored before the target was full is kept");
+        manifest.Files.Should().NotContain(f => f.Path == "a/b/locked.txt");
+        manifest.FileCount.Should().Be(manifest.Files.Count);
+        (await PoolVersions.RestoreAsync(TargetStorage(), Version)).Should().Contain("a.txt", "alpha-final");
+        retry.FilesCopied.Should().Be(0);
+        retry.RetryCandidates.Select(c => c.Path).Should().BeEquivalentTo("a.txt", "a/b/locked.txt");
+        File.Exists(LockPath).Should().BeFalse("the lock is released whatever the outcome");
+    }
+
+    private sealed class RecordingSink : IVersionIndexSink
+    {
+        public List<(string PlanId, VersionInfo Version, BackupManifest Manifest)> Added { get; } = [];
+
+        public void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest) =>
+            Added.Add((planId, version, manifest));
+    }
+}

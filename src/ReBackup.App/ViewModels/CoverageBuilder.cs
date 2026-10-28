@@ -1,6 +1,7 @@
 using System.Globalization;
 using ReBackup.Core.Backup;
 using ReBackup.Shared.Retention;
+using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Wpf.Localization;
 
 namespace ReBackup.App.ViewModels;
@@ -14,6 +15,8 @@ public static class CoverageBuilder
     /// <summary>
     /// The lanes and their labels. Only <see cref="VersionOwnership.Owned"/> versions count; a version whose run (looked up
     /// in <paramref name="log"/> by version name) ended with warnings is marked so, with its skipped count as detail.
+    /// <paramref name="log"/> is the effective log (<see cref="Core.Backup.Retry.EffectiveRun"/>): a version belongs to the
+    /// run that created it, whose entry already holds what its retries recovered, never to a retry line.
     /// </summary>
     /// <exception cref="ArgumentException">A rule is not valid.</exception>
     public static (IReadOnlyList<CoverageLane> Lanes, IReadOnlyList<string> Labels) Build(IReadOnlyList<VersionInfo> owned,
@@ -22,7 +25,7 @@ public static class CoverageBuilder
         var runs = new Dictionary<string, RunLogEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in log)
         {
-            if (!string.IsNullOrEmpty(entry.Version))
+            if (!string.IsNullOrEmpty(entry.Version) && entry.Trigger != RunTrigger.Retry)
                 runs[entry.Version] = entry;   // the log is oldest first: the last run of a name wins
         }
 

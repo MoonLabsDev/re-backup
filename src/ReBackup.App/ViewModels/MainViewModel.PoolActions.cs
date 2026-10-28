@@ -131,7 +131,7 @@ public sealed partial class MainViewModel
     /// <summary>Why <paramref name="source"/> cannot be copied right now; null when it can.</summary>
     private static string? CopyBlocker(PlanEditorViewModel source)
     {
-        if (source.Run.IsActive)
+        if (source.Run.IsActive || source.Run.IsRetryActive)   // a retry writes into one of its versions
             return Loc.F("copy.backupRunning", ("plan", source.Name));
         if (source.IsCopying)
             return Loc.F("copy.alreadyCopying", ("plan", source.Name));
@@ -146,7 +146,7 @@ public sealed partial class MainViewModel
         var hooks = new CopyPlanHooks(ValidateNewPlan, AddCopyPlan, FinishCopyPlan,
             copying => SetCopying(source, dialog!, copying),
             // Asked when the copy starts: a run may have been queued while the dialog was open.
-            () => source.Run.IsActive ? Loc.F("copy.backupRunning", ("plan", source.Name)) : null);
+            () => source.Run.IsActive || source.Run.IsRetryActive ? Loc.F("copy.backupRunning", ("plan", source.Name)) : null);
         dialog = new CopyPlanViewModel(source.SavedPlan(), copier, _s3, _drive, _dialogs, hooks, unfinished);
         _dialogs.ShowCopyPlan(dialog);
         _ = source.RefreshLockAsync();
@@ -220,6 +220,7 @@ public sealed partial class MainViewModel
         try
         {
             _store.Save(plan);
+            _retries.OnPlanSaved(plan);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

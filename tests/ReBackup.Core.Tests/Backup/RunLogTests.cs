@@ -40,6 +40,93 @@ public class RunLogTests : IDisposable
     };
 
     [Fact]
+    public void Retry_candidates_are_not_written_to_the_log()
+    {
+        var log = new RunLog(_tmp.PathOf("candidates.jsonl"));
+        var entry = Entry("a", RunStatus.CompletedWithWarnings);
+        entry.AddSkipped(new SkippedEntry("x.txt", "locked by another program", "core.file.locked"));
+        entry.RetryOf = "first";
+        entry.Attempt = 2;
+        entry.Attempts = 3;
+        entry.MetForeignMarkers = true;
+
+        log.Append(entry);
+        var read = log.ReadAll().Single();
+
+        read.RetryCandidates.Should().BeEmpty();
+        read.RetryableCount.Should().Be(1);
+        read.Skipped.Should().Equal(new SkippedEntry("x.txt", "locked by another program", "core.file.locked"));
+        read.RetryOf.Should().Be("first");
+        read.Attempt.Should().Be(2);
+        read.Attempts.Should().Be(3);
+        read.MetForeignMarkers.Should().BeTrue();
+    }
+
+    [Fact]
+    public void The_last_regular_entry_skips_retry_lines()
+    {
+        var log = new RunLog(_tmp.PathOf("regular.jsonl"));
+        log.Append(Entry("manual", RunStatus.Completed));
+        var retry = Entry("r1", RunStatus.Completed);
+        retry.Trigger = RunTrigger.Retry;
+        log.Append(retry);
+        retry = Entry("r2", RunStatus.Completed);
+        retry.Trigger = RunTrigger.Retry;
+        log.Append(retry);
+
+        log.ReadLastRegular()!.RunId.Should().Be("manual");
+        log.ReadLast()!.RunId.Should().Be("r2");
+    }
+
+    [Fact]
+    public void The_last_regular_entry_is_null_without_one()
+    {
+        new RunLog(_tmp.PathOf("missing.jsonl")).ReadLastRegular().Should().BeNull();
+        var log = new RunLog(_tmp.PathOf("only-retries.jsonl"));
+        var retry = Entry("r1", RunStatus.Completed);
+        retry.Trigger = RunTrigger.Retry;
+        log.Append(retry);
+
+        log.ReadLastRegular().Should().BeNull();
+    }
+
+    [Fact]
+    public void The_last_regular_entry_is_found_behind_a_tail_full_of_retry_lines()
+    {
+        var log = new RunLog(_tmp.PathOf("big-retries.jsonl"));
+        log.Append(Entry("manual", RunStatus.Completed));
+        for (var i = 0; i < 400; i++)
+        {
+            var retry = Entry("r" + i, RunStatus.Completed);
+            retry.Trigger = RunTrigger.Retry;
+            retry.Warnings.Add(new string('w', 300));
+            log.Append(retry);
+        }
+
+        new FileInfo(log.LogFile).Length.Should().BeGreaterThan(64 * 1024);
+        log.ReadLastRegular()!.RunId.Should().Be("manual");
+    }
+
+    [Fact]
+    public void A_log_line_written_before_retries_existed_still_reads()
+    {
+        var log = new RunLog(_tmp.PathOf("old.jsonl"));
+        File.WriteAllText(log.LogFile,
+            "{\"runId\":\"old\",\"trigger\":\"Manual\",\"status\":\"CompletedWithWarnings\",\"skippedCount\":1," +
+            "\"skipped\":[{\"path\":\"a.txt\",\"reason\":\"locked by another program\"}]}\n");
+
+        var entry = log.ReadAll().Single();
+
+        entry.RetryOf.Should().BeNull();
+        entry.Attempt.Should().BeNull();
+        entry.Attempts.Should().BeNull();
+        entry.RetryableCount.Should().Be(0);
+        entry.MetForeignMarkers.Should().BeFalse();
+        entry.Skipped.Should().ContainSingle().Which.Key.Should().BeNull();
+        entry.RetryCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Missing_file_reads_as_empty()
     {
         new RunLog(_tmp.PathOf(@"logs\p1.jsonl")).ReadAll().Should().BeEmpty();

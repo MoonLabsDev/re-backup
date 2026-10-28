@@ -27,18 +27,23 @@ public sealed partial class BackupRunner
         CancellationToken cancellationToken)
     {
         if (plan.Incremental)
-        {
-            heldLock.Value = await TargetLock.TryAcquireAsync(target, _host, LockOperation, _time, cancellationToken)
-                .ConfigureAwait(false);
-            if (heldLock.Value is null)
-                throw new BackupAbortException(RunStatus.Error,
-                    await TargetLock.LockedMessageAsync(target, cancellationToken).ConfigureAwait(false));
-        }
+            heldLock.Value = await AcquireLockAsync(target, cancellationToken).ConfigureAwait(false);
 
         var outcome = await StoreGuard.CheckAsync(target, plan, createIfMissing: plan.Incremental, cancellationToken)
             .ConfigureAwait(false);
         if (outcome is not (StoreGuardOutcome.Ok or StoreGuardOutcome.Created))
             throw new BackupAbortException(RunStatus.Error, CoreTexts.English(StoreGuard.MessageKey(outcome)));
+    }
+
+    /// <summary>
+    /// Takes the target's lock for a run or a retry; the caller releases it (<see cref="ReleaseLockAsync"/>). A target that
+    /// another holder has locked ends the run as an <see cref="RunStatus.Error"/> that names the holder; nothing is written.
+    /// </summary>
+    private async Task<TargetLock> AcquireLockAsync(IStorage target, CancellationToken cancellationToken)
+    {
+        var held = await TargetLock.TryAcquireAsync(target, _host, LockOperation, _time, cancellationToken).ConfigureAwait(false);
+        return held ?? throw new BackupAbortException(RunStatus.Error,
+            await TargetLock.LockedMessageAsync(target, cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -202,11 +207,11 @@ public sealed partial class BackupRunner
         if (pool.Detection == ChangeDetection.Fast && pool.IsUnchanged(node, out var previous) && pool.Writer.Contains(previous.Hash))
             return new FileOutcome(new ManifestFile(node.RelativePath, node.Size, node.LastWriteUtc, previous.Hash), null, false, false);
 
-        var locked = new FileOutcome(null, CoreTexts.English("core.file.locked"), false, false);
-        var (input, skipReason, denied) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
+        var locked = new FileOutcome(null, CoreTexts.English("core.file.locked"), false, false, "core.file.locked");
+        var (input, skipReason, denied, skipKey) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
             .ConfigureAwait(false);
         if (input is null)
-            return new FileOutcome(null, skipReason, false, denied);
+            return new FileOutcome(null, skipReason, false, denied, skipKey);
 
         string hash;
         long size;
@@ -224,10 +229,10 @@ public sealed partial class BackupRunner
 
         if (!pool.Writer.Contains(hash))
         {
-            (input, skipReason, denied) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
+            (input, skipReason, denied, skipKey) = await OpenSourceFileAsync(source, node, cancellationToken, storageFailuresStop)
                 .ConfigureAwait(false);
             if (input is null)
-                return new FileOutcome(null, skipReason, false, denied);
+                return new FileOutcome(null, skipReason, false, denied, skipKey);
             await using (input.ConfigureAwait(false))
             {
                 try

@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Shared.Json;
 using ReBackup.Shared.Schedule;
 
@@ -7,7 +9,11 @@ namespace ReBackup.Core.Backup;
 
 public enum RunStatus { Completed, CompletedWithWarnings, Full, Error, Canceled }
 
-public sealed record SkippedEntry(string Path, string Reason);
+/// <param name="Path">The relative path of the skipped file or folder.</param>
+/// <param name="Reason">Why, in English as it is shown and stored.</param>
+/// <param name="Key">The <c>CoreTexts</c> key the reason was formatted from; null when it has none (a raw message of the storage) or the line is older than keys.</param>
+public sealed record SkippedEntry(string Path, string Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Key = null);
 
 /// <summary>One line of a plan's run log.</summary>
 public sealed class RunLogEntry
@@ -32,6 +38,45 @@ public sealed class RunLogEntry
     public long BytesCopied { get; set; }
     public int SkippedCount { get; set; }
     public List<SkippedEntry> Skipped { get; set; } = [];
+
+    /// <summary>How many skipped entries <see cref="RetryPolicy"/> would retry; counts all, also those beyond <see cref="MaxSkippedEntries"/>.</summary>
+    public int RetryableCount { get; set; }
+
+    /// <summary>
+    /// Every retryable skip of this run, not capped like <see cref="Skipped"/>, so a retry loses none of them. Held in
+    /// memory only: it is not written to the log.
+    /// </summary>
+    [JsonIgnore]
+    public List<SkippedEntry> RetryCandidates { get; } = [];
+
+    /// <summary>For a retry run: the id of the run whose skipped files it retries.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RetryOf { get; set; }
+
+    /// <summary>For a retry run: which attempt this is (1-based).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Attempt { get; set; }
+
+    /// <summary>For a retry run: how many attempts the plan allows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Attempts { get; set; }
+
+    /// <summary>The run left a folder another computer marked alone (see <see cref="Warnings"/>); that alone makes it a run with warnings.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool MetForeignMarkers { get; set; }
+
+    /// <summary>The version this run created no longer exists (set when the run is read for retrying, not stored).</summary>
+    [JsonIgnore]
+    public bool VersionGone { get; set; }
+
+    /// <summary>How many of this run's skipped files later attempts copied (set by the effective-status calculation, not stored).</summary>
+    [JsonIgnore]
+    public int RetryRecovered { get; set; }
+
+    /// <summary>How many retry attempts were made for this run (set by the effective-status calculation, not stored).</summary>
+    [JsonIgnore]
+    public int RetryAttemptsMade { get; set; }
+
     public List<string> RetentionDeleted { get; set; } = [];
 
     /// <summary>Problems that are not about a source file, e.g. a version retention could not delete. They do not change the status.</summary>
@@ -42,6 +87,25 @@ public sealed class RunLogEntry
         SkippedCount++;
         if (Skipped.Count < MaxSkippedEntries)
             Skipped.Add(entry);
+        if (RetryPolicy.IsRetryable(entry))
+        {
+            RetryableCount++;
+            RetryCandidates.Add(entry);
+        }
+    }
+
+    /// <summary>
+    /// For a retry run: a requested file that is still open, counted as skipped and kept as a candidate whatever its
+    /// reason now (ruling R14). A file that comes back with a reason <see cref="RetryPolicy"/> would not retry (archived,
+    /// or a raw message of the storage) is still not copied: dropping it would show it as recovered.
+    /// </summary>
+    internal void AddStillOpen(SkippedEntry entry)
+    {
+        SkippedCount++;
+        if (Skipped.Count < MaxSkippedEntries)
+            Skipped.Add(entry);
+        RetryableCount++;
+        RetryCandidates.Add(entry);
     }
 }
 
@@ -108,7 +172,12 @@ public sealed class RunLog
     }
 
     /// <summary>The newest readable entry; null when there is none. Reads only the end of a large log where possible.</summary>
-    public RunLogEntry? ReadLast()
+    public RunLogEntry? ReadLast() => ReadLastWhere(_ => true);
+
+    /// <summary>The newest readable entry that is not a retry run; null when there is none. Reads only the end of a large log where possible.</summary>
+    public RunLogEntry? ReadLastRegular() => ReadLastWhere(entry => entry.Trigger != RunTrigger.Retry);
+
+    private RunLogEntry? ReadLastWhere(Func<RunLogEntry, bool> accept)
     {
         if (!File.Exists(LogFile))
             return null;
@@ -124,15 +193,14 @@ public sealed class RunLog
                 // The first piece is usually the cut-off end of an older line.
                 for (var i = lines.Length - 1; i >= 1; i--)
                 {
-                    if (Parse(lines[i].TrimEnd('\r')) is { } entry)
+                    if (Parse(lines[i].TrimEnd('\r')) is { } entry && accept(entry))
                         return entry;
                 }
             }
         }
 
-        // A small log, or no complete readable line in its last part.
-        var all = ReadAll();
-        return all.Count == 0 ? null : all[^1];
+        // A small log, or no complete readable line in its last part that qualifies.
+        return ReadAll().LastOrDefault(accept);
     }
 
     /// <summary>A readable entry; null for a blank or damaged line.</summary>

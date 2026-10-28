@@ -377,12 +377,12 @@ public class BackupRunnerLifecycleTests
     }
 
     [Theory]
-    [InlineData("locked", "locked by another program")]
-    [InlineData("missing", "no longer exists")]
-    [InlineData("denied", "access denied")]
-    [InlineData("io", "cannot be opened: the device hiccuped")]
-    [InlineData("name", "cannot be opened: A path segment must not end with a space or a dot.")]
-    public async Task A_source_file_that_cannot_be_opened_is_skipped(string failure, string reason)
+    [InlineData("locked", "locked by another program", "core.file.locked")]
+    [InlineData("missing", "no longer exists", "core.file.noLongerExists")]
+    [InlineData("denied", "access denied", "core.file.accessDenied")]
+    [InlineData("io", "cannot be opened: the device hiccuped", "core.file.cannotOpenFile")]
+    [InlineData("name", "cannot be opened: A path segment must not end with a space or a dot.", "core.file.cannotOpenFile")]
+    public async Task A_source_file_that_cannot_be_opened_is_skipped(string failure, string reason, string key)
     {
         var source = (IStorage s) => new FaultyStorage(s)
         {
@@ -404,7 +404,7 @@ public class BackupRunnerLifecycleTests
         var entry = await Run(source: source);
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
-        entry.Skipped.Should().ContainSingle().Which.Should().Be(new SkippedEntry("a.txt", reason));
+        entry.Skipped.Should().ContainSingle().Which.Should().Be(new SkippedEntry("a.txt", reason, key));
         entry.FilesCopied.Should().Be(1);
         _target.Files.Should().NotContain(Version + "/a.txt").And.Contain(Version + "/sub/b.bin");
     }
@@ -449,6 +449,9 @@ public class BackupRunnerLifecycleTests
         entry.Version.Should().Be(Version);
         entry.Skipped.Select(s => s.Path).Should().BeEquivalentTo("x.", "y ");
         entry.Skipped.Should().OnlyContain(s => s.Reason.StartsWith("cannot be opened: ", StringComparison.Ordinal));
+        entry.Skipped.Single(s => s.Path == "x.").Key.Should().Be("core.file.cannotOpenFolder");
+        entry.Skipped.Single(s => s.Path == "y ").Key.Should().Be("core.file.cannotOpenFile");
+        entry.RetryCandidates.Should().ContainSingle().Which.Path.Should().Be("y ", "a folder name is never retried");
         entry.FilesCopied.Should().Be(2);
         File.ReadAllText(Path.Combine(tmp.Root, Version, "sub", "b.bin")).Should().Be("bravo-bravo");
         (await VersionCatalog.ListAsync(target, "p1", "Projects")).Should().ContainSingle().Which.Name.Should().Be(Version);
@@ -497,7 +500,7 @@ public class BackupRunnerLifecycleTests
 
         entry.Status.Should().Be(RunStatus.CompletedWithWarnings);
         entry.Skipped.Should().ContainSingle().Which.Should().Be(
-            new SkippedEntry("a.txt", "changed while it was copied; the copy may be inconsistent"));
+            new SkippedEntry("a.txt", "changed while it was copied; the copy may be inconsistent", "core.skip.changed"));
         entry.FilesCopied.Should().Be(2);
     }
 

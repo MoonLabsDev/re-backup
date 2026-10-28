@@ -1,3 +1,7 @@
+using ReBackup.Core.Backup.Retry;
+using ReBackup.Core.Plans;
+using ReBackup.Shared.Schedule;
+
 namespace ReBackup.Core.Backup;
 
 public enum JobState
@@ -9,8 +13,10 @@ public enum JobState
     Removed,
 }
 
+/// <param name="IsRetry">The job retries the skipped files of an earlier run (<see cref="BackupQueue.EnqueueRetry"/>).</param>
+/// <param name="Plan">The plan the job runs with, as it was when the job was queued; the queue sets it on every update.</param>
 public sealed record BackupJobUpdate(string PlanId, string PlanName, JobState State, BackupProgress? Progress,
-    RunLogEntry? Result);
+    RunLogEntry? Result, bool IsRetry = false, BackupPlan? Plan = null);
 
 /// <summary>
 /// Where a waiting job stands: <paramref name="Position"/> 1 starts next. The job ahead is the one before it in the
@@ -18,7 +24,11 @@ public sealed record BackupJobUpdate(string PlanId, string PlanName, JobState St
 /// </summary>
 public sealed record QueuePosition(int Position, string? AheadPlanId, string? AheadPlanName);
 
-/// <summary>Runs backups one at a time. A plan can be queued or running only once.</summary>
+/// <summary>
+/// Runs backups one at a time. A plan can be queued or running only once, except that its regular job may wait behind
+/// its running retry. Retries wait in a low-priority lane: one starts only when no regular job waits, and a running
+/// retry is never canceled because a regular job arrives.
+/// </summary>
 public sealed class BackupQueue
 {
     private readonly IBackupRunner _runner;
@@ -26,6 +36,7 @@ public sealed class BackupQueue
     private readonly TimeProvider _time;
     private readonly object _gate = new();
     private readonly List<Job> _queued = [];
+    private readonly List<Job> _lowQueued = [];   // waiting retries; they start only when _queued is empty
     private Job? _running;
     private bool _workerActive;
     private bool _closed;
@@ -40,9 +51,12 @@ public sealed class BackupQueue
 
     /// <summary>
     /// Per job: Queued, Running (repeated with progress), then Finished or Removed. Queued is raised on the enqueuing
-    /// thread, Removed on the canceling thread, Running and Finished on the worker. Queued, Removed and Finished are
-    /// raised while the queue's lock is held, so the events of one plan are always ordered across its jobs. Handlers
+    /// thread, Removed on the canceling thread, Running and Finished on the worker. Queued, Removed, the first Running
+    /// (without progress) and Finished are raised while the queue's lock is held, so the events of one plan are always
+    /// ordered across its jobs. Handlers
     /// must therefore not block or call back into the queue; an exception thrown by a handler is swallowed.
+    /// The jobs of one plan follow each other, except that a regular job can be queued while the plan's retry runs: its
+    /// Queued then comes between the retry's Running and Finished. <see cref="BackupJobUpdate.IsRetry"/> tells them apart.
     /// </summary>
     public event Action<BackupJobUpdate>? Changed;
 
@@ -54,12 +68,22 @@ public sealed class BackupQueue
 
     public bool IsBusy
     {
-        get { lock (_gate) return _running is not null || _queued.Count > 0; }
+        get { lock (_gate) return _running is not null || _queued.Count > 0 || _lowQueued.Count > 0; }
     }
 
+    /// <summary>The waiting jobs, waiting retries included.</summary>
     public int QueuedCount
     {
-        get { lock (_gate) return _queued.Count; }
+        get { lock (_gate) return _queued.Count + _lowQueued.Count; }
+    }
+
+    /// <summary>
+    /// A regular job is queued or running. Waiting and running retries do not count: they are tried again after the next
+    /// start, so nothing the user asked for is lost when they are canceled.
+    /// </summary>
+    public bool HasRegularJobs
+    {
+        get { lock (_gate) return _queued.Count > 0 || _running is { IsRetry: false }; }
     }
 
     public string? RunningPlanId
@@ -67,22 +91,35 @@ public sealed class BackupQueue
         get { lock (_gate) return _running?.PlanId; }
     }
 
-    /// <summary>A snapshot of the waiting plans, the next one to run first; the running plan is not part of it.</summary>
-    public IReadOnlyList<string> QueuedPlanIds
+    /// <summary>True while a retry of that plan runs.</summary>
+    public bool IsRetryRunning(string planId)
     {
-        get { lock (_gate) return _queued.Select(q => q.PlanId).ToList(); }
+        lock (_gate) return _running is { IsRetry: true } running && running.PlanId == planId;
     }
 
-    /// <summary>Where the waiting job of that plan stands; null when the plan is not waiting (running or not queued).</summary>
+    /// <summary>
+    /// A snapshot of the waiting plans, the next one to run first, waiting retries after the regular jobs; the running
+    /// plan is not part of it (unless its regular job waits behind its running retry).
+    /// </summary>
+    public IReadOnlyList<string> QueuedPlanIds
+    {
+        get { lock (_gate) return Waiting().Select(q => q.PlanId).ToList(); }
+    }
+
+    /// <summary>
+    /// Where the waiting job of that plan stands, waiting retries counted after the regular jobs; null when the plan is
+    /// not waiting (running or not queued).
+    /// </summary>
     public QueuePosition? PositionOf(string planId)
     {
         lock (_gate)
         {
-            var index = _queued.FindIndex(q => q.PlanId == planId);
+            var waiting = Waiting().ToList();
+            var index = waiting.FindIndex(q => q.PlanId == planId);
             if (index < 0)
                 return null;
-            var ahead = index > 0 ? _queued[index - 1] : _running;
-            return new QueuePosition(index + 1, ahead?.PlanId, ahead?.Request.Plan.Name);
+            var ahead = index > 0 ? waiting[index - 1] : _running;
+            return new QueuePosition(index + 1, ahead?.PlanId, ahead?.PlanName);
         }
     }
 
@@ -92,56 +129,77 @@ public sealed class BackupQueue
         get { lock (_gate) return _closed; }
     }
 
-    /// <summary>False when that plan is already queued or running, or the queue is closed.</summary>
+    /// <summary>
+    /// False when a regular job of that plan is already queued or running, or the queue is closed. A waiting retry of
+    /// the plan is removed (the regular run supersedes it); behind a running retry of the plan the job is queued normally.
+    /// </summary>
     public bool Enqueue(BackupRequest request)
+    {
+        var job = new Job(request);
+        Job? superseded;
+        lock (_gate)
+        {
+            if (_closed
+                || _running is { IsRetry: false } running && running.PlanId == job.PlanId
+                || _queued.Any(q => q.PlanId == job.PlanId))
+            {
+                job.Cancellation.Dispose();
+                return false;
+            }
+
+            superseded = TryRemove(_lowQueued, job.PlanId);
+            if (superseded is not null)
+                Raise(superseded, JobState.Removed);
+            Add(_queued, job);
+        }
+        superseded?.Cancellation.Dispose();
+        return true;
+    }
+
+    /// <summary>
+    /// Queues a retry in the low-priority lane. False when any job of that plan is queued or running, or the queue is
+    /// closed.
+    /// </summary>
+    public bool EnqueueRetry(RetryRequest request)
     {
         var job = new Job(request);
         lock (_gate)
         {
-            if (_closed)
+            if (_closed
+                || _running?.PlanId == job.PlanId
+                || Waiting().Any(q => q.PlanId == job.PlanId))
             {
                 job.Cancellation.Dispose();
                 return false;
             }
-            if (_running?.PlanId == job.PlanId || _queued.Any(q => q.PlanId == job.PlanId))
-            {
-                job.Cancellation.Dispose();
-                return false;
-            }
-            _queued.Add(job);
-
-            // Raised inside the lock so that the worker cannot report Running before Queued.
-            Raise(job, JobState.Queued);
-
-            if (!_workerActive)
-            {
-                _worker = Task.Run(ProcessAsync);
-                _workerActive = true;
-            }
+            Add(_lowQueued, job);
         }
         return true;
     }
 
-    /// <summary>Cancels the running job of that plan or removes its queued job. False when there is neither.</summary>
+    /// <summary>
+    /// Cancels the running job of that plan or removes its queued job, its regular job before its retry. False when
+    /// there is neither.
+    /// </summary>
     public bool Cancel(string planId)
     {
         Job? running = null;
         Job? removed = null;
         lock (_gate)
         {
-            if (_running?.PlanId == planId)
-            {
-                running = _running;
-            }
+            if (_running is { IsRetry: false } regular && regular.PlanId == planId)
+                running = regular;
+            else if (TryRemove(_queued, planId) is { } queued)
+                removed = queued;
+            else if (_running is { IsRetry: true } retry && retry.PlanId == planId)
+                running = retry;
+            else if (TryRemove(_lowQueued, planId) is { } lowQueued)
+                removed = lowQueued;
             else
-            {
-                var index = _queued.FindIndex(q => q.PlanId == planId);
-                if (index < 0)
-                    return false;
-                removed = _queued[index];
-                _queued.RemoveAt(index);
+                return false;
+
+            if (removed is not null)
                 Raise(removed, JobState.Removed);
-            }
         }
 
         removed?.Cancellation.Dispose();
@@ -150,14 +208,47 @@ public sealed class BackupQueue
         return true;
     }
 
+    /// <summary>
+    /// The plan was deleted: removes every waiting job of it (its regular one and its retry) and cancels its running job,
+    /// whose line is not written (its Finished is still raised), so nothing re-creates a log deleted with the plan. When
+    /// this returns, no line of the plan is appended any more. False when the plan had no job.
+    /// </summary>
+    public bool Forget(string planId)
+    {
+        var removed = new List<Job>();
+        Job? running;
+        lock (_gate)
+        {
+            if (TryRemove(_queued, planId) is { } queued)
+                removed.Add(queued);
+            if (TryRemove(_lowQueued, planId) is { } lowQueued)
+                removed.Add(lowQueued);
+            running = _running?.PlanId == planId ? _running : null;
+            foreach (var job in removed)
+                Raise(job, JobState.Removed);
+        }
+
+        foreach (var job in removed)
+            job.Cancellation.Dispose();
+        if (running is not null)
+        {
+            // Waits for a line being written; the worker checks the flag under the same lock.
+            lock (running.LogGate)
+                running.Forgotten = true;
+            CancelToken(running);
+        }
+        return removed.Count > 0 || running is not null;
+    }
+
     public void CancelAll()
     {
         List<Job> removed;
         Job? running;
         lock (_gate)
         {
-            removed = [.. _queued];
+            removed = [.. Waiting()];
             _queued.Clear();
+            _lowQueued.Clear();
             running = _running;
             foreach (var job in removed)
                 Raise(job, JobState.Removed);
@@ -191,7 +282,7 @@ public sealed class BackupQueue
 
             lock (_gate)
             {
-                if (_queued.Count == 0 && _running is null && !_workerActive)
+                if (_queued.Count == 0 && _lowQueued.Count == 0 && _running is null && !_workerActive)
                     return;
                 // A new worker may have been started meanwhile; if the old one is still winding down, let it.
                 worker = _worker;
@@ -199,6 +290,35 @@ public sealed class BackupQueue
             if (worker.IsCompleted)
                 await Task.Delay(1).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>The waiting jobs in the order they start: the regular ones, then the retries. Call under the lock.</summary>
+    private IEnumerable<Job> Waiting() => _queued.Concat(_lowQueued);
+
+    /// <summary>Adds a job to one of the lanes and makes sure the worker runs. Call under the lock.</summary>
+    private void Add(List<Job> lane, Job job)
+    {
+        lane.Add(job);
+
+        // Raised inside the lock so that the worker cannot report Running before Queued.
+        Raise(job, JobState.Queued);
+
+        if (!_workerActive)
+        {
+            _worker = Task.Run(ProcessAsync);
+            _workerActive = true;
+        }
+    }
+
+    /// <summary>Removes and returns the job of that plan from the lane; null when it has none. Call under the lock.</summary>
+    private static Job? TryRemove(List<Job> lane, string planId)
+    {
+        var index = lane.FindIndex(q => q.PlanId == planId);
+        if (index < 0)
+            return null;
+        var job = lane[index];
+        lane.RemoveAt(index);
+        return job;
     }
 
     /// <summary>The worker may have disposed the source in the meantime.</summary>
@@ -215,25 +335,35 @@ public sealed class BackupQueue
             Job job;
             lock (_gate)
             {
-                if (_queued.Count == 0)
+                // A retry starts only when no regular job waits.
+                var lane = _queued.Count > 0 ? _queued : _lowQueued;
+                if (lane.Count == 0)
                 {
                     _workerActive = false;
                     return;
                 }
-                job = _queued[0];
-                _queued.RemoveAt(0);
+                job = lane[0];
+                lane.RemoveAt(0);
                 _running = job;
+
+                // Raised in the critical section that makes the job the running one: a regular job of the same plan
+                // may be queued behind a running retry, and its Queued must not come before the retry's Running.
+                Raise(job, JobState.Running);
             }
 
             RunLogEntry? result = null;
             try
             {
-                Raise(job, JobState.Running);
                 result = await RunAsync(job);
 
                 try
                 {
-                    _logForPlan(job.PlanId).Append(result);
+                    // A retry whose version no longer exists did nothing worth a line; a forgotten plan has no log.
+                    lock (job.LogGate)
+                    {
+                        if (!result.VersionGone && !job.Forgotten)
+                            _logForPlan(job.PlanId).Append(result);
+                    }
                 }
                 catch (Exception)
                 {
@@ -246,8 +376,9 @@ public sealed class BackupQueue
             }
             finally
             {
-                // Clearing _running and raising Finished in one critical section keeps a concurrent Enqueue of
-                // the same plan from raising Queued before Finished.
+                // Clearing _running and raising Finished in one critical section keeps a job of the same plan that
+                // is accepted only once this one has ended from raising Queued before Finished. (A regular job
+                // queued behind a running retry was accepted earlier; its Queued precedes the retry's Finished.)
                 lock (_gate)
                 {
                     _running = null;
@@ -264,7 +395,9 @@ public sealed class BackupQueue
         try
         {
             var progress = new JobProgress(this, job);
-            return await _runner.RunAsync(job.Request, progress, job.Cancellation.Token);
+            return job.Retry is { } retry
+                ? await _runner.RetryAsync(retry, progress, job.Cancellation.Token)
+                : await _runner.RunAsync(job.Request!, progress, job.Cancellation.Token);
         }
         catch (Exception ex)
         {
@@ -272,18 +405,21 @@ public sealed class BackupQueue
             return new RunLogEntry
             {
                 RunId = Guid.NewGuid().ToString("N"),
-                Trigger = job.Request.Trigger,
+                Trigger = job.Retry is null ? job.Request!.Trigger : RunTrigger.Retry,
                 StartUtc = now,
                 EndUtc = now,
                 Status = ex is OperationCanceledException ? RunStatus.Canceled : RunStatus.Error,
                 Reason = ex is OperationCanceledException ? null : ex.Message,
+                RetryOf = job.Retry?.RunId,
+                Attempt = job.Retry?.Attempt,
+                Attempts = job.Retry?.Attempts,
             };
         }
     }
 
     private void Raise(Job job, JobState state, BackupProgress? progress = null, RunLogEntry? result = null)
     {
-        var update = new BackupJobUpdate(job.PlanId, job.Request.Plan.Name, state, progress, result);
+        var update = new BackupJobUpdate(job.PlanId, job.PlanName, state, progress, result, job.IsRetry, job.Plan);
         if (Changed is null)
             return;
 
@@ -294,11 +430,36 @@ public sealed class BackupQueue
         }
     }
 
-    private sealed class Job(BackupRequest request)
+    /// <summary>A regular run (<see cref="Request"/>) or a retry (<see cref="Retry"/>); exactly one of them is set.</summary>
+    private sealed class Job
     {
-        public BackupRequest Request { get; } = request;
-        public string PlanId => Request.Plan.Id;
+        private readonly BackupPlan _plan;
+
+        public Job(BackupRequest request)
+        {
+            Request = request;
+            _plan = request.Plan;
+        }
+
+        public Job(RetryRequest retry)
+        {
+            Retry = retry;
+            _plan = retry.Plan;
+        }
+
+        public BackupRequest? Request { get; }
+        public RetryRequest? Retry { get; }
+        public bool IsRetry => Retry is not null;
+        public BackupPlan Plan => _plan;
+        public string PlanId => _plan.Id;
+        public string PlanName => _plan.Name;
         public CancellationTokenSource Cancellation { get; } = new();
+
+        /// <summary>Held while the job's line is written and while <see cref="Forgotten"/> is set.</summary>
+        public object LogGate { get; } = new();
+
+        /// <summary>Its plan was deleted (<see cref="Forget"/>): its line is not written.</summary>
+        public bool Forgotten { get; set; }
     }
 
     /// <summary>Forwards progress synchronously, so updates keep their order.</summary>

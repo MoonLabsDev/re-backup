@@ -1,17 +1,20 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.App.Services;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Config;
 using ReBackup.Core.Ignore;
 using ReBackup.Core.Localization;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Settings;
 using ReBackup.Core.Versions;
+using ReBackup.Shared.Json;
 using ReBackup.Shared.Schedule;
 using ReBackup.Shared.Wpf.Controls;
 using ReBackup.Storage;
@@ -40,6 +43,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Action _openSettings;
     private readonly BackupQueue _queue;
     private readonly Scheduler _scheduler;
+    private readonly RetryPlanner _retries;
     private readonly Action<Action> _runOnUi;
     private readonly VersionsContext _versions;
     private readonly S3Connections _s3;
@@ -65,7 +69,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public MainViewModel(PlanStore store, ConfigPaths paths, AppSettings settings, Action saveSettings,
         Func<string?> settingsLoadError, IDialogService dialogs,
-        Action openSettings, BackupQueue queue, Scheduler scheduler, Action<Action> runOnUi, ThemeToggleViewModel theme,
+        Action openSettings, BackupQueue queue, Scheduler scheduler, RetryPlanner retries, Action<Action> runOnUi,
+        ThemeToggleViewModel theme,
         LanguageToggleViewModel language, IFolderOpener folders, VersionIndexWorker versionIndex,
         IStorageFactory storages, S3Connections? s3 = null, DriveConnections? drive = null, ITempOpener? tempOpener = null,
         IRecycleBin? recycleBin = null)
@@ -93,8 +98,11 @@ public sealed partial class MainViewModel : ObservableObject
         _openSettings = openSettings;
         _queue = queue;
         _scheduler = scheduler;
+        _retries = retries;
         _runOnUi = runOnUi;
         _queue.Changed += update => _runOnUi(() => OnJobUpdate(update));
+        // Raised on the planner's timer thread too.
+        _retries.Changed += planId => _runOnUi(() => ShowRetry(planId));
 
         Plans.CollectionChanged += (_, _) =>
         {
@@ -242,6 +250,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (loaded.Remove(editor.Id, out var plan))
             {
+                _retries.OnPlanSaved(plan);   // as saved on disk, also under unsaved edits
                 if (editor.IsDirty)
                 {
                     editor.MarkAsExisting();
@@ -264,6 +273,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
             else if (!editor.IsNew)
             {
+                _retries.OnPlanDeleted(editor.Id);
                 if (editor.IsDirty)
                 {
                     editor.MarkAsNew();
@@ -349,6 +359,12 @@ public sealed partial class MainViewModel : ObservableObject
                 _dialogs.ShowError(Loc.T("shell.plans.delete"), Loc.Known(ex.Message));
                 return;
             }
+
+            _retries.OnPlanDeleted(editor.Id);
+            // Every job of the plan goes, before its history: a run queued while the questions were open (dialogs pump the
+            // dispatcher) and its retry, which would write into the target of a plan that no longer exists; no line of
+            // theirs is written, so none re-creates a history deleted here.
+            _queue.Forget(editor.Id);
 
             if (deleteLog == true)
             {
@@ -487,6 +503,7 @@ public sealed partial class MainViewModel : ObservableObject
             RevalidateAll();
             if (saved)
             {
+                _retries.OnPlanSaved(editor.SavedPlan());
                 PublishPlans();
                 if (wasNew)
                     SavePlanOrder();   // its place in the list, also when it was moved before the first save
@@ -593,6 +610,69 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Queues the due attempt of the plan's retry; called by the retry planner through the dispatcher, with a copy of the
+    /// state it handed out. It uses the plan as saved. While the plan could not run on schedule (scheduler paused, plan
+    /// copied, an unfinished copy, versions deleted, invalid with the connections as they are now), while its target is
+    /// verified, or when the queue refuses the job (a job of the plan is queued or running, the app exits), the attempt is
+    /// deferred: it costs no attempt and is not logged.
+    /// </summary>
+    public void RunRetry(RetryState due)
+    {
+        // Called from the planner through the dispatcher: an exception here would end the app.
+        try
+        {
+            // A save, a deletion or a run of the plan may have dropped or replaced the state since then; that one is not
+            // handed out (nothing to defer).
+            if (_retries.StateOf(due.PlanId) is not { } state || state.RunId != due.RunId)
+                return;
+            var editor = Plans.FirstOrDefault(p => p.Id.Equals(state.PlanId, StringComparison.OrdinalIgnoreCase));
+            if (editor is null || editor.IsNew)
+            {
+                _retries.OnPlanDeleted(state.PlanId);   // the plan is no longer saved
+                return;
+            }
+            var plan = editor.SavedPlan();
+            // "Verify backup…" holds the target's lock: the attempt would fail on it and use up an attempt.
+            var blocked = _scheduler.IsPaused || editor.IsCopying || plan.CopyFromPlanId is not null ||
+                          editor.IsDeletingVersions || editor.IsVerifying || ScheduledRunBlocker(plan) is not null;
+            if (blocked || !_queue.EnqueueRetry(new RetryRequest(plan, state.RunId, state.Version, state.Files,
+                    state.Attempt + 1, state.Attempts)))
+                _retries.Defer(state.PlanId);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"The retry of plan {due.PlanId} could not be queued: {ex.Message}");
+            try
+            {
+                _retries.Defer(due.PlanId);
+            }
+            catch (Exception)
+            {
+                // Then it stays handed out until the app starts again.
+            }
+        }
+    }
+
+    /// <summary>The plan's card shows its pending retry as the planner has it now.</summary>
+    private void ShowRetry(string planId) =>
+        Plans.FirstOrDefault(p => p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase))?.Run.SetRetry(_retries.StateOf(planId));
+
+    /// <summary>
+    /// When the plan's newest regular run started; null when it never ran. The scheduler's catch-up asks it: a retry line
+    /// is no run of the schedule and would hide a missed one.
+    /// </summary>
+    public DateTime? LastRegularRunStartUtc(string planId) =>
+        new RunLog(_paths.LogFileFor(planId)).ReadLastRegular()?.StartUtc;
+
+    /// <summary>
+    /// Once, at app start: the retry planner loads the saved retries and drops those that no longer apply to the saved
+    /// plans and their run logs.
+    /// </summary>
+    public void StartRetries() => _retries.Start(
+        planId => Plans.FirstOrDefault(p => !p.IsNew && p.Id.Equals(planId, StringComparison.OrdinalIgnoreCase))?.SavedPlan(),
+        planId => new RunLog(_paths.LogFileFor(planId)).ReadLastRegular());
+
+    /// <summary>
     /// Why the saved plan must not run on schedule: its validation with the connections as they are now (a connection
     /// edited, deleted or unreadable since the plan was saved; an S3 or Drive target now inside its source; a Drive target
     /// whose connection no longer points at a shared drive). English, as the run log stores reasons. Null when it may run.
@@ -696,11 +776,13 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (editor.Run.State != JobState.Queued || _queue.PositionOf(editor.Id) is not { } position)
                 continue;   // not queued, or already started: its Running update follows
-            var ahead = position.AheadPlanId is { } aheadId
-                ? Plans.FirstOrDefault(p => p.Id.Equals(aheadId, StringComparison.OrdinalIgnoreCase)) is { Name.Length: > 0 } aheadEditor
-                    ? aheadEditor.Name
-                    : position.AheadPlanName
-                : null;
+            // A run waiting behind its own plan's running retry starts next; it waits for no other plan.
+            var ahead = position.Position == 1 && _queue.IsRetryRunning(editor.Id) ? null
+                : position.AheadPlanId is { } aheadId
+                    ? Plans.FirstOrDefault(p => p.Id.Equals(aheadId, StringComparison.OrdinalIgnoreCase)) is { Name.Length: > 0 } aheadEditor
+                        ? aheadEditor.Name
+                        : position.AheadPlanName
+                    : null;
             editor.Run.SetQueuePosition(position.Position, ahead);
         }
     }
@@ -818,6 +900,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void OnJobUpdate(BackupJobUpdate update)
     {
         var editor = Plans.FirstOrDefault(p => p.Id.Equals(update.PlanId, StringComparison.OrdinalIgnoreCase));
+        ReportToRetries(update, editor);   // first: every attempt handed out must come back to the planner
         editor?.Run.Apply(update);
         editor?.ReleaseLockCommand.NotifyCanExecuteChanged();   // not while its own run holds the lock
         if (update.Progress is null)
@@ -830,7 +913,9 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (update.State == JobState.Removed)
         {
-            SetStatus(LocText.Of("shell.status.removed", ("plan", update.PlanName)));
+            // A waiting retry is removed when a regular run of its plan is queued: nothing the user asked for went.
+            if (!update.IsRetry)
+                SetStatus(LocText.Of("shell.status.removed", ("plan", update.PlanName)));
             return;
         }
 
@@ -845,6 +930,11 @@ public sealed partial class MainViewModel : ObservableObject
             editor.HistoryCoverage.ReloadIfLoaded();
             _ = editor.RefreshLockAsync();
         }
+        if (update.IsRetry)
+        {
+            ShowRetryFinished(update.PlanName, result);   // no notification per attempt
+            return;
+        }
         var planName = update.PlanName;
         var reason = result.Reason;
         SetStatus(result.Status switch
@@ -857,6 +947,69 @@ public sealed partial class MainViewModel : ObservableObject
             _ => new LocText(() => Loc.F("shell.status.aborted", ("plan", planName), ("reason", Loc.Known(reason)))),
         });
         RunFinished?.Invoke(update.PlanName, result);
+    }
+
+    /// <summary>
+    /// Tells the retry planner about the plan's jobs: a run starts (a regular one drops the plan's retry), a run finished
+    /// (with the plan as saved now: its interval sets when the next attempt is due), a waiting retry was removed from the
+    /// queue (due again later; a regular run that replaced it drops it when it starts). The finished run of a plan that is
+    /// no longer saved is left out: its retry was dropped with it.
+    /// </summary>
+    private void ReportToRetries(BackupJobUpdate update, PlanEditorViewModel? editor)
+    {
+        try
+        {
+            switch (update.State)
+            {
+                case JobState.Running when update.Progress is null:   // the first Running; the others carry progress
+                    _retries.OnRunStarted(update.PlanId, update.IsRetry);
+                    break;
+                case JobState.Finished when update.Result is { } result && editor is { IsNew: false }:
+                    _retries.OnRunFinished(RetryPlanOf(editor.SavedPlan(), update), result);
+                    break;
+                case JobState.Removed when update.IsRetry:
+                    _retries.Defer(update.PlanId);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"The retry planner could not take the update of plan {update.PlanId}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The plan to hand the planner with a finished job: the plan as saved (its retry settings and interval apply). A regular
+    /// run whose source or target was saved differently while it ran made its version from the old locations: its skipped
+    /// files must not be read from the new source into that version, so it gets no retry (the saved plan with retries off).
+    /// </summary>
+    private static BackupPlan RetryPlanOf(BackupPlan saved, BackupJobUpdate update)
+    {
+        if (update.IsRetry || update.Plan is not { } ran || SameLocations(ran, saved))
+            return saved;
+        var plan = saved.Clone();
+        plan.RetrySkipped.Enabled = false;
+        return plan;
+    }
+
+    /// <summary>Source and target compared as the retry planner compares them (their JSON).</summary>
+    private static bool SameLocations(BackupPlan a, BackupPlan b) =>
+        JsonSerializer.Serialize(a.Source, JsonDefaults.Options) == JsonSerializer.Serialize(b.Source, JsonDefaults.Options) &&
+        JsonSerializer.Serialize(a.Target, JsonDefaults.Options) == JsonSerializer.Serialize(b.Target, JsonDefaults.Options);
+
+    /// <summary>
+    /// The footer after a retry attempt: what it copied and what is still open. A canceled one says so; a failed one, or
+    /// one whose version is gone, leaves the footer as it is (the history shows a failed attempt).
+    /// </summary>
+    private void ShowRetryFinished(string planName, RunLogEntry result)
+    {
+        if (result.VersionGone)
+            return;
+        if (result.Status is RunStatus.Completed or RunStatus.CompletedWithWarnings)
+            SetStatus(LocText.Of("shell.status.retryFinished", ("plan", planName), ("recovered", result.FilesCopied),
+                ("open", result.SkippedCount)));
+        else if (result.Status == RunStatus.Canceled)
+            SetStatus(LocText.Of("shell.status.canceled", ("plan", planName)));
     }
 
     /// <summary>
@@ -898,8 +1051,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            // Only a folder target's versions can be opened in Explorer from the history.
-            editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll(),
+            // Every run as its retries left it. Only a folder target's versions can be opened in Explorer from the history.
+            editor.Run.LoadHistory(EffectiveRun.Apply(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll()),
                 editor.IsNew || editor.SavedPlan().Target is not { IsFileSystem: true } target ? null : target.Path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -929,6 +1082,7 @@ public sealed partial class MainViewModel : ObservableObject
         };
         LoadHistory(editor);
         ShowSchedule(editor, _scheduler.IsPaused);
+        editor.Run.SetRetry(_retries.StateOf(editor.Id));
         Plans.Insert(index ?? Plans.Count, editor);
     }
 

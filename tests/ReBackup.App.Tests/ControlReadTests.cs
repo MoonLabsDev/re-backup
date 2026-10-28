@@ -493,6 +493,36 @@ public class ControlReadTests : IDisposable
         result.GetProperty("hint").GetString().Should().Contain("n");
     }
 
+    [Fact]
+    public async Task A_run_whose_skipped_files_a_retry_copied_is_listed_as_completed()
+    {
+        AppendRun("p1", new RunLogEntry
+        {
+            RunId = "r1", Trigger = RunTrigger.Manual, Status = RunStatus.CompletedWithWarnings, Version = Newer,
+            StartUtc = Utc(2026, 9, 30, 12, 5), EndUtc = Utc(2026, 9, 30, 12, 6), FilesCopied = 3, SkippedCount = 1,
+            RetryableCount = 1, Skipped = [new SkippedEntry("a.txt", "The file is locked by another program.", "core.file.locked")],
+        });
+        AppendRun("p1", new RunLogEntry
+        {
+            RunId = "r2", Trigger = RunTrigger.Retry, RetryOf = "r1", Attempt = 1, Attempts = 3, Status = RunStatus.Completed,
+            Version = Newer, StartUtc = Utc(2026, 9, 30, 12, 11), EndUtc = Utc(2026, 9, 30, 12, 11), FilesCopied = 1,
+        });
+        var (service, _) = Create();
+
+        var plans = await OkAsync(service, ControlOps.ListPlans, new { });
+        var history = await OkAsync(service, ControlOps.GetRunHistory, new { plan = "p1" });
+
+        var lastRun = plans.GetProperty("plans").EnumerateArray().Single().GetProperty("lastRun");
+        lastRun.GetProperty("status").GetString().Should().Be("completed", "the retry copied the one skipped file");
+        lastRun.GetProperty("trigger").GetString().Should().Be("manual", "a retry line is no run of its own");
+        lastRun.GetProperty("start").GetDateTime().Should().Be(Utc(2026, 9, 30, 12, 5));
+        var runs = history.GetProperty("runs").EnumerateArray().ToList();
+        runs.Select(r => r.GetProperty("runId").GetString()).Should().Equal("r2", "r1");
+        runs[0].GetProperty("trigger").GetString().Should().Be("retry");
+        runs[1].GetProperty("status").GetString().Should().Be("completed");
+        runs[1].GetProperty("skipped").GetInt32().Should().Be(0);
+    }
+
     // ------------------------------------------------------------------ metadata only
 
     [Fact]

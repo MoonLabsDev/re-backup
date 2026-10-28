@@ -1,6 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
+using ReBackup.Shared.Schedule;
 
 namespace ReBackup.App.ViewModels;
 
@@ -29,6 +31,11 @@ public sealed partial class RunHistoryRow : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(OpenVersionToolTip))]
     private bool _isCheckingVersion;
+
+    /// <summary>The plan's pending retry of this run's skipped files; null when none is pending for it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RetryHintText))]
+    private RetryState? _pendingRetry;
 
     /// <param name="target">The plan's target, where the version folder is looked up.</param>
     public RunHistoryRow(RunLogEntry entry, string? target = null)
@@ -68,15 +75,25 @@ public sealed partial class RunHistoryRow : ObservableObject
     public string DurationText => FormatDuration(_entry.DurationMs);
     public string TriggerText => Loc.T("enum.runTrigger." + _entry.Trigger);
 
-    public string StatusText => _entry.Status switch
-    {
-        RunStatus.CompletedWithWarnings => Loc.T("run.status.completedWithWarnings"),
-        RunStatus.Full => Loc.T("run.status.full"),
-        RunStatus.Error => Loc.T("run.status.error"),
-        RunStatus.Canceled => Loc.T("run.status.canceled"),
-        RunStatus.Completed when _entry.Warnings.Count > 0 => Loc.T("run.status.completedRetentionWarnings"),
-        _ => Loc.T("run.status.completed"),
-    };
+    /// <summary>A retry line (<see cref="RunTrigger.Retry"/>) rather than a run of its own.</summary>
+    public bool IsRetryLine => _entry.Trigger == RunTrigger.Retry;
+
+    /// <summary>
+    /// The run's result as its retries left it; a retry line that finished says what it recovered and what is still
+    /// open ("Retry 1/3 · 61 recovered · 12 open"), a failed or canceled one shows that status.
+    /// </summary>
+    public string StatusText => IsRetryLine && _entry.Status is RunStatus.Completed or RunStatus.CompletedWithWarnings
+        ? Loc.F("history.retryLine", ("attempt", _entry.Attempt ?? 0), ("attempts", _entry.Attempts ?? 0),
+            ("recovered", _entry.FilesCopied), ("open", _entry.SkippedCount))
+        : _entry.Status switch
+        {
+            RunStatus.CompletedWithWarnings => Loc.T("run.status.completedWithWarnings"),
+            RunStatus.Full => Loc.T("run.status.full"),
+            RunStatus.Error => Loc.T("run.status.error"),
+            RunStatus.Canceled => Loc.T("run.status.canceled"),
+            RunStatus.Completed when _entry.Warnings.Count > 0 => Loc.T("run.status.completedRetentionWarnings"),
+            _ => Loc.T("run.status.completed"),
+        };
 
     public RunOutcome Outcome => _entry.Status switch
     {
@@ -96,6 +113,32 @@ public sealed partial class RunHistoryRow : ObservableObject
     public string VersionText => _entry.Version is null ? "" : Loc.F("history.details.version", ("version", _entry.Version));
 
     public bool HasSkipped => _entry.SkippedCount > 0;
+
+    /// <summary>
+    /// The line under the Last run card's tiles: when the pending retry runs ("Retry 2/3 at 04:30 · 12 open"), or how the
+    /// retries ended for the files they could retry ("73 files recovered by retry", "5 still skipped after 3 retries");
+    /// null for a run without retries.
+    /// </summary>
+    public string? RetryHintText
+    {
+        get
+        {
+            if (IsRetryLine)
+                return null;
+            if (PendingRetry is { } pending)
+            {
+                return Loc.F("plan.lastRun.retryPending", ("attempt", pending.Attempt + 1), ("attempts", pending.Attempts),
+                    ("time", Formats.Time(pending.NextDueUtc.ToLocalTime())), ("open", pending.Files.Count));
+            }
+            // The retryable files the attempts left open; the skips never retried (gone, archived…) are not theirs.
+            var open = Math.Max(0, _entry.RetryableCount - _entry.RetryRecovered);
+            if (_entry.RetryRecovered > 0 && open == 0)
+                return Loc.F("plan.lastRun.retryRecovered", ("count", _entry.RetryRecovered));
+            if (_entry.RetryAttemptsMade > 0 && open > 0)
+                return Loc.F("plan.lastRun.retryExhausted", ("count", _entry.RetryAttemptsMade), ("files", open));
+            return null;
+        }
+    }
 
     /// <summary>"Skipped (1,234):".</summary>
     public string SkippedTitle => Loc.F("history.details.skipped", ("count", _entry.SkippedCount));

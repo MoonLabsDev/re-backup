@@ -39,7 +39,7 @@
       "Friday": "Freitag", "Saturday": "Samstag", "Sunday": "Sonntag"
     },
     "weekdayShort": { "Mon": "Mo", "Tue": "Di", "Wed": "Mi", "Thu": "Do", "Fri": "Fr", "Sat": "Sa", "Sun": "So" },
-    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt", "Mcp": "MCP" },
+    "runTrigger": { "Manual": "Manuell", "Scheduled": "Geplant", "CatchUp": "Nachgeholt", "Mcp": "MCP", "Retry": "Wiederholung" },
     "includeStatus": { "Included": "Enthalten", "Ignored": "Ignoriert", "Partial": "Teilweise" },
     "diffStatus": { "Unchanged": "Unverändert", "Added": "Hinzugefügt", "Changed": "Geändert", "Deleted": "Gelöscht" },
     "historyStatus": { "New": "Neu", "Changed": "Geändert", "Unchanged": "Unverändert", "Deleted": "Gelöscht", "Absent": "—" },
@@ -133,7 +133,9 @@
       "targetNotSharedDrive": "Drive-Ziele müssen auf einer geteilten Ablage liegen.",
       "driveConnectionsUnreadable": "Die Google-Drive-Verbindungen konnten nicht gelesen werden: {error}",
       "retentionRule": "Aufbewahrungsregel {index}: {problem}",
-      "trigger": "Auslöser {index}: {problem}"
+      "trigger": "Auslöser {index}: {problem}",
+      "retryAttempts": "Die Anzahl der Wiederholungen muss zwischen {min} und {max} liegen.",
+      "retryInterval": "Die Wartezeit zwischen Wiederholungen muss zwischen {min} und {max} Minuten liegen."
     },
     "run": {
       "nameUnusable": "Der Planname „{name}“ kann nicht verwendet werden: {problem}",
@@ -330,6 +332,7 @@
       },
       "canceled": "Backup von „{plan}“ wurde abgebrochen.",
       "aborted": "Backup von „{plan}“ ist fehlgeschlagen: {reason}",
+      "retryFinished": "Retry von {plan}: {recovered} nachgeholt, {open} offen",
       "indexError": "Der Versionsindex von „{plan}“ konnte nicht aktualisiert werden: {error}",
       "historyUnreadable": "Der Laufverlauf von „{plan}“ konnte nicht gelesen werden: {error}"
     },
@@ -387,6 +390,9 @@
     "failed": "Fehlgeschlagen",
     "failedReason": "Fehlgeschlagen: {reason}",
     "skipped": "{count:N0} übersprungen",
+    "retryWaiting": "Retry wartet",
+    "retryRunning": "Retry läuft",
+    "retryAt": "Retry um {time}",
     "retentionWarnings": "Warnungen der Aufbewahrung",
     "backedUpAt": "Gesichert · {when}",
     "lastShort": "zuletzt {when} · {result}",
@@ -555,7 +561,14 @@
       "chooseTarget": "Zielordner wählen",
       "enabled": "Nach Zeitplan ausführen",
       "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
-      "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+      "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde",
+      "retry": "Übersprungene Dateien später erneut versuchen",
+      "retryToolTip": "Gesperrte oder beim Kopieren geänderte Dateien werden nach dem Lauf erneut kopiert und in dieselbe Version nachgetragen. Andere Backups haben Vorrang.",
+      "retryAttemptsBefore": "Bis zu",
+      "retryAttemptsMiddle": "Versuche, alle",
+      "retryAttemptsAfter": "Minuten",
+      "retryAttemptsName": "Retry-Versuche",
+      "retryIntervalName": "Minuten zwischen den Retries"
     },
     "copyUnfinished": {
       "card": "Kopie unfertig",
@@ -628,7 +641,10 @@
       "title": "LETZTER LAUF",
       "duration": "Dauer",
       "copied": "Kopiert",
-      "skipped": "Übersprungen"
+      "skipped": "Übersprungen",
+      "retryPending": "Retry {attempt}/{attempts} um {time} · {open:N0} offen",
+      "retryRecovered": { "one": "{count} Datei per Retry nachgeholt", "other": "{count:N0} Dateien per Retry nachgeholt" },
+      "retryExhausted": { "one": "Nach {count} Retry noch {files:N0} übersprungen", "other": "Nach {count:N0} Retries noch {files:N0} übersprungen" }
     },
     "schedule": {
       "title": "ZEITPLAN",
@@ -910,6 +926,7 @@
   },
   "history": {
     "title": "LAUFVERLAUF",
+    "retryLine": "Retry {attempt}/{attempts} · {recovered:N0} nachgeholt · {open:N0} offen",
     "column": { "start": "Start", "duration": "Dauer", "trigger": "Auslöser", "result": "Ergebnis", "reason": "Grund" },
     "openVersion": {
       "name": "Versionsordner öffnen",

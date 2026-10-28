@@ -125,6 +125,17 @@ public class LocaleFileTests
     }
 
     [Theory]
+    [InlineData(AppLanguages.English, 1, "5 still skipped after 1 retry")]
+    [InlineData(AppLanguages.English, 3, "5 still skipped after 3 retries")]
+    [InlineData(AppLanguages.German, 1, "Nach 1 Retry noch 5 übersprungen")]
+    [InlineData(AppLanguages.German, 3, "Nach 3 Retries noch 5 übersprungen")]
+    public void Exhausted_retries_count_the_attempts_naturally(string language, int attempts, string expected)
+    {
+        LabelsFor(language).Format(Message.Of("plan.lastRun.retryExhausted", ("count", attempts), ("files", 5)))
+            .Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData(AppLanguages.English, "versions.foreign.pending", "Being written by PC-2 since 30.09.2026 15:00")]
     [InlineData(AppLanguages.English, "versions.foreign.deleting", "Being deleted by PC-2 since 30.09.2026 15:00")]
     [InlineData(AppLanguages.German, "versions.foreign.pending", "Wird seit 30.09.2026 15:00 von PC-2 geschrieben")]

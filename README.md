@@ -91,6 +91,7 @@
 | **Plans** | One source and one target per plan, each a folder, an **Amazon S3** location (connection + prefix) or a **Google Drive** location (shared drive or folder + path), any number of plans. Turn off "Run on schedule" for manual-only plans. Optionally, when the target is full, delete the versions that retention would delete anyway before giving up. |
 | **Schedules** | Triggers: **Daily** (time), **Weekly** (weekdays + time), **Monthly** (day 1–31, `0` = last day, `-1` = the day before it), **Interval** (every *n* hours between two times). Shows the next five runs. On startup, a plan that missed a trigger gets **one catch-up run** about a minute later. |
 | **Versions** | By default, every run is a **full copy** in its own folder `YYYY_MM_DD-hh_mm <Plan>` with a `re-manifest.json` that lists every file with size, modification time and an **xxHash64** hash. No archive format: a version is an ordinary folder you can open in Explorer. Plans can instead be **incremental** (see [Storage formats](#storage-formats)). |
+| **Retry skipped files** | Files that were locked, refused or changed while they were copied are tried again after the run and added to the same version: by default 3 attempts, 5 minutes apart. Set per plan (see [How it works](#how-it-works)). |
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
 | **Ignore tab** | Scans the source live and shows, per file and folder, what goes into the backup and what the gitignore-style patterns leave out (tree and treemap). **Compare with** a version of the plan to see its size and the difference per entry — growth in red, shrinking in green — to find unwanted gains before the next run. `.backupignore` files are marked and can be moved into the plan or out of it with a scope-equivalence check. |
 | **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted with both sizes and the size difference, optionally changed only), and see a **file's history** across all versions. **Delete versions** by hand (one or several, after a confirmation), with the progress of the deletion, the cleanup and the indexing shown in the tab and on the plan's card. A size header shows how much the versions need (and, for incremental plans, how much the pool saves). Backed by a local SQLite index per plan. |
@@ -172,12 +173,24 @@ plan ─► scan source ─► apply ignore patterns ─► reserve "YYYY_MM_DD-
 2. **Copy.** The version folder is reserved by creating `re-pending.json` in it; while that marker is there, the
    folder is not a version. Files are copied into it with their relative paths and modification times; each file is
    hashed with xxHash64 while it is read. Files that are locked or cannot be read are **skipped and logged**; the run
-   continues and ends as *completed with warnings*.
+   continues and ends as *completed with warnings* (unless the files are recovered by a retry, see below).
 3. **Finish.** `re-manifest.json` is written, `re-pending.json` is removed, and retention runs.
    Retention deletes only folders that are versions of this plan (the name and the plan id in the manifest must
    match). Other folders in the target are shown as *not managed* and are never deleted.
 4. **Cancel or error.** What the run wrote is removed, the marker last; whatever cannot be removed keeps the marker
    and is removed at the plan's next run. The run is logged either way.
+
+**Retrying skipped files.** Files that were locked, refused or changed while they were copied (an editor or an AI
+agent still writing to them, say) are tried again after the run and added to the **same version**. This is on by
+default: 3 attempts, 5 minutes apart. You set it per plan in the Source → Target card (*Retry skipped files
+later*).
+
+- Other backups always go first; a retry that is already running is never interrupted.
+- When every file is recovered, the run shows as *Completed* with 0 skipped. Each attempt has its own line in the
+  history.
+- Pending retries survive a restart, for up to 24 hours after the run. A new regular run of the plan replaces them.
+- This is not a point-in-time snapshot: a retried file reflects its state at the time of the retry, not at the time of
+  the run.
 
 **Several computers, one target.** Every marker names the computer that wrote it. A folder whose marker another
 computer wrote (it is writing or deleting that folder) is never touched by a run, by retention or by "When the target
