@@ -1052,8 +1052,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            // Only a folder target's versions can be opened in Explorer from the history.
-            editor.Run.LoadHistory(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll(),
+            // Every run as its retries left it. Only a folder target's versions can be opened in Explorer from the history.
+            editor.Run.LoadHistory(EffectiveRun.Apply(new RunLog(_paths.LogFileFor(editor.Id)).ReadAll()),
                 editor.IsNew || editor.SavedPlan().Target is not { IsFileSystem: true } target ? null : target.Path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

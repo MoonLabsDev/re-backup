@@ -390,6 +390,9 @@
     "failed": "Failed",
     "failedReason": "Failed: {reason}",
     "skipped": "{count:N0} skipped",
+    "retryWaiting": "Retry waiting",
+    "retryRunning": "Retry running",
+    "retryAt": "Retry at {time}",
     "retentionWarnings": "Retention warnings",
     "backedUpAt": "Backed up · {when}",
     "lastShort": "last {when} · {result}",
@@ -558,7 +561,14 @@
       "chooseTarget": "Choose the target folder",
       "enabled": "Run on schedule",
       "enabledToolTip": "When off, the plan runs only when started by hand.",
-      "freeSpace": "When the target is full, first delete versions that retention would delete anyway"
+      "freeSpace": "When the target is full, first delete versions that retention would delete anyway",
+      "retry": "Retry skipped files later",
+      "retryToolTip": "Files that were locked or changed while copied are copied again after the run and added to the same version. Other backups go first.",
+      "retryAttemptsBefore": "Up to",
+      "retryAttemptsMiddle": "attempts, every",
+      "retryAttemptsAfter": "minutes",
+      "retryAttemptsName": "Retry attempts",
+      "retryIntervalName": "Minutes between retries"
     },
     "copyUnfinished": {
       "card": "Copy unfinished",
@@ -631,7 +641,10 @@
       "title": "LAST RUN",
       "duration": "Duration",
       "copied": "Copied",
-      "skipped": "Skipped"
+      "skipped": "Skipped",
+      "retryPending": "Retry {attempt}/{attempts} at {time} · {open:N0} open",
+      "retryRecovered": { "one": "{count} file recovered by retry", "other": "{count:N0} files recovered by retry" },
+      "retryExhausted": "{count:N0} still skipped after {attempts} retries"
     },
     "schedule": {
       "title": "SCHEDULE",
@@ -913,6 +926,7 @@
   },
   "history": {
     "title": "RUN HISTORY",
+    "retryLine": "Retry {attempt}/{attempts} · {recovered:N0} recovered · {open:N0} open",
     "column": { "start": "Start", "duration": "Duration", "trigger": "Trigger", "result": "Result", "reason": "Reason" },
     "openVersion": {
       "name": "Open the version folder",

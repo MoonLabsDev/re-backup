@@ -390,6 +390,9 @@
     "failed": "Fehlgeschlagen",
     "failedReason": "Fehlgeschlagen: {reason}",
     "skipped": "{count:N0} übersprungen",
+    "retryWaiting": "Retry wartet",
+    "retryRunning": "Retry läuft",
+    "retryAt": "Retry um {time}",
     "retentionWarnings": "Warnungen der Aufbewahrung",
     "backedUpAt": "Gesichert · {when}",
     "lastShort": "zuletzt {when} · {result}",
@@ -558,7 +561,14 @@
       "chooseTarget": "Zielordner wählen",
       "enabled": "Nach Zeitplan ausführen",
       "enabledToolTip": "Wenn aus, läuft der Plan nur, wenn er von Hand gestartet wird.",
-      "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde"
+      "freeSpace": "Wenn das Ziel voll ist, zuerst Versionen löschen, die die Aufbewahrung ohnehin löschen würde",
+      "retry": "Übersprungene Dateien später erneut versuchen",
+      "retryToolTip": "Gesperrte oder beim Kopieren geänderte Dateien werden nach dem Lauf erneut kopiert und in dieselbe Version nachgetragen. Andere Backups haben Vorrang.",
+      "retryAttemptsBefore": "Bis zu",
+      "retryAttemptsMiddle": "Versuche, alle",
+      "retryAttemptsAfter": "Minuten",
+      "retryAttemptsName": "Retry-Versuche",
+      "retryIntervalName": "Minuten zwischen den Retries"
     },
     "copyUnfinished": {
       "card": "Kopie unfertig",
@@ -631,7 +641,10 @@
       "title": "LETZTER LAUF",
       "duration": "Dauer",
       "copied": "Kopiert",
-      "skipped": "Übersprungen"
+      "skipped": "Übersprungen",
+      "retryPending": "Retry {attempt}/{attempts} um {time} · {open:N0} offen",
+      "retryRecovered": { "one": "{count} Datei per Retry nachgeholt", "other": "{count:N0} Dateien per Retry nachgeholt" },
+      "retryExhausted": "Nach {attempts} Retries noch {count:N0} übersprungen"
     },
     "schedule": {
       "title": "ZEITPLAN",
@@ -913,6 +926,7 @@
   },
   "history": {
     "title": "LAUFVERLAUF",
+    "retryLine": "Retry {attempt}/{attempts} · {recovered:N0} nachgeholt · {open:N0} offen",
     "column": { "start": "Start", "duration": "Dauer", "trigger": "Auslöser", "result": "Ergebnis", "reason": "Grund" },
     "openVersion": {
       "name": "Versionsordner öffnen",

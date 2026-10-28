@@ -93,7 +93,7 @@ public sealed partial class PlanRunViewModel : ObservableObject
     /// <summary>The remaining copy time alone, e.g. "12 min left"; "" while it is not known.</summary>
     [ObservableProperty] private string _etaText = "";
 
-    /// <summary>The newest run, or null when the plan has never run.</summary>
+    /// <summary>The newest run (never a retry line: its run shows what the retries recovered), or null when the plan has never run.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRun), nameof(LastRunText))]
     private RunHistoryRow? _lastRun;
@@ -206,6 +206,21 @@ public sealed partial class PlanRunViewModel : ObservableObject
     /// <summary>The plan's pending retry as the planner has it now; null when it has none.</summary>
     public void SetRetry(RetryState? state) => Retry = state;
 
+    partial void OnRetryChanged(RetryState? value)
+    {
+        ShowPendingRetry();
+        UpdateCard();
+    }
+
+    partial void OnRetryJobStateChanged(JobState? value) => UpdateCard();
+
+    /// <summary>The row of the run whose files are retried shows when the next attempt runs; every other row shows none.</summary>
+    private void ShowPendingRetry()
+    {
+        foreach (var row in History)
+            row.PendingRetry = Retry is { } retry && !row.IsRetryLine && row.Entry.RunId == retry.RunId ? retry : null;
+    }
+
     /// <summary>Shows at once that the cancel was requested; the run may still need a moment to stop.</summary>
     public void MarkCanceling()
     {
@@ -259,8 +274,9 @@ public sealed partial class PlanRunViewModel : ObservableObject
         for (var i = entries.Count - 1; i >= 0; i--)
             History.Add(new RunHistoryRow(entries[i], target));
         VersionCheck = CheckVersionsAsync(++_historyLoads, target, History.Where(row => row.HasVersion).ToList());
+        ShowPendingRetry();
 
-        LastRun = History.Count == 0 ? null : History[0];
+        LastRun = History.FirstOrDefault(row => !row.IsRetryLine);
         UpdateCard();
         HistoryLoaded?.Invoke();
     }
@@ -416,16 +432,18 @@ public sealed partial class PlanRunViewModel : ObservableObject
     private void ShowIdle()
     {
         var last = LastRun?.Entry;
-        var nextRun = _nextRun.ToString();
+        // A pending retry is what happens next with the plan: it takes the detail line.
+        var retry = RetryDetail();
+        var nextRun = retry ?? _nextRun.ToString();
 
         if (!_enabled)
         {
-            Show(PlanCardState.Disabled, PlanCardAction.Run, 0, false, "", Loc.T("card.manualOnly"), LastRunShort());
+            Show(PlanCardState.Disabled, PlanCardAction.Run, 0, false, "", Loc.T("card.manualOnly"), retry ?? LastRunShort());
             return;
         }
         if (_schedulerPaused)
         {
-            Show(PlanCardState.Paused, PlanCardAction.Run, 0, false, "", Loc.T("card.schedulerPaused"), LastRunShort());
+            Show(PlanCardState.Paused, PlanCardAction.Run, 0, false, "", Loc.T("card.schedulerPaused"), retry ?? LastRunShort());
             return;
         }
         if (last is null)
@@ -465,6 +483,19 @@ public sealed partial class PlanRunViewModel : ObservableObject
                 break;
         }
     }
+
+    /// <summary>
+    /// "Retry running", "Retry waiting", or "Retry at 04:30" while the plan has a pending retry that no paused scheduler
+    /// holds back (it defers the attempts); null otherwise.
+    /// </summary>
+    private string? RetryDetail() => RetryJobState switch
+    {
+        JobState.Running => Loc.T("card.retryRunning"),
+        JobState.Queued => Loc.T("card.retryWaiting"),
+        _ => Retry is { } retry && !_schedulerPaused
+            ? Loc.F("card.retryAt", ("time", ShortWhen(retry.NextDueUtc.ToLocalTime(), _time.GetLocalNow().DateTime)))
+            : null,
+    };
 
     /// <summary>"last 11:34 · OK" for the disabled and paused cards.</summary>
     private string LastRunShort()

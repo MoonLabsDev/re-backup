@@ -3,6 +3,7 @@ using FluentAssertions;
 using ReBackup.App.Tests.TestSupport;
 using ReBackup.App.ViewModels;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Backup.Retry;
 using ReBackup.Core.Plans;
 using ReBackup.Shared.Retention;
 using ReBackup.Shared.Schedule;
@@ -54,6 +55,52 @@ public class RetentionCoverageTests : IDisposable
         slots[0].Version!.Id.Should().Be(older.Name);
         slots[0].Version!.Detail.Should().Be("3");
         labels.Should().Equal("Daily · 3");
+    }
+
+    /// <summary>A run that skipped <paramref name="skipped"/> locked files, and retry lines for it.</summary>
+    private static RunLogEntry SkippingRun(string version, int skipped) => new()
+    {
+        RunId = "r1",
+        Version = version,
+        Status = RunStatus.CompletedWithWarnings,
+        SkippedCount = skipped,
+        RetryableCount = skipped,
+        Skipped = [.. Enumerable.Range(0, skipped).Select(i => new SkippedEntry($"f{i}", "locked", "core.file.locked"))],
+    };
+
+    private static RunLogEntry RetryLine(string version, int attempt, RunStatus status, int open) => new()
+    {
+        RunId = "retry" + attempt,
+        Trigger = RunTrigger.Retry,
+        RetryOf = "r1",
+        Attempt = attempt,
+        Attempts = 3,
+        Version = version,
+        Status = status,
+        SkippedCount = open,
+    };
+
+    [Fact]
+    public void A_recovered_version_is_ok_in_the_coverage()
+    {
+        var version = Owned(DaysAgo(1));
+        var log = EffectiveRun.Apply([SkippingRun(version.Name, 3), RetryLine(version.Name, 1, RunStatus.Completed, 0)]);
+
+        var (lanes, _) = CoverageBuilder.Build([version], [Daily(2)], log, _today);
+
+        lanes[0].Slots[0].Version!.Quality.Should().Be(CoverageQuality.Ok);
+    }
+
+    [Fact]
+    public void A_version_whose_retries_failed_keeps_its_warnings_in_the_coverage()
+    {
+        var version = Owned(DaysAgo(1));
+        var log = EffectiveRun.Apply([SkippingRun(version.Name, 3), RetryLine(version.Name, 1, RunStatus.Error, 3)]);
+
+        var (lanes, _) = CoverageBuilder.Build([version], [Daily(2)], log, _today);
+
+        lanes[0].Slots[0].Version!.Quality.Should().Be(CoverageQuality.Warning, "the retry line is no run of its own");
+        lanes[0].Slots[0].Version!.Detail.Should().Be("3");
     }
 
     [Fact]

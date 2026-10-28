@@ -114,7 +114,7 @@ public class MainViewModelRetryTests : IDisposable
         Encoding.UTF8.GetString(_target.Inner.ReadAllBytes($"{run.Version}/{Locked}")).Should().Be("locked-content");
 
         editor.Run.Entries.Should().HaveCount(2, "the history was read again");
-        var effective = EffectiveRun.Apply(editor.Run.Entries)[0];
+        var effective = editor.Run.Entries[0];   // the history holds every run as its retries left it
         effective.Status.Should().Be(RunStatus.Completed);
         effective.SkippedCount.Should().Be(0);
         _fixture.Retries.StateOf("p1").Should().BeNull("nothing is left to retry");

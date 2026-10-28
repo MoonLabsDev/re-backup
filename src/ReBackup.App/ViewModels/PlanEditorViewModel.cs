@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -50,6 +51,21 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     private bool _targetIsDrive;
     [ObservableProperty] private bool _enabled;
     [ObservableProperty] private bool _freeSpaceByRetention;
+
+    /// <summary>"Retry skipped files later": the files a run had to skip are tried again into its version.</summary>
+    [ObservableProperty] private bool _retryEnabled;
+
+    /// <summary>How many retry attempts a run gets; 0 while <see cref="RetryAttemptsText"/> is no whole number.</summary>
+    [ObservableProperty] private int _retryAttempts;
+
+    /// <summary>The wait before each retry attempt; 0 while <see cref="RetryIntervalMinutesText"/> is no whole number.</summary>
+    [ObservableProperty] private int _retryIntervalMinutes;
+
+    /// <summary>The attempts box as typed; it sets <see cref="RetryAttempts"/>, so a wrong entry shows as the validator's error.</summary>
+    [ObservableProperty] private string _retryAttemptsText = "";
+
+    /// <summary>The minutes box as typed; it sets <see cref="RetryIntervalMinutes"/> like <see cref="RetryAttemptsText"/>.</summary>
+    [ObservableProperty] private string _retryIntervalMinutesText = "";
     [ObservableProperty] private string _ignorePatternsText = "";
     [ObservableProperty] private bool _useGlobalIgnoreDefaults;
     [ObservableProperty] private bool _honorNestedIgnoreFiles;
@@ -383,6 +399,30 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     }
     partial void OnFreeSpaceByRetentionChanged(bool value) => Touch();
 
+    partial void OnRetryEnabledChanged(bool value) => Touch();
+
+    partial void OnRetryAttemptsChanged(int value)
+    {
+        if (WholeNumber(RetryAttemptsText) != value)
+            RetryAttemptsText = value.ToString(CultureInfo.InvariantCulture);
+        Touch();
+    }
+
+    partial void OnRetryIntervalMinutesChanged(int value)
+    {
+        if (WholeNumber(RetryIntervalMinutesText) != value)
+            RetryIntervalMinutesText = value.ToString(CultureInfo.InvariantCulture);
+        Touch();
+    }
+
+    partial void OnRetryAttemptsTextChanged(string value) => RetryAttempts = WholeNumber(value);
+
+    partial void OnRetryIntervalMinutesTextChanged(string value) => RetryIntervalMinutes = WholeNumber(value);
+
+    /// <summary>The number in a retry box; 0 (out of range, so the validator names it) for anything else.</summary>
+    private static int WholeNumber(string? text) =>
+        int.TryParse((text ?? "").Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0;
+
     partial void OnIncrementalChanged(bool value) => Touch();
 
     partial void OnChangeDetectionChanged(ChangeDetection value) => Touch();
@@ -455,6 +495,12 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         plan.Target = EditedLocation(TargetKind, TargetS3, TargetDrive, Target, _saved.Target);
         plan.Enabled = Enabled;
         plan.FreeSpaceByRetention = FreeSpaceByRetention;
+        plan.RetrySkipped = new RetrySkippedSettings
+        {
+            Enabled = RetryEnabled,
+            Attempts = RetryAttempts,
+            IntervalMinutes = RetryIntervalMinutes,
+        };
         // The saved plan is the authority once it exists: the format cannot change after the first save.
         plan.Incremental = IsNew ? Incremental : _saved.Incremental;
         plan.ChangeDetection = ChangeDetection;
@@ -725,6 +771,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             TargetDrive.Load(TargetIsDrive ? plan.Target.ConnectionId : null, TargetIsDrive ? plan.Target.Path : "");
             Enabled = plan.Enabled;
             FreeSpaceByRetention = plan.FreeSpaceByRetention;
+            RetryEnabled = plan.RetrySkipped.Enabled;
+            RetryAttemptsText = plan.RetrySkipped.Attempts.ToString(CultureInfo.InvariantCulture);
+            RetryIntervalMinutesText = plan.RetrySkipped.IntervalMinutes.ToString(CultureInfo.InvariantCulture);
             Incremental = plan.Incremental;
             ChangeDetection = plan.ChangeDetection;
             IgnorePatternsText = string.Join(Environment.NewLine, plan.Ignore.Patterns);
