@@ -612,9 +612,9 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>
     /// Queues the due attempt of the plan's retry; called by the retry planner through the dispatcher, with a copy of the
     /// state it handed out. It uses the plan as saved. While the plan could not run on schedule (scheduler paused, plan
-    /// copied, an unfinished copy, versions deleted, invalid with the connections as they are now) or the queue refuses the
-    /// job (a job of the plan is queued or running, the app exits), the attempt is deferred: it costs no attempt and is not
-    /// logged.
+    /// copied, an unfinished copy, versions deleted, invalid with the connections as they are now), while its target is
+    /// verified, or when the queue refuses the job (a job of the plan is queued or running, the app exits), the attempt is
+    /// deferred: it costs no attempt and is not logged.
     /// </summary>
     public void RunRetry(RetryState due)
     {
@@ -632,8 +632,9 @@ public sealed partial class MainViewModel : ObservableObject
                 return;
             }
             var plan = editor.SavedPlan();
+            // "Verify backup…" holds the target's lock: the attempt would fail on it and use up an attempt.
             var blocked = _scheduler.IsPaused || editor.IsCopying || plan.CopyFromPlanId is not null ||
-                          editor.IsDeletingVersions || ScheduledRunBlocker(plan) is not null;
+                          editor.IsDeletingVersions || editor.IsVerifying || ScheduledRunBlocker(plan) is not null;
             if (blocked || !_queue.EnqueueRetry(new RetryRequest(plan, state.RunId, state.Version, state.Files,
                     state.Attempt + 1, state.Attempts)))
                 _retries.Defer(state.PlanId);

@@ -173,6 +173,61 @@ public class MainViewModelRetryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_due_retry_is_deferred_while_the_target_is_verified()
+    {
+        var vm = _fixture.Create();
+        await RunWithLockedFileAsync(vm);
+        // "Verify backup…" holds the target's lock: an attempt now would fail on it and use up an attempt.
+        Projects(vm).IsVerifying = true;
+
+        AdvanceToDue();
+
+        _fixture.Queue.IsBusy.Should().BeFalse("nothing is queued while the target is verified");
+        Log().Should().ContainSingle();
+        var state = _fixture.Retries.StateOf("p1")!;
+        state.Attempt.Should().Be(0, "waiting costs no attempt");
+        state.NextDueUtc.Should().Be(_fixture.Time.GetUtcNow().UtcDateTime + RetryPlanner.RetryDelay);
+    }
+
+    [Fact]
+    public async Task A_waiting_retry_replaced_by_a_run_that_is_canceled_while_queued_is_due_again_a_minute_later()
+    {
+        var vm = _fixture.Create();
+        var editor = Projects(vm);
+        await RunWithLockedFileAsync(vm);
+        // Another plan's run holds the queue, so the attempt waits in the queue.
+        var other = new HoldStorage(new InMemoryStorage()) { HoldCreate = _ => true };
+        _storages.Storages[("other", "")] = other;
+        _fixture.Queue.Enqueue(new BackupRequest(new BackupPlan
+        {
+            Id = "p2",
+            Name = "Other",
+            Source = StorageLocation.FileSystem(_source),
+            Target = new StorageLocation("s3", "", "other"),
+        }, [], RunTrigger.Manual)).Should().BeTrue();
+        await other.Reached.Task.WaitAsync(Timeout);
+        AdvanceToDue();
+        editor.Run.RetryJobState.Should().Be(JobState.Queued, "the attempt waits behind the other plan");
+
+        vm.RunPlan("p1").Should().BeTrue("the regular run replaces the waiting attempt");
+        editor.Run.State.Should().Be(JobState.Queued);
+        vm.CancelRunCommand.Execute(editor);   // while it still waits: it never starts
+        editor.Run.State.Should().BeNull();
+
+        var state = _fixture.Retries.StateOf("p1")!;
+        state.Attempt.Should().Be(0, "no attempt was made");
+        state.NextDueUtc.Should().Be(_fixture.Time.GetUtcNow().UtcDateTime + RetryPlanner.RetryDelay,
+            "the removed attempt is deferred, not left in flight");
+        _fixture.Time.Advance(RetryPlanner.RetryDelay);
+        editor.Run.RetryJobState.Should().Be(JobState.Queued, "it is queued again");
+
+        other.Gate.TrySetResult();
+        await _fixture.Queue.WhenIdleAsync().WaitAsync(Timeout);
+        Log().Select(e => e.Trigger).Should().Equal(RunTrigger.Manual, RunTrigger.Retry);
+        _fixture.Retries.StateOf("p1").Should().BeNull("the attempt copied the file");
+    }
+
+    [Fact]
     public async Task A_finished_retry_raises_no_run_notification()
     {
         var vm = _fixture.Create();
