@@ -162,9 +162,14 @@ attempt.
 3. Read the current manifest and remember its stamp.
 4. For each file, with the same read and change detection as a regular run (`ChangedAfterReadAsync`, pool hash check):
    - source gone → drop from the list (resolved);
-   - copied cleanly → add or replace the manifest entry;
-     - **Full copies**: write into the version folder with `CreateOptions(Overwrite: true, …)` (temp + move);
-     - **Incremental**: `PoolWriter.PutAsync`, entry refers to the blob;
+   - copied cleanly → add or replace the manifest entry. The new entry is built entirely from this attempt's read:
+     size, mtime and the hash computed while copying; nothing of the old entry is kept, so a "changed" file's earlier
+     hash is corrected;
+     - **Full copies**: write into the version folder with `CreateOptions(Overwrite: true, …)` (temp + move); the
+       entry gets the xxh64 of the new copy;
+     - **Incremental**: `PoolWriter.PutAsync` stores the content under its xxh128; the entry refers to that blob. The
+       blob of the earlier copy is no longer referenced by this version and is removed by a later GC if no other
+       manifest uses it;
    - still locked / changed / denied → stays in the list.
 5. If at least one entry changed: recompute `FileCount` and `TotalBytes` and replace the manifest with
    `CreateOptions(Overwrite: true, ExpectedStamp: <stamp from 3>, Durable: true)`.
