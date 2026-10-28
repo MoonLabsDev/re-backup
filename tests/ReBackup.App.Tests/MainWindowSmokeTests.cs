@@ -303,6 +303,35 @@ public class MainWindowSmokeTests
     }
 
     [Fact]
+    public void The_settings_window_shows_its_buttons_at_its_minimum_height()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            var settings = new SettingsViewModel(fixture.SettingsStore, fixture.Settings, fixture.Paths, fixture.Root,
+                fixture.Dialogs, () => true, () => false, _ => { }, "en-US", _ => { }, () => { }, () => { });
+            var window = new SettingsWindow(settings);
+            window.MinHeight.Should().BeLessThanOrEqualTo(840, "it has to fit a 1080p monitor's work area with room to spare");
+
+            var content = (FrameworkElement)window.Content;
+            var height = window.MinHeight - 40;   // the window's frame and title bar
+            content.Measure(new Size(window.Width - 16, height));
+            content.Arrange(new Rect(0, 0, window.Width - 16, height));
+            content.UpdateLayout();
+
+            var ok = FindAll<Button>(content).Single(b =>
+                BindingOperations.GetBinding(b, ButtonBase.CommandProperty)?.Path.Path == nameof(SettingsViewModel.SaveCommand));
+            var bottom = ok.TranslatePoint(new Point(0, ok.ActualHeight), content).Y;
+            bottom.Should().BeLessThanOrEqualTo(height, "the OK button must not be cut off");
+
+            var scroller = (ScrollViewer)window.FindName("ContentScroller");
+            scroller.ExtentHeight.Should().BeGreaterThan(scroller.ViewportHeight, "the cards scroll instead of pushing the buttons out");
+            FindAll<Button>(scroller).Should().NotContain(ok, "the buttons stay outside the scrolling cards");
+        });
+    }
+
+    [Fact]
     public void The_Drive_windows_and_dialogs_load()
     {
         RunOnSta(() =>

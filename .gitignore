@@ -487,3 +487,5 @@ $RECYCLE.BIN/
 
 # Published single-file builds (publish.ps1)
 dist/
+
+.worktree/
