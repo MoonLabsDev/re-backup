@@ -384,8 +384,11 @@ public sealed class LiveScan
 
     private IndexNode ToIndexNode(LiveNode node)
     {
-        var children = node.Children.Select(ToIndexNode).ToList();
-        children.Sort((a, b) => _comparer.Compare(a.Name, b.Name));
+        // An array of the exact size, and the shared empty one for files and empty folders: a list per entry costs
+        // about 100 MB on a source of three million files.
+        var found = node.Children;
+        IndexNode[] children = found.Count == 0 ? [] : [.. found.Select(ToIndexNode)];
+        Array.Sort(children, (a, b) => _comparer.Compare(a.Name, b.Name));
         return new IndexNode
         {
             Name = node.Name,

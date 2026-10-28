@@ -250,7 +250,7 @@ public static class SourceIndexer
                 Name = name,
                 IsDirectory = true,
                 LastWriteUtc = lastWriteUtc,
-                Children = children,
+                Children = children.Count == 0 ? [] : [.. children],   // exact size; files keep the shared empty one
                 Error = error,
             };
         }
