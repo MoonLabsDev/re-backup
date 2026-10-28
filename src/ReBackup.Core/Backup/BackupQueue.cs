@@ -50,8 +50,9 @@ public sealed class BackupQueue
 
     /// <summary>
     /// Per job: Queued, Running (repeated with progress), then Finished or Removed. Queued is raised on the enqueuing
-    /// thread, Removed on the canceling thread, Running and Finished on the worker. Queued, Removed and Finished are
-    /// raised while the queue's lock is held, so the events of one plan are always ordered across its jobs. Handlers
+    /// thread, Removed on the canceling thread, Running and Finished on the worker. Queued, Removed, the first Running
+    /// (without progress) and Finished are raised while the queue's lock is held, so the events of one plan are always
+    /// ordered across its jobs. Handlers
     /// must therefore not block or call back into the queue; an exception thrown by a handler is swallowed.
     /// The jobs of one plan follow each other, except that a regular job can be queued while the plan's retry runs: its
     /// Queued then comes between the retry's Running and Finished. <see cref="BackupJobUpdate.IsRetry"/> tells them apart.
@@ -302,12 +303,15 @@ public sealed class BackupQueue
                 job = lane[0];
                 lane.RemoveAt(0);
                 _running = job;
+
+                // Raised in the critical section that makes the job the running one: a regular job of the same plan
+                // may be queued behind a running retry, and its Queued must not come before the retry's Running.
+                Raise(job, JobState.Running);
             }
 
             RunLogEntry? result = null;
             try
             {
-                Raise(job, JobState.Running);
                 result = await RunAsync(job);
 
                 try
@@ -327,8 +331,9 @@ public sealed class BackupQueue
             }
             finally
             {
-                // Clearing _running and raising Finished in one critical section keeps a concurrent Enqueue of
-                // the same plan from raising Queued before Finished.
+                // Clearing _running and raising Finished in one critical section keeps a job of the same plan that
+                // is accepted only once this one has ended from raising Queued before Finished. (A regular job
+                // queued behind a running retry was accepted earlier; its Queued precedes the retry's Finished.)
                 lock (_gate)
                 {
                     _running = null;

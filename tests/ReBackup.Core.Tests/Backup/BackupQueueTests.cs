@@ -695,6 +695,33 @@ public class BackupQueueTests : IDisposable
         _queue.Cancel("a").Should().BeFalse();
     }
 
+    [Fact]
+    public async Task A_retry_reports_Running_while_holding_the_queue_lock_so_a_regular_Queued_of_its_plan_follows_it()
+    {
+        // Making the job the running one and raising its first Running form one critical section: otherwise an Enqueue of
+        // the plan's regular job could slip in between and raise Queued before the retry's Running.
+        bool? probeGotTheLock = null;
+        _queue.Changed += u =>
+        {
+            if (u is { State: JobState.Running, Progress: null, IsRetry: true })
+                // Deliberately blocks the handler for a moment: from another thread, the queue cannot be entered meanwhile.
+                probeGotTheLock = Task.Run(() => _queue.IsBusy).Wait(TimeSpan.FromMilliseconds(200));
+        };
+
+        _queue.EnqueueRetry(Retry("a"));
+        await _runner.Started(RetryOf("a")).WaitAsync(Timeout);
+        probeGotTheLock.Should().BeFalse("the first Running is raised under the queue's lock");
+
+        _queue.Enqueue(Request("a")).Should().BeTrue();
+        _runner.Complete(RetryOf("a"), RunStatus.Completed);
+        await _runner.Started("a").WaitAsync(Timeout);
+        _runner.Complete("a", RunStatus.Completed);
+        await _queue.WhenIdleAsync().WaitAsync(Timeout);
+
+        _updates.Where(u => u.PlanId == "a" && u.Progress is null).Select(u => $"{u.State}{(u.IsRetry ? " retry" : "")}")
+            .Should().Equal("Queued retry", "Running retry", "Queued", "Finished retry", "Running", "Finished");
+    }
+
     private sealed class ImmediateRunner : IBackupRunner
     {
         public Task<RunLogEntry> RunAsync(BackupRequest request, IProgress<BackupProgress>? progress = null,
