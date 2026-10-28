@@ -128,13 +128,28 @@ public class EffectiveRunTests
     }
 
     [Fact]
-    public void A_run_with_only_a_canceled_retry_is_returned_as_is()
+    public void A_run_with_only_a_canceled_retry_keeps_its_count_and_has_no_attempts()
     {
-        var orig = Original(73, 73);
+        var merged = Merged(Original(73, 73), Retry(RunStatus.Canceled, 0));
 
-        var result = EffectiveRun.Apply([orig, Retry(RunStatus.Canceled, 0)]);
+        merged.SkippedCount.Should().Be(73);
+        merged.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        merged.RetryAttemptsMade.Should().Be(0);
+        merged.RetryRecovered.Should().Be(0);
+    }
 
-        result[0].Should().BeSameAs(orig);
+    [Fact]
+    public void Failed_retries_count_as_attempts_without_changing_the_count()
+    {
+        var merged = Merged(Original(5, 5),
+            Retry(RunStatus.Error, 0, "retry-1"),
+            Retry(RunStatus.Error, 0, "retry-2"));
+
+        merged.SkippedCount.Should().Be(5);
+        merged.Status.Should().Be(RunStatus.CompletedWithWarnings);
+        merged.Skipped.Select(e => e.Path).Should().Equal("locked0.txt", "locked1.txt", "locked2.txt");
+        merged.RetryAttemptsMade.Should().Be(2);
+        merged.RetryRecovered.Should().Be(0);
     }
 
     [Fact]

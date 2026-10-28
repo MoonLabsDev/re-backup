@@ -12,7 +12,7 @@ public static class EffectiveRun
 {
     /// <summary>
     /// Returns <paramref name="log"/> with every run that has retry lines (<see cref="RunLogEntry.RetryOf"/> equal to its id)
-    /// replaced by a merged copy. Same order and count; a run without a finished retry and the retry lines themselves
+    /// replaced by a merged copy. Same order and count; a run without retry lines and the retry lines themselves
     /// are the very same instances.
     /// </summary>
     public static IReadOnlyList<RunLogEntry> Apply(IReadOnlyList<RunLogEntry> log)
@@ -41,19 +41,20 @@ public static class EffectiveRun
 
     private static RunLogEntry Merge(RunLogEntry orig, List<RunLogEntry> retries)
     {
-        // Only a finished retry has a result: a failed or canceled one leaves the count as it was.
+        var merged = JsonSerializer.Deserialize<RunLogEntry>(JsonSerializer.Serialize(orig, JsonDefaults.Compact), JsonDefaults.Compact)!;
+        merged.VersionGone = orig.VersionGone;
+        merged.RetryAttemptsMade = retries.Count(r => r.Status != RunStatus.Canceled);
+
+        // Only a finished retry has a result: a failed or canceled one leaves the run as it was, nothing recovered.
         var latest = retries.LastOrDefault(r => r.Status is RunStatus.Completed or RunStatus.CompletedWithWarnings);
         if (latest is null)
-            return orig;
+            return merged;
 
-        var merged = JsonSerializer.Deserialize<RunLogEntry>(JsonSerializer.Serialize(orig, JsonDefaults.Compact), JsonDefaults.Compact)!;
         var remaining = latest.SkippedCount;
         merged.SkippedCount = orig.SkippedCount - orig.RetryableCount + remaining;
         merged.Skipped = [.. orig.Skipped.Where(e => !RetryPolicy.IsRetryable(e)).Concat(latest.Skipped).Take(RunLogEntry.MaxSkippedEntries)];
         merged.Status = merged.SkippedCount == 0 && !orig.MetForeignMarkers ? RunStatus.Completed : RunStatus.CompletedWithWarnings;
         merged.RetryRecovered = orig.RetryableCount - remaining;
-        merged.RetryAttemptsMade = retries.Count(r => r.Status != RunStatus.Canceled);
-        merged.VersionGone = orig.VersionGone;
         return merged;
     }
 }
