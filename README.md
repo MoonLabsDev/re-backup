@@ -188,7 +188,7 @@ later*).
 - Other backups always go first; a retry that is already running is never interrupted.
 - When every file is recovered, the run shows as *Completed* with 0 skipped. Each attempt has its own line in the
   history.
-- Pending retries survive a restart. A new regular run of the plan replaces them.
+- Pending retries survive a restart, for up to 24 hours after the run. A new regular run of the plan replaces them.
 - This is not a point-in-time snapshot: a retried file reflects its state at the time of the retry, not at the time of
   the run.
 

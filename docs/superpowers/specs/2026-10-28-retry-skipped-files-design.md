@@ -77,6 +77,7 @@ One file per plan: `retries\<planId>.json` (new entry in `ConfigPaths`), written
   "planId": "…",
   "runId": "…",             // RunId of the original run
   "version": "2026_10_27-03_00 MoonLabs",
+  "runEndUtc": "…",         // when the original run ended (missing in older files: never expires)
   "attempt": 1,             // attempts made so far
   "attempts": 3,            // attempts allowed (from the plan when the state was created, see 6.1)
   "nextDueUtc": "…",
@@ -85,8 +86,10 @@ One file per plan: `retries\<planId>.json` (new entry in `ConfigPaths`), written
 ```
 
 The state is **deleted** when the file list becomes empty, the attempts are used up, the version no longer exists, a
-new regular run of the plan starts, the switch is turned off, source or target of the plan change, or the plan is
-deleted.
+new regular run of the plan starts, the switch is turned off, source or target of the plan change, the plan is
+deleted, or the original run ended more than **24 hours** ago (`RetryPlanner.MaxAge`; checked at start and when the
+state falls due, instead of handing it out): files from much later must not be written into an old version, the next
+regular run catches up.
 
 ### 3.5 Run log
 
@@ -95,7 +98,9 @@ A retry attempt is appended as a normal `RunLogEntry` with:
 - `Trigger = RunTrigger.Retry`, new fields `RetryOf` (RunId of the original run) and `Attempt` (1-based);
 - `Version` = the amended version;
 - `FilesCopied` / `BytesCopied` = files fetched by this attempt;
-- `SkippedCount` / `Skipped` = retryable files **still open** after this attempt;
+- `SkippedCount` / `Skipped` = requested files **still open** after this attempt, whatever stops them now: a file that
+  was locked and now comes back archived or unreadable (a reason 3.2 does not retry) is still open and stays in the
+  state until the attempts run out; it is never counted as recovered without having been copied;
 - `Status` = `Completed` when nothing is open, `CompletedWithWarnings` when files are still open, `Error` / `Full` /
   `Canceled` as for regular runs.
 
@@ -113,7 +118,8 @@ Both new fields are nullable, so older readers and older log lines are unaffecte
   warning status; otherwise the original status (`CompletedWithWarnings`). Only foreign markers keep it. Retention
   warnings do **not**: a recovered run with retention warnings is `Completed` and shown as "Completed (retention
   warnings)", as for regular runs;
-- `recovered = retryable skips of the original − remaining`.
+- `recovered = retryable skips of the original − remaining`. Because a retry line counts every requested file it did
+  not copy (3.5), a file is recovered only when an attempt copied it.
 
 Everything that shows a run uses the effective values: the "Last run" card, the history row of the original run, the
 coverage calendar (`CoverageBuilder` maps a version to its original run, not to a retry line), the plan card, the
@@ -138,7 +144,8 @@ A file that is gone at retry time leaves the list and no longer counts as skippe
 
 `RetryPlanner` (Core, `TimeProvider`-based timer, like `Scheduler`) calls an enqueue delegate with a `RetryRequest`
 (plan id, run id, version, files, attempt). `MainViewModel.RunRetry` applies the same blockers as `RunScheduled`
-(scheduler paused, `IsDeletingVersions`, `CopyFromPlanId`, `IsCopying`) and otherwise puts the job into the
+(scheduler paused, `IsDeletingVersions`, `CopyFromPlanId`, `IsCopying`), plus `IsVerifying` (verify holds the target's
+lock, the attempt would fail on it), and otherwise puts the job into the
 **low-priority lane** of `BackupQueue`. A blocked retry is retried at the next timer tick; waiting never costs an
 attempt.
 
@@ -175,7 +182,8 @@ attempt.
      - **Incremental**: `PoolWriter.PutAsync` stores the content under its xxh128; the entry refers to that blob. The
        blob of the earlier copy is no longer referenced by this version and is removed by a later GC if no other
        manifest uses it;
-   - still locked / changed / denied → stays in the list.
+   - not copied for any other reason (still locked, changed, denied, and also archived or unreadable now) → stays in
+     the list as a retry candidate with its new reason, whatever that is.
 5. If at least one entry changed: recompute `FileCount` and `TotalBytes` and replace the manifest with
    `CreateOptions(Overwrite: true, ExpectedStamp: <stamp from 3>, Durable: true)`.
    An attempt that stops part-way (`Full`, `Error` or `Canceled`) commits the manifest of the copies made so far once,
@@ -198,8 +206,8 @@ run creates its own state from its own skips (4.1).
 - On exit `BackupQueue.Close` cancels a running retry; the attempt does not count and the state stays on disk. The
   exit question ("a backup is running") ignores retries (a retry is not a backup in that sense); the exit still waits
   for a canceled retry to clean up.
-- On start `RetryPlanner.Start` loads all states and drops those whose plan is missing or has the switch off, or whose
-  plan has a regular run-log entry newer than `runId`. Whether the version still exists is checked at the attempt
+- On start `RetryPlanner.Start` loads all states and drops those whose plan is missing or has the switch off, whose
+  plan has a regular run-log entry newer than `runId`, or whose run ended more than 24 hours ago (3.4). Whether the version still exists is checked at the attempt
   (4.4), not at start, so start does no storage I/O. Overdue states become due no earlier than one minute after start
   (as catch-up).
 - `Scheduler` catch-up (`App.xaml.cs` L143) must take the last entry whose trigger is **not** `Retry`; otherwise a
@@ -254,6 +262,8 @@ Added to `en-US.json` and `de-DE.json` with matching placeholders and plurals: `
 | Attempt stops part-way (`Full`, `Error`, `Canceled`) | The manifest of the copies made so far is committed once (same `ExpectedStamp`, not cancelable); the remaining files stay in the list |
 | Crash, or a failed manifest write, between overwriting a "changed" file and the manifest swap (full copies; the remaining window, as a part-way stop commits first) | The file is newer than its manifest hash. The state is still on disk, so the next attempt after restart copies it again and fixes the manifest. Only if the state is dropped first (a new regular run starts) does the mismatch stay in that old version; a verify reports it. Accepted residual risk. |
 | Source file gone at retry time | Removed from the list; not counted as skipped |
+| Retried file now archived or unreadable (a reason not retried) | Stays in the list and counted as open until the attempts run out; never shown as recovered |
+| Original run ended more than 24 h ago (long shutdown, manual-only plan) | State dropped at start or when due; nothing written into the old version; the next regular run catches up |
 | Plan settings changed while a state exists | Switch off, source or target changed → state dropped; new numbers apply from the next attempt (`attempts` is capped at the new value) |
 
 ### 6.1 Attempt count when the setting changes
