@@ -79,9 +79,13 @@ public sealed partial class PlanEditorViewModel
         Validate();
     }
 
-    /// <summary>The saved plan changed (saved, reloaded): whether it is incremental may have changed, and so its lock.</summary>
+    /// <summary>
+    /// The saved plan changed (saved, reloaded): whether it is incremental may have changed, and so its lock; a cleanup
+    /// scan made with other rules goes stale.
+    /// </summary>
     private void OnSavedPlanChanged()
     {
+        Cleanup.OnPlanChanged();
         OnPropertyChanged(nameof(ShowPoolActions));
         OnPropertyChanged(nameof(ShowReleaseLock));
         OnPropertyChanged(nameof(IsCopyUnfinished));

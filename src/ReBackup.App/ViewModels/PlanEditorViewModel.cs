@@ -121,6 +121,15 @@ public sealed partial class PlanEditorViewModel : ObservableObject
             versions, () => Run.Entries, () => IsCopying);
         Versions.IndexSyncEnded += RetentionPreview.OnIndexSyncEnded;
         Versions.IndexSyncEnded += Preview.OnIndexSyncEnded;
+        // The scan uses the saved rules only: none while the plan has unsaved edits.
+        Cleanup = new CleanupViewModel(() => IsNew ? null : SavedPlan(), () => IsDirty, Versions, versions,
+            globalIgnoreDefaults);
+        // A cleanup waits for the plan's runs and retries (and they for it, as for a deletion).
+        Run.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(PlanRunViewModel.IsActive) or nameof(PlanRunViewModel.IsRetryActive) or "")
+                Cleanup.CleanUpCommand.NotifyCanExecuteChanged();
+        };
         HistoryCoverage = new HistoryCoverageViewModel(() => IsNew ? null : SavedPlan(), versions.Storages, Run);
         Versions.PropertyChanged += (_, e) =>
         {
@@ -311,6 +320,9 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     /// <summary>The versions in the saved target, their index, comparison and restore.</summary>
     public VersionsViewModel Versions { get; }
 
+    /// <summary>The Cleanup tab: what the saved rules would remove from old versions, and removing it.</summary>
+    public CleanupViewModel Cleanup { get; }
+
     /// <summary>The coverage timeline of the History tab, linked to its selected run.</summary>
     public HistoryCoverageViewModel HistoryCoverage { get; }
 
@@ -431,7 +443,11 @@ public sealed partial class PlanEditorViewModel : ObservableObject
     {
         RefreshNextRuns();
         RefreshRelocation();
+        Cleanup.OnPlanChanged();
     }
+
+    /// <summary>A copy of the plan started or ended: no cleanup while its versions are copied.</summary>
+    partial void OnIsCopyingChanged(bool value) => Cleanup.CleanUpCommand.NotifyCanExecuteChanged();
 
     partial void OnSchedulerPausedChanged(bool value) => RefreshNextRuns();
 
@@ -685,6 +701,7 @@ public sealed partial class PlanEditorViewModel : ObservableObject
         Preview.RefreshTexts();
         RetentionPreview.RefreshTexts();
         Versions.RefreshTexts();
+        Cleanup.RefreshTexts();
         HistoryCoverage.RefreshTexts();
         OnPropertyChanged(nameof(LockBanner));
         RefreshRelocation();

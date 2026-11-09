@@ -1145,7 +1145,7 @@
       "other": "{count} Versionen werden bereinigt …"
     },
     "card": "Versionen werden bereinigt …",
-    "progress": "Bereinigen: {current} von {total}: {version}",
+    "progress": "Bereinige {current} von {total}: {version}",
     "collecting": "Bereinigen: nicht referenzierte Inhalte werden aus dem Pool entfernt …",
     "canceling": "Abbruch nach der aktuellen Version …",
     "stopping": "Bereinigen wird angehalten",
@@ -1157,7 +1157,45 @@
       "one": "Bereinigen abgebrochen; {count} Version bereinigt, {size} freigegeben.",
       "other": "Bereinigen abgebrochen; {count} Versionen bereinigt, {size} freigegeben."
     },
-    "stopped": "Das Bereinigen wurde angehalten: {error}"
+    "stopped": "Das Bereinigen wurde angehalten: {error}",
+    "title": "Bereinigen",
+    "notIndexed": "Noch nicht indexiert: Sie kann bereinigt werden, sobald der Tab Versionen sie indexiert hat",
+    "saveFirst": "Erst den Plan speichern: Die Prüfung verwendet die gespeicherten Regeln.",
+    "scanAgain": "Die Regeln, die Auswahl oder eine Version haben sich seit der Prüfung geändert. Bitte erneut prüfen.",
+    "scanningSource": "Die Quelle wird gelesen … {files}",
+    "sourceError": "Die Quelle kann nicht gelesen werden: {error}",
+    "scanFailed": "Die Prüfung ist fehlgeschlagen: {error}",
+    "busy": "Das Bereinigen kann jetzt nicht starten: Eine Sicherung, Wiederholung, Kopie, Löschung oder Wiederherstellung des Plans läuft.",
+    "totals": {
+      "full": {
+        "one": "{count} Version · {files} zu entfernen · {size} frei",
+        "other": "{count} Versionen · {files} zu entfernen · {size} frei"
+      },
+      "pool": {
+        "one": "{count} Version · {files} zu entfernen · ≈ {size} im Pool frei",
+        "other": "{count} Versionen · {files} zu entfernen · ≈ {size} im Pool frei"
+      }
+    },
+    "result": {
+      "one": "{count} Version bereinigt · {files} entfernt · {size} freigegeben",
+      "other": "{count} Versionen bereinigt · {files} entfernt · {size} freigegeben"
+    },
+    "confirm": {
+      "one": "{count} Version bereinigen?\n\n{files} werden daraus entfernt, {size} werden frei.\n\nDas kann nicht rückgängig gemacht werden.",
+      "other": "{count} Versionen bereinigen?\n\n{files} werden daraus entfernt, {size} werden frei.\n\nDas kann nicht rückgängig gemacht werden."
+    },
+    "problems": {
+      "one": "{count} Version wurde nicht bereinigt:",
+      "other": "{count} Versionen wurden nicht bereinigt:"
+    },
+    "status": {
+      "running": "Wird bereinigt …",
+      "cleaned": "✓",
+      "nothing": "Nichts zu entfernen",
+      "changed": "Übersprungen: seit der Prüfung geändert",
+      "gone": "Übersprungen: keine Version dieses Plans mehr",
+      "failed": "Fehlgeschlagen: {error}"
+    }
   },
   "restore": {
     "title": "Wiederherstellen",

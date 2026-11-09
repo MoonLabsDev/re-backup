@@ -186,6 +186,26 @@ public class VersionsCleanupTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleanup_of_no_versions_starts_no_job()
+    {
+        var statuses = new List<string>();
+        var worker = new VersionIndexWorker(new VersionIndexSet(Path.Combine(_fixture.Root, "index")));
+        var context = new VersionsContext(worker, _fixture.Dialogs, s => { lock (statuses) statuses.Add(s.ToString()); },
+            _storages, MachineName: "THIS-PC");
+        var plan = Plan;
+        var versions = new VersionsViewModel(() => plan, () => false, new FakeFolderOpener(), context);
+        var deleting = false;
+        versions.PropertyChanged += (_, e) => deleting |= e.PropertyName == nameof(VersionsViewModel.IsDeleting);
+
+        var result = await versions.CleanUpAsync(Rules("target/"), []);
+
+        result.Should().BeNull();
+        deleting.Should().BeFalse("no job was started");
+        lock (statuses)
+            statuses.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Cleanup_reports_the_versions_cleaned_up_and_the_bytes_freed()
     {
         var statuses = new List<string>();

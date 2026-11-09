@@ -1157,7 +1157,45 @@
       "one": "Cleanup canceled; {count} version cleaned up, {size} freed.",
       "other": "Cleanup canceled; {count} versions cleaned up, {size} freed."
     },
-    "stopped": "Cleaning up stopped: {error}"
+    "stopped": "Cleaning up stopped: {error}",
+    "title": "Clean up",
+    "notIndexed": "Not indexed yet: it can be cleaned up once the Versions tab has indexed it",
+    "saveFirst": "Save the plan first: the scan uses the saved rules.",
+    "scanAgain": "The rules, the selection or a version changed since the scan. Scan again.",
+    "scanningSource": "Scanning the source… {files}",
+    "sourceError": "The source cannot be read: {error}",
+    "scanFailed": "The scan failed: {error}",
+    "busy": "The cleanup cannot start now: a backup, retry, copy, deletion or restore of the plan is running.",
+    "totals": {
+      "full": {
+        "one": "{count} version · {files} to remove · {size} freed",
+        "other": "{count} versions · {files} to remove · {size} freed"
+      },
+      "pool": {
+        "one": "{count} version · {files} to remove · ≈ frees {size} in the pool",
+        "other": "{count} versions · {files} to remove · ≈ frees {size} in the pool"
+      }
+    },
+    "result": {
+      "one": "{count} version cleaned up · {files} removed · {size} freed",
+      "other": "{count} versions cleaned up · {files} removed · {size} freed"
+    },
+    "confirm": {
+      "one": "Clean up {count} version?\n\n{files} are removed from it, freeing {size}.\n\nThis cannot be undone.",
+      "other": "Clean up {count} versions?\n\n{files} are removed from them, freeing {size}.\n\nThis cannot be undone."
+    },
+    "problems": {
+      "one": "{count} version was not cleaned up:",
+      "other": "{count} versions were not cleaned up:"
+    },
+    "status": {
+      "running": "Cleaning up…",
+      "cleaned": "✓",
+      "nothing": "Nothing to remove",
+      "changed": "Skipped: changed since the scan",
+      "gone": "Skipped: no longer a version of this plan",
+      "failed": "Failed: {error}"
+    }
   },
   "restore": {
     "title": "Restore",

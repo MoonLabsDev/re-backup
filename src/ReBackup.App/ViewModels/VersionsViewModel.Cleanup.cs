@@ -22,8 +22,8 @@ public sealed partial class VersionsViewModel
     /// Cleans up <paramref name="versions"/> of the saved plan by <paramref name="matcher"/> in the background, as a
     /// deletion-like job: the plan card and the tab show "Cleaning up 1 of 3: …" (each report also goes to
     /// <paramref name="progress"/>), the footer gets the outcome, the index is handed each cleaned version, and afterwards
-    /// the target is read again. Null when it is refused (<see cref="CanStartCleanup"/> is false, or the plan is not
-    /// saved) or when the run failed (the footer says why); a canceled run (<see cref="CancelCleanup"/>) returns its
+    /// the target is read again. Null when there is nothing to clean up (<paramref name="versions"/> is empty: no job
+    /// starts), when it is refused (<see cref="CanStartCleanup"/> is false, or the plan is not saved) or when the run failed (the footer says why); a canceled run (<see cref="CancelCleanup"/>) returns its
     /// result with <see cref="CleanupResult.Canceled"/> set.
     /// </summary>
     public async Task<CleanupResult?> CleanUpAsync(IgnoreMatcher matcher, IReadOnlyList<CleanupTarget> versions,
@@ -31,7 +31,7 @@ public sealed partial class VersionsViewModel
     {
         ArgumentNullException.ThrowIfNull(matcher);
         ArgumentNullException.ThrowIfNull(versions);
-        if (!CanStartCleanup || _savedPlan() is not { } plan)
+        if (versions.Count == 0 || !CanStartCleanup || _savedPlan() is not { } plan)
             return null;
 
         // A sync must not index manifests that are being rewritten; the target is read again afterwards.
