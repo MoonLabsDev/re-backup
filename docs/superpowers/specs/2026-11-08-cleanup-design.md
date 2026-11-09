@@ -122,9 +122,9 @@ before the first version.
 2. Apply the rules to the file list. Compute the paths to remove.
 3. **Full plans:** write `re-pruning.json` into the version folder with the list of paths to remove (§6.2).
 4. Write the shortened manifest: `Files` filtered, header (`FileCount`, `TotalBytes`) recomputed, `Directories`
-   without folders that end up empty. Written with `CreateOptions(Overwrite: true, Durable: true,
+   without the folders the rules ignore (a folder that only lost some files stays: the next backup lists it too). Written with `CreateOptions(Overwrite: true, Durable: true,
    ExpectedStamp: stamp)`. A `StorageConflictException` skips the version (and removes the marker); nothing is deleted.
-5. **Full plans:** delete the listed files, then the folders that became empty; a file already missing is fine. Remove
+5. **Full plans:** delete the listed files, then the ignored folders once they are empty; a file already missing is fine. Remove
    `re-pruning.json`.
 6. Update the index with `VersionIndex.Add` so Versions, Ignore and Retention see the new state.
 

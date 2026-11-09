@@ -1,0 +1,473 @@
+{
+  "plan": "e:/MoonLabs/Internal/Apps/re-backup/docs/superpowers/plans/2026-11-09-cleanup-tab.md",
+  "updatedAt": 1794220402905,
+  "overhead": {
+    "costUsd": {
+      "d2c6d5cf-a0be-4533-a2a0-323c21f86377": 0.17354440000000082
+    }
+  },
+  "phases": [
+    {
+      "id": "p1",
+      "title": "Index queries for the cleanup",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p1t1",
+          "title": "Write the failing tests",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p1t2",
+          "title": "Run to verify they fail",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p1t3",
+          "title": "Implement the three queries in `VersionIndex.Queries.cs`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p1t4",
+          "title": "Run to verify they pass (same command, expected PASS)",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p1t5",
+          "title": "Commit — `git commit -m \"feat(core): index queries for the cleanup scan\"`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "title": "CleanupScanner",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p2t1",
+          "title": "Write the failing tests",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p2t2",
+          "title": "Run to verify they fail — `dotnet test tests/ReBackup.Core.Tests --filter FullyQualifiedName~CleanupScannerTests` → build error.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p2t3",
+          "title": "Implement `CleanupScanner.Scan` as described.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p2t4",
+          "title": "Run to verify they pass.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p2t5",
+          "title": "Commit — `feat(core): cleanup scan over the version index`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p3",
+      "title": "Manifest pruning and the shared manifest writer",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p3t1",
+          "title": "Write the failing tests",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p3t2",
+          "title": "Run to verify they fail — `--filter \"FullyQualifiedName~ManifestPrunerTests\"` → build error.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p3t3",
+          "title": "Implement `ManifestPruner`, add `ManifestWriter`, switch the retry over.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p3t4",
+          "title": "Run `dotnet test tests/ReBackup.Core.Tests --filter \"FullyQualifiedName~ManifestPrunerTests|FullyQualifiedName~BackupRunnerRetryTests\"` → PASS.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p3t5",
+          "title": "Commit — `feat(core): prune a manifest by the ignore rules`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p4",
+      "title": "CleanupRunner for full plans (with the pruning marker)",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p4t1",
+          "title": "Write the failing tests (file-system target via `TempDir` + `VersionBuilder.Write`, `FaultyStorage` for faults)",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p4t2",
+          "title": "Run to verify they fail — `--filter FullyQualifiedName~CleanupRunnerFullTests`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p4t3",
+          "title": "Implement `PruningMarker` and `CleanupRunner.RunAsync` (full-plan path).",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p4t4",
+          "title": "Run to verify they pass.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p4t5",
+          "title": "Commit — `feat(core): clean up full-plan versions by the ignore rules`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p5",
+      "title": "CleanupRunner for incremental plans",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p5t1",
+          "title": "Write the failing tests (`InMemoryStorage` + `PoolVersions.Write` / `AddBlob` / `Blobs`)",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p5t2",
+          "title": "Run to verify they fail — `--filter FullyQualifiedName~CleanupRunnerPoolTests`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p5t3",
+          "title": "Implement the incremental path.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p5t4",
+          "title": "Run `--filter FullyQualifiedName~Cleanup` → all PASS.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p5t5",
+          "title": "Commit — `feat(core): clean up incremental versions and collect the pool`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p6",
+      "title": "Resume an interrupted cleanup",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p6t1",
+          "title": "Write the failing tests",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p6t2",
+          "title": "Run to verify they fail — `--filter \"FullyQualifiedName~CleanupResumerTests|FullyQualifiedName~LeftoverCleanerTests|FullyQualifiedName~PoolCollectorTests\"`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p6t3",
+          "title": "Implement `CleanupResumer` and wire it into `ResumeDeletionAsync`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p6t4",
+          "title": "Run to verify they pass.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p6t5",
+          "title": "Commit — `feat: finish an interrupted cleanup at start`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p7",
+      "title": "Run the cleanup as a Versions job",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p7t1",
+          "title": "Write the failing tests (`MainViewModelFixture`, full plan on disk as in `VersionsCompareTests`)",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p7t2",
+          "title": "Run to verify they fail — `dotnet test tests/ReBackup.App.Tests --artifacts-path <scratchpad>/artifacts --filter FullyQualifiedName~VersionsCleanupTests`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p7t3",
+          "title": "Implement `VersionsViewModel.Cleanup.cs`; add `cleanup.running`, `cleanup.done`, `cleanup.canceled` to both locale files.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p7t4",
+          "title": "Run to verify they pass.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p7t5",
+          "title": "Commit — `feat(app): run a cleanup as a versions job`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p8",
+      "title": "CleanupViewModel (grid, scan, staleness)",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p8t1",
+          "title": "Write the failing tests",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p8t2",
+          "title": "Run to verify they fail — `--filter FullyQualifiedName~CleanupViewModelTests`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p8t3",
+          "title": "Implement `CleanupRowViewModel`, `CleanupViewModel`, the `PlanEditorViewModel.Cleanup` property, and the `cleanup.*` locale keys used.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p8t4",
+          "title": "Run to verify they pass.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p8t5",
+          "title": "Commit — `feat(app): cleanup tab view model`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p9",
+      "title": "The Cleanup tab view",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p9t1",
+          "title": "Write the failing smoke test",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p9t2",
+          "title": "Run to verify it fails — `--filter FullyQualifiedName~MainWindowSmokeTests`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p9t3",
+          "title": "Add the enum value, the three XAML places, `CleanupView`, locale keys, README section.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p9t4",
+          "title": "Run the whole suite — `dotnet test tests/ReBackup.Core.Tests` and `dotnet test tests/ReBackup.App.Tests --artifacts-path <scratchpad>/artifacts` → all PASS.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p9t5",
+          "title": "Commit — `feat(app): cleanup tab`",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    },
+    {
+      "id": "p10",
+      "title": "Manual check on the NAS",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "p10t1",
+          "title": "Ask the user to quit ReBackup via the tray; build and start the new exe via Explorer.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p10t2",
+          "title": "In the Cleanup tab of a real plan: check 2 old versions, Scan, note \"Removes\"/\"Frees\" and the by-rule list.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p10t3",
+          "title": "Clean up…; compare the measured result with the scan (full: equal; pool: freed ≤ estimate), check the Versions tab sizes and that a restore of one cleaned file still works.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        },
+        {
+          "id": "p10t4",
+          "title": "Report to the user; on approval merge `feature/cleanup-tab` into `main` with `--no-ff`.",
+          "status": "pending",
+          "costUsd": {},
+          "approx": false,
+          "updatedAt": 0
+        }
+      ]
+    }
+  ]
+}
