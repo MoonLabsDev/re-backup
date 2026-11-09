@@ -327,6 +327,60 @@ public sealed partial class VersionIndex
         return files;
     }
 
+    /// <summary>
+    /// Every folder (with the totals below it, without the root) and file of a version, by path ignoring case, so a
+    /// folder always comes before its entries. Empty when the version is unknown.
+    /// </summary>
+    public IReadOnlyList<IndexEntry> EntriesOf(long versionId)
+    {
+        using var connection = OpenConnection();
+        using var command = Command(connection, null, """
+            SELECT p.path, 1, d.size, d.files, NULL FROM dirs d JOIN paths p ON p.id = d.path_id
+            WHERE d.version_id = $v AND p.path <> ''
+            UNION ALL
+            SELECT p.path, 0, f.size, 1, f.hash FROM files f JOIN paths p ON p.id = f.path_id
+            WHERE f.version_id = $v
+            ORDER BY 1 COLLATE NOCASE
+            """);
+        command.Parameters.AddWithValue("$v", versionId);
+        using var reader = command.ExecuteReader();
+        var entries = new List<IndexEntry>();
+        while (reader.Read())
+            entries.Add(new IndexEntry(reader.GetString(0), reader.GetInt64(1) != 0, reader.GetInt64(2), (int)reader.GetInt64(3),
+                reader.IsDBNull(4) ? null : reader.GetInt64(4)));
+        return entries;
+    }
+
+    /// <summary>The change detector recorded for a version (see <see cref="StampOfAsync"/>); null for an unknown id.</summary>
+    public string? StampOf(long versionId)
+    {
+        using var connection = OpenConnection();
+        using var command = Command(connection, null, "SELECT stamp FROM versions WHERE id = $v");
+        command.Parameters.AddWithValue("$v", versionId);
+        return command.ExecuteScalar() as string;
+    }
+
+    /// <summary>
+    /// The distinct content hashes among the files of the given versions (a file without a hash adds none). Ids the
+    /// index does not know are ignored; empty for no versions.
+    /// </summary>
+    public IReadOnlySet<long> HashesOf(IReadOnlyCollection<long> versionIds)
+    {
+        var hashes = new HashSet<long>();
+        if (versionIds.Count == 0)
+            return hashes;
+        using var connection = OpenConnection();
+        using var command = Command(connection, null, """
+            WITH ids(id) AS (SELECT DISTINCT value FROM json_each($ids))
+            SELECT DISTINCT f.hash FROM ids JOIN files f ON f.version_id = ids.id WHERE f.hash IS NOT NULL
+            """);
+        command.Parameters.AddWithValue("$ids", "[" + string.Join(',', versionIds.Select(id => id.ToString(CultureInfo.InvariantCulture))) + "]");
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            hashes.Add(reader.GetInt64(0));
+        return hashes;
+    }
+
     /// <summary>The path of a folder ("" = the root); null when no folder has that id.</summary>
     private static string? FolderPath(SqliteConnection connection, long folderPathId)
     {

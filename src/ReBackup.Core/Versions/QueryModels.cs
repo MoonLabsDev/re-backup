@@ -37,3 +37,9 @@ public sealed record PoolQuery(IReadOnlyList<string> All, IReadOnlyList<string> 
 public sealed record PoolNumbers(long Pool, long? Freed, long? ForecastBase, long Growth, IReadOnlyList<string> NotIndexed);
 
 public sealed record SearchHit(long PathId, string Path, string Name, bool IsDirectory, long Size);
+
+/// <summary>
+/// A folder or file of one version, by path. A folder carries the totals below it (<paramref name="Size"/>,
+/// <paramref name="Files"/>) and no hash; a file has <paramref name="Files"/> = 1 and its hash (null: none).
+/// </summary>
+public sealed record IndexEntry(string Path, bool IsDirectory, long Size, int Files, long? Hash);
