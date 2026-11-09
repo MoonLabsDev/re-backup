@@ -6,8 +6,8 @@ namespace ReBackup.App.Tests.TestSupport;
 
 /// <summary>
 /// An <see cref="InMemoryStorage"/> whose reads of the paths <see cref="Holds"/> picks wait for <see cref="Gate"/> (or for
-/// their token), so that a test can look at a job while it is in the middle of reading; files <see cref="FullOnCreate"/>
-/// picks cannot be created.
+/// their token), so that a test can look at a job while it is in the middle of reading (or of creating the files
+/// <see cref="HoldsCreate"/> picks); files <see cref="FullOnCreate"/> picks cannot be created.
 /// </summary>
 public sealed class GatedStorage(InMemoryStorage inner) : IStorage
 {
@@ -42,8 +42,20 @@ public sealed class GatedStorage(InMemoryStorage inner) : IStorage
     /// <summary>The paths whose creation finds the storage full; none by default.</summary>
     public Func<string, bool> FullOnCreate { get; set; } = _ => false;
 
-    public Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct) =>
-        FullOnCreate(path) ? throw new StorageFullException(path) : Inner.CreateAsync(path, options, ct);
+    /// <summary>The paths whose creation waits for <see cref="Gate"/> like a held read; none by default.</summary>
+    public Func<string, bool> HoldsCreate { get; set; } = _ => false;
+
+    public async Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct)
+    {
+        if (FullOnCreate(path))
+            throw new StorageFullException(path);
+        if (HoldsCreate(path))
+        {
+            Reached.TrySetResult();
+            await Gate.Task.WaitAsync(ct);
+        }
+        return await Inner.CreateAsync(path, options, ct);
+    }
 
     public Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct) => Inner.DeleteAsync(paths, ct);
 

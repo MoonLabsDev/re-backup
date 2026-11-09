@@ -264,7 +264,7 @@
     }
   },
   "shell": {
-    "tab": { "plan": "Plan", "ignore": "Ignore", "retention": "Retention", "history": "History", "versions": "Versions" },
+    "tab": { "plan": "Plan", "ignore": "Ignore", "retention": "Retention", "history": "History", "versions": "Versions", "cleanup": "Cleanup" },
     "rail": {
       "settings": "Settings",
       "themeToolTip": "Theme: {theme} — click to change",
@@ -1137,6 +1137,82 @@
       "title": "HISTORY OF {name}",
       "unreadable": "HISTORY OF {name} — cannot be read: {error}",
       "showCopy": "Show this copy in Explorer"
+    }
+  },
+  "cleanup": {
+    "running": {
+      "one": "Cleaning up {count} version…",
+      "other": "Cleaning up {count} versions…"
+    },
+    "card": "Cleaning up versions…",
+    "progress": "Cleaning up {current} of {total}: {version}",
+    "collecting": "Cleaning up: removing unreferenced content from the pool…",
+    "canceling": "Stopping after the current version…",
+    "stopping": "Stopping the cleanup",
+    "done": {
+      "one": "{count} version cleaned up; {size} freed.",
+      "other": "{count} versions cleaned up; {size} freed."
+    },
+    "canceled": {
+      "one": "Cleanup canceled; {count} version cleaned up, {size} freed.",
+      "other": "Cleanup canceled; {count} versions cleaned up, {size} freed."
+    },
+    "stopped": "Cleaning up stopped: {error}",
+    "step": "{done} of {total} deleted",
+    "intro": "Removes what the saved ignore rules exclude now from versions already in the target. Check versions, scan, then clean up.",
+    "scan": "Scan",
+    "scanToolTip": "Find what the saved ignore rules remove from the checked versions",
+    "cleanUp": "Clean up…",
+    "cleanUpToolTip": "Remove the files the scan found from the checked versions. This cannot be undone.",
+    "cancelToolTip": "Stop after the version being cleaned up",
+    "list": "Versions to clean up",
+    "checkAll": "Check all versions",
+    "column": { "removes": "Removes", "frees": "Frees", "sizeAfter": "Size after" },
+    "byRule": {
+      "title": "By rule",
+      "rule": "Rule",
+      "origin": "Origin",
+      "largestHeader": "Largest",
+      "largest": "{path} ({size})"
+    },
+    "title": "Clean up",
+    "notIndexed": "Not indexed yet: it can be cleaned up once the Versions tab has indexed it",
+    "saveFirst": "Save the plan first: the scan uses the saved rules.",
+    "scanAgain": "The rules, the selection or a version changed since the scan. Scan again.",
+    "scanningSource": "Scanning the source… {files}",
+    "sourceError": "The source cannot be read: {error}",
+    "scanFailed": "The scan failed: {error}",
+    "busy": "The cleanup cannot start now: a backup, retry, copy, deletion or restore of the plan is running.",
+    "totals": {
+      "full": {
+        "one": "{count} version · {files} to remove · {size} freed",
+        "other": "{count} versions · {files} to remove · {size} freed"
+      },
+      "pool": {
+        "one": "{count} version · {files} to remove · ≈ frees {size} in the pool",
+        "other": "{count} versions · {files} to remove · ≈ frees {size} in the pool"
+      }
+    },
+    "result": {
+      "one": "{count} version cleaned up · {files} removed · {size} freed",
+      "other": "{count} versions cleaned up · {files} removed · {size} freed"
+    },
+    "confirm": {
+      "one": "Clean up {count} version?\n\nRemoves {files} from it and frees {size}.\n\nThis cannot be undone.",
+      "other": "Clean up {count} versions?\n\nRemoves {files} from them and frees {size}.\n\nThis cannot be undone."
+    },
+    "problems": {
+      "one": "{count} version was not cleaned up:",
+      "other": "{count} versions were not cleaned up:"
+    },
+    "status": {
+      "running": "Cleaning up…",
+      "cleaned": "Cleaned up",
+      "stopped": "Not cleaned up: the cleanup was stopped",
+      "nothing": "Nothing to remove",
+      "changed": "Skipped: changed since the scan",
+      "gone": "Skipped: no longer a version of this plan",
+      "failed": "Failed: {error}"
     }
   },
   "restore": {

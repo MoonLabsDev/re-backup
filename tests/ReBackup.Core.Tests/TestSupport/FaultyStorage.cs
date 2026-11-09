@@ -36,6 +36,9 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
     /// <summary>Runs after a commit has succeeded, with <c>commit</c> and the path.</summary>
     public Action<string, string>? After { get; init; }
 
+    /// <summary>Rewrites what <see cref="StatAsync"/> returns for an entry that exists (e.g. to drop its stamp).</summary>
+    public Func<StorageEntry, StorageEntry>? MapStat { get; init; }
+
     /// <summary>The paths <see cref="CreateAsync"/> started writing, in order.</summary>
     public IReadOnlyList<string> Created
     {
@@ -59,8 +62,11 @@ public sealed class FaultyStorage(IStorage inner) : IStorage
     public Task<StorageEntry?> StatAsync(string path, CancellationToken ct)
     {
         Before?.Invoke("stat", path);
-        return inner.StatAsync(path, ct);
+        return MapStat is null ? inner.StatAsync(path, ct) : MappedStatAsync(path, ct);
     }
+
+    private async Task<StorageEntry?> MappedStatAsync(string path, CancellationToken ct) =>
+        await inner.StatAsync(path, ct).ConfigureAwait(false) is { } entry ? MapStat!(entry) : null;
 
     public async IAsyncEnumerable<StorageEntry> ListAsync(string folder, bool recursive, [EnumeratorCancellation] CancellationToken ct)
     {

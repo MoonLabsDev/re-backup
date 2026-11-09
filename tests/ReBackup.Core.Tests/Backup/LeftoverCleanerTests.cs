@@ -244,6 +244,19 @@ public class LeftoverCleanerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_folder_with_a_pruning_marker_is_no_leftover()
+    {
+        await VersionFolder.CreateAsync(_storage, Folder, PlanId);
+        _storage.AddFile($"{Folder}/target/x.dll", [1]);
+        _storage.AddFile($"{Folder}/{VersionMarkerNames.Pruning}",
+            "{\"formatVersion\":1,\"planId\":\"p1\",\"host\":\"HOST\",\"startedUtc\":\"2026-09-02T00:00:00Z\",\"files\":[\"target/x.dll\"],\"folders\":[\"target\"]}"u8.ToArray());
+        var before = FilesIn(Folder).ToList();
+
+        (await Clean()).Should().BeEmpty();
+        FilesIn(Folder).Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
     public async Task Reports_the_files_it_removes_per_folder()
     {
         await Unfinished(files: 3);

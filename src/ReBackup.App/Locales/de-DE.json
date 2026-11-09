@@ -264,7 +264,7 @@
     }
   },
   "shell": {
-    "tab": { "plan": "Plan", "ignore": "Ignorieren", "retention": "Aufbewahrung", "history": "Verlauf", "versions": "Versionen" },
+    "tab": { "plan": "Plan", "ignore": "Ignorieren", "retention": "Aufbewahrung", "history": "Verlauf", "versions": "Versionen", "cleanup": "Bereinigen" },
     "rail": {
       "settings": "Einstellungen",
       "themeToolTip": "Design: {theme} – zum Ändern klicken",
@@ -1137,6 +1137,82 @@
       "title": "VERLAUF VON {name}",
       "unreadable": "VERLAUF VON {name} – nicht lesbar: {error}",
       "showCopy": "Diese Kopie im Explorer zeigen"
+    }
+  },
+  "cleanup": {
+    "running": {
+      "one": "{count} Version wird bereinigt …",
+      "other": "{count} Versionen werden bereinigt …"
+    },
+    "card": "Versionen werden bereinigt …",
+    "progress": "Bereinige {current} von {total}: {version}",
+    "collecting": "Bereinigen: nicht referenzierte Inhalte werden aus dem Pool entfernt …",
+    "canceling": "Abbruch nach der aktuellen Version …",
+    "stopping": "Bereinigen wird angehalten",
+    "done": {
+      "one": "{count} Version bereinigt; {size} freigegeben.",
+      "other": "{count} Versionen bereinigt; {size} freigegeben."
+    },
+    "canceled": {
+      "one": "Bereinigen abgebrochen; {count} Version bereinigt, {size} freigegeben.",
+      "other": "Bereinigen abgebrochen; {count} Versionen bereinigt, {size} freigegeben."
+    },
+    "stopped": "Das Bereinigen wurde angehalten: {error}",
+    "step": "{done} von {total} gelöscht",
+    "intro": "Entfernt aus den Versionen im Ziel, was die gespeicherten Ignorier-Regeln jetzt ausschließen. Versionen anhaken, prüfen, dann bereinigen.",
+    "scan": "Prüfen",
+    "scanToolTip": "Ermitteln, was die gespeicherten Ignorier-Regeln aus den angehakten Versionen entfernen",
+    "cleanUp": "Bereinigen …",
+    "cleanUpToolTip": "Die bei der Prüfung gefundenen Dateien aus den angehakten Versionen entfernen. Das kann nicht rückgängig gemacht werden.",
+    "cancelToolTip": "Nach der Version anhalten, die gerade bereinigt wird",
+    "list": "Zu bereinigende Versionen",
+    "checkAll": "Alle Versionen anhaken",
+    "column": { "removes": "Entfernt", "frees": "Gibt frei", "sizeAfter": "Größe danach" },
+    "byRule": {
+      "title": "Nach Regel",
+      "rule": "Regel",
+      "origin": "Herkunft",
+      "largestHeader": "Am größten",
+      "largest": "{path} ({size})"
+    },
+    "title": "Bereinigen",
+    "notIndexed": "Noch nicht indexiert: Sie kann bereinigt werden, sobald der Tab Versionen sie indexiert hat",
+    "saveFirst": "Erst den Plan speichern: Die Prüfung verwendet die gespeicherten Regeln.",
+    "scanAgain": "Die Regeln, die Auswahl oder eine Version haben sich seit der Prüfung geändert. Bitte erneut prüfen.",
+    "scanningSource": "Die Quelle wird gelesen … {files}",
+    "sourceError": "Die Quelle kann nicht gelesen werden: {error}",
+    "scanFailed": "Die Prüfung ist fehlgeschlagen: {error}",
+    "busy": "Das Bereinigen kann jetzt nicht starten: Eine Sicherung, Wiederholung, Kopie, Löschung oder Wiederherstellung des Plans läuft.",
+    "totals": {
+      "full": {
+        "one": "{count} Version · {files} zu entfernen · {size} frei",
+        "other": "{count} Versionen · {files} zu entfernen · {size} frei"
+      },
+      "pool": {
+        "one": "{count} Version · {files} zu entfernen · ≈ {size} im Pool frei",
+        "other": "{count} Versionen · {files} zu entfernen · ≈ {size} im Pool frei"
+      }
+    },
+    "result": {
+      "one": "{count} Version bereinigt · {files} entfernt · {size} freigegeben",
+      "other": "{count} Versionen bereinigt · {files} entfernt · {size} freigegeben"
+    },
+    "confirm": {
+      "one": "{count} Version bereinigen?\n\nEntfernt daraus {files} und gibt {size} frei.\n\nDas kann nicht rückgängig gemacht werden.",
+      "other": "{count} Versionen bereinigen?\n\nEntfernt daraus {files} und gibt {size} frei.\n\nDas kann nicht rückgängig gemacht werden."
+    },
+    "problems": {
+      "one": "{count} Version wurde nicht bereinigt:",
+      "other": "{count} Versionen wurden nicht bereinigt:"
+    },
+    "status": {
+      "running": "Wird bereinigt …",
+      "cleaned": "Bereinigt",
+      "stopped": "Nicht bereinigt: die Bereinigung wurde abgebrochen",
+      "nothing": "Nichts zu entfernen",
+      "changed": "Übersprungen: seit der Prüfung geändert",
+      "gone": "Übersprungen: keine Version dieses Plans mehr",
+      "failed": "Fehlgeschlagen: {error}"
     }
   },
   "restore": {

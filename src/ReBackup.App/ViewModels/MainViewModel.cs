@@ -29,6 +29,7 @@ public enum MainTab
     Retention,
     History,
     Versions,
+    Cleanup,
 }
 
 public sealed partial class MainViewModel : ObservableObject
