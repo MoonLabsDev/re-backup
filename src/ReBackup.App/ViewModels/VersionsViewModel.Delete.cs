@@ -363,10 +363,10 @@ public sealed partial class VersionsViewModel
     /// <summary>
     /// At app start: finishes the plan's deletions this computer did not finish (version folders it marked as being
     /// deleted, an incremental plan's pending pool cleanup; <see cref="DeletionResumer"/>) in the background, with the same
-    /// progress as a deletion by hand, then the cleanups it did not finish (version folders with its
+    /// progress as a deletion by hand, then a full plan's cleanups it did not finish (version folders with its
     /// <see cref="VersionMarkerNames.Pruning"/>; <see cref="CleanupResumer"/>). The target is looked at first (at most
-    /// <see cref="ResumeFindTimeout"/> for both); only when something is left does <see cref="IsResuming"/> turn true and
-    /// the plan's runs wait. Nothing happens while the plan
+    /// <see cref="ResumeFindTimeout"/> for each lookup); only when something is left does <see cref="IsResuming"/> turn
+    /// true and the plan's runs wait. Nothing happens while the plan
     /// is queued or running, or while the target cannot be reached; the next start tries again. <paramref name="ct"/> is
     /// the app's exit: it stops looking, or stops after the folder being removed (what was removed leaves the index).
     /// </summary>
@@ -380,14 +380,13 @@ public sealed partial class VersionsViewModel
             var host = _context.Host;
             IReadOnlyList<string> folders;
             bool cleanup;
-            IReadOnlyList<string> pruning;
             using (var find = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
                 find.CancelAfter(ResumeFindTimeout);
                 (folders, cleanup) = await Task.Run(() =>
                     DeletionResumer.FindAsync(target, plan.Id, plan.Incremental, host, find.Token), find.Token);
-                pruning = await Task.Run(() => CleanupResumer.FindAsync(target, plan.Id, host, find.Token), find.Token);
             }
+            var pruning = await FindPruningAsync(plan, target, host, ct);
             var deletions = folders.Count > 0 || cleanup;
             // A run (full plans take no lock) or a deletion by hand may have started meanwhile: it goes first.
             if ((!deletions && pruning.Count == 0) || ct.IsCancellationRequested || IsDeleting || _isBackupActive())
@@ -414,6 +413,32 @@ public sealed partial class VersionsViewModel
         catch (Exception ex)
         {
             Trace.TraceWarning($"Resuming the deletions of plan {plan.Id} failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The version folders with an unfinished cleanup of this computer (<see cref="CleanupResumer.FindAsync"/>), looked
+    /// for with a budget of its own (<see cref="ResumeFindTimeout"/>). An incremental plan's cleanup writes no marker, so
+    /// it is not looked for there. A timeout or a target that cannot be read is traced and finds nothing: the deletion
+    /// resume goes ahead as without a marker, and the next start looks again.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> FindPruningAsync(BackupPlan plan, IStorage target, string host,
+        CancellationToken ct)
+    {
+        if (plan.Incremental)
+            return [];
+        try
+        {
+            using var find = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            find.CancelAfter(ResumeFindTimeout);
+            return await Task.Run(() => CleanupResumer.FindAsync(target, plan.Id, host, find.Token), find.Token);
+        }
+        catch (Exception ex)
+        {
+            // Deliberately broad: this lookup must never stop the deletion resume. An exit is checked by the caller.
+            if (!ct.IsCancellationRequested)
+                Trace.TraceWarning($"Looking for the unfinished cleanups of plan {plan.Id} failed: {ex.Message}");
+            return [];
         }
     }
 
