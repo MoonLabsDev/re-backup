@@ -297,9 +297,9 @@ public static class CleanupRunner
 
     /// <summary>
     /// Deletes the marker's files in batches (a file that is missing already is not an error), then its folders, deepest
-    /// first, where they are empty.
+    /// first, where they are empty (a folder that is not empty stays). Also used by <see cref="CleanupResumer"/>.
     /// </summary>
-    private static async Task DeleteAsync(IStorage target, string versionPath, PruningInfo deletion, CancellationToken ct)
+    internal static async Task DeleteAsync(IStorage target, string versionPath, PruningInfo deletion, CancellationToken ct)
     {
         var files = deletion.Files.Select(path => StoragePath.Combine(versionPath, path)).ToList();
         for (var start = 0; start < files.Count; start += VersionRemover.BatchSize)

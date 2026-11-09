@@ -177,6 +177,20 @@ public class PoolCollectorTests
     }
 
     [Fact]
+    public async Task A_pruning_marker_does_not_stop_a_collection()
+    {
+        Version(V1, ("a.txt", "kept"));
+        _target.AddFile($"{V1}/{VersionMarkerNames.Pruning}", Bytes(
+            "{\"formatVersion\":1,\"planId\":\"p1\",\"host\":\"TESTHOST\",\"startedUtc\":\"2026-10-15T08:00:00Z\",\"files\":[],\"folders\":[]}"));
+        AddBlob(_target, "orphan");
+
+        var result = await Collect();
+
+        result.SkippedReason.Should().BeNull();
+        Blobs(_target).Should().Equal(BlobOf("kept"));
+    }
+
+    [Fact]
     public async Task Empty_shard_folders_are_removed()
     {
         Version(V1, ("a.txt", "kept"));

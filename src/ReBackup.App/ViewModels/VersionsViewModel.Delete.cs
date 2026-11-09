@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Shared.Wpf.Localization;
 using ReBackup.Core.Backup;
+using ReBackup.Core.Cleanup;
 using ReBackup.Core.Plans;
 using ReBackup.Core.Pool;
 using ReBackup.Storage;
@@ -362,8 +363,10 @@ public sealed partial class VersionsViewModel
     /// <summary>
     /// At app start: finishes the plan's deletions this computer did not finish (version folders it marked as being
     /// deleted, an incremental plan's pending pool cleanup; <see cref="DeletionResumer"/>) in the background, with the same
-    /// progress as a deletion by hand. The target is looked at first (at most <see cref="ResumeFindTimeout"/>); only when
-    /// something is left does <see cref="IsResuming"/> turn true and the plan's runs wait. Nothing happens while the plan
+    /// progress as a deletion by hand, then the cleanups it did not finish (version folders with its
+    /// <see cref="VersionMarkerNames.Pruning"/>; <see cref="CleanupResumer"/>). The target is looked at first (at most
+    /// <see cref="ResumeFindTimeout"/> for both); only when something is left does <see cref="IsResuming"/> turn true and
+    /// the plan's runs wait. Nothing happens while the plan
     /// is queued or running, or while the target cannot be reached; the next start tries again. <paramref name="ct"/> is
     /// the app's exit: it stops looking, or stops after the folder being removed (what was removed leaves the index).
     /// </summary>
@@ -377,20 +380,27 @@ public sealed partial class VersionsViewModel
             var host = _context.Host;
             IReadOnlyList<string> folders;
             bool cleanup;
+            IReadOnlyList<string> pruning;
             using (var find = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
                 find.CancelAfter(ResumeFindTimeout);
                 (folders, cleanup) = await Task.Run(() =>
                     DeletionResumer.FindAsync(target, plan.Id, plan.Incremental, host, find.Token), find.Token);
+                pruning = await Task.Run(() => CleanupResumer.FindAsync(target, plan.Id, host, find.Token), find.Token);
             }
+            var deletions = folders.Count > 0 || cleanup;
             // A run (full plans take no lock) or a deletion by hand may have started meanwhile: it goes first.
-            if ((folders.Count == 0 && !cleanup) || ct.IsCancellationRequested || IsDeleting || _isBackupActive())
+            if ((!deletions && pruning.Count == 0) || ct.IsCancellationRequested || IsDeleting || _isBackupActive())
                 return;
 
             IsResuming = true;
             try
             {
-                await ResumeFoundAsync(plan, target, host, ct);
+                var index = deletions && await ResumeFoundAsync(plan, target, host, ct);
+                if (pruning.Count > 0 && !ct.IsCancellationRequested)
+                    index |= await ResumePruningAsync(target, pruning, ct);
+                if (index && _loaded)
+                    _ = IndexAfterDeleteAsync();
             }
             finally
             {
@@ -407,7 +417,11 @@ public sealed partial class VersionsViewModel
         }
     }
 
-    private async Task ResumeFoundAsync(BackupPlan plan, IStorage target, string host, CancellationToken ct)
+    /// <summary>
+    /// Finishes what <see cref="DeletionResumer.FindAsync"/> found, with the deletion's progress; true when the index is
+    /// to be synced afterwards (the resume was not canceled).
+    /// </summary>
+    private async Task<bool> ResumeFoundAsync(BackupPlan plan, IStorage target, string host, CancellationToken ct)
     {
         _syncCts?.Cancel();
         var cts = _deleteCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -423,7 +437,7 @@ public sealed partial class VersionsViewModel
         }
         catch (OperationCanceledException)
         {
-            return;   // nothing was changed; the markers stay for the next start
+            return false;   // nothing was changed; the markers stay for the next start
         }
         finally
         {
@@ -434,12 +448,23 @@ public sealed partial class VersionsViewModel
         if (result.Removed.Count > 0)
             VersionsDeleted?.Invoke();
         if (result.Outcome == ResumeOutcome.Canceled)
-            return;   // the rest stays for the next start
+            return false;   // the rest stays for the next start
         _context.ReportStatus(result.Outcome == ResumeOutcome.Finished
             ? LocText.Of("versions.delete.resumed")
             : LocText.Of("versions.delete.resumeIncomplete"));
-        if (_loaded)
-            _ = IndexAfterDeleteAsync();
+        return true;
+    }
+
+    /// <summary>
+    /// Finishes the cleanups <see cref="CleanupResumer.FindAsync"/> found (spec 6.2) as a job the app waits for on exit;
+    /// true when the index is to be synced afterwards (the manifests were shortened before the app stopped, so the index
+    /// may still hold the old ones). The app's exit stops it after the folder being finished.
+    /// </summary>
+    private async Task<bool> ResumePruningAsync(IStorage target, IReadOnlyList<string> folders, CancellationToken ct)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        await RunAsJobAsync(cts, () => CleanupResumer.ResumeAsync(target, folders, cts.Token));
+        return !ct.IsCancellationRequested;
     }
 
     private static string ProblemText(VersionDeletion result) => result.Outcome switch
