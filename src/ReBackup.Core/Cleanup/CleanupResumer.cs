@@ -64,9 +64,7 @@ public static class CleanupResumer
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(folders);
-        var comparer = target.Capabilities.HasFlag(StorageCapabilities.CaseSensitive)
-            ? StringComparer.Ordinal
-            : StringComparer.OrdinalIgnoreCase;
+        var comparer = CleanupRunner.PathComparerOf(target);
         var deleted = 0;
         foreach (var folder in folders)
         {

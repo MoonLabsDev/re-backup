@@ -277,7 +277,8 @@ public static class CleanupRunner
     /// <summary>
     /// The marker for a full-plan version: what <paramref name="pruned"/> removed from the manifest, plus the files and
     /// folders of a marker an earlier cleanup left behind that the shortened <paramref name="manifest"/> does not list
-    /// (a path it lists again is never deleted). Folders come deepest first.
+    /// (a path it lists again, in any case the target treats as the same name, is never deleted). Folders come deepest
+    /// first.
     /// </summary>
     private static async Task<PruningInfo> DeletionOfAsync(IStorage target, string versionPath, BackupManifest manifest,
         PruneResult pruned, string planId, string host, CancellationToken ct)
@@ -286,14 +287,25 @@ public static class CleanupRunner
         IReadOnlyList<string> folders = pruned.RemovedFolders;
         if (await PruningMarker.TryReadAsync(target, versionPath, ct).ConfigureAwait(false) is { } earlier)
         {
-            var listedFiles = manifest.Files.Select(f => f.Path).ToHashSet(StringComparer.Ordinal);
-            var listedFolders = manifest.Directories.ToHashSet(StringComparer.Ordinal);
-            files = [.. files.Union(earlier.Files.Where(path => !listedFiles.Contains(path)), StringComparer.Ordinal)];
-            folders = [.. folders.Union(earlier.Folders.Where(path => !listedFolders.Contains(path)), StringComparer.Ordinal)
+            var comparer = PathComparerOf(target);
+            var listedFiles = manifest.Files.Select(f => f.Path).ToHashSet(comparer);
+            var listedFolders = manifest.Directories.ToHashSet(comparer);
+            files = [.. files.Union(earlier.Files.Where(path => !listedFiles.Contains(path)), comparer)];
+            folders = [.. folders.Union(earlier.Folders.Where(path => !listedFolders.Contains(path)), comparer)
                 .OrderByDescending(path => path.Count(c => c == '/'))];   // stable: the pruner's order stays
         }
         return new PruningInfo(PruningMarker.FormatVersion, planId, host, DateTime.UtcNow, files, folders);
     }
+
+    /// <summary>
+    /// Compares paths as <paramref name="target"/> compares names: ignoring case unless it is
+    /// <see cref="StorageCapabilities.CaseSensitive"/>. Used for "does the manifest still list this path" here and in
+    /// <see cref="CleanupResumer"/>, so both agree on what is the same file.
+    /// </summary>
+    internal static StringComparer PathComparerOf(IStorage target) =>
+        target.Capabilities.HasFlag(StorageCapabilities.CaseSensitive)
+            ? StringComparer.Ordinal
+            : StringComparer.OrdinalIgnoreCase;
 
     /// <summary>
     /// Deletes the marker's files in batches (a file that is missing already is not an error), then its folders, deepest

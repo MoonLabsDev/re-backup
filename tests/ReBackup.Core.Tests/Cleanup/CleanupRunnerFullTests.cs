@@ -386,6 +386,27 @@ public class CleanupRunnerFullTests : IDisposable
         File.Exists(Path.Combine(_target, OldName, VersionMarkerNames.Pruning)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task A_marker_left_behind_keeps_a_path_the_manifest_lists_in_another_case_on_a_target_that_ignores_case()
+    {
+        Target.Capabilities.HasFlag(StorageCapabilities.CaseSensitive).Should().BeFalse("the test needs a target that ignores case");
+        WriteVersion(Old);
+        // The earlier marker names src/a.cs in another case; the manifest lists it, so it is the same, listed file.
+        await PruningMarker.WriteAsync(Target, OldName,
+            new PruningInfo(PruningMarker.FormatVersion, VersionBuilder.PlanId, "this-pc", DateTime.UtcNow,
+                ["SRC/A.cs"], ["SRC"]), CancellationToken.None);
+        var storage = new FaultyStorage(Target);
+
+        var result = await Run([await Scanned(OldName)], storage);
+
+        result.Versions.Single().Outcome.Should().Be(CleanupOutcome.Cleaned);
+        File.Exists(Path.Combine(_target, OldName, "src", "a.cs")).Should().BeTrue();
+        storage.DeleteBatches.SelectMany(b => b)
+            .Should().NotContain(p => p.Contains("src", StringComparison.OrdinalIgnoreCase));
+        ManifestOf(OldName).Files.Select(f => f.Path).Should().Equal("src/a.cs");
+        File.Exists(Path.Combine(_target, OldName, VersionMarkerNames.Pruning)).Should().BeFalse();
+    }
+
     private sealed class ThrowingSink : IVersionIndexSink
     {
         public void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest) =>
