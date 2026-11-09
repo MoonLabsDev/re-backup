@@ -1166,7 +1166,7 @@
     "cancelToolTip": "Stop after the version being cleaned up",
     "list": "Versions to clean up",
     "checkAll": "Check all versions",
-    "column": { "removes": "Removes", "frees": "Frees" },
+    "column": { "removes": "Removes", "frees": "Frees", "sizeAfter": "Size after" },
     "byRule": {
       "title": "By rule",
       "rule": "Rule",

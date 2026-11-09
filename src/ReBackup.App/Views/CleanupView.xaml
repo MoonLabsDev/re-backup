@@ -15,6 +15,12 @@
             <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
         </Style>
 
+        <!-- The header of a right-aligned number column. -->
+        <Style x:Key="Header.Number" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="Padding" Value="8,0,12,0" />
+        </Style>
+
         <!-- A plain text cell. -->
         <Style x:Key="TextBlock.Cell" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -125,31 +131,38 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="{l:Loc common.size}" Width="100">
+                        <DataGridTemplateColumn Header="{l:Loc common.size}" Width="100" HeaderStyle="{StaticResource Header.Number}">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeText}" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="{l:Loc common.files}" Width="110">
+                        <DataGridTemplateColumn Header="{l:Loc common.files}" Width="110" HeaderStyle="{StaticResource Header.Number}">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding FilesText}" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="{l:Loc cleanup.column.removes}" Width="90">
+                        <DataGridTemplateColumn Header="{l:Loc cleanup.column.removes}" Width="90" HeaderStyle="{StaticResource Header.Number}">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding RemovesText}" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTemplateColumn Header="{l:Loc cleanup.column.frees}" Width="100">
+                        <DataGridTemplateColumn Header="{l:Loc cleanup.column.frees}" Width="100" HeaderStyle="{StaticResource Header.Number}">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding FreesText}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="{l:Loc cleanup.column.sizeAfter}" Width="110" HeaderStyle="{StaticResource Header.Number}">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Style="{StaticResource TextBlock.Number}" Text="{Binding SizeAfterText}" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>

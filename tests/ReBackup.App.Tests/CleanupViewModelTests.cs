@@ -246,6 +246,9 @@ public class CleanupViewModelTests : IDisposable
         var row = Row(cleanup, Older);
         row.RemovesText.Should().Be("2");
         row.FreesText.Should().Be(Formats.Bytes(150));
+        var size = row.Version.Info.TotalBytes ?? row.Version.Indexed!.TotalBytes;
+        row.SizeAfterText.Should().Be(Formats.Bytes(size - 150), "the size after is the version's size minus what is freed");
+        Row(cleanup, Newer).SizeAfterText.Should().BeEmpty("it was not scanned");
         Row(cleanup, Newer).RemovesText.Should().BeEmpty("it was not scanned");
         var rule = cleanup.ByRule.Should().ContainSingle().Subject;
         rule.Rule.Should().Be("target/");

@@ -77,6 +77,15 @@ public sealed class CleanupRowViewModel : ObservableObject
         { } scan => Formats.Bytes(scan.Bytes),
     };
 
+    /// <summary>
+    /// The version's own size once the files the scan found are removed, e.g. "5.7 GB" (also for pool plans: what the
+    /// version lists afterwards); empty while the version was not scanned or its size is unknown.
+    /// </summary>
+    public string SizeAfterText =>
+        _scan is { } scan && (Version.Info.TotalBytes ?? Version.Indexed?.TotalBytes) is { } bytes
+            ? Formats.Bytes(Math.Max(0, bytes - scan.Bytes))
+            : "";
+
     /// <summary>What the last cleanup did with the version (or is doing now); empty before a cleanup.</summary>
     public string StatusText => _status?.ToString() ?? "";
 
@@ -86,6 +95,7 @@ public sealed class CleanupRowViewModel : ObservableObject
         _scan = (files, bytes, pool);
         OnPropertyChanged(nameof(RemovesText));
         OnPropertyChanged(nameof(FreesText));
+        OnPropertyChanged(nameof(SizeAfterText));
     }
 
     /// <summary>Forgets the scan's numbers (not scanned, or the scan was dropped).</summary>
@@ -94,6 +104,7 @@ public sealed class CleanupRowViewModel : ObservableObject
         _scan = null;
         OnPropertyChanged(nameof(RemovesText));
         OnPropertyChanged(nameof(FreesText));
+        OnPropertyChanged(nameof(SizeAfterText));
     }
 
     /// <summary>Sets <see cref="StatusText"/>; null clears it.</summary>

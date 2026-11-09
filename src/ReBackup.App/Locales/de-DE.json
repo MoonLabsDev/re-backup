@@ -1166,7 +1166,7 @@
     "cancelToolTip": "Nach der Version anhalten, die gerade bereinigt wird",
     "list": "Zu bereinigende Versionen",
     "checkAll": "Alle Versionen anhaken",
-    "column": { "removes": "Entfernt", "frees": "Gibt frei" },
+    "column": { "removes": "Entfernt", "frees": "Gibt frei", "sizeAfter": "Größe danach" },
     "byRule": {
       "title": "Nach Regel",
       "rule": "Regel",
