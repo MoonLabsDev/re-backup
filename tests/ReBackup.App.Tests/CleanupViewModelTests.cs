@@ -513,7 +513,7 @@ public class CleanupViewModelTests : IDisposable
         foreach (var count in new[] { 1, 2 })
         {
             Loc.F("cleanup.confirm", ("count", count), ("files", Formats.Files(1)), ("size", size))
-                .Should().Contain($"Removes {Loc.F(Formats.Files(1))} from").And.Contain($"frees {size}");
+                .Should().Contain("Removes 1 file from").And.Contain($"frees {size}");
         }
 
         // German: the verb must not agree with the file count ("1 Datei werden …" is wrong).

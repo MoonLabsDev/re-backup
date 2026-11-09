@@ -48,12 +48,15 @@ public class VersionsCleanupTests : IDisposable
         _fixture.Dispose();
     }
 
+    private bool _incremental;
+
     private BackupPlan Plan => new()
     {
         Id = "p1",
         Name = "Projects",
         Source = StorageLocation.FileSystem(Path.Combine(_fixture.Root, "source")),
         Target = new StorageLocation("s3", "", "full"),
+        Incremental = _incremental,
     };
 
     private static IgnoreMatcher Rules(params string[] patterns) =>
@@ -88,6 +91,23 @@ public class VersionsCleanupTests : IDisposable
         _target.AddFile(ManifestPath(name), Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, JsonDefaults.Options)));
     }
 
+    /// <summary>
+    /// What a cleanup interrupted after its manifest write leaves (spec 6.2): <paramref name="name"/>'s manifest lists only
+    /// <c>src/a.cs</c>, the files under <c>target/</c> are still there, and this computer's marker lists them.
+    /// </summary>
+    private async Task LeaveUnfinishedCleanupAsync(string name)
+    {
+        var manifest = JsonSerializer.Deserialize<BackupManifest>(_target.ReadAllBytes(ManifestPath(name)), JsonDefaults.Options)!;
+        manifest.Files.RemoveAll(f => f.Path.StartsWith("target/", StringComparison.Ordinal));
+        manifest.FileCount = manifest.Files.Count;
+        manifest.TotalBytes = manifest.Files.Sum(f => f.Size);
+        manifest.Directories = ["src"];
+        _target.AddFile(ManifestPath(name), Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, JsonDefaults.Options)));
+        await PruningMarker.WriteAsync(_target, name,
+            new PruningInfo(PruningMarker.FormatVersion, "p1", Environment.MachineName, DateTime.UtcNow,
+                ["target/x.dll", "target/y.dll"], ["target"]), CancellationToken.None);
+    }
+
     private MainViewModel CreateMain()
     {
         _fixture.Store.Save(Plan);
@@ -117,6 +137,52 @@ public class VersionsCleanupTests : IDisposable
             await Task.Delay(20);
         }
         throw new TimeoutException($"Not met in time: {because}");
+    }
+
+    /// <summary>Records every path the app looks at (stat, read, list) on an <see cref="InMemoryStorage"/>.</summary>
+    private sealed class RecordingStorage(InMemoryStorage inner) : IStorage
+    {
+        private readonly List<string> _seen = [];
+
+        public IReadOnlyList<string> Seen
+        {
+            get { lock (_seen) return [.. _seen]; }
+        }
+
+        private void See(string path)
+        {
+            lock (_seen)
+                _seen.Add(path);
+        }
+
+        public StorageCapabilities Capabilities => inner.Capabilities;
+
+        public Task<StorageEntry?> StatAsync(string path, CancellationToken ct)
+        {
+            See(path);
+            return inner.StatAsync(path, ct);
+        }
+
+        public IAsyncEnumerable<StorageEntry> ListAsync(string folder, bool recursive, CancellationToken ct)
+        {
+            See(folder);
+            return inner.ListAsync(folder, recursive, ct);
+        }
+
+        public Task<Stream> OpenReadAsync(string path, CancellationToken ct)
+        {
+            See(path);
+            return inner.OpenReadAsync(path, ct);
+        }
+
+        public Task<StorageWriter> CreateAsync(string path, CreateOptions options, CancellationToken ct) =>
+            inner.CreateAsync(path, options, ct);
+
+        public Task DeleteAsync(IReadOnlyList<string> paths, CancellationToken ct) => inner.DeleteAsync(paths, ct);
+
+        public Task EnsureDirectoryAsync(string path, CancellationToken ct) => inner.EnsureDirectoryAsync(path, ct);
+
+        public Task<long?> GetFreeSpaceAsync(CancellationToken ct) => inner.GetFreeSpaceAsync(ct);
     }
 
     /// <summary>Collects the reports as they come (synchronously, on the reporting thread).</summary>
@@ -259,5 +325,54 @@ public class VersionsCleanupTests : IDisposable
         result.Versions.Select(v => v.Name).Should().Equal(Older);
         versions.IsDeleting.Should().BeFalse();
         _target.Files.Should().NotContain($"{Older}/target/x.dll").And.Contain($"{Newer}/target/x.dll");
+    }
+
+    // ---- Finishing an interrupted cleanup at the next start ----
+
+    [Fact]
+    public async Task An_unfinished_cleanup_is_finished_at_start_while_runs_of_the_plan_wait()
+    {
+        await LeaveUnfinishedCleanupAsync(Older);
+        Directory.CreateDirectory(Path.Combine(_fixture.Root, "source"));
+        var vm = CreateMain();
+        var editor = Projects(vm);
+        vm.RunnablePlans.Single(p => p.Id == "p1").CanRun.Should().BeTrue("the plan can run before the resume");
+        // Only a cleanup marker is left (no deletion): the resume reads the manifest of the marked version and waits there.
+        _gated.Holds = path => path == ManifestPath(Older);
+
+        var resuming = editor.Versions.ResumeDeletionAsync();
+        await _gated.Reached.Task.WaitAsync(Timeout);
+
+        await WaitUntilAsync(() => editor.Versions.IsResuming, "the resume runs");
+        editor.IsDeletingVersions.Should().BeTrue();
+        vm.RunnablePlans.Single(p => p.Id == "p1").CanRun.Should().BeFalse();
+        vm.RunNowCommand.Execute(editor);
+        _fixture.Queue.IsBusy.Should().BeFalse("a manual run waits for the cleanup to finish");
+
+        _gated.Gate.SetResult();
+        await resuming.WaitAsync(Timeout);
+
+        _target.Files.Should().NotContain([$"{Older}/target/x.dll", $"{Older}/target/y.dll", MarkerPath(Older)]);
+        _target.Files.Should().Contain([$"{Older}/src/a.cs", ManifestPath(Older), $"{Newer}/target/x.dll", $"{Newer}/target/y.dll"]);
+        editor.Versions.IsResuming.Should().BeFalse();
+        editor.IsDeletingVersions.Should().BeFalse();
+        vm.RunnablePlans.Single(p => p.Id == "p1").CanRun.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_incremental_plan_does_not_look_for_cleanup_markers_at_start()
+    {
+        _incremental = true;
+        await LeaveUnfinishedCleanupAsync(Older);
+        var recording = new RecordingStorage(_target);
+        _storages.Storages[("full", "")] = recording;
+        var vm = CreateMain();
+        var before = _target.Files.ToList();
+
+        await Projects(vm).Versions.ResumeDeletionAsync().WaitAsync(Timeout);
+
+        recording.Seen.Should().Contain($"{Older}/{VersionMarkerNames.Deleting}", "the deletion lookup looked at the version");
+        recording.Seen.Should().NotContain(path => path.EndsWith(VersionMarkerNames.Pruning, StringComparison.Ordinal));
+        _target.Files.Should().BeEquivalentTo(before, "nothing was changed");
     }
 }
