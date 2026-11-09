@@ -106,8 +106,9 @@ public sealed partial class VersionsViewModel
             DeleteProgress = collecting
                 ? LocText.Of("cleanup.collecting")
                 : LocText.Of("cleanup.progress", ("current", p.Current), ("total", p.Total), ("version", p.VersionName));
-            // A version counts half done once its manifest is short and its files go.
-            DeleteFraction = collecting ? 0 : (p.Current - (p.Phase == CleanupPhase.Deleting ? 0.5 : 1.0)) / total;
+            // A version counts by the bytes of it deleted so far (none while its manifest is rewritten).
+            var step = p.BytesTotal > 0 ? Math.Clamp((double)p.BytesDone / p.BytesTotal, 0, 1) : 0;
+            DeleteFraction = collecting ? 0 : (p.Current - 1 + step) / total;
             DeleteIndeterminate = collecting;
             DeletionStatus = new DeletionCardStatus(LocText.Of("cleanup.card"), DeleteProgress, DeleteFraction, collecting);
             _context.ReportStatus(DeleteProgress);

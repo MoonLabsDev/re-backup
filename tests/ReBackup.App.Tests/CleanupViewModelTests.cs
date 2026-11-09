@@ -387,6 +387,9 @@ public class CleanupViewModelTests : IDisposable
         _fixture.Dialogs.Confirms.Should().ContainSingle().Which.Should().Be(Loc.F("cleanup.confirm", ("count", 1),
             ("files", Formats.Files(2)), ("size", Formats.Bytes(150))));
         Row(cleanup, Older).StatusText.Should().Be(Loc.T("cleanup.status.cleaned"));
+        Row(cleanup, Older).Lamp.Should().Be(CleanupLamp.Done);
+        Row(cleanup, Newer).Lamp.Should().Be(CleanupLamp.None, "it was not part of the cleanup");
+        cleanup.HasStep.Should().BeFalse("the second bar goes with the run");
         cleanup.TotalsText.ToString().Should().Be(Loc.F("cleanup.result", ("count", 1), ("files", Formats.Files(2)),
             ("size", Formats.Bytes(150))));
         cleanup.ByRule.Should().BeEmpty("the scan was dropped");
@@ -424,12 +427,15 @@ public class CleanupViewModelTests : IDisposable
         var running = cleanup.CleanUpCommand.ExecuteAsync(null);
         await _gated.Reached.Task.WaitAsync(Timeout);
         cleanup.CancelCommand.CanExecute(null).Should().BeTrue();
+        await WaitUntilAsync(() => Row(cleanup, Older).Lamp == CleanupLamp.Running, "its lamp shows it is being cleaned up");
         cleanup.CancelCommand.Execute(null);
         _gated.Gate.SetResult();
         await running.WaitAsync(Timeout);
 
         Row(cleanup, Older).StatusText.Should().Be(Loc.T("cleanup.status.cleaned"));
-        Row(cleanup, Newer).StatusText.Should().BeEmpty("it was not started");
+        Row(cleanup, Older).Lamp.Should().Be(CleanupLamp.Done);
+        Row(cleanup, Newer).StatusText.Should().Be(Loc.T("cleanup.status.stopped"), "the run stopped before it");
+        Row(cleanup, Newer).Lamp.Should().Be(CleanupLamp.Warning);
         _target.Files.Should().NotContain($"{Older}/target/x.dll").And.Contain($"{Newer}/target/x.dll");
     }
 

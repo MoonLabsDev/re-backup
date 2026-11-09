@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ReBackup.Core.Cleanup;
 using ReBackup.Shared.Wpf.Localization;
@@ -12,6 +13,15 @@ public sealed partial class CleanupViewModel
 
     /// <summary>A cleanup this tab started runs: the tab shows its progress and Cancel.</summary>
     public bool IsCleaningUp => _run is not null;
+
+    /// <summary>True while the files of a full plan's version are deleted: the second bar shows how far that version is.</summary>
+    [ObservableProperty] private bool _hasStep;
+
+    /// <summary>How much of the version being cleaned up is deleted, 0 to 1.</summary>
+    [ObservableProperty] private double _stepFraction;
+
+    /// <summary>E.g. "2.1 GB of 23.8 GB deleted".</summary>
+    [ObservableProperty] private string _stepText = "";
 
     /// <summary>
     /// "Clean up…" is enabled after a current scan that found something, while the plan has no unsaved changes ("Save
@@ -60,9 +70,12 @@ public sealed partial class CleanupViewModel
         NotifyCommands();
         var progress = new Progress<CleanupProgress>(p =>
         {
-            if (ReferenceEquals(_run, run) && p.Phase != CleanupPhase.CollectingPool &&
-                byName.TryGetValue(p.VersionName, out var row))
-                row.SetStatus(LocText.Of("cleanup.status.running"));
+            if (!ReferenceEquals(_run, run))
+                return;
+            if (p.Phase != CleanupPhase.CollectingPool && byName.TryGetValue(p.VersionName, out var row) &&
+                row.Lamp != CleanupLamp.Running)
+                row.SetStatus(LocText.Of("cleanup.status.running"), CleanupLamp.Running);
+            ShowStep(p);
         });
         CleanupResult? outcome;
         try
@@ -72,6 +85,7 @@ public sealed partial class CleanupViewModel
         finally
         {
             _run = null;
+            HasStep = false;
             OnPropertyChanged(nameof(IsCleaningUp));
         }
 
@@ -80,7 +94,7 @@ public sealed partial class CleanupViewModel
         foreach (var row in Rows)
             row.SetStatus(null);
         if (outcome is not null)
-            ShowOutcome(outcome, byName, title);
+            ShowOutcome(outcome, targets, byName, title);
         RefreshHint();
         NotifyCommands();
     }
@@ -91,13 +105,36 @@ public sealed partial class CleanupViewModel
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel() => _versions.CancelCleanup();
 
-    /// <summary>Each version's outcome in its row, the measured totals, and the versions that were not cleaned up.</summary>
-    private void ShowOutcome(CleanupResult outcome, IReadOnlyDictionary<string, CleanupRowViewModel> byName, string title)
+    /// <summary>The second bar: the bytes of a full plan's version deleted so far; hidden otherwise.</summary>
+    private void ShowStep(CleanupProgress p)
+    {
+        HasStep = p.Phase == CleanupPhase.Deleting && p.BytesTotal > 0;
+        if (!HasStep)
+            return;
+        StepFraction = Math.Clamp((double)p.BytesDone / p.BytesTotal, 0, 1);
+        StepText = Loc.F("cleanup.step", ("done", Formats.Bytes(p.BytesDone)), ("total", Formats.Bytes(p.BytesTotal)));
+    }
+
+    /// <summary>
+    /// Each version's outcome in its row (a version the run stopped before shows that), the measured totals, and the
+    /// versions that were not cleaned up.
+    /// </summary>
+    private void ShowOutcome(CleanupResult outcome, IReadOnlyList<CleanupTarget> targets,
+        IReadOnlyDictionary<string, CleanupRowViewModel> byName, string title)
     {
         foreach (var version in outcome.Versions)
         {
             if (byName.TryGetValue(version.Name, out var row))
-                row.SetStatus(StatusOf(version));
+                row.SetStatus(StatusOf(version), LampOf(version.Outcome));
+        }
+        if (outcome.Canceled)
+        {
+            var reached = outcome.Versions.Select(v => v.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var target in targets.Where(t => !reached.Contains(t.Name)))
+            {
+                if (byName.TryGetValue(target.Name, out var row))
+                    row.SetStatus(LocText.Of("cleanup.status.stopped"), CleanupLamp.Warning);
+            }
         }
         var cleaned = outcome.Versions.Count(v => v.Outcome == CleanupOutcome.Cleaned);
         var files = outcome.FilesRemoved;
@@ -112,6 +149,14 @@ public sealed partial class CleanupViewModel
         if (problems.Count > 0)
             _context.Dialogs.ShowFailures(title, Loc.F("cleanup.problems", ("count", problems.Count)), problems);
     }
+
+    private static CleanupLamp LampOf(CleanupOutcome outcome) => outcome switch
+    {
+        CleanupOutcome.Cleaned => CleanupLamp.Done,
+        CleanupOutcome.NothingToDo => CleanupLamp.Idle,
+        CleanupOutcome.Changed or CleanupOutcome.Gone => CleanupLamp.Warning,
+        _ => CleanupLamp.Failed,
+    };
 
     private static LocText StatusOf(CleanupVersionResult version)
     {

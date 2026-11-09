@@ -173,8 +173,8 @@ public static class CleanupRunner
             }
 
             var current = i + 1;
-            void Report(CleanupPhase phase) =>
-                progress?.Report(new CleanupProgress(current, ordered.Count, version.Name, phase));
+            void Report(CleanupPhase phase, long bytesDone, long bytesTotal) =>
+                progress?.Report(new CleanupProgress(current, ordered.Count, version.Name, phase, bytesDone, bytesTotal));
             try
             {
                 results.Add(await CleanVersionAsync(target, plan, matcher, request, version, index, host, Report)
@@ -196,10 +196,10 @@ public static class CleanupRunner
     /// </summary>
     private static async Task<CleanupVersionResult> CleanVersionAsync(IStorage target, BackupPlan plan,
         IgnoreMatcher matcher, CleanupTarget request, VersionInfo version, IVersionIndexSink? index, string host,
-        Action<CleanupPhase> report)
+        Action<CleanupPhase, long, long> report)
     {
         var ct = CancellationToken.None;
-        report(CleanupPhase.Rewriting);
+        report(CleanupPhase.Rewriting, 0, 0);
         if (await VersionIndex.StampOfAsync(target, version.Path, ct).ConfigureAwait(false) != request.Stamp)
             return Result(CleanupOutcome.Changed);
 
@@ -248,8 +248,18 @@ public static class CleanupRunner
 
         if (deletion is not null)
         {
-            report(CleanupPhase.Deleting);
-            await DeleteAsync(target, version.Path, deletion, ct).ConfigureAwait(false);
+            // The sizes of the files to delete as the manifest listed them; one an earlier marker added counts 0.
+            var sizes = new Dictionary<string, long>(PathComparerOf(target));
+            foreach (var file in listed)
+                sizes.TryAdd(file.Path, file.Size);
+            var total = deletion.Files.Sum(path => sizes.GetValueOrDefault(path));
+            long done = 0;
+            report(CleanupPhase.Deleting, 0, total);
+            await DeleteAsync(target, version.Path, deletion, ct, batch =>
+            {
+                done += batch.Sum(path => sizes.GetValueOrDefault(path));
+                report(CleanupPhase.Deleting, done, total);
+            }).ConfigureAwait(false);
             await PruningMarker.RemoveAsync(target, version.Path, ct).ConfigureAwait(false);
         }
 
@@ -311,12 +321,18 @@ public static class CleanupRunner
     /// Deletes the marker's files in batches (a file that is missing already is not an error), then its folders, deepest
     /// first, where they are empty (a folder that is not empty stays). Also used by <see cref="CleanupResumer"/>.
     /// </summary>
-    internal static async Task DeleteAsync(IStorage target, string versionPath, PruningInfo deletion, CancellationToken ct)
+    /// <param name="onBatchDeleted">Called after each batch with the marker paths (relative to the version) it deleted.</param>
+    internal static async Task DeleteAsync(IStorage target, string versionPath, PruningInfo deletion, CancellationToken ct,
+        Action<IReadOnlyList<string>>? onBatchDeleted = null)
     {
-        var files = deletion.Files.Select(path => StoragePath.Combine(versionPath, path)).ToList();
-        for (var start = 0; start < files.Count; start += VersionRemover.BatchSize)
-            await target.DeleteAsync(files.GetRange(start, Math.Min(VersionRemover.BatchSize, files.Count - start)), ct)
+        var paths = deletion.Files;
+        for (var start = 0; start < paths.Count; start += VersionRemover.BatchSize)
+        {
+            var batch = paths.Skip(start).Take(VersionRemover.BatchSize).ToList();
+            await target.DeleteAsync(batch.Select(path => StoragePath.Combine(versionPath, path)).ToList(), ct)
                 .ConfigureAwait(false);
+            onBatchDeleted?.Invoke(batch);
+        }
         // Elsewhere folders vanish with their last file.
         if (!target.Capabilities.HasFlag(StorageCapabilities.EmptyDirectories))
             return;

@@ -1158,6 +1158,7 @@
       "other": "Cleanup canceled; {count} versions cleaned up, {size} freed."
     },
     "stopped": "Cleaning up stopped: {error}",
+    "step": "{done} of {total} deleted",
     "intro": "Removes what the saved ignore rules exclude now from versions already in the target. Check versions, scan, then clean up.",
     "scan": "Scan",
     "scanToolTip": "Find what the saved ignore rules remove from the checked versions",
@@ -1206,7 +1207,8 @@
     },
     "status": {
       "running": "Cleaning up…",
-      "cleaned": "✓",
+      "cleaned": "Cleaned up",
+      "stopped": "Not cleaned up: the cleanup was stopped",
       "nothing": "Nothing to remove",
       "changed": "Skipped: changed since the scan",
       "gone": "Skipped: no longer a version of this plan",

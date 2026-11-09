@@ -107,13 +107,25 @@ public sealed class CleanupRowViewModel : ObservableObject
         OnPropertyChanged(nameof(SizeAfterText));
     }
 
-    /// <summary>Sets <see cref="StatusText"/>; null clears it.</summary>
-    internal void SetStatus(LocText? status)
+    /// <summary>The colour of the status lamp: what the last cleanup did with the version (or is doing now).</summary>
+    public CleanupLamp Lamp { get; private set; }
+
+    /// <summary>Sets <see cref="StatusText"/> and <see cref="Lamp"/>; null clears both.</summary>
+    internal void SetStatus(LocText? status, CleanupLamp lamp = CleanupLamp.None)
     {
         _status = status;
+        Lamp = status is null ? CleanupLamp.None : lamp;
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(Lamp));
     }
 
     /// <summary>The language changed: every text of the row is read again.</summary>
     public void Refresh() => OnPropertyChanged(string.Empty);
 }
+
+/// <summary>
+/// The status lamp of a version in the Cleanup tab: none before a cleanup; running while it is cleaned up; done when it
+/// was cleaned up; idle when there was nothing to remove; warning when it was skipped (changed, gone) or the run stopped
+/// before it; failed on an error.
+/// </summary>
+public enum CleanupLamp { None, Running, Done, Idle, Warning, Failed }

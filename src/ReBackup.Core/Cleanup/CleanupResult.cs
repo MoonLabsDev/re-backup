@@ -45,8 +45,14 @@ public sealed record CleanupResult(IReadOnlyList<CleanupVersionResult> Versions,
     public int FilesRemoved => Versions.Sum(v => v.FilesRemoved);
 }
 
-/// <summary>What a cleanup run does now: version <paramref name="Current"/> of <paramref name="Total"/> (1-based).</summary>
-public readonly record struct CleanupProgress(int Current, int Total, string VersionName, CleanupPhase Phase);
+/// <summary>
+/// What a cleanup run does now: version <paramref name="Current"/> of <paramref name="Total"/> (1-based). For a
+/// full plan's version <paramref name="BytesTotal"/> is what its cleanup removes and <paramref name="BytesDone"/> how
+/// much of it is deleted so far (reported after each batch of files); both are 0 for an incremental plan and while
+/// the pool is collected.
+/// </summary>
+public readonly record struct CleanupProgress(int Current, int Total, string VersionName, CleanupPhase Phase,
+    long BytesDone = 0, long BytesTotal = 0);
 
 /// <summary>The step of a cleanup run.</summary>
 public enum CleanupPhase

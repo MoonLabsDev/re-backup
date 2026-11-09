@@ -65,6 +65,22 @@ public class CleanupRunnerFullTests : IDisposable
         CleanupRunner.RunAsync(storage ?? Target, Plan, matcher ?? Rules("target/"), versions, index, progress, ct, "this-pc");
 
     [Fact]
+    public async Task Deleting_reports_the_bytes_deleted_of_the_bytes_to_delete()
+    {
+        WriteVersion(Old);
+        var seen = new List<CleanupProgress>();
+
+        await Run([await Scanned(OldName)], progress: new SyncProgress<CleanupProgress>(seen.Add));
+
+        var deleting = seen.Where(p => p.Phase == CleanupPhase.Deleting).ToList();
+        deleting.Should().NotBeEmpty();
+        deleting.Should().OnlyContain(p => p.BytesTotal == "xx".Length + "yyy".Length);
+        deleting.First().BytesDone.Should().Be(0);
+        deleting.Last().BytesDone.Should().Be(deleting.Last().BytesTotal);
+        seen.Where(p => p.Phase == CleanupPhase.Rewriting).Should().OnlyContain(p => p.BytesTotal == 0);
+    }
+
+    [Fact]
     public async Task Shortens_the_manifest_then_deletes_the_files_and_ignored_folders()
     {
         WriteVersion(Old);

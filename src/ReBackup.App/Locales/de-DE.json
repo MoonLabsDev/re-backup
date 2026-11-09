@@ -1158,6 +1158,7 @@
       "other": "Bereinigen abgebrochen; {count} Versionen bereinigt, {size} freigegeben."
     },
     "stopped": "Das Bereinigen wurde angehalten: {error}",
+    "step": "{done} von {total} gelöscht",
     "intro": "Entfernt aus den Versionen im Ziel, was die gespeicherten Ignorier-Regeln jetzt ausschließen. Versionen anhaken, prüfen, dann bereinigen.",
     "scan": "Prüfen",
     "scanToolTip": "Ermitteln, was die gespeicherten Ignorier-Regeln aus den angehakten Versionen entfernen",
@@ -1206,7 +1207,8 @@
     },
     "status": {
       "running": "Wird bereinigt …",
-      "cleaned": "✓",
+      "cleaned": "Bereinigt",
+      "stopped": "Nicht bereinigt: die Bereinigung wurde abgebrochen",
       "nothing": "Nichts zu entfernen",
       "changed": "Übersprungen: seit der Prüfung geändert",
       "gone": "Übersprungen: keine Version dieses Plans mehr",

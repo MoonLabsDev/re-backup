@@ -1,6 +1,7 @@
 <UserControl x:Class="ReBackup.App.Views.CleanupView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ReBackup.App.ViewModels"
              xmlns:l="clr-namespace:ReBackup.Shared.Wpf.Localization;assembly=ReBackup.Shared.Wpf">
     <!-- DataContext: the plan's CleanupViewModel. -->
     <UserControl.Resources>
@@ -82,6 +83,11 @@
                                Text="{Binding Versions.DeleteText}" />
                     <ProgressBar Margin="0,4,0,0" Height="6" Maximum="1" Value="{Binding Versions.DeleteFraction, Mode=OneWay}"
                                  IsIndeterminate="{Binding Versions.DeleteIndeterminate, Mode=OneWay}" />
+                    <!-- The version being cleaned up: its bytes deleted so far (full plans, while its files go). -->
+                    <StackPanel Margin="0,8,0,0" Visibility="{Binding HasStep, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Text="{Binding StepText}" />
+                        <ProgressBar Margin="0,4,0,0" Height="4" Maximum="1" Value="{Binding StepFraction, Mode=OneWay}" />
+                    </StackPanel>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -169,8 +175,44 @@
                         <DataGridTemplateColumn Header="{l:Loc common.status}" Width="*" MinWidth="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <TextBlock Style="{StaticResource TextBlock.Cell}" Text="{Binding StatusText}"
-                                               ToolTip="{Binding StatusText}" />
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ToolTip="{Binding StatusText}">
+                                        <Ellipse Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Lamp}" Value="{x:Static vm:CleanupLamp.None}">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Lamp}" Value="{x:Static vm:CleanupLamp.Running}">
+                                                            <Setter Property="Fill" Value="{DynamicResource Brush.AccentLight}" />
+                                                            <DataTrigger.EnterActions>
+                                                                <BeginStoryboard x:Name="Pulse">
+                                                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.25" Duration="0:0:0.7" />
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </DataTrigger.EnterActions>
+                                                            <DataTrigger.ExitActions>
+                                                                <StopStoryboard BeginStoryboardName="Pulse" />
+                                                            </DataTrigger.ExitActions>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Lamp}" Value="{x:Static vm:CleanupLamp.Idle}">
+                                                            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Lamp}" Value="{x:Static vm:CleanupLamp.Warning}">
+                                                            <Setter Property="Fill" Value="{DynamicResource Brush.WarningMark}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Lamp}" Value="{x:Static vm:CleanupLamp.Failed}">
+                                                            <Setter Property="Fill" Value="{DynamicResource Brush.Danger}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
+                                        <TextBlock Style="{StaticResource TextBlock.Cell}" Text="{Binding StatusText}" />
+                                    </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
