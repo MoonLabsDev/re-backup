@@ -264,7 +264,7 @@
     }
   },
   "shell": {
-    "tab": { "plan": "Plan", "ignore": "Ignorieren", "retention": "Aufbewahrung", "history": "Verlauf", "versions": "Versionen" },
+    "tab": { "plan": "Plan", "ignore": "Ignorieren", "retention": "Aufbewahrung", "history": "Verlauf", "versions": "Versionen", "cleanup": "Bereinigen" },
     "rail": {
       "settings": "Einstellungen",
       "themeToolTip": "Design: {theme} – zum Ändern klicken",
@@ -1158,6 +1158,22 @@
       "other": "Bereinigen abgebrochen; {count} Versionen bereinigt, {size} freigegeben."
     },
     "stopped": "Das Bereinigen wurde angehalten: {error}",
+    "intro": "Entfernt aus den Versionen im Ziel, was die gespeicherten Ignorier-Regeln jetzt ausschließen. Versionen anhaken, prüfen, dann bereinigen.",
+    "scan": "Prüfen",
+    "scanToolTip": "Ermitteln, was die gespeicherten Ignorier-Regeln aus den angehakten Versionen entfernen",
+    "cleanUp": "Bereinigen …",
+    "cleanUpToolTip": "Die bei der Prüfung gefundenen Dateien aus den angehakten Versionen entfernen. Das kann nicht rückgängig gemacht werden.",
+    "cancelToolTip": "Nach der Version anhalten, die gerade bereinigt wird",
+    "list": "Zu bereinigende Versionen",
+    "checkAll": "Alle Versionen anhaken",
+    "column": { "removes": "Entfernt", "frees": "Gibt frei" },
+    "byRule": {
+      "title": "Nach Regel",
+      "rule": "Regel",
+      "origin": "Herkunft",
+      "largestHeader": "Am größten",
+      "largest": "{path} ({size})"
+    },
     "title": "Bereinigen",
     "notIndexed": "Noch nicht indexiert: Sie kann bereinigt werden, sobald der Tab Versionen sie indexiert hat",
     "saveFirst": "Erst den Plan speichern: Die Prüfung verwendet die gespeicherten Regeln.",
@@ -1181,8 +1197,8 @@
       "other": "{count} Versionen bereinigt · {files} entfernt · {size} freigegeben"
     },
     "confirm": {
-      "one": "{count} Version bereinigen?\n\n{files} werden daraus entfernt, {size} werden frei.\n\nDas kann nicht rückgängig gemacht werden.",
-      "other": "{count} Versionen bereinigen?\n\n{files} werden daraus entfernt, {size} werden frei.\n\nDas kann nicht rückgängig gemacht werden."
+      "one": "{count} Version bereinigen?\n\nEntfernt daraus {files} und gibt {size} frei.\n\nDas kann nicht rückgängig gemacht werden.",
+      "other": "{count} Versionen bereinigen?\n\nEntfernt daraus {files} und gibt {size} frei.\n\nDas kann nicht rückgängig gemacht werden."
     },
     "problems": {
       "one": "{count} Version wurde nicht bereinigt:",

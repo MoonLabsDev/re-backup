@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +9,8 @@ using System.Windows.Media;
 using FluentAssertions;
 using ReBackup.App.Tests.TestSupport;
 using ReBackup.App.ViewModels;
+using ReBackup.Core.Backup;
+using ReBackup.Core.Versions;
 using ReBackup.Shared.Wpf.Controls;
 
 namespace ReBackup.App.Tests;
@@ -113,6 +116,108 @@ public class MainWindowSmokeTests
             if (tab == "Versions")
                 PathOf(RetentionCoverageControl.SelectedDateProperty).Should().Be("Versions.SelectedVersion.Info.LocalTime");
         });
+    }
+
+    [Fact]
+    public void The_cleanup_tab_opens_for_a_saved_plan()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddPlan("a", "Alpha");
+            var vm = fixture.Create();
+            var editor = vm.Plans[0];
+            var time = new DateTime(2026, 9, 29, 14, 5, 0);
+            editor.Versions.VersionRows.ReplaceAll([
+                new VersionRowViewModel(new VersionInfo("2026_09_30-14_05 Alpha", "2026_09_30-14_05 Alpha", time,
+                    VersionOwnership.Owned, 3, 160))
+                {
+                    Indexed = new IndexedVersion(1, "2026_09_30-14_05 Alpha", time, VersionOwnership.Owned, null,
+                        IndexOrigin.Manifest, 3, 160),
+                },
+                new VersionRowViewModel(new VersionInfo("2026_09_29-14_05 Alpha", "2026_09_29-14_05 Alpha", time,
+                    VersionOwnership.Foreign, 3, 160)),
+            ]);
+            using var bindingErrors = new BindingErrors();
+            var window = new MainWindow { DataContext = vm };
+            vm.SelectedPlan = editor;
+            vm.SelectedTab = MainTab.Cleanup;
+            var content = Layout(window);
+
+            var view = FindAll<ReBackup.App.Views.CleanupView>(content).Should().ContainSingle().Subject;
+            Shown(view).Should().BeTrue();
+            view.DataContext.Should().BeSameAs(editor.Cleanup);
+            FindAll<ReBackup.App.Views.VersionsView>(content).Should().ContainSingle().Which.Visibility.Should().Be(Visibility.Collapsed);
+            var grid = FindAll<DataGrid>(view).Should().ContainSingle(g => ReferenceEquals(g.ItemsSource, editor.Cleanup.Rows)).Subject;
+            grid.Items.Count.Should().Be(2);
+            // The header box and one per row; the foreign version's is hidden (greyed row, reason as tooltip).
+            var boxes = FindAll<CheckBox>(grid).ToList();
+            boxes.Should().HaveCount(3);
+            boxes.Count(Shown).Should().Be(2);
+            FindAll<RadioButton>(content).Where(r => r.Name is "RailCleanupTab" or "CleanupTab")
+                .Should().HaveCount(2).And.OnlyContain(r => Shown(r) && r.IsChecked == true);
+            FindAll<Button>(view).Select(b => BindingOperations.GetBinding(b, ButtonBase.CommandProperty)?.Path.Path)
+                .Should().Contain(["ScanCommand", "CleanUpCommand", "CancelCommand"]);
+            bindingErrors.Messages.Should().BeEmpty();
+        });
+    }
+
+    [Fact]
+    public void The_cleanup_tab_is_hidden_for_a_new_plan()
+    {
+        RunOnSta(() =>
+        {
+            EnsureApplication();
+            using var fixture = new MainViewModelFixture();
+            fixture.AddPlan("a", "Alpha");
+            var vm = fixture.Create();
+            var window = new MainWindow { DataContext = vm };
+            vm.SelectedPlan = vm.Plans[0];
+            vm.SelectedTab = MainTab.Cleanup;
+            Layout(window);
+
+            vm.NewPlanCommand.Execute(null);
+            var content = Layout(window);
+
+            vm.SelectedTab.Should().Be(MainTab.Plan, "a new plan has no Cleanup tab to stay on");
+            FindAll<RadioButton>(content).Where(r => r.Name is "RailCleanupTab" or "CleanupTab")
+                .Should().HaveCount(2).And.OnlyContain(r => !Shown(r));
+        });
+    }
+
+    /// <summary>Collects the binding errors WPF traces on this thread while it lives.</summary>
+    private sealed class BindingErrors : TraceListener
+    {
+        private readonly int _thread = Environment.CurrentManagedThreadId;
+        private readonly SourceLevels _level = PresentationTraceSources.DataBindingSource.Switch.Level;
+
+        public BindingErrors()
+        {
+            // Without a debugger WPF traces nothing until asked to.
+            PresentationTraceSources.Refresh();
+            PresentationTraceSources.DataBindingSource.Listeners.Add(this);
+            PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
+        }
+
+        public List<string> Messages { get; } = [];
+
+        public override void Write(string? message)
+        {
+        }
+
+        public override void WriteLine(string? message)
+        {
+            if (message is not null && Environment.CurrentManagedThreadId == _thread)
+                Messages.Add(message);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            PresentationTraceSources.DataBindingSource.Listeners.Remove(this);
+            PresentationTraceSources.DataBindingSource.Switch.Level = _level;
+            base.Dispose(disposing);
+        }
     }
 
     [Fact]

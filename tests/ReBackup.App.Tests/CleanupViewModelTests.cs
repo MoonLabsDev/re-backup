@@ -249,9 +249,9 @@ public class CleanupViewModelTests : IDisposable
         Row(cleanup, Newer).RemovesText.Should().BeEmpty("it was not scanned");
         var rule = cleanup.ByRule.Should().ContainSingle().Subject;
         rule.Rule.Should().Be("target/");
-        rule.Files.Should().Be(2);
-        rule.Bytes.Should().Be(150);
-        rule.LargestPath.Should().Be("target");
+        rule.Hit.Files.Should().Be(2);
+        rule.Hit.Bytes.Should().Be(150);
+        rule.Hit.LargestPath.Should().Be("target");
         cleanup.TotalsText.ToString().Should().Be(Loc.F("cleanup.totals.full", ("count", 1), ("files", Formats.Files(2)),
             ("size", Formats.Bytes(150))));
         cleanup.IsStale.Should().BeFalse();
@@ -503,6 +503,83 @@ public class CleanupViewModelTests : IDisposable
 
         cleanup.IsScanning.Should().BeFalse();
         cleanup.Hint.Should().BeNull();
+        Row(cleanup, Older).RemovesText.Should().Be("2");
+    }
+
+    [Fact]
+    public void The_question_reads_right_for_one_file()
+    {
+        var size = Formats.Bytes(10);
+        foreach (var count in new[] { 1, 2 })
+        {
+            Loc.F("cleanup.confirm", ("count", count), ("files", Formats.Files(1)), ("size", size))
+                .Should().Contain($"Removes {Loc.F(Formats.Files(1))} from").And.Contain($"frees {size}");
+        }
+
+        // German: the verb must not agree with the file count ("1 Datei werden …" is wrong).
+        using var stream = typeof(MainViewModel).Assembly.GetManifestResourceStream("ReBackup.App.Locales.de-DE.json")!;
+        using var german = JsonDocument.Parse(stream);
+        var confirm = german.RootElement.GetProperty("cleanup").GetProperty("confirm");
+        foreach (var form in new[] { "one", "other" })
+            confirm.GetProperty(form).GetString().Should().Contain("Entfernt daraus {files} und gibt {size} frei.");
+    }
+
+    [Fact]
+    public void Versions_whose_names_differ_only_in_case_do_not_break_the_grid()
+    {
+        var (versions, cleanup) = Standalone();
+        var rows = new[]
+        {
+            VersionRow("2026_09_30-14_05 X", VersionOwnership.Owned, IndexOrigin.Manifest),
+            VersionRow("2026_09_30-14_05 x", VersionOwnership.Owned, IndexOrigin.Manifest),
+        };
+
+        versions.VersionRows.ReplaceAll(rows);
+        versions.VersionRows.ReplaceAll(rows.Reverse().ToList());
+
+        cleanup.Rows.Should().HaveCount(2);
+        cleanup.AllChecked = true;
+        cleanup.Rows.Should().OnlyContain(r => r.IsChecked);
+    }
+
+    [Fact]
+    public async Task CleanUp_is_disabled_while_the_plan_has_unsaved_changes()
+    {
+        var vm = CreateMain();
+        var editor = Projects(vm);
+        var cleanup = editor.Cleanup;
+        await LoadAsync(editor);
+        await ScanAsync(cleanup, Older);
+        var changes = 0;
+        cleanup.CleanUpCommand.CanExecuteChanged += (_, _) => changes++;
+
+        editor.IgnorePatternsText = "target/\nsrc/";
+
+        cleanup.CleanUpCommand.CanExecute(null).Should().BeFalse("the plan has unsaved changes");
+        changes.Should().BeGreaterThan(0, "the button is told to look again");
+        cleanup.Hint!.ToString().Should().Be(Loc.T("cleanup.saveFirst"));
+
+        editor.Revert();
+
+        cleanup.CleanUpCommand.CanExecute(null).Should().BeTrue("the saved rules are those of the scan");
+    }
+
+    [Fact]
+    public async Task A_language_switch_keeps_a_current_scan_current_without_looking_at_each_row()
+    {
+        var vm = CreateMain();
+        var editor = Projects(vm);
+        var cleanup = editor.Cleanup;
+        await LoadAsync(editor);
+        await ScanAsync(cleanup, Older);
+        var looks = 0;
+        cleanup.ScanCommand.CanExecuteChanged += (_, _) => looks++;
+
+        cleanup.RefreshTexts();
+
+        looks.Should().Be(0, "a language switch changes no selection");
+        cleanup.IsStale.Should().BeFalse();
+        cleanup.CleanUpCommand.CanExecute(null).Should().BeTrue();
         Row(cleanup, Older).RemovesText.Should().Be("2");
     }
 

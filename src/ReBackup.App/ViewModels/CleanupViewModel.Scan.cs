@@ -120,14 +120,14 @@ public sealed partial class CleanupViewModel
     private void ShowScan(ScanState scan)
     {
         var result = scan.Result;
-        var byName = Rows.ToDictionary(r => r.Name, StringComparer.OrdinalIgnoreCase);
+        var byName = RowsByName();
         foreach (var version in result.Versions)
         {
             if (byName.TryGetValue(version.Name, out var row))
                 row.ShowScan(version.Files, version.Bytes, scan.Pool);
         }
         foreach (var hit in result.ByRule)
-            ByRule.Add(hit);
+            ByRule.Add(new CleanupRuleRowViewModel(hit));
         var count = result.Versions.Count;
         var files = result.Files;
         var bytes = scan.Pool ? result.PoolBytesFreed ?? 0 : result.Bytes;

@@ -264,7 +264,7 @@
     }
   },
   "shell": {
-    "tab": { "plan": "Plan", "ignore": "Ignore", "retention": "Retention", "history": "History", "versions": "Versions" },
+    "tab": { "plan": "Plan", "ignore": "Ignore", "retention": "Retention", "history": "History", "versions": "Versions", "cleanup": "Cleanup" },
     "rail": {
       "settings": "Settings",
       "themeToolTip": "Theme: {theme} — click to change",
@@ -1158,6 +1158,22 @@
       "other": "Cleanup canceled; {count} versions cleaned up, {size} freed."
     },
     "stopped": "Cleaning up stopped: {error}",
+    "intro": "Removes what the saved ignore rules exclude now from versions already in the target. Check versions, scan, then clean up.",
+    "scan": "Scan",
+    "scanToolTip": "Find what the saved ignore rules remove from the checked versions",
+    "cleanUp": "Clean up…",
+    "cleanUpToolTip": "Remove the files the scan found from the checked versions. This cannot be undone.",
+    "cancelToolTip": "Stop after the version being cleaned up",
+    "list": "Versions to clean up",
+    "checkAll": "Check all versions",
+    "column": { "removes": "Removes", "frees": "Frees" },
+    "byRule": {
+      "title": "By rule",
+      "rule": "Rule",
+      "origin": "Origin",
+      "largestHeader": "Largest",
+      "largest": "{path} ({size})"
+    },
     "title": "Clean up",
     "notIndexed": "Not indexed yet: it can be cleaned up once the Versions tab has indexed it",
     "saveFirst": "Save the plan first: the scan uses the saved rules.",
@@ -1181,8 +1197,8 @@
       "other": "{count} versions cleaned up · {files} removed · {size} freed"
     },
     "confirm": {
-      "one": "Clean up {count} version?\n\n{files} are removed from it, freeing {size}.\n\nThis cannot be undone.",
-      "other": "Clean up {count} versions?\n\n{files} are removed from them, freeing {size}.\n\nThis cannot be undone."
+      "one": "Clean up {count} version?\n\nRemoves {files} from it and frees {size}.\n\nThis cannot be undone.",
+      "other": "Clean up {count} versions?\n\nRemoves {files} from them and frees {size}.\n\nThis cannot be undone."
     },
     "problems": {
       "one": "{count} version was not cleaned up:",

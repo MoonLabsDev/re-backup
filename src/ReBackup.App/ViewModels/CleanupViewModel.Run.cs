@@ -10,14 +10,17 @@ public sealed partial class CleanupViewModel
     /// <summary>The cleanup this tab started runs; its progress reports count only while it is this object.</summary>
     private object? _run;
 
-    private bool IsCleaningUp => _run is not null;
+    /// <summary>A cleanup this tab started runs: the tab shows its progress and Cancel.</summary>
+    public bool IsCleaningUp => _run is not null;
 
     /// <summary>
-    /// "Clean up…" is enabled after a current scan that found something, while no backup, retry, copy, deletion, resume
-    /// or restore of the plan runs (<see cref="VersionsViewModel.CanStartCleanup"/>).
+    /// "Clean up…" is enabled after a current scan that found something, while the plan has no unsaved changes ("Save
+    /// first") and no backup, retry, copy, deletion, resume or restore of it runs
+    /// (<see cref="VersionsViewModel.CanStartCleanup"/>).
     /// </summary>
     private bool CanCleanUp() =>
-        _scan is { Result.Files: > 0 } && !IsStale && !IsScanning && !IsCleaningUp && _versions.CanStartCleanup;
+        _scan is { Result.Files: > 0 } && !IsStale && !IsScanning && !IsCleaningUp && !_hasUnsavedChanges() &&
+        _versions.CanStartCleanup;
 
     /// <summary>
     /// Asks (versions, files, bytes; "≈" for the pool of an incremental plan; "cannot be undone"), then cleans up the
@@ -49,10 +52,11 @@ public sealed partial class CleanupViewModel
         }
 
         var targets = result.Versions.Select(v => new CleanupTarget(v.Name, v.Stamp)).ToList();
-        var byName = Rows.ToDictionary(r => r.Name, StringComparer.OrdinalIgnoreCase);
+        var byName = RowsByName();
         foreach (var row in Rows)
             row.SetStatus(null);
         var run = _run = new object();
+        OnPropertyChanged(nameof(IsCleaningUp));
         NotifyCommands();
         var progress = new Progress<CleanupProgress>(p =>
         {
@@ -68,6 +72,7 @@ public sealed partial class CleanupViewModel
         finally
         {
             _run = null;
+            OnPropertyChanged(nameof(IsCleaningUp));
         }
 
         // Also after a failure: versions before it may have been cleaned up, so the scan no longer holds.

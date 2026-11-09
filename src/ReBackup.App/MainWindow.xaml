@@ -303,6 +303,21 @@
                                  Content="{StaticResource Icon.Versions}" ToolTip="{l:Loc shell.tab.versions}" AutomationProperties.Name="{l:Loc shell.tab.versions}"
                                  AutomationProperties.AutomationId="RailVersionsTab"
                                  IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Versions}}" />
+                    <!-- Saved plans only: a new plan has no versions to clean up. -->
+                    <RadioButton x:Name="RailCleanupTab" GroupName="RailTabs"
+                                 Content="{StaticResource Icon.Filter}" ToolTip="{l:Loc shell.tab.cleanup}" AutomationProperties.Name="{l:Loc shell.tab.cleanup}"
+                                 AutomationProperties.AutomationId="RailCleanupTab"
+                                 IsChecked="{Binding SelectedTab, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Cleanup}}">
+                        <RadioButton.Style>
+                            <Style TargetType="RadioButton" BasedOn="{StaticResource RadioButton.Rail}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedPlan.IsNew}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </RadioButton.Style>
+                    </RadioButton>
                 </StackPanel>
                 <Button DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Style="{StaticResource Button.Icon}"
                         Width="40" Height="40" FontSize="18" Content="{StaticResource Icon.Settings}"
@@ -597,6 +612,24 @@
                                             <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="{l:Loc shell.tab.versions}" />
                                         </StackPanel>
                                     </RadioButton>
+                                    <!-- Saved plans only: a new plan has no versions to clean up. -->
+                                    <RadioButton x:Name="CleanupTab" GroupName="MainTabs"
+                                                 Margin="2,0,0,0" AutomationProperties.Name="{l:Loc shell.tab.cleanup}"
+                                                 IsChecked="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Cleanup}}">
+                                        <RadioButton.Style>
+                                            <Style TargetType="RadioButton" BasedOn="{StaticResource RadioButton.Segment}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsNew}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </RadioButton.Style>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource TextBlock.Icon}" FontSize="13" Text="{StaticResource Icon.Filter}" />
+                                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" FontWeight="Medium" Text="{l:Loc shell.tab.cleanup}" />
+                                        </StackPanel>
+                                    </RadioButton>
                                 </StackPanel>
                             </Border>
 
@@ -670,6 +703,8 @@
                             Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.History}}" />
                         <views:VersionsView
                             Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Versions}}" />
+                        <views:CleanupView DataContext="{Binding Cleanup}"
+                            Visibility="{Binding DataContext.SelectedTab, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Converter.EnumMatch}, ConverterParameter={x:Static vm:MainTab.Cleanup}}" />
                     </Grid>
                 </DockPanel>
             </Grid>

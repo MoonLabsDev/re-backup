@@ -75,7 +75,10 @@ public sealed partial class CleanupViewModel : ObservableObject
     public ObservableCollection<CleanupRowViewModel> Rows => _rows;
 
     /// <summary>What the scan found by rule (rule, origin, files, bytes, largest hit), most bytes first.</summary>
-    public ObservableCollection<CleanupRuleHit> ByRule { get; } = [];
+    public ObservableCollection<CleanupRuleRowViewModel> ByRule { get; } = [];
+
+    /// <summary>The plan's Versions tab: the grid's versions come from it, and so does the progress of a running cleanup.</summary>
+    public VersionsViewModel Versions => _versions;
 
     /// <summary>
     /// The header checkbox: true when every selectable row is checked, false when none is (or there is none), null when
@@ -111,7 +114,7 @@ public sealed partial class CleanupViewModel : ObservableObject
     /// </summary>
     public void Reload()
     {
-        var known = Rows.ToDictionary(r => r.Name, StringComparer.OrdinalIgnoreCase);
+        var known = RowsByName();
         var rows = new List<CleanupRowViewModel>();
         _checkingAll = true;
         try
@@ -129,7 +132,8 @@ public sealed partial class CleanupViewModel : ObservableObject
                 }
                 rows.Add(row);
             }
-            foreach (var gone in known.Values)
+            var kept = new HashSet<CleanupRowViewModel>(rows, ReferenceEqualityComparer.Instance);
+            foreach (var gone in Rows.Where(r => !kept.Contains(r)))
             {
                 gone.PropertyChanged -= OnRowChanged;
                 gone.IsChecked = false;
@@ -156,11 +160,22 @@ public sealed partial class CleanupViewModel : ObservableObject
         NotifyCommands();
     }
 
-    /// <summary>The language changed: the rows, the totals and the hint are read again.</summary>
+    /// <summary>The language changed: the rows, the by-rule list, the totals and the hint are read again.</summary>
     public void RefreshTexts()
     {
-        foreach (var row in Rows)
-            row.Refresh();
+        // Only the texts change: the rows' notifications are no change of what is checked.
+        _checkingAll = true;
+        try
+        {
+            foreach (var row in Rows)
+                row.Refresh();
+        }
+        finally
+        {
+            _checkingAll = false;
+        }
+        foreach (var rule in ByRule)
+            rule.Refresh();
         OnPropertyChanged(string.Empty);
     }
 
@@ -190,6 +205,18 @@ public sealed partial class CleanupViewModel : ObservableObject
             }
         }
         return string.Join("\n", parts);
+    }
+
+    /// <summary>
+    /// The rows by version name, ignoring case as the target's folders do; of two names that differ only in case the
+    /// first row wins.
+    /// </summary>
+    private Dictionary<string, CleanupRowViewModel> RowsByName()
+    {
+        var byName = new Dictionary<string, CleanupRowViewModel>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in Rows)
+            byName.TryAdd(row.Name, row);
+        return byName;
     }
 
     private void OnRowChanged(object? sender, PropertyChangedEventArgs e)

@@ -20,8 +20,14 @@ public sealed partial class MainViewModel
     /// <summary>The copies and verifies running now.</summary>
     private readonly HashSet<IPoolJob> _poolJobs = [];
 
-    /// <summary>A plan was selected: its lock banner reads the target's lock.</summary>
-    partial void OnSelectedPlanChanged(PlanEditorViewModel? value) => _ = value?.RefreshLockAsync();
+    /// <summary>A plan was selected: its lock banner reads the target's lock; a new plan leaves the Cleanup tab.</summary>
+    partial void OnSelectedPlanChanged(PlanEditorViewModel? value)
+    {
+        _ = value?.RefreshLockAsync();
+        // A new plan has no Cleanup tab (it has no versions to clean up yet).
+        if (value is { IsNew: true } && SelectedTab == MainTab.Cleanup)
+            SelectedTab = MainTab.Plan;
+    }
 
     /// <summary>A "Copy plan…" or "Verify backup…" is running.</summary>
     public bool IsAnyPoolJobRunning

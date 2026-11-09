@@ -82,6 +82,23 @@
 
 ![Ignore & Preview: patterns, tree and treemap, total sizes with ignored parts in grey](docs/images/ignore-preview-total.png)
 
+### Cleanup
+
+A new ignore rule only affects the next backups; the versions already in the target still hold what it now leaves
+out. The **Cleanup** tab removes those files from existing versions:
+
+- **Scan**: check the versions to clean up and scan them. The scan uses the plan's **saved** rules (plan patterns,
+  global defaults and `.backupignore` files, as the next backup would use them) and shows per version how many files
+  it removes and how much it frees, the totals, and a list **by rule** with where each rule comes from and its largest
+  folder. Versions the plan does not manage, damaged ones and versions that are not indexed yet cannot be checked.
+- **Clean up…**: after a confirmation, the found files are removed version by version, oldest first, and each version
+  shows its outcome. The scan must still be current: saving other rules, checking other versions or a version that
+  changed in the meantime ask for a new scan first.
+- **Full and incremental plans**: in a full plan the files are deleted from the version folders, so the space is freed
+  exactly as shown. In an incremental plan only the versions' manifests shrink; content no remaining version refers to
+  is then removed from the pool, so the space freed is an estimate (*≈*).
+- **It cannot be undone.** Removed files are gone from those versions; restore anything you still need first.
+
 ---
 
 ## Features
@@ -95,6 +112,7 @@
 | **Run history** | Start, duration, trigger (manual, scheduled, catch-up), result, files, size. Select a run to see skipped files and versions deleted by retention. Results: completed, completed with warnings, target full, error, canceled. |
 | **Ignore tab** | Scans the source live and shows, per file and folder, what goes into the backup and what the gitignore-style patterns leave out (tree and treemap). **Compare with** a version of the plan to see its size and the difference per entry — growth in red, shrinking in green — to find unwanted gains before the next run. `.backupignore` files are marked and can be moved into the plan or out of it with a scope-equivalence check. |
 | **Versions tab** | Browse any version, search names (substring or `*`/`?`), **compare two versions** (added / changed / deleted with both sizes and the size difference, optionally changed only), and see a **file's history** across all versions. **Delete versions** by hand (one or several, after a confirmation), with the progress of the deletion, the cleanup and the indexing shown in the tab and on the plan's card. A size header shows how much the versions need (and, for incremental plans, how much the pool saves). Backed by a local SQLite index per plan. |
+| **Cleanup tab** | Remove what the saved ignore rules now exclude from versions already in the target: **scan** the checked versions (files and bytes per version and by rule), then **clean up** after a confirmation. Works for full and incremental plans; it cannot be undone (see [Cleanup](#cleanup)). |
 | **Restore** | Restore a file, a folder or a whole version to its original location or to a folder of your choice. If files already exist you choose **Overwrite**, **Skip** or **Keep both** (or cancel). A restore **never deletes** anything at the destination. |
 | **App** | **Dark and Light** theme, **English and German** (both switch at once, no restart), tray icon with Open, Run plan, Pause scheduler and Exit, a notification when a run ends, start with Windows, a single instance. |
 | **Distribution** | One self-contained `.exe` for Windows x64; no installer, no .NET runtime to install. |
