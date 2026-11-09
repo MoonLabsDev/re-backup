@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using ReBackup.Core.Backup;
@@ -311,6 +312,107 @@ public class CleanupRunnerFullTests : IDisposable
 
         read.Should().BeEquivalentTo(info);
         (await PruningMarker.TryReadAsync(Target, OldName, CancellationToken.None)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_failing_index_hand_off_keeps_the_version_cleaned_and_is_traced()
+    {
+        WriteVersion(Old);
+        var listener = new RecordingListener();
+        Trace.Listeners.Add(listener);
+        try
+        {
+            var result = await Run([await Scanned(OldName)], index: new ThrowingSink());
+
+            result.Versions.Single().Should().Be(new CleanupVersionResult(OldName, CleanupOutcome.Cleaned, 2, 5, null));
+        }
+        finally
+        {
+            Trace.Listeners.Remove(listener);
+        }
+        listener.Messages.Should().Contain(m => m.Contains(OldName, StringComparison.Ordinal) &&
+                                                m.Contains("index is down", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_manifest_without_a_stamp_is_never_replaced()
+    {
+        WriteVersion(Old);
+        var storage = new FaultyStorage(Target)
+        {
+            MapStat = entry => entry.Path.EndsWith(VersionMarkerNames.Manifest, StringComparison.Ordinal)
+                ? entry with { Stamp = null }
+                : entry,
+        };
+        var scanned = new CleanupTarget(OldName, await VersionIndex.StampOfAsync(storage, OldName, CancellationToken.None));
+
+        var result = await Run([scanned], storage);
+
+        result.Versions.Single().Should().Be(new CleanupVersionResult(OldName, CleanupOutcome.Changed, 0, 0, null));
+        storage.Created.Should().BeEmpty();
+        storage.DeleteBatches.Should().BeEmpty();
+        ManifestOf(OldName).FileCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task A_marker_left_behind_is_merged_without_what_the_manifest_still_lists()
+    {
+        WriteVersion(Old);
+        // An earlier cleanup shortened the manifest but did not get to delete old/gone.txt; src/a.cs is listed again.
+        Directory.CreateDirectory(Path.Combine(_target, OldName, "old"));
+        File.WriteAllText(Path.Combine(_target, OldName, "old", "gone.txt"), "left over");
+        await PruningMarker.WriteAsync(Target, OldName,
+            new PruningInfo(PruningMarker.FormatVersion, VersionBuilder.PlanId, "this-pc", DateTime.UtcNow,
+                ["old/gone.txt", "src/a.cs"], ["old", "src"]), CancellationToken.None);
+        string? markerSeen = null;
+        var storage = new FaultyStorage(Target)
+        {
+            Before = (op, path) =>
+            {
+                if (op == "delete" && path.EndsWith("x.dll", StringComparison.Ordinal))
+                    markerSeen = File.ReadAllText(Path.Combine(_target, OldName, VersionMarkerNames.Pruning));
+            },
+        };
+
+        var result = await Run([await Scanned(OldName)], storage);
+
+        result.Versions.Single().Should().Be(new CleanupVersionResult(OldName, CleanupOutcome.Cleaned, 2, 5, null));
+        var marker = JsonSerializer.Deserialize<PruningInfo>(markerSeen!, JsonDefaults.Options)!;
+        marker.Files.Should().BeEquivalentTo("target/x.dll", "target/sub/y.dll", "old/gone.txt");
+        marker.Folders.Should().Equal("target/sub", "target", "old");
+        Directory.Exists(Path.Combine(_target, OldName, "old")).Should().BeFalse();
+        File.Exists(Path.Combine(_target, OldName, "src", "a.cs")).Should().BeTrue();
+        storage.DeleteBatches.SelectMany(b => b).Should().NotContain(p => p.Contains("src", StringComparison.Ordinal));
+        File.Exists(Path.Combine(_target, OldName, VersionMarkerNames.Pruning)).Should().BeFalse();
+    }
+
+    private sealed class ThrowingSink : IVersionIndexSink
+    {
+        public void Add(string planId, IStorage target, VersionInfo version, BackupManifest manifest) =>
+            throw new InvalidOperationException("The index is down.");
+    }
+
+    private sealed class RecordingListener : TraceListener
+    {
+        private readonly List<string> _messages = [];
+
+        public IReadOnlyList<string> Messages
+        {
+            get { lock (_messages) return [.. _messages]; }
+        }
+
+        public override void Write(string? message) { }
+
+        public override void WriteLine(string? message)
+        {
+            lock (_messages) _messages.Add(message ?? "");
+        }
+
+        public override void TraceEvent(TraceEventCache? eventCache, string source, TraceEventType eventType, int id,
+            string? message)
+        {
+            lock (_messages) _messages.Add(message ?? "");
+        }
     }
 
     private sealed class RecordingSink : IVersionIndexSink

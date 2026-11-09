@@ -36,7 +36,8 @@ public sealed record CleanupVersionResult(string Name, CleanupOutcome Outcome, i
 /// <summary>
 /// The result of a cleanup run: one entry per version that was started, oldest first (a canceled run leaves out the
 /// versions it did not start, and sets <paramref name="Canceled"/>). <paramref name="BytesFreed"/> is what the run freed
-/// on the target: for a full plan the sum of <see cref="CleanupVersionResult.BytesRemoved"/>.
+/// on the target: for a full plan the sum of <see cref="CleanupVersionResult.BytesRemoved"/>, for an incremental plan what
+/// the pool collect freed (0 when it was skipped or did not run).
 /// </summary>
 public sealed record CleanupResult(IReadOnlyList<CleanupVersionResult> Versions, long BytesFreed, bool Canceled)
 {
