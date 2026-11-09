@@ -237,7 +237,7 @@ public sealed partial class BackupRunner
 
             Report(BackupPhase.Finishing, "", force: true);
             if (replaced > 0)
-                await WriteRetriedManifestAsync(target, manifestPath, manifest, manifestEntry.Stamp, cancellationToken)
+                await ManifestWriter.ReplaceAsync(target, manifestPath, manifest, manifestEntry.Stamp, cancellationToken)
                     .ConfigureAwait(false);
         }
         catch (Exception ex) when (replaced > 0 && ex is not StorageConflictException)
@@ -248,7 +248,7 @@ public sealed partial class BackupRunner
             var committed = false;
             try
             {
-                await WriteRetriedManifestAsync(target, manifestPath, manifest, manifestEntry.Stamp, CancellationToken.None)
+                await ManifestWriter.ReplaceAsync(target, manifestPath, manifest, manifestEntry.Stamp, CancellationToken.None)
                     .ConfigureAwait(false);
                 committed = true;
             }
@@ -265,26 +265,6 @@ public sealed partial class BackupRunner
         if (replaced > 0 && _indexSink is not null)
             AddToIndex(plan, target, entry, version.Name, manifest);
         entry.Status = entry.SkippedCount > 0 ? RunStatus.CompletedWithWarnings : RunStatus.Completed;
-    }
-
-    /// <summary>
-    /// Replaces a version's manifest with the retried one, conditionally on <paramref name="expectedStamp"/> (the stamp it
-    /// had when it was read; <see cref="StorageConflictException"/> when it was replaced meanwhile). Durable, because the
-    /// manifest is what the version is; written to a temporary file and moved over the old one on commit.
-    /// </summary>
-    private static async Task WriteRetriedManifestAsync(IStorage target, string manifestPath, BackupManifest manifest,
-        string? expectedStamp, CancellationToken cancellationToken)
-    {
-        manifest.FileCount = manifest.Files.Count;
-        manifest.TotalBytes = manifest.Files.Sum(f => f.Size);
-        var writer = await target.CreateAsync(manifestPath,
-            new CreateOptions(Overwrite: true, Durable: true, ExpectedStamp: expectedStamp), cancellationToken)
-            .ConfigureAwait(false);
-        await using (writer.ConfigureAwait(false))
-        {
-            await JsonSerializer.SerializeAsync(writer, manifest, JsonDefaults.Options, cancellationToken).ConfigureAwait(false);
-            await writer.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
     }
 
     /// <summary>

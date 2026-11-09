@@ -9,7 +9,8 @@ namespace ReBackup.Core.Backup;
 /// </summary>
 public static class VersionMarkerNames
 {
-    public const string Manifest = "re-manifest.json", Pending = "re-pending.json", Deleting = "re-deleting.json";
+    public const string Manifest = "re-manifest.json", Pending = "re-pending.json", Deleting = "re-deleting.json",
+        Pruning = "re-pruning.json";
 }
 
 /// <summary>Names of version folders in a target: <c>YYYY_MM_DD-hh_mm PlanName</c>.</summary>
