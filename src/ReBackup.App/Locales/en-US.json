@@ -1139,6 +1139,26 @@
       "showCopy": "Show this copy in Explorer"
     }
   },
+  "cleanup": {
+    "running": {
+      "one": "Cleaning up {count} version…",
+      "other": "Cleaning up {count} versions…"
+    },
+    "card": "Cleaning up versions…",
+    "progress": "Cleaning up {current} of {total}: {version}",
+    "collecting": "Cleaning up: removing unreferenced content from the pool…",
+    "canceling": "Stopping after the current version…",
+    "stopping": "Stopping the cleanup",
+    "done": {
+      "one": "{count} version cleaned up; {size} freed.",
+      "other": "{count} versions cleaned up; {size} freed."
+    },
+    "canceled": {
+      "one": "Cleanup canceled; {count} version cleaned up, {size} freed.",
+      "other": "Cleanup canceled; {count} versions cleaned up, {size} freed."
+    },
+    "stopped": "Cleaning up stopped: {error}"
+  },
   "restore": {
     "title": "Restore",
     "notInVersion": "\"{path}\" no longer exists in the version.",

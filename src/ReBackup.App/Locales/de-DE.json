@@ -1139,6 +1139,26 @@
       "showCopy": "Diese Kopie im Explorer zeigen"
     }
   },
+  "cleanup": {
+    "running": {
+      "one": "{count} Version wird bereinigt …",
+      "other": "{count} Versionen werden bereinigt …"
+    },
+    "card": "Versionen werden bereinigt …",
+    "progress": "Bereinigen: {current} von {total}: {version}",
+    "collecting": "Bereinigen: nicht referenzierte Inhalte werden aus dem Pool entfernt …",
+    "canceling": "Abbruch nach der aktuellen Version …",
+    "stopping": "Bereinigen wird angehalten",
+    "done": {
+      "one": "{count} Version bereinigt; {size} freigegeben.",
+      "other": "{count} Versionen bereinigt; {size} freigegeben."
+    },
+    "canceled": {
+      "one": "Bereinigen abgebrochen; {count} Version bereinigt, {size} freigegeben.",
+      "other": "Bereinigen abgebrochen; {count} Versionen bereinigt, {size} freigegeben."
+    },
+    "stopped": "Das Bereinigen wurde angehalten: {error}"
+  },
   "restore": {
     "title": "Wiederherstellen",
     "notInVersion": "„{path}“ existiert nicht mehr in der Version.",
