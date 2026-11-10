@@ -456,7 +456,8 @@ the real path of your exe); merge it into Claude Desktop's `claude_desktop_confi
 
 For **Claude Code** and **Codex**, the buttons **Claude Code** and **Codex** below **Copy configuration** do it for
 you: they remove an older `rebackup` entry and register the exe that is running (`claude mcp` in user scope,
-`codex mcp`). Each version has its own exe file, so click it again after updating. By hand, for Claude Code, register the exe with its argument instead (`--scope user` makes it available in every project):
+`codex mcp`). Each version has its own exe file: when a newer version starts and Claude Code or Codex still start an
+older exe, ReBackup asks whether to switch them. By hand, for Claude Code, register the exe with its argument instead (`--scope user` makes it available in every project):
 
 ```powershell
 claude mcp add rebackup --scope user '--' "C:\Path\To\ReBackup.exe" --mcp
@@ -521,9 +522,11 @@ places your existing rules use.
 **Does it run without the app?**
 No. There is no Windows service. Schedules run while ReBackup runs; closing the window keeps it in the tray, and
 "Start with Windows" starts it minimized at sign-in. Missed triggers get one catch-up run at the next start.
-While "Start with Windows" is on, every start of ReBackup rewrites its entry under
-`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` with the path of the exe that is running, so the entry follows
-an exe that was moved or replaced by a newer download.
+The entry lives under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. When a newer ReBackup starts and the
+entry still starts an older one (or an exe that no longer exists), ReBackup asks whether to switch it to the exe that
+is running; the same question covers Claude Code and Codex while "Allow control via MCP" is on (see
+[Claude / MCP](#claude--mcp)). Starting an older version or the same version from another folder never changes the
+entry.
 
 **Are open files backed up?**
 Only if they can be read. ReBackup does not use Volume Shadow Copy (VSS): a file that is locked by another program

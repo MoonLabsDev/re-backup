@@ -28,10 +28,20 @@ public sealed class AppStartupTests
     }
 
     [Fact]
-    public void On_start_with_StartWithWindows_on_a_stale_path_is_replaced()
+    public void On_start_with_StartWithWindows_on_another_exe_stays_until_the_user_switches()
     {
         var key = new InMemoryRunKey();
         key.Values["ReBackup"] = Stale;
+
+        AppStartup.RefreshOnStart(new AppSettings { StartWithWindows = true }, key, Exe);
+
+        key.Values["ReBackup"].Should().Be(Stale);
+    }
+
+    [Fact]
+    public void On_start_with_StartWithWindows_on_a_missing_entry_is_created()
+    {
+        var key = new InMemoryRunKey();
 
         AppStartup.RefreshOnStart(new AppSettings { StartWithWindows = true }, key, Exe);
 

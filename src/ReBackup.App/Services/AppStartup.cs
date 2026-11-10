@@ -16,10 +16,16 @@ public static class AppStartup
     public static void Apply(bool enabled, IRunKey runKey, string? exePath) =>
         StartupRegistration.Apply(ValueName, enabled, Arguments, runKey, exePath);
 
-    /// <summary>On every start: when StartWithWindows is on, rewrites the entry with this exe's path (it may have moved).</summary>
+    /// <summary>
+    /// On every start: when StartWithWindows is on and the entry is missing, it is created for this exe. An entry that
+    /// starts another exe stays: <see cref="Control.StaleRegistrations"/> asks before switching it to a newer version.
+    /// </summary>
     public static void RefreshOnStart(AppSettings settings) =>
-        StartupRegistration.Refresh(ValueName, settings.StartWithWindows, Arguments);
+        RefreshOnStart(settings, new RegistryRunKey(), Environment.ProcessPath);
 
-    public static void RefreshOnStart(AppSettings settings, IRunKey runKey, string? exePath) =>
-        StartupRegistration.Refresh(ValueName, settings.StartWithWindows, Arguments, runKey, exePath);
+    public static void RefreshOnStart(AppSettings settings, IRunKey runKey, string? exePath)
+    {
+        if (settings.StartWithWindows && runKey.GetValue(ValueName) is null)
+            Apply(true, runKey, exePath);
+    }
 }

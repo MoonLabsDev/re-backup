@@ -487,6 +487,15 @@
     "backupRunning": {
       "title": "Backup läuft",
       "message": "Ein Backup läuft oder ist eingereiht.\n\nAbbrechen und ReBackup beenden?"
+    },
+    "staleRegistrations": {
+      "title": "Älteres ReBackup noch eingetragen",
+      "message": "Diese starten noch ein älteres ReBackup:\n\n{entries}\n\nAuf diese Version ({version}) umstellen?",
+      "autostart": "Autostart",
+      "older": "• {name}: ReBackup {version}",
+      "missing": "• {name}: {path} (existiert nicht mehr)",
+      "switched": "{entries} starten jetzt ReBackup {version}. Offene Claude-Code- oder Codex-Sitzungen neu starten.",
+      "autostartFailed": "Der Autostart konnte nicht umgestellt werden: {error}"
     }
   },
   "s3connections": {

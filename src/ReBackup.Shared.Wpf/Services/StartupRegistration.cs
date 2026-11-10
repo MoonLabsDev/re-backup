@@ -8,6 +8,9 @@ public interface IRunKey
     void SetValue(string name, string value);
 
     void DeleteValue(string name);
+
+    /// <summary>The value's text; null when it does not exist.</summary>
+    string? GetValue(string name);
 }
 
 /// <summary>The real <c>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</c> key.</summary>
@@ -25,6 +28,12 @@ public sealed class RegistryRunKey : IRunKey
     {
         using var key = Open();
         key.DeleteValue(name, throwOnMissingValue: false);
+    }
+
+    public string? GetValue(string name)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
+        return key?.GetValue(name) as string;
     }
 
     private static RegistryKey Open() =>
