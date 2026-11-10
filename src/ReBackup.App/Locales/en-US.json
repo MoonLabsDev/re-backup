@@ -487,6 +487,15 @@
     "backupRunning": {
       "title": "Backup in progress",
       "message": "A backup is running or queued.\n\nCancel it and exit ReBackup?"
+    },
+    "staleRegistrations": {
+      "title": "Older ReBackup still registered",
+      "message": "These still start an older ReBackup:\n\n{entries}\n\nSwitch them to this version ({version})?",
+      "autostart": "Autostart",
+      "older": "• {name}: ReBackup {version}",
+      "missing": "• {name}: {path} (no longer exists)",
+      "switched": "{entries} now start ReBackup {version}. Restart open Claude Code or Codex sessions.",
+      "autostartFailed": "Autostart could not be switched: {error}"
     }
   },
   "s3connections": {

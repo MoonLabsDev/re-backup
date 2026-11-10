@@ -10,4 +10,6 @@ public sealed class InMemoryRunKey : IRunKey
     public void SetValue(string name, string value) => Values[name] = value;
 
     public void DeleteValue(string name) => Values.Remove(name);
+
+    public string? GetValue(string name) => Values.TryGetValue(name, out var value) ? value : null;
 }

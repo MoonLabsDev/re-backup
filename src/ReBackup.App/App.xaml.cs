@@ -153,6 +153,100 @@ public partial class App : Application
             _ = StartMcpControlAsync(restarted);
         if (!e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase))
             ShowMainWindow();
+        _ = OfferRegistrationSwitchAsync();
+    }
+
+    /// <summary>
+    /// Autostart, Claude Code or Codex still start an older ReBackup (or an exe that is gone): once the window is shown,
+    /// the user is asked whether to switch them to this exe. Never asked for the same or a newer version elsewhere.
+    /// </summary>
+    private async Task OfferRegistrationSwitchAsync()
+    {
+        var exe = Environment.ProcessPath;
+        var version = typeof(App).Assembly.GetName().Version;
+        if (exe is null || version is null)
+            return;
+        var (autostart, mcp) = (_settings.StartWithWindows, _settings.AllowMcpControl);
+        if (!autostart && !mcp)
+            return;
+        IReadOnlyList<StaleRegistration> stale;
+        try
+        {
+            stale = await Task.Run(() => StaleRegistrations.Find(StaleCheckSources.ForThisUser(), autostart, mcp, exe, version));
+        }
+        catch (Exception)
+        {
+            return;   // a convenience: an unreadable registry or file must not stop the app
+        }
+        if (stale.Count == 0)
+            return;
+
+        // Started into the tray: the question waits until the user opens the window.
+        await WhenMainWindowVisibleAsync();
+        if (_exitRequested)
+            return;
+        var current = LocVersionExtension.Version;
+        var entries = string.Join("\n", stale.Select(DescribeStale));
+        if (!_dialogs.Confirm(Loc.T("app.staleRegistrations.title"),
+                Loc.F("app.staleRegistrations.message", ("entries", entries), ("version", current))))
+            return;
+
+        IReadOnlyList<SwitchFailure> failures;
+        try
+        {
+            failures = await StaleRegistrations.SwitchAsync(stale, exe, new RegistryRunKey(), new ShellCommandRunner());
+        }
+        catch (Exception ex)
+        {
+            failures = [new SwitchFailure(stale[0].Kind, RegistrationResult.Failed(ex.Message))];
+        }
+        var title = Loc.T("app.staleRegistrations.title");
+        var switched = stale.Where(s => failures.All(f => f.Kind != s.Kind)).Select(s => NameOf(s.Kind)).ToList();
+        if (switched.Count > 0)
+            ShowControlNotification(title, Loc.F("app.staleRegistrations.switched",
+                ("entries", string.Join(", ", switched)), ("version", current)));
+        foreach (var failure in failures)
+            ShowControlNotification(title, DescribeFailure(failure));
+    }
+
+    private Task WhenMainWindowVisibleAsync()
+    {
+        if (_window.IsVisible)
+            return Task.CompletedTask;
+        var shown = new TaskCompletionSource();
+        DependencyPropertyChangedEventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            if (!_window.IsVisible)
+                return;
+            _window.IsVisibleChanged -= handler;
+            // After the window has rendered, so the question sits on top of it.
+            Dispatcher.InvokeAsync(shown.SetResult, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        };
+        _window.IsVisibleChanged += handler;
+        return shown.Task;
+    }
+
+    private static string NameOf(RegistrationKind kind) => kind switch
+    {
+        RegistrationKind.Autostart => Loc.T("app.staleRegistrations.autostart"),
+        RegistrationKind.ClaudeCode => "Claude Code",
+        _ => "Codex",
+    };
+
+    private static string DescribeStale(StaleRegistration stale) => stale.Version is { } v
+        ? Loc.F("app.staleRegistrations.older", ("name", NameOf(stale.Kind)), ("version", $"{v.Major}.{v.Minor}.{v.Build}"))
+        : Loc.F("app.staleRegistrations.missing", ("name", NameOf(stale.Kind)), ("path", stale.ExePath));
+
+    private static string DescribeFailure(SwitchFailure failure)
+    {
+        var name = NameOf(failure.Kind);
+        if (failure.Kind == RegistrationKind.Autostart)
+            return Loc.F("app.staleRegistrations.autostartFailed", ("error", failure.Result.Error));
+        return failure.Result.ToolMissing
+            ? Loc.F("settings.mcp.notInstalled", ("client", name),
+                ("tool", McpClientRegistration.Tool(failure.Kind == RegistrationKind.ClaudeCode ? McpClientTool.ClaudeCode : McpClientTool.Codex)))
+            : Loc.F("settings.mcp.registerFailed", ("client", name), ("error", failure.Result.Error));
     }
 
     /// <summary>
